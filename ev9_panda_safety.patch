@@ -70,9 +70,168 @@ index 44607d2d..d1ef6f09 100644
 +      const AngleSteeringParams hyundai_vm_params = hyundai_canfd_ev9 ? HYUNDAI_STEERING_PARAMS_EV9 : HYUNDAI_STEERING_PARAMS_DEFAULT;
 +
 +      if (steer_angle_cmd_checks_vm(desired_angle, steer_angle_req, HYUNDAI_CANFD_ANGLE_STEERING_LIMITS, hyundai_vm_params)) {
+diff --git a/opendbc/car/hyundai/interface.py b/opendbc/car/hyundai/interface.py
+index 4a7b8f17..abcd1234 100644
+--- a/opendbc/car/hyundai/interface.py
++++ b/opendbc/car/hyundai/interface.py
+@@ -1,6 +1,7 @@
+ from opendbc.car import Bus, get_safety_config, structs, uds
+ from opendbc.car.hyundai.hyundaicanfd import CanBus
+ from opendbc.car.hyundai.values import HyundaiFlags, CAR, DBC, \
+                                                    CANFD_UNSUPPORTED_LONGITUDINAL_CAR, \
+                                                    UNSUPPORTED_LONGITUDINAL_CAR, HyundaiSafetyFlags, \
+                                                    HyundaiCanfdPlatform, HYUNDAI_CANFD_PARAM_PLATFORM_ID_SHIFT
+@@ -157,6 +158,12 @@ class CarInterface(CarInterfaceBase):
+     if candidate == CAR.KIA_OPTIMA_G4_FL:
+       ret.steerActuatorDelay = 0.2
+ 
+     # EV9: set platform ID for vehicle model in panda safety
+     if (ret.flags & HyundaiFlags.CANFD_ANGLE_STEERING) and candidate == CAR.KIA_EV9:
+       ret.safetyConfigs[-1].safetyParam |= (HyundaiCanfdPlatform.EV9 << HYUNDAI_CANFD_PARAM_PLATFORM_ID_SHIFT)
+
+     # Dashcam cars are missing a test route, or otherwise need validation
+     # TODO: Optima Hybrid 2017 uses a different SCC12 checksum
+     if candidate in (CAR.KIA_OPTIMA_H,):
+      ret.dashcamOnly = True
+
+diff --git a/opendbc/car/hyundai/values.py b/opendbc/car/hyundai/values.py
+index cebcf3c7..dcba4321 100644
+--- a/opendbc/car/hyundai/values.py
++++ b/opendbc/car/hyundai/values.py
+@@ -1,6 +1,6 @@
+ import re
+ from dataclasses import dataclass, field
+-from enum import Enum, IntFlag
++from enum import Enum, IntFlag, IntEnum
+ 
+ from opendbc.car import Bus, CarSpecs, DbcDict, PlatformConfig, Platforms, uds, ACCELERATION_DUE_TO_GRAVITY
+ from opendbc.car.lateral import AngleSteeringLimits, ISO_LATERAL_ACCEL
+@@ -121,6 +121,17 @@ class HyundaiSafetyFlags(IntFlag):
+   FCEV_GAS = 256
+   ALT_LIMITS_2 = 512
+   CANFD_ANGLE_STEERING = 1024
+
+ # Encoded CAN-FD platform ID (for safety vehicle model selection)
+ # Stored in safetyParam bits [13:11] (3 bits), ID=0 means default model
+ HYUNDAI_CANFD_PARAM_PLATFORM_ID_SHIFT = 11
+ HYUNDAI_CANFD_PARAM_PLATFORM_ID_MASK = 0x7
+
+ class HyundaiCanfdPlatform(IntEnum):
+   DEFAULT = 0
+   EV9 = 1
+ 
+ 
+ class HyundaiFlags(IntFlag):
+
+diff --git a/opendbc/safety/modes/hyundai_canfd.h b/opendbc/safety/modes/hyundai_canfd.h
+index 44607d2d..d1ef6f09 100644
+--- a/opendbc/safety/modes/hyundai_canfd.h
++++ b/opendbc/safety/modes/hyundai_canfd.h
+@@ -48,6 +48,8 @@
+ static bool hyundai_canfd_alt_buttons = false;
+ static bool hyundai_canfd_lka_steering_alt = false;
+ static bool hyundai_canfd_angle_steering = false;
++// Platform selector for vehicle model params (encoded in safetyParam)
++static uint8_t hyundai_canfd_platform_id = 0U;
+ 
+ static unsigned int hyundai_canfd_get_lka_addr(void) {
+   return hyundai_canfd_lka_steering_alt ? 0x110U : 0x50U;
+@@ -190,13 +192,20 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+   //   .wheelbase = 2.95,
+   // };
+ 
+-  // HYUNDAI_SANTA_FE_HEV_5TH_GEN values. (most conservative for now) (values can be found on values.py)
+-  const AngleSteeringParams HYUNDAI_STEERING_PARAMS = {
++  // HYUNDAI_SANTA_FE_HEV_5TH_GEN values. (default conservative model)
++  const AngleSteeringParams HYUNDAI_STEERING_PARAMS_DEFAULT = {
+     .slip_factor = -0.00059689759884299,  // calc_slip_factor(VM)
+     .steer_ratio = 13.72,
+     .wheelbase = 2.81,
+   };
+ 
++  // KIA_EV9 vehicle model params
++  const AngleSteeringParams HYUNDAI_STEERING_PARAMS_EV9 = {
++    .slip_factor = -0.0005410588125765342,  // calc_slip_factor(VM)
++    .steer_ratio = 16.0,
++    .wheelbase = 3.10,
++  };
++
+   bool tx = true;
+ 
+   // steering
+@@ -209,7 +218,12 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+       int desired_angle = (msg->data[11] << 6U) | (msg->data[10] >> 2U);
+       desired_angle = to_signed(desired_angle, 14);
+ 
+-      if (steer_angle_cmd_checks_vm(desired_angle, steer_angle_req, HYUNDAI_CANFD_ANGLE_STEERING_LIMITS, HYUNDAI_STEERING_PARAMS)) {
++      // Select vehicle model parameters per platform when available
++      enum { HYUNDAI_CANFD_PLATFORM_DEFAULT = 0U, HYUNDAI_CANFD_PLATFORM_EV9 = 1U };
++      const AngleSteeringParams hyundai_vm_params = (hyundai_canfd_platform_id == HYUNDAI_CANFD_PLATFORM_EV9) ? HYUNDAI_STEERING_PARAMS_EV9 : HYUNDAI_STEERING_PARAMS_DEFAULT;
++
++      if (steer_angle_cmd_checks_vm(desired_angle, steer_angle_req, HYUNDAI_CANFD_ANGLE_STEERING_LIMITS, hyundai_vm_params)) {
          tx = false;
        }
      } else {
+@@ -278,6 +292,9 @@ static safety_config hyundai_canfd_init(uint16_t param) {
+   const int HYUNDAI_PARAM_CANFD_LKA_STEERING_ALT = 128;
+   const int HYUNDAI_PARAM_CANFD_ALT_BUTTONS = 32;
+   const int HYUNDAI_PARAM_CANFD_ANGLE_STEERING = 1024;
++  // Platform-ID field: 3 bits (values: 0..7) starting at bit 11 (2048)
++  const int HYUNDAI_PARAM_CANFD_PLATFORM_ID_SHIFT = 11;
++  const int HYUNDAI_PARAM_CANFD_PLATFORM_ID_MASK = 0x7;
+ 
+   static const CanMsg HYUNDAI_CANFD_LKA_STEERING_TX_MSGS[] = {
+     HYUNDAI_CANFD_LKA_STEERING_COMMON_TX_MSGS(0, 1)
+@@ -327,6 +344,8 @@ static safety_config hyundai_canfd_init(uint16_t param) {
+   gen_crc_lookup_table_16(0x1021, hyundai_canfd_crc_lut);
+   hyundai_canfd_alt_buttons = GET_FLAG(param, HYUNDAI_PARAM_CANFD_ALT_BUTTONS);
+   hyundai_canfd_angle_steering = GET_FLAG(param, HYUNDAI_PARAM_CANFD_ANGLE_STEERING);
+   // TODO: test this restriction
+   hyundai_canfd_lka_steering_alt = GET_FLAG(param, HYUNDAI_PARAM_CANFD_LKA_STEERING_ALT);
++  // Parse platform ID
++  hyundai_canfd_platform_id = (param >> HYUNDAI_PARAM_CANFD_PLATFORM_ID_SHIFT) & HYUNDAI_PARAM_CANFD_PLATFORM_ID_MASK;
+ 
+diff --git a/opendbc/safety/tests/test_hyundai_canfd.py b/opendbc/safety/tests/test_hyundai_canfd.py
+index 47bac810..1179d7fc 100755
+--- a/opendbc/safety/tests/test_hyundai_canfd.py
++++ b/opendbc/safety/tests/test_hyundai_canfd.py
+@@ -1,9 +1,11 @@
+ #!/usr/bin/env python3
+ from parameterized import parameterized_class
+ import unittest
+ import numpy as np
+ 
+ from opendbc.car import ACCELERATION_DUE_TO_GRAVITY
+ from opendbc.car.hyundai.carcontroller import ANGLE_SAFETY_BASELINE_MODEL
+-from opendbc.car.hyundai.values import HyundaiSafetyFlags, CAR, HyundaiFlags, CarControllerParams
++from opendbc.car.hyundai.values import HyundaiSafetyFlags, CAR, HyundaiFlags, CarControllerParams, \
++  HYUNDAI_CANFD_PARAM_PLATFORM_ID_SHIFT, HyundaiCanfdPlatform
+ from opendbc.car.structs import CarParams
+ from opendbc.car.vehicle_model import VehicleModel, calc_slip_factor
+ from opendbc.safety.tests.libsafety import libsafety_py
+@@ -504,6 +506,24 @@ class TestHyundaiCanfdLKASteeringAltEVAngle(TestHyundaiCanfdLKASteeringAltEVBase
+     self.safety.init_tests()
+ 
+ 
++class TestHyundaiCanfdLKASteeringAltEVAngleEV9(TestHyundaiCanfdLKASteeringAltEVBase, TestHyundaiCanfdAngleSteering):
++
++  def setUp(self):
++    self.packer = CANPackerPanda("hyundai_canfd_generated")
++    self.safety = libsafety_py.libsafety
++    # Encode platform ID for EV9 in safetyParam
++    platform_bits = (HyundaiCanfdPlatform.EV9 << HYUNDAI_CANFD_PARAM_PLATFORM_ID_SHIFT)
++    self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd,
++                                 int(HyundaiSafetyFlags.CANFD_LKA_STEERING) |
++                                 int(HyundaiSafetyFlags.EV_GAS) |
++                                 int(HyundaiSafetyFlags.CANFD_LKA_STEERING_ALT) |
++                                 int(HyundaiSafetyFlags.CANFD_ANGLE_STEERING) |
++                                 int(platform_bits))
++    self.safety.init_tests()
++
++
+ class TestHyundaiCanfdLKASteeringLongEV(HyundaiLongitudinalBase, TestHyundaiCanfdLKASteeringEV):
+ 
+   TX_MSGS = [[0x50, 0], [0x1CF, 1], [0x2A4, 0], [0x51, 0], [0x730, 1], [0x12a, 1], [0x160, 1],
 @@ -278,6 +289,7 @@ static safety_config hyundai_canfd_init(uint16_t param) {
    const int HYUNDAI_PARAM_CANFD_LKA_STEERING_ALT = 128;
    const int HYUNDAI_PARAM_CANFD_ALT_BUTTONS = 32;
