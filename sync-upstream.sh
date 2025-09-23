@@ -22,8 +22,9 @@ git restore --source="${TARGET_REF}" --staged --worktree --no-overlay -- \
   ':(top,exclude)AGENTS.md' \
   ':(top,exclude)sync-upstream.sh' \
   ':(top,exclude)update.sh' \
+  ':(top,exclude)apply_patch.sh' \
   ':(top,exclude).gitmodules' \
-  ':(top,exclude)ev9_panda_safety.patch' \
+  ':(top,exclude)patches' \
   ':(top,exclude)opendbc_repo'
 #git restore --source="${TARGET_REF}" --staged --worktree --no-overlay .
 #git clean -fd
