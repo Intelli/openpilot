@@ -1,0 +1,29 @@
+diff --git b/selfdrive/ui/qt/util.cc a/selfdrive/ui/qt/util.cc
+index 9af76e4aea..6553d6de5a 100644
+--- b/selfdrive/ui/qt/util.cc
++++ a/selfdrive/ui/qt/util.cc
+@@ -27,7 +27,7 @@ QString getVersion() {
+ }
+ 
+ QString getBrand() {
+-  return QObject::tr("sunnypilot");
++  return QObject::tr("sunnypilot - EV9 Edition");
+ }
+ 
+ QString getUserAgent() {
+diff --git b/system/ui/spinner.py a/system/ui/spinner.py
+index dd7fadc538..8684883c44 100755
+--- b/system/ui/spinner.py
++++ a/system/ui/spinner.py
+@@ -74,6 +74,11 @@ class Spinner(Widget):
+ 
+       bar.width *= self._progress / 100.0
+       rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
++
++      edition_text = "EV9 Edition"
++      edition_size = measure_text_cached(gui_app.font(), edition_text, FONT_SIZE)
++      edition_pos = rl.Vector2(center.x - edition_size.x / 2.0, y_pos + PROGRESS_BAR_HEIGHT + 40)
++      rl.draw_text_ex(gui_app.font(), edition_text, edition_pos, FONT_SIZE, 0.0, rl.WHITE)
+     elif self._wrapped_lines:
+       for i, line in enumerate(self._wrapped_lines):
+         text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)
