@@ -11,6 +11,7 @@ EXCLUDES=(
   'create_patch.sh'
   '.gitmodules'
   'patches'
+  'opendbc_repo'
 )
 
 if [[ $# -gt 1 ]]; then
@@ -32,17 +33,17 @@ OPENDBC_UPSTREAM_URL="https://github.com/sunnypilot/opendbc.git"
 OPENDBC_TMP_REMOTE="__sync_upstream_opendbc__"
 
 # Ensure upstream opendbc commits are available locally so the merge can fast-forward the submodule.
-git submodule update --init -- "${OPENDBC_SUBMODULE_PATH}"
-if [[ -d "${OPENDBC_SUBMODULE_PATH}" ]]; then
-  if git -C "${OPENDBC_SUBMODULE_PATH}" remote | grep -Fxq "${OPENDBC_TMP_REMOTE}"; then
-    git -C "${OPENDBC_SUBMODULE_PATH}" remote remove "${OPENDBC_TMP_REMOTE}"
-  fi
-  git -C "${OPENDBC_SUBMODULE_PATH}" remote add "${OPENDBC_TMP_REMOTE}" "${OPENDBC_UPSTREAM_URL}"
-  if ! git -C "${OPENDBC_SUBMODULE_PATH}" fetch "${OPENDBC_TMP_REMOTE}" --tags; then
-    echo "Warning: unable to fetch upstream opendbc; proceeding with existing submodule objects." >&2
-  fi
-  git -C "${OPENDBC_SUBMODULE_PATH}" remote remove "${OPENDBC_TMP_REMOTE}" >/dev/null 2>&1 || true
-fi
+#git submodule update --init -- "${OPENDBC_SUBMODULE_PATH}"
+#if [[ -d "${OPENDBC_SUBMODULE_PATH}" ]]; then
+#  if git -C "${OPENDBC_SUBMODULE_PATH}" remote | grep -Fxq "${OPENDBC_TMP_REMOTE}"; then
+#    git -C "${OPENDBC_SUBMODULE_PATH}" remote remove "${OPENDBC_TMP_REMOTE}"
+#  fi
+#  git -C "${OPENDBC_SUBMODULE_PATH}" remote add "${OPENDBC_TMP_REMOTE}" "${OPENDBC_UPSTREAM_URL}"
+#  if ! git -C "${OPENDBC_SUBMODULE_PATH}" fetch "${OPENDBC_TMP_REMOTE}" --tags; then
+#    echo "Warning: unable to fetch upstream opendbc; proceeding with existing submodule objects." >&2
+#  fi
+#  git -C "${OPENDBC_SUBMODULE_PATH}" remote remove "${OPENDBC_TMP_REMOTE}" >/dev/null 2>&1 || true
+#fi
 
 PRE_SYNC_REF="$(git rev-parse --verify HEAD)"
 
