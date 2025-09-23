@@ -4,7 +4,7 @@ set -euo pipefail
 NAME=opendbc
 SUBPATH=opendbc_repo
 REMOTE=origin
-BRANCH=hkg-angle-steering-2025
+BRANCH=ev9
 URL=https://github.com/Intelli/opendbc.git
 
 # 0) Keep local submodule config in sync with .gitmodules
