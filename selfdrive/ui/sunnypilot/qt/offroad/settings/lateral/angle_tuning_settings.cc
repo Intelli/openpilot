@@ -33,7 +33,7 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
   });
   first_row->addWidget(hkgTuningOverridingCycles);
 
-  hkgAngleMinTorque = new OptionControlSP("HkgTuningAngleMinTorqueReductionGain", tr("Override Steering Effort"), tr("Sets the steering effort percentage used when the driver is overriding lateral control.<br/>Higher values increase resistance and make the wheel feel stiffer."), "../assets/offroad/icon_blank.png", {5, 60}, 1);
+  hkgAngleMinTorque = new OptionControlSP("HkgTuningAngleMinTorqueReductionGain", tr("Override Steering Effort"), tr("Sets the steering effort percentage used when the driver is overriding lateral control.<br/>Higher values increase resistance and make the wheel feel stiffer."), "../assets/offroad/icon_blank.png", {1, 60}, 1);
   connect(hkgAngleMinTorque, &OptionControlSP::updateLabels, hkgAngleMinTorque, [=]() {
     this->updateToggles(offroad);
   });
