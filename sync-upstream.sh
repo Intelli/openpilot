@@ -31,7 +31,8 @@ fi
 PRE_SYNC_REF="$(git rev-parse --verify HEAD)"
 
 # Prefer upstream changes on overlap; excluded files get restored after.
-if ! git merge --no-edit -X theirs "${TARGET_REF}"; then
+# Ignore submodule commits during merge, they get synced separately.
+if ! git merge --no-edit --no-recurse-submodules -X theirs "${TARGET_REF}"; then
   echo "Merge with '${TARGET_REF}' failed. Aborting merge; please resolve issues manually." >&2
   git merge --abort >/dev/null 2>&1 || true
   exit 1
