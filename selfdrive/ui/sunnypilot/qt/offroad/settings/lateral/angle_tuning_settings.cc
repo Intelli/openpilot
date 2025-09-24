@@ -55,12 +55,26 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
   list->addItem(second_row);
 
   auto third_row = new QHBoxLayout();
+  hkgAngleMaxLatAccel = new OptionControlSP("HkgTuningAngleMaxLateralAccel", tr("Max Lateral Accel"), tr("Overrides the maximum lateral acceleration allowed by the angle controller.<br/>Lower values reduce cornering force; higher values permit more aggressive turns."), "../assets/offroad/icon_blank.png", {300, 500}, 10, false, nullptr, true);
+  connect(hkgAngleMaxLatAccel, &OptionControlSP::updateLabels, hkgAngleMaxLatAccel, [=]() {
+    this->updateToggles(offroad);
+  });
+  third_row->addWidget(hkgAngleMaxLatAccel);
+
+  hkgAngleMaxJerk = new OptionControlSP("HkgTuningAngleMaxLateralJerk", tr("Max Lateral Jerk"), tr("Limits how quickly lateral acceleration can change.<br/>Lower values smooth lane entry/exit; higher values allow quicker transitions."), "../assets/offroad/icon_blank.png", {300, 500}, 10, false, nullptr, true);
+  connect(hkgAngleMaxJerk, &OptionControlSP::updateLabels, hkgAngleMaxJerk, [=]() {
+    this->updateToggles(offroad);
+  });
+  third_row->addWidget(hkgAngleMaxJerk);
+  list->addItem(third_row);
+
+  auto fourth_row = new QHBoxLayout();
   hkgAngleMaxRate = new OptionControlSP("HkgTuningAngleMaxAngleRate", tr("Max Angle Rate"), tr("Limits the rate of change for angle commands each control frame.<br/>Lower values smooth steering; higher values sharpen response."), "../assets/offroad/icon_blank.png", {1, 9}, 1);
   connect(hkgAngleMaxRate, &OptionControlSP::updateLabels, hkgAngleMaxRate, [=]() {
     this->updateToggles(offroad);
   });
-  third_row->addWidget(hkgAngleMaxRate);
-  list->addItem(third_row);
+  fourth_row->addWidget(hkgAngleMaxRate);
+  list->addItem(fourth_row);
   
   QObject::connect(uiState(), &UIState::offroadTransition, this, &AngleTunningSettings::updateToggles);
 
@@ -87,6 +101,28 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
 
   auto HkgAngleMaxTorqueValue = QString::fromStdString(params.get("HkgTuningAngleMaxTorqueReductionGain")).toInt();
   hkgAngleMaxTorque->setLabel(QString::number(HkgAngleMaxTorqueValue)+"%");
+
+  auto HkgAngleMaxLatAccelParam = params.get("HkgTuningAngleMaxLateralAccel");
+  auto HkgAngleMaxLatAccelValue = QString::fromStdString(HkgAngleMaxLatAccelParam).toFloat();
+  if (HkgAngleMaxLatAccelParam.empty()) {
+    HkgAngleMaxLatAccelValue = 3.60f;
+  } else if (HkgAngleMaxLatAccelValue < 3.0f) {
+    HkgAngleMaxLatAccelValue = 3.0f;
+  } else if (HkgAngleMaxLatAccelValue > 5.0f) {
+    HkgAngleMaxLatAccelValue = 5.0f;
+  }
+  hkgAngleMaxLatAccel->setLabel(QString::number(HkgAngleMaxLatAccelValue, 'f', 2)+tr(" m/s^2"));
+
+  auto HkgAngleMaxJerkParam = params.get("HkgTuningAngleMaxLateralJerk");
+  auto HkgAngleMaxJerkValue = QString::fromStdString(HkgAngleMaxJerkParam).toFloat();
+  if (HkgAngleMaxJerkParam.empty()) {
+    HkgAngleMaxJerkValue = 3.60f;
+  } else if (HkgAngleMaxJerkValue < 3.0f) {
+    HkgAngleMaxJerkValue = 3.0f;
+  } else if (HkgAngleMaxJerkValue > 5.0f) {
+    HkgAngleMaxJerkValue = 5.0f;
+  }
+  hkgAngleMaxJerk->setLabel(QString::number(HkgAngleMaxJerkValue, 'f', 2)+tr(" m/s^3"));
 
   auto HkgAngleMaxRateParam = params.get("HkgTuningAngleMaxAngleRate");
   auto HkgAngleMaxRateValue = QString::fromStdString(HkgAngleMaxRateParam).toInt();

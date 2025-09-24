@@ -36,5 +36,7 @@ private:
   OptionControlSP* hkgAngleActiveTorque;
   OptionControlSP* hkgAngleMaxTorque;
   OptionControlSP* hkgAngleMaxRate;
+  OptionControlSP* hkgAngleMaxLatAccel;
+  OptionControlSP* hkgAngleMaxJerk;
   OptionControlSP* hkgTuningOverridingCycles;
 };
