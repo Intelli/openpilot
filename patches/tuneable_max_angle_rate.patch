@@ -10,7 +10,7 @@ index 2148a73494..9455306671 100644
      {"HkgTuningOverridingCycles", {PERSISTENT | BACKUP, INT, "17"}},
  };
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.cc
-index b26762fa12..497624f1ab 100644
+index b26762fa12..6ad08cff91 100644
 --- b/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.cc
 +++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.cc
 @@ -53,6 +53,14 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
@@ -19,7 +19,7 @@ index b26762fa12..497624f1ab 100644
    list->addItem(second_row);
 +
 +  auto third_row = new QHBoxLayout();
-+  hkgAngleMaxRate = new OptionControlSP("HkgTuningAngleMaxAngleRate", tr("Max Angle Rate"), tr("Limits the rate of change for angle commands each control frame.<br/>Lower values smooth steering; higher values sharpen response."), "../assets/offroad/icon_blank.png", {1, 9}, 1);
++  hkgAngleMaxRate = new OptionControlSP("HkgTuningAngleMaxAngleRate", tr("Max Angle Rate"), tr("Limits the rate of change for angle commands each control frame.<br/>Lower values smooth steering; higher values sharpen response."), "../assets/offroad/icon_blank.png", {0, 30}, 1);
 +  connect(hkgAngleMaxRate, &OptionControlSP::updateLabels, hkgAngleMaxRate, [=]() {
 +    this->updateToggles(offroad);
 +  });
@@ -28,13 +28,17 @@ index b26762fa12..497624f1ab 100644
    
    QObject::connect(uiState(), &UIState::offroadTransition, this, &AngleTunningSettings::updateToggles);
  
-@@ -80,6 +88,12 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
+@@ -80,6 +88,16 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
    auto HkgAngleMaxTorqueValue = QString::fromStdString(params.get("HkgTuningAngleMaxTorqueReductionGain")).toInt();
    hkgAngleMaxTorque->setLabel(QString::number(HkgAngleMaxTorqueValue)+"%");
  
 +  auto HkgAngleMaxRateValue = QString::fromStdString(params.get("HkgTuningAngleMaxAngleRate")).toInt();
-+  if (HkgAngleMaxRateValue <= 0) {
++  if (HkgAngleMaxRateValue == 0 && params.get("HkgTuningAngleMaxAngleRate").empty()) {
 +    HkgAngleMaxRateValue = 5;
++  } else if (HkgAngleMaxRateValue < 0) {
++    HkgAngleMaxRateValue = 0;
++  } else if (HkgAngleMaxRateValue > 30) {
++    HkgAngleMaxRateValue = 30;
 +  }
 +  hkgAngleMaxRate->setLabel(QString::number(HkgAngleMaxRateValue)+tr(" deg/frame"));
 +
