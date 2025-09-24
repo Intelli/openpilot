@@ -74,6 +74,12 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
     this->updateToggles(offroad);
   });
   fourth_row->addWidget(hkgAngleMaxRate);
+
+  hkgAngleCustomSpeed = new OptionControlSP("HkgTuningAngleCustomLimitMaxSpeedKph", tr("Max Speed (Custom Limits)"), tr("Applies the custom lateral acceleration, jerk, and angle rate limits only below this speed."), "../assets/offroad/icon_blank.png", {10, 50}, 1);
+  connect(hkgAngleCustomSpeed, &OptionControlSP::updateLabels, hkgAngleCustomSpeed, [=]() {
+    this->updateToggles(offroad);
+  });
+  fourth_row->addWidget(hkgAngleCustomSpeed);
   list->addItem(fourth_row);
   
   QObject::connect(uiState(), &UIState::offroadTransition, this, &AngleTunningSettings::updateToggles);
@@ -123,6 +129,17 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
     HkgAngleMaxJerkValue = 5.0f;
   }
   hkgAngleMaxJerk->setLabel(QString::number(HkgAngleMaxJerkValue, 'f', 2)+tr(" m/s^3"));
+
+  auto HkgAngleCustomSpeedParam = params.get("HkgTuningAngleCustomLimitMaxSpeedKph");
+  auto HkgAngleCustomSpeedValue = QString::fromStdString(HkgAngleCustomSpeedParam).toInt();
+  if (HkgAngleCustomSpeedParam.empty()) {
+    HkgAngleCustomSpeedValue = 32;
+  } else if (HkgAngleCustomSpeedValue < 10) {
+    HkgAngleCustomSpeedValue = 10;
+  } else if (HkgAngleCustomSpeedValue > 50) {
+    HkgAngleCustomSpeedValue = 50;
+  }
+  hkgAngleCustomSpeed->setLabel(QString::number(HkgAngleCustomSpeedValue)+tr(" km/h"));
 
   auto HkgAngleMaxRateParam = params.get("HkgTuningAngleMaxAngleRate");
   auto HkgAngleMaxRateValue = QString::fromStdString(HkgAngleMaxRateParam).toInt();
