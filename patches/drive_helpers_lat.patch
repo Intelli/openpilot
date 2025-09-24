@@ -1,5 +1,5 @@
 diff --git b/selfdrive/controls/lib/drive_helpers.py a/selfdrive/controls/lib/drive_helpers.py
-index e28fa3021c..39f672d98d 100644
+index e28fa3021c..46c9bae985 100644
 --- b/selfdrive/controls/lib/drive_helpers.py
 +++ a/selfdrive/controls/lib/drive_helpers.py
 @@ -1,6 +1,7 @@
@@ -23,16 +23,15 @@ index e28fa3021c..39f672d98d 100644
                            prev_curvature - max_curvature_rate * DT_CTRL,
                            prev_curvature + max_curvature_rate * DT_CTRL)
  
--  roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
--  max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
--  min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
 +  speed_threshold_mps = float(params.get("HkgTuningAngleCustomLimitMaxSpeedKph", return_default=True)) / 3.6
 +  custom_max_lat = float(params.get("HkgTuningAngleMaxLateralAccel", return_default=True))
+   roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
+-  max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
+-  min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
 +  if v_ego <= speed_threshold_mps:
-+    max_lat_accel = custom_max_lat
-+    min_lat_accel = -custom_max_lat
++    max_lat_accel = custom_max_lat + roll_compensation
++    min_lat_accel = -custom_max_lat + roll_compensation
 +  else:
-+    roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
 +    max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
 +    min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
    new_curvature, limited_accel = clamp(new_curvature, min_lat_accel / v_ego ** 2, max_lat_accel / v_ego ** 2)
