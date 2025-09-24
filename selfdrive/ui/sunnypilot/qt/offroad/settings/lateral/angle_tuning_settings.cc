@@ -52,6 +52,12 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
     this->updateToggles(offroad);
   });
   second_row->addWidget(hkgAngleMaxTorque);
+
+  hkgAngleMaxRate = new OptionControlSP("HkgTuningAngleMaxAngleRate", tr("Max Angle Rate"), tr("Limits the rate of change for angle commands each control frame.<br/>Lower values smooth steering; higher values sharpen response."), "../assets/offroad/icon_blank.png", {1, 9}, 1);
+  connect(hkgAngleMaxRate, &OptionControlSP::updateLabels, hkgAngleMaxRate, [=]() {
+    this->updateToggles(offroad);
+  });
+  second_row->addWidget(hkgAngleMaxRate);
   list->addItem(second_row);
   
   QObject::connect(uiState(), &UIState::offroadTransition, this, &AngleTunningSettings::updateToggles);
@@ -79,6 +85,12 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
 
   auto HkgAngleMaxTorqueValue = QString::fromStdString(params.get("HkgTuningAngleMaxTorqueReductionGain")).toInt();
   hkgAngleMaxTorque->setLabel(QString::number(HkgAngleMaxTorqueValue)+"%");
+
+  auto HkgAngleMaxRateValue = QString::fromStdString(params.get("HkgTuningAngleMaxAngleRate")).toInt();
+  if (HkgAngleMaxRateValue <= 0) {
+    HkgAngleMaxRateValue = 5;
+  }
+  hkgAngleMaxRate->setLabel(QString::number(HkgAngleMaxRateValue)+tr(" deg/frame"));
 
   auto HkgTuningOverridingCyclesValue = QString::fromStdString(params.get("HkgTuningOverridingCycles")).toInt();
   hkgTuningOverridingCycles->setLabel(QString::number(HkgTuningOverridingCyclesValue));

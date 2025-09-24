@@ -33,7 +33,7 @@
 - Build, run tests, and pass `scripts/lint/lint.sh`.
 
 ## Angle Control Tuning Tips
-- Optional runtime params in `CarController`: `HkgTuningAngleMinTorqueReductionGain`, `HkgTuningAngleMaxTorqueReductionGain`, `HkgTuningAngleActiveTorqueReductionGain`, `HkgTuningOverridingCycles`, `EnableHkgTuningAngleSmoothingFactor`. See `opendbc/car/hyundai/carcontroller.py`.
+- Optional runtime params in `CarController`: `HkgTuningAngleMinTorqueReductionGain`, `HkgTuningAngleMaxTorqueReductionGain`, `HkgTuningAngleActiveTorqueReductionGain`, `HkgTuningOverridingCycles`, `EnableHkgTuningAngleSmoothingFactor`, `HkgTuningAngleMaxAngleRate`. See `opendbc/car/hyundai/carcontroller.py`.
 
 ## Commits & Pull Requests
 - Commits: concise, imperative summaries; optional scope prefix (e.g., `selfdrive: fix lateral tune`, `UI:`). Squash unrelated changes.
