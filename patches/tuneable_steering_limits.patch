@@ -1,37 +1,75 @@
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 2148a73494..9455306671 100644
+index 2148a73494..869d1eeae4 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
-@@ -243,5 +243,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -243,5 +243,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"HkgTuningAngleMinTorqueReductionGain", {PERSISTENT | BACKUP, INT, "10"}},
      {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
      {"HkgTuningAngleActiveTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
++    {"HkgTuningAngleMaxLateralAccel", {PERSISTENT | BACKUP, FLOAT, "3.60"}},
++    {"HkgTuningAngleMaxLateralJerk", {PERSISTENT | BACKUP, FLOAT, "3.60"}},
 +    {"HkgTuningAngleMaxAngleRate", {PERSISTENT | BACKUP, INT, "5"}},
      {"HkgTuningOverridingCycles", {PERSISTENT | BACKUP, INT, "17"}},
  };
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.cc
-index b26762fa12..0655c3d4f2 100644
+index b26762fa12..8ca7093707 100644
 --- b/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.cc
 +++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.cc
-@@ -53,6 +53,14 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
+@@ -53,6 +53,28 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
    });
    second_row->addWidget(hkgAngleMaxTorque);
    list->addItem(second_row);
 +
 +  auto third_row = new QHBoxLayout();
++  hkgAngleMaxLatAccel = new OptionControlSP("HkgTuningAngleMaxLateralAccel", tr("Max Lateral Accel"), tr("Overrides the maximum lateral acceleration allowed by the angle controller.<br/>Lower values reduce cornering force; higher values permit more aggressive turns."), "../assets/offroad/icon_blank.png", {300, 500}, 10, false, nullptr, true);
++  connect(hkgAngleMaxLatAccel, &OptionControlSP::updateLabels, hkgAngleMaxLatAccel, [=]() {
++    this->updateToggles(offroad);
++  });
++  third_row->addWidget(hkgAngleMaxLatAccel);
++
++  hkgAngleMaxJerk = new OptionControlSP("HkgTuningAngleMaxLateralJerk", tr("Max Lateral Jerk"), tr("Limits how quickly lateral acceleration can change.<br/>Lower values smooth lane entry/exit; higher values allow quicker transitions."), "../assets/offroad/icon_blank.png", {300, 500}, 10, false, nullptr, true);
++  connect(hkgAngleMaxJerk, &OptionControlSP::updateLabels, hkgAngleMaxJerk, [=]() {
++    this->updateToggles(offroad);
++  });
++  third_row->addWidget(hkgAngleMaxJerk);
++  list->addItem(third_row);
++
++  auto fourth_row = new QHBoxLayout();
 +  hkgAngleMaxRate = new OptionControlSP("HkgTuningAngleMaxAngleRate", tr("Max Angle Rate"), tr("Limits the rate of change for angle commands each control frame.<br/>Lower values smooth steering; higher values sharpen response."), "../assets/offroad/icon_blank.png", {1, 9}, 1);
 +  connect(hkgAngleMaxRate, &OptionControlSP::updateLabels, hkgAngleMaxRate, [=]() {
 +    this->updateToggles(offroad);
 +  });
-+  third_row->addWidget(hkgAngleMaxRate);
-+  list->addItem(third_row);
++  fourth_row->addWidget(hkgAngleMaxRate);
++  list->addItem(fourth_row);
    
    QObject::connect(uiState(), &UIState::offroadTransition, this, &AngleTunningSettings::updateToggles);
  
-@@ -80,6 +88,17 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
+@@ -80,6 +102,39 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
    auto HkgAngleMaxTorqueValue = QString::fromStdString(params.get("HkgTuningAngleMaxTorqueReductionGain")).toInt();
    hkgAngleMaxTorque->setLabel(QString::number(HkgAngleMaxTorqueValue)+"%");
  
++  auto HkgAngleMaxLatAccelParam = params.get("HkgTuningAngleMaxLateralAccel");
++  auto HkgAngleMaxLatAccelValue = QString::fromStdString(HkgAngleMaxLatAccelParam).toFloat();
++  if (HkgAngleMaxLatAccelParam.empty()) {
++    HkgAngleMaxLatAccelValue = 3.60f;
++  } else if (HkgAngleMaxLatAccelValue < 3.0f) {
++    HkgAngleMaxLatAccelValue = 3.0f;
++  } else if (HkgAngleMaxLatAccelValue > 5.0f) {
++    HkgAngleMaxLatAccelValue = 5.0f;
++  }
++  hkgAngleMaxLatAccel->setLabel(QString::number(HkgAngleMaxLatAccelValue, 'f', 2)+tr(" m/s^2"));
++
++  auto HkgAngleMaxJerkParam = params.get("HkgTuningAngleMaxLateralJerk");
++  auto HkgAngleMaxJerkValue = QString::fromStdString(HkgAngleMaxJerkParam).toFloat();
++  if (HkgAngleMaxJerkParam.empty()) {
++    HkgAngleMaxJerkValue = 3.60f;
++  } else if (HkgAngleMaxJerkValue < 3.0f) {
++    HkgAngleMaxJerkValue = 3.0f;
++  } else if (HkgAngleMaxJerkValue > 5.0f) {
++    HkgAngleMaxJerkValue = 5.0f;
++  }
++  hkgAngleMaxJerk->setLabel(QString::number(HkgAngleMaxJerkValue, 'f', 2)+tr(" m/s^3"));
++
 +  auto HkgAngleMaxRateParam = params.get("HkgTuningAngleMaxAngleRate");
 +  auto HkgAngleMaxRateValue = QString::fromStdString(HkgAngleMaxRateParam).toInt();
 +  if (HkgAngleMaxRateParam.empty()) {
@@ -47,13 +85,15 @@ index b26762fa12..0655c3d4f2 100644
    hkgTuningOverridingCycles->setLabel(QString::number(HkgTuningOverridingCyclesValue));
  
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.h a/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.h
-index 7309f600ef..ca610b7a90 100644
+index 7309f600ef..503dd9f736 100644
 --- b/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.h
 +++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/lateral/angle_tuning_settings.h
-@@ -35,5 +35,6 @@ private:
+@@ -35,5 +35,8 @@ private:
    OptionControlSP* hkgAngleMinTorque;
    OptionControlSP* hkgAngleActiveTorque;
    OptionControlSP* hkgAngleMaxTorque;
 +  OptionControlSP* hkgAngleMaxRate;
++  OptionControlSP* hkgAngleMaxLatAccel;
++  OptionControlSP* hkgAngleMaxJerk;
    OptionControlSP* hkgTuningOverridingCycles;
  };
