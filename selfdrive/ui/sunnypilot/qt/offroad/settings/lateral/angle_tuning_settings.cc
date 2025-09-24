@@ -52,13 +52,15 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
     this->updateToggles(offroad);
   });
   second_row->addWidget(hkgAngleMaxTorque);
+  list->addItem(second_row);
 
+  auto third_row = new QHBoxLayout();
   hkgAngleMaxRate = new OptionControlSP("HkgTuningAngleMaxAngleRate", tr("Max Angle Rate"), tr("Limits the rate of change for angle commands each control frame.<br/>Lower values smooth steering; higher values sharpen response."), "../assets/offroad/icon_blank.png", {1, 9}, 1);
   connect(hkgAngleMaxRate, &OptionControlSP::updateLabels, hkgAngleMaxRate, [=]() {
     this->updateToggles(offroad);
   });
-  second_row->addWidget(hkgAngleMaxRate);
-  list->addItem(second_row);
+  third_row->addWidget(hkgAngleMaxRate);
+  list->addItem(third_row);
   
   QObject::connect(uiState(), &UIState::offroadTransition, this, &AngleTunningSettings::updateToggles);
 
