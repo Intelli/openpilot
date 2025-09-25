@@ -14,6 +14,7 @@ from openpilot.common.realtime import config_realtime_process, Priority, Ratekee
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.gps import get_gps_location_service
 
+from opendbc.car.hyundai.values import CAR
 from openpilot.selfdrive.car.car_specific import CarSpecificEvents
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
@@ -146,6 +147,10 @@ class SelfdriveD(CruiseHelper):
       self.startup_event = EventName.startupNoControl
     elif self.CP.secOcRequired and not self.CP.secOcKeyAvailable:
       self.startup_event = EventName.startupNoSecOcKey
+
+    ev9_supported = self.CP.carFingerprint == CAR.KIA_EV9
+    if self.startup_event == EventName.startupMaster and not ev9_supported and not REPLAY and not SIMULATION:
+      self.events.add(EventName.startupNoControl, static=True)
 
     if not car_recognized:
       self.events.add(EventName.carUnrecognized, static=True)
