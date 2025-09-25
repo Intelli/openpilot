@@ -55,7 +55,7 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
   list->addItem(second_row);
 
   auto third_row = new QHBoxLayout();
-  hkgAngleCustomSpeed = new OptionControlSP("HkgTuningAngleCustomLimitMaxSpeedKph", tr("Max Speed (EV9 Limits)"), tr("Applies the EV9 steering limits only below this speed."), "../assets/offroad/icon_blank.png", {10, 50}, 1);
+  hkgAngleCustomSpeed = new OptionControlSP("HkgTuningAngleCustomLimitMaxSpeedKph", tr("Max Speed (EV9 Limits)"), tr("Applies the EV9 steering limits only below this speed."), "../assets/offroad/icon_blank.png", {10, 40}, 1);
   connect(hkgAngleCustomSpeed, &OptionControlSP::updateLabels, hkgAngleCustomSpeed, [=]() {
     this->updateToggles(offroad);
   });
@@ -94,8 +94,8 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
     HkgAngleCustomSpeedValue = 32;
   } else if (HkgAngleCustomSpeedValue < 10) {
     HkgAngleCustomSpeedValue = 10;
-  } else if (HkgAngleCustomSpeedValue > 50) {
-    HkgAngleCustomSpeedValue = 50;
+  } else if (HkgAngleCustomSpeedValue > 40) {
+    HkgAngleCustomSpeedValue = 40;
   }
   hkgAngleCustomSpeed->setLabel(QString::number(HkgAngleCustomSpeedValue)+tr(" km/h"));
 
