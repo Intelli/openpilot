@@ -34,8 +34,8 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll, params=Params()):
   speed_threshold_mps = float(params.get("HkgTuningAngleCustomLimitMaxSpeedKph", return_default=True)) / 3.6
   roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
   if v_ego <= speed_threshold_mps:
-    max_lat_accel = 3.6 + roll_compensation
-    min_lat_accel = -3.6 + roll_compensation
+    max_lat_accel = 4.2
+    min_lat_accel = -4.2
   else:
     max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
     min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
