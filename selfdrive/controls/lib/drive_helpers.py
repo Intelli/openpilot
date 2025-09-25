@@ -1,7 +1,7 @@
 import numpy as np
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
-from openpilot.common.realtime import DT_CTRL, DT_MDL
 from openpilot.common.params import Params
+from openpilot.common.realtime import DT_CTRL, DT_MDL
 
 MIN_SPEED = 1.0
 CONTROL_N = 17
@@ -32,17 +32,19 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll, params=Params()):
                           prev_curvature + max_curvature_rate * DT_CTRL)
 
   speed_threshold_mps = float(params.get("HkgTuningAngleCustomLimitMaxSpeedKph", return_default=True)) / 3.6
-  custom_max_lat = float(params.get("HkgTuningAngleMaxLateralAccel", return_default=True))
   roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
   if v_ego <= speed_threshold_mps:
-    max_lat_accel = custom_max_lat + roll_compensation
-    min_lat_accel = -custom_max_lat + roll_compensation
+    max_lat_accel = 3.6 + roll_compensation
+    min_lat_accel = -3.6 + roll_compensation
   else:
     max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
     min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
   new_curvature, limited_accel = clamp(new_curvature, min_lat_accel / v_ego ** 2, max_lat_accel / v_ego ** 2)
 
-  new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+  if v_ego <= speed_threshold_mps:
+    limited_max_curv = False
+  else:
+    new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
   return float(new_curvature), limited_accel or limited_max_curv
 
 
