@@ -1,15 +1,14 @@
 diff --git b/selfdrive/controls/lib/drive_helpers.py a/selfdrive/controls/lib/drive_helpers.py
-index e28fa3021c..46c9bae985 100644
+index e28fa3021c..1b5769d1dd 100644
 --- b/selfdrive/controls/lib/drive_helpers.py
 +++ a/selfdrive/controls/lib/drive_helpers.py
-@@ -1,6 +1,7 @@
+@@ -1,5 +1,6 @@
  import numpy as np
  from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
- from openpilot.common.realtime import DT_CTRL, DT_MDL
 +from openpilot.common.params import Params
+ from openpilot.common.realtime import DT_CTRL, DT_MDL
  
  MIN_SPEED = 1.0
- CONTROL_N = 17
 @@ -22,7 +23,7 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
    alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
    return alpha * val + (1 - alpha) * prev_val
@@ -19,21 +18,27 @@ index e28fa3021c..46c9bae985 100644
    # This function respects ISO lateral jerk and acceleration limits + a max curvature
    v_ego = max(v_ego, MIN_SPEED)
    max_curvature_rate = MAX_LATERAL_JERK / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
-@@ -30,9 +31,15 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll):
+@@ -30,12 +31,20 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll):
                            prev_curvature - max_curvature_rate * DT_CTRL,
                            prev_curvature + max_curvature_rate * DT_CTRL)
  
 +  speed_threshold_mps = float(params.get("HkgTuningAngleCustomLimitMaxSpeedKph", return_default=True)) / 3.6
-+  custom_max_lat = float(params.get("HkgTuningAngleMaxLateralAccel", return_default=True))
    roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
 -  max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
 -  min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
 +  if v_ego <= speed_threshold_mps:
-+    max_lat_accel = custom_max_lat + roll_compensation
-+    min_lat_accel = -custom_max_lat + roll_compensation
++    max_lat_accel = 3.6 + roll_compensation
++    min_lat_accel = -3.6 + roll_compensation
 +  else:
 +    max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
 +    min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
    new_curvature, limited_accel = clamp(new_curvature, min_lat_accel / v_ego ** 2, max_lat_accel / v_ego ** 2)
  
-   new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+-  new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
++  if v_ego <= speed_threshold_mps:
++    limited_max_curv = False
++  else:
++    new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+   return float(new_curvature), limited_accel or limited_max_curv
+ 
+ 
