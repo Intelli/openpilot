@@ -1,5 +1,5 @@
 diff --git b/selfdrive/controls/lib/drive_helpers.py a/selfdrive/controls/lib/drive_helpers.py
-index e28fa3021c..1b5769d1dd 100644
+index e28fa3021c..5ae1835e14 100644
 --- b/selfdrive/controls/lib/drive_helpers.py
 +++ a/selfdrive/controls/lib/drive_helpers.py
 @@ -1,5 +1,6 @@
@@ -27,8 +27,8 @@ index e28fa3021c..1b5769d1dd 100644
 -  max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
 -  min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
 +  if v_ego <= speed_threshold_mps:
-+    max_lat_accel = 3.6 + roll_compensation
-+    min_lat_accel = -3.6 + roll_compensation
++    max_lat_accel = 4.2
++    min_lat_accel = -4.2
 +  else:
 +    max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
 +    min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation

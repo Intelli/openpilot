@@ -25,6 +25,7 @@
 - Flow:
   `controlsd` → `opendbc.car.hyundai.carcontroller:CarController` (angle path) →
   `hyundaicanfd.create_steering_messages()` → EPS/ADAS; Panda safety (`opendbc/safety/modes/hyundai_canfd.h`) enforces angle/jerk limits via vehicle model.
+- `controlsd`'s `clip_curvature` low-speed branch has EV9-specific safety headroom (±4.2 m/s²) gated by `HkgTuningAngleCustomLimitMaxSpeedKph`; this path only runs on EV9 angle-steering builds, and the harder limits are still enforced later by `apply_steer_angle_limits_vm` and Panda.
 
 ## Dev Workflow: Add a new HKG angle-steering car
 - Define platform in `opendbc/car/hyundai/values.py` with `HyundaiCanFDPlatformConfig` + `HyundaiFlags.CANFD_ANGLE_STEERING`.
