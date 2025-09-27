@@ -55,13 +55,20 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
   list->addItem(second_row);
 
   auto third_row = new QHBoxLayout();
-  hkgAngleCustomSpeed = new OptionControlSP("HkgTuningAngleCustomLimitMaxSpeedKph", tr("Max Speed (EV9 Limits)"), tr("Applies the EV9 steering limits only below this speed."), "../assets/offroad/icon_blank.png", {10, 40}, 1);
+  hkgAngleCustomSpeed = new OptionControlSP("HkgTuningAngleCustomLimitMaxSpeedKph", tr("Speed (EV9 Limits)"), tr("Modify EV9 steering limits only below this speed."), "../assets/offroad/icon_blank.png", {10, 40}, 1);
   connect(hkgAngleCustomSpeed, &OptionControlSP::updateLabels, hkgAngleCustomSpeed, [=]() {
     this->updateToggles(offroad);
   });
   third_row->addWidget(hkgAngleCustomSpeed);
+
+  // EV9 Alerts speed option
+  hkgEv9AlertsSpeed = new OptionControlSP("HkgTuningEv9AlertsSpeedKph", tr("Speed (EV9 Alerts)"), tr("Modify EV9 steering alerts only below this speed."), "../assets/offroad/icon_blank.png", {10, 50}, 1);
+  connect(hkgEv9AlertsSpeed, &OptionControlSP::updateLabels, hkgEv9AlertsSpeed, [=]() {
+    this->updateToggles(offroad);
+  });
+  third_row->addWidget(hkgEv9AlertsSpeed);
   list->addItem(third_row);
-  
+
   QObject::connect(uiState(), &UIState::offroadTransition, this, &AngleTunningSettings::updateToggles);
 
   main_layout->addWidget(new ScrollViewSP(list, this));
@@ -98,6 +105,17 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
     HkgAngleCustomSpeedValue = 40;
   }
   hkgAngleCustomSpeed->setLabel(QString::number(HkgAngleCustomSpeedValue)+tr(" km/h"));
+
+  auto HkgEv9AlertsSpeedParam = params.get("HkgTuningEv9AlertsSpeedKph");
+  auto HkgEv9AlertsSpeedValue = QString::fromStdString(HkgEv9AlertsSpeedParam).toInt();
+  if (HkgEv9AlertsSpeedParam.empty()) {
+    HkgEv9AlertsSpeedValue = 40;
+  } else if (HkgEv9AlertsSpeedValue < 10) {
+    HkgEv9AlertsSpeedValue = 10;
+  } else if (HkgEv9AlertsSpeedValue > 50) {
+    HkgEv9AlertsSpeedValue = 50;
+  }
+  hkgEv9AlertsSpeed->setLabel(QString::number(HkgEv9AlertsSpeedValue)+tr(" km/h"));
 
   auto HkgTuningOverridingCyclesValue = QString::fromStdString(params.get("HkgTuningOverridingCycles")).toInt();
   hkgTuningOverridingCycles->setLabel(QString::number(HkgTuningOverridingCyclesValue));
