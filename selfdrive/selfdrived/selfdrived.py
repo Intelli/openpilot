@@ -420,7 +420,7 @@ class SelfdriveD(CruiseHelper):
           self.events.add(EventName.steerSaturated)
 
       # Check for high steering angle saturation
-      if desired_steering_angle >= 119.9 and turning:
+      if desired_steering_angle >= 119.9:
         self.events.add(EventName.steerSaturated)
 
     # Check for FCW
