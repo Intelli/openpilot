@@ -410,12 +410,18 @@ class SelfdriveD(CruiseHelper):
       desired_lateral_accel = self.sm['modelV2'].action.desiredCurvature * (clipped_speed**2)
       undershooting = abs(desired_lateral_accel) / abs(1e-3 + actual_lateral_accel) > 1.2
       turning = abs(desired_lateral_accel) > 1.0
+      desired_steering_angle = abs(lac.steeringAngleDesiredDeg)
+
       # TODO: lac.saturated includes speed and other checks, should be pulled out
       if undershooting and turning and lac.saturated:
         # Silence "Turn Exceeds Steering Limit" alert when below custom speed threshold
         speed_threshold_mps = float(self.params.get("HkgTuningAngleCustomLimitMaxSpeedKph", return_default=True)) / 3.6
-        if CS.vEgo > speed_threshold_mps:
+        if CS.vEgo > speed_threshold_mps and desired_steering_angle < 119.9:
           self.events.add(EventName.steerSaturated)
+
+      # Check for high steering angle saturation
+      if desired_steering_angle >= 119.9 and turning:
+        self.events.add(EventName.steerSaturated)
 
     # Check for FCW
     stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
