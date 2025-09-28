@@ -416,7 +416,7 @@ class SelfdriveD(CruiseHelper):
       if undershooting and turning and lac.saturated:
         # Silence "Turn Exceeds Steering Limit" alert when below custom speed threshold
         speed_threshold_mps = float(self.params.get("HkgTuningEv9AlertsSpeedKph", return_default=True)) / 3.6
-        if CS.vEgo > speed_threshold_mps and desired_steering_angle < 119.9:
+        if (CS.vEgo > speed_threshold_mps or desired_steering_angle >= 90.0) and desired_steering_angle < 119.9:
           self.events.add(EventName.steerSaturated)
 
       # Check for high steering angle saturation
