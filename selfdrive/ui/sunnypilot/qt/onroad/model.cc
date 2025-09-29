@@ -58,8 +58,8 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
   bool rainbow = Params().getBool("RainbowMode");
   float a_ego = sm["carState"].getCarState().getAEgo();
-  constexpr float hard_accel_threshold = 2.5f;  // m/s^2 threshold to trigger the effect
-  constexpr float hard_accel_span = 2.0f;
+  constexpr float hard_accel_threshold = 0.5f;  // m/s^2 threshold to trigger the effect
+  constexpr float hard_accel_span = 1.5f;
   constexpr float hard_accel_fade_seconds = 1.0f;
   static float hard_accel_mix = 0.0f;
   static auto last_hard_accel_update = std::chrono::steady_clock::now();
