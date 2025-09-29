@@ -75,15 +75,22 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
   static float hazard_mix = 0.0f;
   static auto last_hazard_update = std::chrono::steady_clock::now();
+  static float hazard_hold = 0.0f;
   auto now = std::chrono::steady_clock::now();
   float dt = std::chrono::duration<float>(now - last_hazard_update).count();
   last_hazard_update = now;
 
+  constexpr float hazard_hold_seconds = 1.0f;
   constexpr float hazard_fade_seconds = 1.0f;
   if (hazard_active) {
     hazard_mix = 1.0f;
+    hazard_hold = hazard_hold_seconds;
   } else if (hazard_mix > 0.0f && dt > 0.0f) {
-    hazard_mix = std::max(0.0f, hazard_mix - dt / hazard_fade_seconds);
+    if (hazard_hold > 0.0f) {
+      hazard_hold = std::max(0.0f, hazard_hold - dt);
+    } else {
+      hazard_mix = std::max(0.0f, hazard_mix - dt / hazard_fade_seconds);
+    }
   }
 
   if (rainbow) {
