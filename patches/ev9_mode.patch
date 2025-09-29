@@ -14,7 +14,7 @@ index 10ead53774..609ea729c7 100644
        false,
      },
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 5d92838f8a..9f827cd1fb 100644
+index 5d92838f8a..cc3092805b 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -7,6 +7,13 @@
@@ -36,8 +36,8 @@ index 5d92838f8a..9f827cd1fb 100644
  
    bool rainbow = Params().getBool("RainbowMode");
 +  float a_ego = sm["carState"].getCarState().getAEgo();
-+  constexpr float hard_accel_threshold = 2.5f;  // m/s^2 threshold to trigger the effect
-+  constexpr float hard_accel_span = 2.0f;
++  constexpr float hard_accel_threshold = 0.5f;  // m/s^2 threshold to trigger the effect
++  constexpr float hard_accel_span = 1.5f;
 +  constexpr float hard_accel_fade_seconds = 1.0f;
 +  static float hard_accel_mix = 0.0f;
 +  static auto last_hard_accel_update = std::chrono::steady_clock::now();
