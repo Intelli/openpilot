@@ -78,7 +78,7 @@ def startup_master_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
     if car_state_sp.stateOfCharge >= 0.99 and car_state_sp.liveEfficiency > 0.0 and car_state_sp.dte > 50.0:
       estimated_kwh = car_state_sp.dte / car_state_sp.liveEfficiency
       if 40.0 < estimated_kwh < 120.0:
-        Params().put_nonblocking("EvBatteryUsableKwh", f"{estimated_kwh:.3f}".encode())
+        Params().put_nonblocking("EvBatteryUsableKwh", f"{estimated_kwh:.3f}")
   except Exception:
     pass
 
