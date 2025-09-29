@@ -81,7 +81,7 @@ void HudRendererSP::updateState(const UIState &s) {
   torqueLateral = steerControlType == cereal::CarParams::SteerControlType::TORQUE;
   liveEfficiency = car_state_sp.getLiveEfficiency();
   liveRange = car_state_sp.getLiveRange();
-  liveRangeValid = liveRange > 0.0f;
+  liveRangeValid = liveRange >= 0.0f;
   batteryCapacity = car_state_sp.getBatteryCapacity();
   stateOfCharge = car_state_sp.getStateOfCharge();
   dte = car_state_sp.getDte();
