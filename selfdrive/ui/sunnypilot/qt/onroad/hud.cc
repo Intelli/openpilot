@@ -189,23 +189,28 @@ void HudRendererSP::drawLiveRange(QPainter &p, const QRect &surface_rect) {
 
   QString range_text = tr("Live Range: %1 %2").arg(QString::number(range_output, 'f', 0)).arg(unit);
   QString efficiency_text = tr("Efficiency: %1 %2").arg(QString::number(efficiency_output, 'f', 1)).arg(efficiency_unit);
-  QString diag_text = tr("Diag: %.1fkWh | SOC %.0f%% | DTE %1 %2")
-                        .arg(batteryCapacity, 0, 'f', 1)
-                        .arg(stateOfCharge * 100.0f, 0, 'f', 0)
-                        .arg(QString::number(is_metric ? dte : dte * KM_TO_MILE, 'f', 0))
+  QString dte_text = QString::number(is_metric ? dte : dte * KM_TO_MILE, 'f', 0);
+  QString diag_text = tr("Diag: %1 kWh | SOC %2%% | DTE %3 %4")
+                        .arg(QString::number(batteryCapacity, 'f', 1))
+                        .arg(QString::number(stateOfCharge * 100.0f, 'f', 0))
+                        .arg(dte_text)
                         .arg(unit);
 
-  p.setFont(InterFont(42, QFont::Bold));
-  QRect text_rect(surface_rect.right() - 500, surface_rect.top() + 40, 470, 170);
+  const int box_width = 520;
+  const int box_height = 170;
+  QRect text_rect(surface_rect.center().x() + 180, surface_rect.top() + 80, box_width, box_height);
 
   p.setPen(Qt::NoPen);
   p.setBrush(QColor(0, 0, 0, 120));
   p.drawRoundedRect(text_rect.adjusted(-20, -20, 0, 40), 12, 12);
 
   p.setPen(QColor(255, 255, 255, 220));
+  p.setFont(InterFont(42, QFont::Bold));
   p.drawText(text_rect.adjusted(-10, -10, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, range_text);
+
   QRect eff_rect = text_rect.translated(0, 60);
   p.drawText(eff_rect.adjusted(-10, -10, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, efficiency_text);
+
   QRect diag_rect = text_rect.translated(0, 120);
   p.setFont(InterFont(32, QFont::DemiBold));
   p.drawText(diag_rect.adjusted(-10, -10, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, diag_text);
