@@ -1,3 +1,16 @@
+diff --git b/selfdrive/controls/lib/latcontrol_angle.py a/selfdrive/controls/lib/latcontrol_angle.py
+index 787bd2dbe1..dee5604b78 100644
+--- b/selfdrive/controls/lib/latcontrol_angle.py
++++ a/selfdrive/controls/lib/latcontrol_angle.py
+@@ -10,7 +10,7 @@ STEER_ANGLE_SATURATION_THRESHOLD = 2.5  # Degrees
+ class LatControlAngle(LatControl):
+   def __init__(self, CP, CP_SP, CI):
+     super().__init__(CP, CP_SP, CI)
+-    self.sat_check_min_speed = 5.
++    self.sat_check_min_speed = 5.0 / 3.6  # 5 km/h
+     self.use_steer_limited_by_safety = CP.brand == "tesla"
+ 
+   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited):
 diff --git b/selfdrive/selfdrived/selfdrived.py a/selfdrive/selfdrived/selfdrived.py
 index 33e5357541..6925e30af6 100755
 --- b/selfdrive/selfdrived/selfdrived.py
