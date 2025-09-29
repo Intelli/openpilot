@@ -57,6 +57,13 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   }
 
   bool rainbow = Params().getBool("RainbowMode");
+  float a_ego = sm["carState"].getCarState().getAEgo();
+  constexpr float hard_accel_threshold = 2.5f;  // m/s^2 threshold to trigger the effect
+  constexpr float hard_accel_span = 2.0f;
+  constexpr float hard_accel_fade_seconds = 1.0f;
+  static float hard_accel_mix = 0.0f;
+  static auto last_hard_accel_update = std::chrono::steady_clock::now();
+  float target_hard_accel_mix = std::clamp((a_ego - hard_accel_threshold) / hard_accel_span, 0.0f, 1.0f);
   //float v_ego = sm["carState"].getCarState().getVEgo();
 
   const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
@@ -93,6 +100,14 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     }
   }
 
+  float hard_accel_dt = std::chrono::duration<float>(now - last_hard_accel_update).count();
+  last_hard_accel_update = now;
+  if (target_hard_accel_mix > 0.0f) {
+    hard_accel_mix = target_hard_accel_mix;
+  } else if (hard_accel_mix > 0.0f && hard_accel_dt > 0.0f) {
+    hard_accel_mix = std::max(0.0f, hard_accel_mix - hard_accel_dt / hard_accel_fade_seconds);
+  }
+
   if (rainbow) {
     // Kia EV9 "Ocean Blue" inspired gradient with subtle motion
 
@@ -122,7 +137,11 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
     float time_offset = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.0f;
-    float animation_speed = 1.2f;
+    float accel_influence = hard_accel_mix * (1.0f - hazard_mix);
+    float animation_speed = lerp(1.2f, 2.6f, accel_influence);
+    float lightness_boost = lerp(0.0f, 0.08f, accel_influence);
+    float saturation_boost = lerp(0.0f, 0.12f, accel_influence);
+    float alpha_boost = lerp(0.0f, 0.10f, accel_influence);
 
     QLinearGradient bg(0, surface_rect.height(), 0, 0);
 
@@ -132,15 +151,20 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
       float wave = 0.5f * std::sin(animation_speed * time_offset + ocean.position * 3.0f) + 0.5f;
 
-      float hue_mod = lerp(10.0f, 6.0f, hazard_mix);
-      float lightness_mod = lerp(0.08f, 0.05f, hazard_mix);
-      float saturation_mod = lerp(0.05f, 0.04f, hazard_mix);
-      float alpha_mod = lerp(0.04f, 0.05f, hazard_mix);
+      float base_hue_mod = lerp(10.0f, 6.0f, hazard_mix);
+      float base_lightness_mod = lerp(0.08f, 0.05f, hazard_mix);
+      float base_saturation_mod = lerp(0.05f, 0.04f, hazard_mix);
+      float base_alpha_mod = lerp(0.04f, 0.05f, hazard_mix);
+
+      float hue_mod = base_hue_mod + lerp(0.0f, 8.0f, accel_influence);
+      float lightness_mod = base_lightness_mod + lerp(0.0f, 0.04f, accel_influence);
+      float saturation_mod = base_saturation_mod + lerp(0.0f, 0.10f, accel_influence);
+      float alpha_mod = base_alpha_mod + lerp(0.0f, 0.05f, accel_influence);
 
       float hue = std::fmod(lerp(ocean.hue_deg, warning.hue_deg, hazard_mix) + (wave - 0.5f) * hue_mod + 360.0f, 360.0f);
-      float lightness = std::clamp(lerp(ocean.lightness, warning.lightness, hazard_mix) + (wave - 0.5f) * lightness_mod, 0.0f, 1.0f);
-      float saturation = std::clamp(lerp(ocean.saturation, warning.saturation, hazard_mix) + (0.5f - wave) * saturation_mod, 0.0f, 1.0f);
-      float alpha = std::clamp(lerp(ocean.alpha, warning.alpha, hazard_mix) + (0.5f - wave) * alpha_mod, 0.4f, 0.95f);
+      float lightness = std::clamp(lerp(ocean.lightness, warning.lightness, hazard_mix) + (wave - 0.5f) * lightness_mod + lightness_boost, 0.0f, 1.0f);
+      float saturation = std::clamp(lerp(ocean.saturation, warning.saturation, hazard_mix) + (0.5f - wave) * saturation_mod + saturation_boost, 0.0f, 1.0f);
+      float alpha = std::clamp(lerp(ocean.alpha, warning.alpha, hazard_mix) + (0.5f - wave) * alpha_mod + alpha_boost, 0.4f, 0.95f);
 
       QColor color = QColor::fromHslF(hue / 360.0f, saturation, lightness, alpha);
       bg.setColorAt(ocean.position, color);
