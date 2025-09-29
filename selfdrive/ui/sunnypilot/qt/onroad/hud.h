@@ -34,6 +34,7 @@ private:
   void drawSpeedLimitSigns(QPainter &p);
   void drawUpcomingSpeedLimit(QPainter &p);
   void drawRoadName(QPainter &p, const QRect &surface_rect);
+  void drawLiveRange(QPainter &p, const QRect &surface_rect);
 
   bool lead_status;
   float lead_d_rel;
@@ -62,6 +63,12 @@ private:
   bool reversing;
   cereal::CarParams::SteerControlType steerControlType;
   cereal::CarControl::Actuators::Reader actuators;
+  float liveEfficiency;
+  float liveRange;
+  bool liveRangeValid;
+  float batteryCapacity;
+  float stateOfCharge;
+  float dte;
   bool standstillTimer;
   bool isStandstill;
   float standstillElapsedTime;
