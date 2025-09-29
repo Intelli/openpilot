@@ -10,7 +10,6 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.locationd.calibrationd import MIN_SPEED_FILTER
 from openpilot.system.micd import SAMPLE_RATE, SAMPLE_BUFFER
 from openpilot.selfdrive.ui.feedback.feedbackd import FEEDBACK_MAX_DURATION
-from openpilot.common.params import Params
 
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, \
   NoEntryAlert, SoftDisableAlert, UserSoftDisableAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, \
@@ -72,15 +71,6 @@ def startup_master_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
   branch = get_short_branch()  # Ensure get_short_branch is cached to avoid lags on startup
   if "REPLAY" in os.environ:
     branch = "replay"
-
-  try:
-    car_state_sp = sm["carStateSP"].carStateSP
-    if car_state_sp.stateOfCharge >= 0.99 and car_state_sp.liveEfficiency > 0.0 and car_state_sp.dte > 50.0:
-      estimated_kwh = car_state_sp.dte / car_state_sp.liveEfficiency
-      if 40.0 < estimated_kwh < 120.0:
-        Params().put_nonblocking("EvBatteryUsableKwh", f"{estimated_kwh:.3f}")
-  except Exception:
-    pass
 
   return StartupAlert("WARNING: This branch is not tested", branch, alert_status=AlertStatus.userPrompt)
 

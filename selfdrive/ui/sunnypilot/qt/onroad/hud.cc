@@ -19,7 +19,6 @@ void HudRendererSP::updateState(const UIState &s) {
   const SubMaster &sm = *(s.sm);
   const auto cs = sm["controlsState"].getControlsState();
   const auto car_state = sm["carState"].getCarState();
-  const auto car_state_sp = sm["carStateSP"].getCarStateSP();
   const auto car_control = sm["carControl"].getCarControl();
   const auto radar_state = sm["radarState"].getRadarState();
   const auto is_gps_location_external = sm.rcv_frame("gpsLocationExternal") > 1;
@@ -79,12 +78,6 @@ void HudRendererSP::updateState(const UIState &s) {
   steerControlType = car_params.getSteerControlType();
   actuators = car_control.getActuators();
   torqueLateral = steerControlType == cereal::CarParams::SteerControlType::TORQUE;
-  liveEfficiency = car_state_sp.getLiveEfficiency();
-  liveRange = car_state_sp.getLiveRange();
-  liveRangeValid = liveRange > 0.0f;
-  batteryCapacity = car_state_sp.getBatteryCapacity();
-  stateOfCharge = car_state_sp.getStateOfCharge();
-  dte = car_state_sp.getDte();
   angleSteers = car_state.getSteeringAngleDeg();
   desiredCurvature = cs.getDesiredCurvature();
   curvature = cs.getCurvature();
@@ -166,51 +159,10 @@ void HudRendererSP::draw(QPainter &p, const QRect &surface_rect) {
       drawUpcomingSpeedLimit(p);
     }
 
-    if (liveRangeValid) {
-      drawLiveRange(p, surface_rect);
-    }
-
     // Road Name
     drawRoadName(p, surface_rect);
   }
 }
-void HudRendererSP::drawLiveRange(QPainter &p, const QRect &surface_rect) {
-  QString unit = is_metric ? tr("km") : tr("mi");
-  float range_output = liveRange;
-  if (!is_metric) {
-    range_output *= KM_TO_MILE;
-  }
-
-  QString efficiency_unit = is_metric ? tr("km/kWh") : tr("mi/kWh");
-  float efficiency_output = liveEfficiency;
-  if (!is_metric) {
-    efficiency_output *= KM_TO_MILE;
-  }
-
-  QString range_text = tr("Live Range: %1 %2").arg(QString::number(range_output, 'f', 0)).arg(unit);
-  QString efficiency_text = tr("Efficiency: %1 %2").arg(QString::number(efficiency_output, 'f', 1)).arg(efficiency_unit);
-  QString diag_text = tr("Diag: %.1fkWh | SOC %.0f%% | DTE %1 %2")
-                        .arg(batteryCapacity, 0, 'f', 1)
-                        .arg(stateOfCharge * 100.0f, 0, 'f', 0)
-                        .arg(QString::number(is_metric ? dte : dte * KM_TO_MILE, 'f', 0))
-                        .arg(unit);
-
-  p.setFont(InterFont(42, QFont::Bold));
-  QRect text_rect(surface_rect.right() - 500, surface_rect.top() + 40, 470, 170);
-
-  p.setPen(Qt::NoPen);
-  p.setBrush(QColor(0, 0, 0, 120));
-  p.drawRoundedRect(text_rect.adjusted(-20, -20, 0, 40), 12, 12);
-
-  p.setPen(QColor(255, 255, 255, 220));
-  p.drawText(text_rect.adjusted(-10, -10, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, range_text);
-  QRect eff_rect = text_rect.translated(0, 60);
-  p.drawText(eff_rect.adjusted(-10, -10, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, efficiency_text);
-  QRect diag_rect = text_rect.translated(0, 120);
-  p.setFont(InterFont(32, QFont::DemiBold));
-  p.drawText(diag_rect.adjusted(-10, -10, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, diag_text);
-}
-
 
 void HudRendererSP::drawText(QPainter &p, int x, int y, const QString &text, QColor color) {
   QRect real_rect = p.fontMetrics().boundingRect(text);
