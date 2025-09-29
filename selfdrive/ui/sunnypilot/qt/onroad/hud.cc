@@ -20,6 +20,9 @@ void HudRendererSP::updateState(const UIState &s) {
   const auto cs = sm["controlsState"].getControlsState();
   const auto car_state = sm["carState"].getCarState();
   const auto car_control = sm["carControl"].getCarControl();
+  const bool car_state_sp_valid = sm.rcv_frame("carStateSP") > 0;
+  const bool car_state_sp_recent = car_state_sp_valid && (sm.frame - sm.rcv_frame("carStateSP")) <= UI_FREQ;
+  const auto car_state_sp = car_state_sp_valid ? sm["carStateSP"].getCarStateSP() : cereal::Custom::CarStateSP::Reader();
   const auto radar_state = sm["radarState"].getRadarState();
   const auto is_gps_location_external = sm.rcv_frame("gpsLocationExternal") > 1;
   const auto gpsLocation = is_gps_location_external ? sm["gpsLocationExternal"].getGpsLocationExternal() : sm["gpsLocation"].getGpsLocation();
@@ -95,6 +98,20 @@ void HudRendererSP::updateState(const UIState &s) {
   frictionCoefficientFiltered = ltp.getFrictionCoefficientFiltered();
   liveValid = ltp.getLiveValid();
 
+  if (car_state_sp_recent && sm.updated("carStateSP")) {
+    const float new_live_range = car_state_sp.getLiveRangeKm();
+    if (new_live_range > 0.0f) {
+      liveRangeValid = true;
+      liveRangeValue = new_live_range;
+    } else {
+      liveRangeValid = false;
+      liveRangeValue = 0.0f;
+    }
+  } else if (!car_state_sp_recent) {
+    liveRangeValid = false;
+    liveRangeValue = 0.0f;
+  }
+
   standstillTimer = s.scene.standstill_timer;
   isStandstill = car_state.getStandstill();
   longOverride = car_control.getCruiseControl().getOverride();
@@ -161,6 +178,17 @@ void HudRendererSP::draw(QPainter &p, const QRect &surface_rect) {
 
     // Road Name
     drawRoadName(p, surface_rect);
+
+    if (liveRangeValid) {
+      const float display_range = is_metric ? liveRangeValue : liveRangeValue * KM_TO_MILE;
+      const QString unit = is_metric ? tr("km") : tr("mi");
+      QString range_text = tr("Live Range: %1 %2").arg(QString::number(display_range, 'f', display_range >= 100 ? 0 : 1), unit);
+      QFont font = InterFont(38, QFont::Bold);
+      p.setFont(font);
+      QRect range_rect(surface_rect.left() + 40, surface_rect.bottom() - 160, surface_rect.width(), 50);
+      p.setPen(QPen(QColor(255, 255, 255, 220)));
+      p.drawText(range_rect, Qt::AlignLeft | Qt::AlignVCenter, range_text);
+    }
   }
 }
 
