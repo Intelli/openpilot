@@ -7,6 +7,13 @@
 
 #include "selfdrive/ui/sunnypilot/qt/onroad/model.h"
 
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <iterator>
+#include <QString>
+
 
 void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
   ModelRenderer::update_model(model, lead);
@@ -52,11 +59,35 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   bool rainbow = Params().getBool("RainbowMode");
   //float v_ego = sm["carState"].getCarState().getVEgo();
 
+  const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
+  const QString alert_type = QString::fromUtf8(selfdrive_state.getAlertType().cStr());
+  static const std::array<QString, 7> hazard_prefixes = {
+      QStringLiteral("steerSaturated"),
+      QStringLiteral("aeb"),
+      QStringLiteral("stockAeb"),
+      QStringLiteral("fcw"),
+      QStringLiteral("driverDistracted"),
+      QStringLiteral("driverUnresponsive"),
+      QStringLiteral("manualRestart"),
+  };
+  const bool hazard_active = !alert_type.isEmpty() &&
+      std::any_of(hazard_prefixes.begin(), hazard_prefixes.end(), [&](const QString &prefix) { return alert_type.startsWith(prefix); });
+
+  static float hazard_mix = 0.0f;
+  static auto last_hazard_update = std::chrono::steady_clock::now();
+  auto now = std::chrono::steady_clock::now();
+  float dt = std::chrono::duration<float>(now - last_hazard_update).count();
+  last_hazard_update = now;
+
+  constexpr float hazard_fade_seconds = 1.0f;
+  if (hazard_active) {
+    hazard_mix = 1.0f;
+  } else if (hazard_mix > 0.0f && dt > 0.0f) {
+    hazard_mix = std::max(0.0f, hazard_mix - dt / hazard_fade_seconds);
+  }
+
   if (rainbow) {
     // Kia EV9 "Ocean Blue" inspired gradient with subtle motion
-    float time_offset = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.0f;
-    float animation_speed = 1.2f;
 
     struct GradientStop {
       float position;
@@ -66,30 +97,61 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       float alpha;
     };
 
-    const GradientStop stops[] = {
-      {0.00f, 206.0f, 0.70f, 0.32f, 0.85f},
-      {0.35f, 202.0f, 0.72f, 0.40f, 0.75f},
-      {0.70f, 198.0f, 0.74f, 0.55f, 0.65f},
-      {1.00f, 192.0f, 0.60f, 0.68f, 0.55f},
-    };
+    static constexpr std::array<GradientStop, 4> ocean_stops = {{
+        {0.00f, 206.0f, 0.70f, 0.32f, 0.85f},
+        {0.35f, 202.0f, 0.72f, 0.40f, 0.75f},
+        {0.70f, 198.0f, 0.74f, 0.55f, 0.65f},
+        {1.00f, 192.0f, 0.60f, 0.68f, 0.55f},
+    }};
+
+    static constexpr std::array<GradientStop, 4> warning_stops = {{
+        {0.00f, 358.0f, 0.78f, 0.30f, 0.93f},
+        {0.35f, 5.0f, 0.82f, 0.39f, 0.82f},
+        {0.70f, 12.0f, 0.85f, 0.52f, 0.72f},
+        {1.00f, 18.0f, 0.76f, 0.65f, 0.62f},
+    }};
+
+    auto lerp = [](float a, float b, float t) { return a + (b - a) * t; };
+
+    float time_offset = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.0f;
+    float animation_speed = 1.2f;
 
     QLinearGradient bg(0, surface_rect.height(), 0, 0);
 
-    for (const auto &stop : stops) {
-      float wave = 0.5f * std::sin(animation_speed * time_offset + stop.position * 3.0f) + 0.5f;
-      float hue = std::fmod(stop.hue_deg + (wave - 0.5f) * 10.0f + 360.0f, 360.0f);
-      float lightness = std::clamp(stop.lightness + (wave - 0.5f) * 0.08f, 0.0f, 1.0f);
-      float saturation = std::clamp(stop.saturation + (0.5f - wave) * 0.05f, 0.0f, 1.0f);
-      float alpha = std::clamp(stop.alpha + (0.5f - wave) * 0.04f, 0.4f, 0.9f);
+    for (size_t i = 0; i < ocean_stops.size(); ++i) {
+      const auto &ocean = ocean_stops[i];
+      const auto &warning = warning_stops[i];
+
+      float wave = 0.5f * std::sin(animation_speed * time_offset + ocean.position * 3.0f) + 0.5f;
+
+      float hue_mod = lerp(10.0f, 6.0f, hazard_mix);
+      float lightness_mod = lerp(0.08f, 0.05f, hazard_mix);
+      float saturation_mod = lerp(0.05f, 0.04f, hazard_mix);
+      float alpha_mod = lerp(0.04f, 0.05f, hazard_mix);
+
+      float hue = std::fmod(lerp(ocean.hue_deg, warning.hue_deg, hazard_mix) + (wave - 0.5f) * hue_mod + 360.0f, 360.0f);
+      float lightness = std::clamp(lerp(ocean.lightness, warning.lightness, hazard_mix) + (wave - 0.5f) * lightness_mod, 0.0f, 1.0f);
+      float saturation = std::clamp(lerp(ocean.saturation, warning.saturation, hazard_mix) + (0.5f - wave) * saturation_mod, 0.0f, 1.0f);
+      float alpha = std::clamp(lerp(ocean.alpha, warning.alpha, hazard_mix) + (0.5f - wave) * alpha_mod, 0.4f, 0.95f);
 
       QColor color = QColor::fromHslF(hue / 360.0f, saturation, lightness, alpha);
-      bg.setColorAt(stop.position, color);
+      bg.setColorAt(ocean.position, color);
     }
 
     painter.setBrush(bg);
     painter.drawPolygon(track_vertices);
   } else {
-    // Normal path rendering
+    // Normal path rendering with hazard fade overlay
     ModelRenderer::drawPath(painter, model, surface_rect.height());
+
+    if (hazard_mix > 0.0f) {
+      QLinearGradient hazard_bg(0, surface_rect.height(), 0, 0);
+      hazard_bg.setColorAt(0.0f, QColor::fromRgbF(0.45f, 0.0f, 0.0f, 0.82f * hazard_mix));
+      hazard_bg.setColorAt(0.5f, QColor::fromRgbF(0.78f, 0.14f, 0.14f, 0.68f * hazard_mix));
+      hazard_bg.setColorAt(1.0f, QColor::fromRgbF(0.92f, 0.45f, 0.45f, 0.55f * hazard_mix));
+      painter.setBrush(hazard_bg);
+      painter.drawPolygon(track_vertices);
+    }
   }
 }
