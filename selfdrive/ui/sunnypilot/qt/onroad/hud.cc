@@ -20,13 +20,8 @@ void HudRendererSP::updateState(const UIState &s) {
   const auto cs = sm["controlsState"].getControlsState();
   const auto car_state = sm["carState"].getCarState();
   const auto car_control = sm["carControl"].getCarControl();
-  const bool car_state_sp_valid = sm.rcv_frame("carStateSP") > 0;
-  const bool car_state_sp_recent = car_state_sp_valid && (sm.frame - sm.rcv_frame("carStateSP")) <= UI_FREQ;
   const auto radar_state = sm["radarState"].getRadarState();
   const auto is_gps_location_external = sm.rcv_frame("gpsLocationExternal") > 1;
-  liveRangeDebugEnabled = car_state_sp_recent;
-  liveRangeDebugFuelGauge = car_state.getFuelGauge();
-  liveRangeDebugEfficiency = 0.0f;
   const auto gpsLocation = is_gps_location_external ? sm["gpsLocationExternal"].getGpsLocationExternal() : sm["gpsLocation"].getGpsLocation();
   const auto ltp = sm["liveTorqueParameters"].getLiveTorqueParameters();
   const auto car_params = sm["carParams"].getCarParams();
@@ -100,25 +95,6 @@ void HudRendererSP::updateState(const UIState &s) {
   frictionCoefficientFiltered = ltp.getFrictionCoefficientFiltered();
   liveValid = ltp.getLiveValid();
 
-  if (car_state_sp_recent) {
-    const auto car_state_sp = sm["carStateSP"].getCarStateSP();
-    liveRangeDebugEfficiency = car_state_sp.getLiveEfficiencyKmPerKwh();
-
-    if (sm.updated("carStateSP")) {
-      const float new_live_range = car_state_sp.getLiveRangeKm();
-      if (new_live_range > 0.0f) {
-        liveRangeValid = true;
-        liveRangeValue = new_live_range;
-      } else {
-        liveRangeValid = false;
-        liveRangeValue = 0.0f;
-      }
-    }
-  } else {
-    liveRangeValid = false;
-    liveRangeValue = 0.0f;
-  }
-
   standstillTimer = s.scene.standstill_timer;
   isStandstill = car_state.getStandstill();
   longOverride = car_control.getCruiseControl().getOverride();
@@ -170,24 +146,6 @@ void HudRendererSP::draw(QPainter &p, const QRect &surface_rect) {
     if (devUiInfo != 0) {
       QRect rect_right(surface_rect.right() - (UI_BORDER_SIZE * 2), UI_BORDER_SIZE * 1.5, 184, 170);
       drawRightDevUI(p, surface_rect.right() - 184 - UI_BORDER_SIZE * 2, UI_BORDER_SIZE * 2 + rect_right.height());
-
-      if (liveRangeDebugEnabled) {
-        const QString fuel_text = tr("SOC: %1%" ).arg(QString::number(liveRangeDebugFuelGauge * 100.f, 'f', 1));
-        const QString eff_text = tr("Eff: %1 km/kWh").arg(QString::number(liveRangeDebugEfficiency, 'f', 2));
-        const QString range_text = liveRangeValid ? tr("LR: %1 km").arg(QString::number(liveRangeValue, 'f', 1)) : tr("LR: --");
-
-        QFont font = InterFont(24, QFont::DemiBold);
-        p.save();
-        p.setFont(font);
-        const int debug_offset_x = surface_rect.right() - (UI_BORDER_SIZE * 2) - 320;
-        const int debug_offset_y = UI_BORDER_SIZE * 3 + rect_right.height();
-        p.translate(debug_offset_x, debug_offset_y);
-        p.setPen(QPen(QColor(255, 255, 255, 200)));
-        p.drawText(0, 0, fuel_text);
-        p.drawText(0, 26, eff_text);
-        p.drawText(0, 52, range_text);
-        p.restore();
-      }
     }
 
     // Standstill Timer
@@ -203,17 +161,6 @@ void HudRendererSP::draw(QPainter &p, const QRect &surface_rect) {
 
     // Road Name
     drawRoadName(p, surface_rect);
-
-    if (liveRangeValid) {
-      const float display_range = is_metric ? liveRangeValue : liveRangeValue * KM_TO_MILE;
-      const QString unit = is_metric ? tr("km") : tr("mi");
-      QString range_text = tr("Live Range: %1 %2").arg(QString::number(display_range, 'f', display_range >= 100 ? 0 : 1), unit);
-      QFont font = InterFont(38, QFont::Bold);
-      p.setFont(font);
-      QRect range_rect(surface_rect.left() + 40, surface_rect.bottom() - 160, surface_rect.width(), 50);
-      p.setPen(QPen(QColor(255, 255, 255, 220)));
-      p.drawText(range_rect, Qt::AlignLeft | Qt::AlignVCenter, range_text);
-    }
   }
 }
 

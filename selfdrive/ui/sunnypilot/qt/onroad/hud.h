@@ -60,11 +60,6 @@ private:
   bool latActive;
   bool steerOverride;
   bool reversing;
-  bool liveRangeValid = false;
-  float liveRangeValue = 0.0f;
-  bool liveRangeDebugEnabled = false;
-  float liveRangeDebugFuelGauge = 0.0f;
-  float liveRangeDebugEfficiency = 0.0f;
   cereal::CarParams::SteerControlType steerControlType;
   cereal::CarControl::Actuators::Reader actuators;
   bool standstillTimer;
