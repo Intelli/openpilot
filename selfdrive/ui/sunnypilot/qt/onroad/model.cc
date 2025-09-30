@@ -203,9 +203,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       const auto ocean = sample_stops(ocean_stops, position);
       const auto warning = sample_stops(warning_stops, position);
 
-      bool freeze_base_wave = accel_visibility > 0.0f && accel_visibility < 1.0f;
-      float wave_phase = animation_speed * time_offset + position * 3.0f;
-      float wave = freeze_base_wave ? 0.5f : (0.5f * std::sin(wave_phase) + 0.5f);
+      float wave = 0.5f * std::sin(animation_speed * time_offset + position * 3.0f) + 0.5f;
 
       float base_hue_mod = lerp(10.0f, 6.0f, hazard_mix);
       float base_lightness_mod = lerp(0.08f, 0.05f, hazard_mix);
@@ -217,10 +215,13 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       float saturation_mod = base_saturation_mod + 0.08f * accel_visibility;
       float alpha_mod = base_alpha_mod + 0.05f * accel_visibility;
 
-      float base_hue = std::fmod(lerp(ocean.hue_deg, warning.hue_deg, hazard_mix) + (wave - 0.5f) * hue_mod + 360.0f, 360.0f);
-      float base_lightness = clamp01(lerp(ocean.lightness, warning.lightness, hazard_mix) + (wave - 0.5f) * lightness_mod + lightness_boost);
-      float base_saturation = clamp01(lerp(ocean.saturation, warning.saturation, hazard_mix) + (0.5f - wave) * saturation_mod + saturation_boost);
-      float base_alpha = clamp01(lerp(ocean.alpha, warning.alpha, hazard_mix) + (0.5f - wave) * alpha_mod + alpha_boost);
+      float wave_offset = wave - 0.5f;
+      float base_wave_strength = accel_visibility > 0.0f ? 0.0f : 1.0f;
+
+      float base_hue = std::fmod(lerp(ocean.hue_deg, warning.hue_deg, hazard_mix) + wave_offset * hue_mod * base_wave_strength + 360.0f, 360.0f);
+      float base_lightness = clamp01(lerp(ocean.lightness, warning.lightness, hazard_mix) + wave_offset * lightness_mod * base_wave_strength + lightness_boost);
+      float base_saturation = clamp01(lerp(ocean.saturation, warning.saturation, hazard_mix) - wave_offset * saturation_mod * base_wave_strength + saturation_boost);
+      float base_alpha = clamp01(lerp(ocean.alpha, warning.alpha, hazard_mix) - wave_offset * alpha_mod * base_wave_strength + alpha_boost);
 
       QColor base_color = QColor::fromHslF(base_hue / 360.0f, base_saturation, base_lightness, clamp01(0.45f + 0.45f * base_alpha));
 
