@@ -58,12 +58,16 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
   bool rainbow = Params().getBool("RainbowMode");
   float a_ego = sm["carState"].getCarState().getAEgo();
-  constexpr float hard_accel_threshold = 0.5f;  // m/s^2 threshold to trigger the effect
-  constexpr float hard_accel_span = 1.5f;
-  constexpr float hard_accel_fade_seconds = 1.0f;
-  static float hard_accel_mix = 0.0f;
-  static auto last_hard_accel_update = std::chrono::steady_clock::now();
-  float target_hard_accel_mix = std::clamp((a_ego - hard_accel_threshold) / hard_accel_span, 0.0f, 1.0f);
+  constexpr float accel_start_threshold = 0.20f;
+  constexpr float accel_full_threshold = 0.80f;
+  constexpr float accel_fade_in_seconds = 0.5f;
+  constexpr float accel_fade_out_seconds = 1.0f;
+  static float accel_presence = 0.0f;
+  static float accel_speed_mix = 0.0f;
+  static auto last_accel_update = std::chrono::steady_clock::now();
+  float accel_span = std::max(0.1f, accel_full_threshold - accel_start_threshold);
+  float target_accel_speed_mix = std::clamp((a_ego - accel_start_threshold) / accel_span, 0.0f, 1.0f);
+  bool accel_active = target_accel_speed_mix > 0.0f;
   //float v_ego = sm["carState"].getCarState().getVEgo();
 
   const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
@@ -100,12 +104,15 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     }
   }
 
-  float hard_accel_dt = std::chrono::duration<float>(now - last_hard_accel_update).count();
-  last_hard_accel_update = now;
-  if (target_hard_accel_mix > 0.0f) {
-    hard_accel_mix = target_hard_accel_mix;
-  } else if (hard_accel_mix > 0.0f && hard_accel_dt > 0.0f) {
-    hard_accel_mix = std::max(0.0f, hard_accel_mix - hard_accel_dt / hard_accel_fade_seconds);
+  float accel_dt = std::chrono::duration<float>(now - last_accel_update).count();
+  last_accel_update = now;
+  if (accel_dt > 0.0f) {
+    if (accel_active) {
+      accel_presence = std::min(1.0f, accel_presence + accel_dt / accel_fade_in_seconds);
+    } else if (accel_presence > 0.0f) {
+      accel_presence = std::max(0.0f, accel_presence - accel_dt / accel_fade_out_seconds);
+    }
+    accel_speed_mix = target_accel_speed_mix;
   }
 
   if (rainbow) {
@@ -178,12 +185,12 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
     float time_offset = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.0f;
-    float accel_influence = hard_accel_mix * (1.0f - hazard_mix);
-    float animation_speed = lerp(1.2f, 2.6f, accel_influence);
-    float lightness_boost = lerp(0.0f, 0.08f, accel_influence);
-    float saturation_boost = lerp(0.0f, 0.12f, accel_influence);
-    float alpha_boost = lerp(0.0f, 0.10f, accel_influence);
-    float rainbow_scroll_speed = lerp(0.18f, 0.55f, accel_influence);
+    float accel_visibility = accel_presence * (1.0f - hazard_mix);
+    float animation_speed = lerp(0.35f, 0.75f, accel_speed_mix);
+    float lightness_boost = 0.05f * accel_visibility;
+    float saturation_boost = 0.08f * accel_visibility;
+    float alpha_boost = 0.08f * accel_visibility;
+    float rainbow_scroll_speed = lerp(0.06f, 0.18f, accel_speed_mix);
 
     constexpr float kTau = 6.283185307f;
     static constexpr std::array<float, 9> sample_positions = {{
@@ -203,27 +210,28 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       float base_saturation_mod = lerp(0.05f, 0.04f, hazard_mix);
       float base_alpha_mod = lerp(0.04f, 0.05f, hazard_mix);
 
-      float hue_mod = base_hue_mod + lerp(0.0f, 8.0f, accel_influence);
-      float lightness_mod = base_lightness_mod + lerp(0.0f, 0.04f, accel_influence);
-      float saturation_mod = base_saturation_mod + lerp(0.0f, 0.10f, accel_influence);
-      float alpha_mod = base_alpha_mod + lerp(0.0f, 0.05f, accel_influence);
+      float hue_mod = base_hue_mod + 3.0f * accel_speed_mix;
+      float lightness_mod = base_lightness_mod + 0.03f * accel_visibility;
+      float saturation_mod = base_saturation_mod + 0.08f * accel_visibility;
+      float alpha_mod = base_alpha_mod + 0.05f * accel_visibility;
 
       float base_hue = std::fmod(lerp(ocean.hue_deg, warning.hue_deg, hazard_mix) + (wave - 0.5f) * hue_mod + 360.0f, 360.0f);
       float base_lightness = clamp01(lerp(ocean.lightness, warning.lightness, hazard_mix) + (wave - 0.5f) * lightness_mod + lightness_boost);
       float base_saturation = clamp01(lerp(ocean.saturation, warning.saturation, hazard_mix) + (0.5f - wave) * saturation_mod + saturation_boost);
       float base_alpha = clamp01(lerp(ocean.alpha, warning.alpha, hazard_mix) + (0.5f - wave) * alpha_mod + alpha_boost);
 
-      QColor base_color = QColor::fromHslF(base_hue / 360.0f, base_saturation, base_lightness, clamp01(0.4f + 0.55f * base_alpha));
+      QColor base_color = QColor::fromHslF(base_hue / 360.0f, base_saturation, base_lightness, clamp01(0.45f + 0.45f * base_alpha));
 
       float rainbow_phase = wrap_unit(position + time_offset * rainbow_scroll_speed);
-      float rainbow_wave = 0.5f * std::sin(time_offset * 1.4f + position * kTau) + 0.5f;
-      float rainbow_hue = std::fmod((rainbow_phase * 360.0f) + lerp(0.0f, 45.0f, accel_influence * 0.5f), 360.0f);
-      float rainbow_saturation = clamp01(0.78f + 0.18f * accel_influence + 0.12f * (rainbow_wave - 0.5f));
-      float rainbow_lightness = clamp01(0.50f + 0.10f * accel_influence + 0.14f * (0.5f - rainbow_wave));
-      float rainbow_alpha = clamp01(base_color.alphaF() + 0.18f * accel_influence + 0.10f * (0.5f - rainbow_wave));
+      rainbow_phase = wrap_unit(rainbow_phase + 0.12f * accel_speed_mix);
+      float rainbow_wave = 0.5f * std::sin(time_offset * 0.8f + position * (kTau * 0.6f)) + 0.5f;
+      float rainbow_hue = 40.0f + rainbow_phase * 240.0f;
+      float rainbow_saturation = clamp01(0.80f + 0.10f * accel_visibility + 0.10f * (rainbow_wave - 0.5f));
+      float rainbow_lightness = clamp01(0.52f + 0.08f * accel_visibility + 0.12f * (0.5f - rainbow_wave));
+      float rainbow_alpha = clamp01(0.70f + 0.15f * accel_visibility + 0.08f * (0.5f - rainbow_wave));
 
       QColor rainbow_color = QColor::fromHslF(rainbow_hue / 360.0f, rainbow_saturation, rainbow_lightness, rainbow_alpha);
-      QColor final_color = blend_colors(base_color, rainbow_color, accel_influence);
+      QColor final_color = blend_colors(base_color, rainbow_color, accel_visibility);
 
       bg.setColorAt(position, final_color);
     }
