@@ -134,6 +134,47 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     }};
 
     auto lerp = [](float a, float b, float t) { return a + (b - a) * t; };
+    auto clamp01 = [](float v) { return std::clamp(v, 0.0f, 1.0f); };
+
+    auto sample_stops = [&](const std::array<GradientStop, 4> &stops, float position) {
+      if (position <= stops.front().position) return stops.front();
+      if (position >= stops.back().position) return stops.back();
+
+      const GradientStop *left = &stops.front();
+      const GradientStop *right = &stops.back();
+      for (size_t i = 1; i < stops.size(); ++i) {
+        if (position <= stops[i].position) {
+          left = &stops[i - 1];
+          right = &stops[i];
+          break;
+        }
+      }
+
+      float span = std::max(1e-4f, right->position - left->position);
+      float t = clamp01((position - left->position) / span);
+
+      return GradientStop{
+          position,
+          lerp(left->hue_deg, right->hue_deg, t),
+          lerp(left->saturation, right->saturation, t),
+          lerp(left->lightness, right->lightness, t),
+          lerp(left->alpha, right->alpha, t),
+      };
+    };
+
+    auto blend_colors = [&](const QColor &a, const QColor &b, float t) {
+      float mix = clamp01(t);
+      float r = lerp(a.redF(), b.redF(), mix);
+      float g = lerp(a.greenF(), b.greenF(), mix);
+      float bl = lerp(a.blueF(), b.blueF(), mix);
+      float alpha = clamp01(lerp(a.alphaF(), b.alphaF(), mix));
+      return QColor::fromRgbF(clamp01(r), clamp01(g), clamp01(bl), alpha);
+    };
+
+    auto wrap_unit = [](float v) {
+      float wrapped = std::fmod(v, 1.0f);
+      return wrapped < 0.0f ? wrapped + 1.0f : wrapped;
+    };
 
     float time_offset = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.0f;
@@ -142,14 +183,20 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     float lightness_boost = lerp(0.0f, 0.08f, accel_influence);
     float saturation_boost = lerp(0.0f, 0.12f, accel_influence);
     float alpha_boost = lerp(0.0f, 0.10f, accel_influence);
+    float rainbow_scroll_speed = lerp(0.18f, 0.55f, accel_influence);
+
+    constexpr float kTau = 6.283185307f;
+    static constexpr std::array<float, 9> sample_positions = {{
+        0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f,
+    }};
 
     QLinearGradient bg(0, surface_rect.height(), 0, 0);
 
-    for (size_t i = 0; i < ocean_stops.size(); ++i) {
-      const auto &ocean = ocean_stops[i];
-      const auto &warning = warning_stops[i];
+    for (float position : sample_positions) {
+      const auto ocean = sample_stops(ocean_stops, position);
+      const auto warning = sample_stops(warning_stops, position);
 
-      float wave = 0.5f * std::sin(animation_speed * time_offset + ocean.position * 3.0f) + 0.5f;
+      float wave = 0.5f * std::sin(animation_speed * time_offset + position * 3.0f) + 0.5f;
 
       float base_hue_mod = lerp(10.0f, 6.0f, hazard_mix);
       float base_lightness_mod = lerp(0.08f, 0.05f, hazard_mix);
@@ -161,13 +208,24 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       float saturation_mod = base_saturation_mod + lerp(0.0f, 0.10f, accel_influence);
       float alpha_mod = base_alpha_mod + lerp(0.0f, 0.05f, accel_influence);
 
-      float hue = std::fmod(lerp(ocean.hue_deg, warning.hue_deg, hazard_mix) + (wave - 0.5f) * hue_mod + 360.0f, 360.0f);
-      float lightness = std::clamp(lerp(ocean.lightness, warning.lightness, hazard_mix) + (wave - 0.5f) * lightness_mod + lightness_boost, 0.0f, 1.0f);
-      float saturation = std::clamp(lerp(ocean.saturation, warning.saturation, hazard_mix) + (0.5f - wave) * saturation_mod + saturation_boost, 0.0f, 1.0f);
-      float alpha = std::clamp(lerp(ocean.alpha, warning.alpha, hazard_mix) + (0.5f - wave) * alpha_mod + alpha_boost, 0.4f, 0.95f);
+      float base_hue = std::fmod(lerp(ocean.hue_deg, warning.hue_deg, hazard_mix) + (wave - 0.5f) * hue_mod + 360.0f, 360.0f);
+      float base_lightness = clamp01(lerp(ocean.lightness, warning.lightness, hazard_mix) + (wave - 0.5f) * lightness_mod + lightness_boost);
+      float base_saturation = clamp01(lerp(ocean.saturation, warning.saturation, hazard_mix) + (0.5f - wave) * saturation_mod + saturation_boost);
+      float base_alpha = clamp01(lerp(ocean.alpha, warning.alpha, hazard_mix) + (0.5f - wave) * alpha_mod + alpha_boost);
 
-      QColor color = QColor::fromHslF(hue / 360.0f, saturation, lightness, alpha);
-      bg.setColorAt(ocean.position, color);
+      QColor base_color = QColor::fromHslF(base_hue / 360.0f, base_saturation, base_lightness, clamp01(0.4f + 0.55f * base_alpha));
+
+      float rainbow_phase = wrap_unit(position + time_offset * rainbow_scroll_speed);
+      float rainbow_wave = 0.5f * std::sin(time_offset * 1.4f + position * kTau) + 0.5f;
+      float rainbow_hue = std::fmod((rainbow_phase * 360.0f) + lerp(0.0f, 45.0f, accel_influence * 0.5f), 360.0f);
+      float rainbow_saturation = clamp01(0.78f + 0.18f * accel_influence + 0.12f * (rainbow_wave - 0.5f));
+      float rainbow_lightness = clamp01(0.50f + 0.10f * accel_influence + 0.14f * (0.5f - rainbow_wave));
+      float rainbow_alpha = clamp01(base_color.alphaF() + 0.18f * accel_influence + 0.10f * (0.5f - rainbow_wave));
+
+      QColor rainbow_color = QColor::fromHslF(rainbow_hue / 360.0f, rainbow_saturation, rainbow_lightness, rainbow_alpha);
+      QColor final_color = blend_colors(base_color, rainbow_color, accel_influence);
+
+      bg.setColorAt(position, final_color);
     }
 
     painter.setBrush(bg);
