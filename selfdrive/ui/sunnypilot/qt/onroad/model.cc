@@ -203,7 +203,9 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       const auto ocean = sample_stops(ocean_stops, position);
       const auto warning = sample_stops(warning_stops, position);
 
-      float wave = 0.5f * std::sin(animation_speed * time_offset + position * 3.0f) + 0.5f;
+      bool freeze_base_wave = accel_visibility > 0.0f && accel_visibility < 1.0f;
+      float wave_phase = animation_speed * time_offset + position * 3.0f;
+      float wave = freeze_base_wave ? 0.5f : (0.5f * std::sin(wave_phase) + 0.5f);
 
       float base_hue_mod = lerp(10.0f, 6.0f, hazard_mix);
       float base_lightness_mod = lerp(0.08f, 0.05f, hazard_mix);
