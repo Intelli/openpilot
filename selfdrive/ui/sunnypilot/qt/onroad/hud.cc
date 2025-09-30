@@ -8,6 +8,8 @@
 
 #include "selfdrive/ui/sunnypilot/qt/onroad/hud.h"
 
+#include "cereal/gen/cpp/custom.capnp.h"
+
 #include "selfdrive/ui/qt/util.h"
 
 
