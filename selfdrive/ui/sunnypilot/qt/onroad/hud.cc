@@ -177,11 +177,13 @@ void HudRendererSP::draw(QPainter &p, const QRect &surface_rect) {
         QFont font = InterFont(24, QFont::DemiBold);
         p.save();
         p.setFont(font);
-        p.translate(surface_rect.right() - (UI_BORDER_SIZE * 2) - 184, UI_BORDER_SIZE * 3 + rect_right.height());
+        const int debug_offset_x = surface_rect.right() - (UI_BORDER_SIZE * 2) - 320;
+        const int debug_offset_y = UI_BORDER_SIZE * 3 + rect_right.height();
+        p.translate(debug_offset_x, debug_offset_y);
         p.setPen(QPen(QColor(255, 255, 255, 200)));
         p.drawText(0, 0, fuel_text);
-        p.drawText(0, 32, eff_text);
-        p.drawText(0, 64, range_text);
+        p.drawText(0, 26, eff_text);
+        p.drawText(0, 52, range_text);
         p.restore();
       }
     }
