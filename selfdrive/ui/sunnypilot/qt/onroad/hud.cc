@@ -8,8 +8,6 @@
 
 #include "selfdrive/ui/sunnypilot/qt/onroad/hud.h"
 
-#include "cereal/gen/cpp/custom.capnp.h"
-
 #include "selfdrive/ui/qt/util.h"
 
 
@@ -24,12 +22,11 @@ void HudRendererSP::updateState(const UIState &s) {
   const auto car_control = sm["carControl"].getCarControl();
   const bool car_state_sp_valid = sm.rcv_frame("carStateSP") > 0;
   const bool car_state_sp_recent = car_state_sp_valid && (sm.frame - sm.rcv_frame("carStateSP")) <= UI_FREQ;
-  const auto car_state_sp = car_state_sp_valid ? sm["carStateSP"].getCarStateSP() : cereal::CarStateSP::Reader();
   const auto radar_state = sm["radarState"].getRadarState();
   const auto is_gps_location_external = sm.rcv_frame("gpsLocationExternal") > 1;
   liveRangeDebugEnabled = car_state_sp_recent;
   liveRangeDebugFuelGauge = car_state.getFuelGauge();
-  liveRangeDebugEfficiency = car_state_sp_recent ? car_state_sp.getLiveEfficiencyKmPerKwh() : 0.0f;
+  liveRangeDebugEfficiency = 0.0f;
   const auto gpsLocation = is_gps_location_external ? sm["gpsLocationExternal"].getGpsLocationExternal() : sm["gpsLocation"].getGpsLocation();
   const auto ltp = sm["liveTorqueParameters"].getLiveTorqueParameters();
   const auto car_params = sm["carParams"].getCarParams();
@@ -103,16 +100,21 @@ void HudRendererSP::updateState(const UIState &s) {
   frictionCoefficientFiltered = ltp.getFrictionCoefficientFiltered();
   liveValid = ltp.getLiveValid();
 
-  if (car_state_sp_recent && sm.updated("carStateSP")) {
-    const float new_live_range = car_state_sp.getLiveRangeKm();
-    if (new_live_range > 0.0f) {
-      liveRangeValid = true;
-      liveRangeValue = new_live_range;
-    } else {
-      liveRangeValid = false;
-      liveRangeValue = 0.0f;
+  if (car_state_sp_recent) {
+    const auto car_state_sp = sm["carStateSP"].getCarStateSP();
+    liveRangeDebugEfficiency = car_state_sp.getLiveEfficiencyKmPerKwh();
+
+    if (sm.updated("carStateSP")) {
+      const float new_live_range = car_state_sp.getLiveRangeKm();
+      if (new_live_range > 0.0f) {
+        liveRangeValid = true;
+        liveRangeValue = new_live_range;
+      } else {
+        liveRangeValid = false;
+        liveRangeValue = 0.0f;
+      }
     }
-  } else if (!car_state_sp_recent) {
+  } else {
     liveRangeValid = false;
     liveRangeValue = 0.0f;
   }
