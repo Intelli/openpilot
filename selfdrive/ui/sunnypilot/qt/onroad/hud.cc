@@ -27,6 +27,9 @@ void HudRendererSP::updateState(const UIState &s) {
   const auto car_state_sp = car_state_sp_valid ? sm["carStateSP"].getCarStateSP() : cereal::CarStateSP::Reader();
   const auto radar_state = sm["radarState"].getRadarState();
   const auto is_gps_location_external = sm.rcv_frame("gpsLocationExternal") > 1;
+  liveRangeDebugEnabled = car_state_sp_recent;
+  liveRangeDebugFuelGauge = car_state.getFuelGauge();
+  liveRangeDebugEfficiency = car_state_sp_recent ? car_state_sp.getLiveEfficiencyKmPerKwh() : 0.0f;
   const auto gpsLocation = is_gps_location_external ? sm["gpsLocationExternal"].getGpsLocationExternal() : sm["gpsLocation"].getGpsLocation();
   const auto ltp = sm["liveTorqueParameters"].getLiveTorqueParameters();
   const auto car_params = sm["carParams"].getCarParams();
@@ -165,6 +168,22 @@ void HudRendererSP::draw(QPainter &p, const QRect &surface_rect) {
     if (devUiInfo != 0) {
       QRect rect_right(surface_rect.right() - (UI_BORDER_SIZE * 2), UI_BORDER_SIZE * 1.5, 184, 170);
       drawRightDevUI(p, surface_rect.right() - 184 - UI_BORDER_SIZE * 2, UI_BORDER_SIZE * 2 + rect_right.height());
+
+      if (liveRangeDebugEnabled) {
+        const QString fuel_text = tr("SOC: %1%" ).arg(QString::number(liveRangeDebugFuelGauge * 100.f, 'f', 1));
+        const QString eff_text = tr("Eff: %1 km/kWh").arg(QString::number(liveRangeDebugEfficiency, 'f', 2));
+        const QString range_text = liveRangeValid ? tr("LR: %1 km").arg(QString::number(liveRangeValue, 'f', 1)) : tr("LR: --");
+
+        QFont font = InterFont(24, QFont::DemiBold);
+        p.save();
+        p.setFont(font);
+        p.translate(surface_rect.right() - (UI_BORDER_SIZE * 2) - 184, UI_BORDER_SIZE * 3 + rect_right.height());
+        p.setPen(QPen(QColor(255, 255, 255, 200)));
+        p.drawText(0, 0, fuel_text);
+        p.drawText(0, 32, eff_text);
+        p.drawText(0, 64, range_text);
+        p.restore();
+      }
     }
 
     // Standstill Timer
