@@ -24,7 +24,7 @@ void HudRendererSP::updateState(const UIState &s) {
   const auto car_control = sm["carControl"].getCarControl();
   const bool car_state_sp_valid = sm.rcv_frame("carStateSP") > 0;
   const bool car_state_sp_recent = car_state_sp_valid && (sm.frame - sm.rcv_frame("carStateSP")) <= UI_FREQ;
-  const auto car_state_sp = car_state_sp_valid ? sm["carStateSP"].getCarStateSP() : cereal::Custom::CarStateSP::Reader();
+  const auto car_state_sp = car_state_sp_valid ? sm["carStateSP"].getCarStateSP() : cereal::CarStateSP::Reader();
   const auto radar_state = sm["radarState"].getRadarState();
   const auto is_gps_location_external = sm.rcv_frame("gpsLocationExternal") > 1;
   const auto gpsLocation = is_gps_location_external ? sm["gpsLocationExternal"].getGpsLocationExternal() : sm["gpsLocation"].getGpsLocation();
