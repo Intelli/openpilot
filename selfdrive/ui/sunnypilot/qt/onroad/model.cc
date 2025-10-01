@@ -93,6 +93,10 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   float dt = std::chrono::duration<float>(now - last_hazard_update).count();
   last_hazard_update = now;
 
+  static auto last_frame_time = std::chrono::steady_clock::now();
+  float frame_dt = std::chrono::duration<float>(now - last_frame_time).count();
+  last_frame_time = now;
+
   constexpr float hazard_hold_seconds = 1.0f;
   constexpr float hazard_fade_seconds = 1.0f;
   if (hazard_active) {
@@ -118,7 +122,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   }
 
   float base_wave_speed = 0.35f;
-  float base_scroll_speed = 0.08f;
+  float base_scroll_speed = 0.10f;
 
   if (hazard_mix > 0.0f) {
     ModelRenderer::drawPath(painter, model, surface_rect.height());
@@ -205,15 +209,25 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     float accel_visibility = accel_presence;
     float rainbow_speed_multiplier = accel_visibility > 0.0f ? 1.5f : 1.0f;
     float animation_speed = base_wave_speed * rainbow_speed_multiplier;
+    float rainbow_scroll_speed = base_scroll_speed * rainbow_speed_multiplier;
     float lightness_boost = 0.05f * accel_visibility;
     float saturation_boost = 0.08f * accel_visibility;
     float alpha_boost = 0.08f * accel_visibility;
-    float rainbow_scroll_speed = base_scroll_speed * rainbow_speed_multiplier;
 
     constexpr float kTau = 6.283185307f;
     static constexpr std::array<float, 9> sample_positions = {{
         0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f,
     }};
+
+    static float wave_phase = 0.0f;
+    static float rainbow_phase_shift = 0.0f;
+    static float rainbow_wave_phase = 0.0f;
+
+    if (frame_dt > 0.0f) {
+      wave_phase = std::fmod(wave_phase + animation_speed * frame_dt, kTau);
+      rainbow_phase_shift = wrap_unit(rainbow_phase_shift + rainbow_scroll_speed * frame_dt);
+      rainbow_wave_phase = std::fmod(rainbow_wave_phase + 0.8f * frame_dt, kTau);
+    }
 
     QLinearGradient bg(0, surface_rect.height(), 0, 0);
 
@@ -221,7 +235,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       const auto ocean = sample_stops(ocean_stops, position);
       const auto warning = sample_stops(warning_stops, position);
 
-      float wave = 0.5f * std::sin(animation_speed * time_offset + position * 3.0f) + 0.5f;
+      float wave = 0.5f * std::sin(wave_phase + position * 3.0f) + 0.5f;
 
       float base_hue_mod = lerp(10.0f, 6.0f, hazard_mix);
       float base_lightness_mod = lerp(0.08f, 0.05f, hazard_mix);
@@ -243,8 +257,8 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
       QColor base_color = QColor::fromHslF(base_hue / 360.0f, base_saturation, base_lightness, clamp01(0.45f + 0.45f * base_alpha));
 
-      float rainbow_phase = wrap_unit(position + time_offset * rainbow_scroll_speed);
-      float rainbow_wave = 0.5f * std::sin(time_offset * 0.8f + position * (kTau * 0.6f)) + 0.5f;
+      float rainbow_phase = wrap_unit(position + rainbow_phase_shift);
+      float rainbow_wave = 0.5f * std::sin(rainbow_wave_phase + position * (kTau * 0.6f)) + 0.5f;
       float rainbow_hue = 40.0f + rainbow_phase * 240.0f;
       float rainbow_saturation = clamp01(0.80f + 0.10f * accel_visibility + 0.10f * (rainbow_wave - 0.5f));
       float rainbow_lightness = clamp01(0.52f + 0.08f * accel_visibility + 0.12f * (0.5f - rainbow_wave));
