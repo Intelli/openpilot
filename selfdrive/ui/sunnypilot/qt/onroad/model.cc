@@ -58,16 +58,18 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
   bool rainbow = Params().getBool("RainbowMode");
   float a_ego = sm["carState"].getCarState().getAEgo();
-  constexpr float accel_start_threshold = 0.20f;
-  constexpr float accel_full_threshold = 0.80f;
+  constexpr float accel_start_threshold = 0.24f;
+  constexpr float accel_stop_threshold = 0.14f;
   constexpr float accel_fade_in_seconds = 0.5f;
   constexpr float accel_fade_out_seconds = 1.0f;
   static float accel_presence = 0.0f;
-  static float accel_speed_mix = 0.0f;
+  static bool accel_state = false;
   static auto last_accel_update = std::chrono::steady_clock::now();
-  float accel_span = std::max(0.1f, accel_full_threshold - accel_start_threshold);
-  float target_accel_speed_mix = std::clamp((a_ego - accel_start_threshold) / accel_span, 0.0f, 1.0f);
-  bool accel_active = target_accel_speed_mix > 0.0f;
+  if (!accel_state && a_ego >= accel_start_threshold) {
+    accel_state = true;
+  } else if (accel_state && a_ego <= accel_stop_threshold) {
+    accel_state = false;
+  }
   //float v_ego = sm["carState"].getCarState().getVEgo();
 
   const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
@@ -107,12 +109,27 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   float accel_dt = std::chrono::duration<float>(now - last_accel_update).count();
   last_accel_update = now;
   if (accel_dt > 0.0f) {
-    if (accel_active) {
-      accel_presence = std::min(1.0f, accel_presence + accel_dt / accel_fade_in_seconds);
-    } else if (accel_presence > 0.0f) {
-      accel_presence = std::max(0.0f, accel_presence - accel_dt / accel_fade_out_seconds);
+    float target_presence = accel_state ? 1.0f : 0.0f;
+    if (target_presence > accel_presence) {
+      accel_presence = std::min(target_presence, accel_presence + accel_dt / accel_fade_in_seconds);
+    } else if (accel_presence > target_presence) {
+      accel_presence = std::max(target_presence, accel_presence - accel_dt / accel_fade_out_seconds);
     }
-    accel_speed_mix = target_accel_speed_mix;
+  }
+
+  float base_wave_speed = 0.35f;
+  float base_scroll_speed = 0.08f;
+
+  if (hazard_mix > 0.0f) {
+    ModelRenderer::drawPath(painter, model, surface_rect.height());
+
+    QLinearGradient hazard_bg(0, surface_rect.height(), 0, 0);
+    hazard_bg.setColorAt(0.0f, QColor::fromRgbF(0.45f, 0.0f, 0.0f, 0.82f * hazard_mix));
+    hazard_bg.setColorAt(0.5f, QColor::fromRgbF(0.78f, 0.14f, 0.14f, 0.68f * hazard_mix));
+    hazard_bg.setColorAt(1.0f, QColor::fromRgbF(0.92f, 0.45f, 0.45f, 0.55f * hazard_mix));
+    painter.setBrush(hazard_bg);
+    painter.drawPolygon(track_vertices);
+    return;
   }
 
   if (rainbow) {
@@ -185,12 +202,13 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
     float time_offset = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.0f;
-    float accel_visibility = accel_presence * (1.0f - hazard_mix);
-    float animation_speed = lerp(0.35f, 0.75f, accel_speed_mix);
+    float accel_visibility = accel_presence;
+    float rainbow_speed_multiplier = accel_visibility > 0.0f ? 1.5f : 1.0f;
+    float animation_speed = base_wave_speed * rainbow_speed_multiplier;
     float lightness_boost = 0.05f * accel_visibility;
     float saturation_boost = 0.08f * accel_visibility;
     float alpha_boost = 0.08f * accel_visibility;
-    float rainbow_scroll_speed = lerp(0.06f, 0.18f, accel_speed_mix);
+    float rainbow_scroll_speed = base_scroll_speed * rainbow_speed_multiplier;
 
     constexpr float kTau = 6.283185307f;
     static constexpr std::array<float, 9> sample_positions = {{
@@ -210,7 +228,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       float base_saturation_mod = lerp(0.05f, 0.04f, hazard_mix);
       float base_alpha_mod = lerp(0.04f, 0.05f, hazard_mix);
 
-      float hue_mod = base_hue_mod + 3.0f * accel_speed_mix;
+      float hue_mod = base_hue_mod + 3.0f * accel_visibility;
       float lightness_mod = base_lightness_mod + 0.03f * accel_visibility;
       float saturation_mod = base_saturation_mod + 0.08f * accel_visibility;
       float alpha_mod = base_alpha_mod + 0.05f * accel_visibility;
@@ -226,7 +244,6 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       QColor base_color = QColor::fromHslF(base_hue / 360.0f, base_saturation, base_lightness, clamp01(0.45f + 0.45f * base_alpha));
 
       float rainbow_phase = wrap_unit(position + time_offset * rainbow_scroll_speed);
-      rainbow_phase = wrap_unit(rainbow_phase + 0.12f * accel_speed_mix);
       float rainbow_wave = 0.5f * std::sin(time_offset * 0.8f + position * (kTau * 0.6f)) + 0.5f;
       float rainbow_hue = 40.0f + rainbow_phase * 240.0f;
       float rainbow_saturation = clamp01(0.80f + 0.10f * accel_visibility + 0.10f * (rainbow_wave - 0.5f));
@@ -242,16 +259,6 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     painter.setBrush(bg);
     painter.drawPolygon(track_vertices);
   } else {
-    // Normal path rendering with hazard fade overlay
     ModelRenderer::drawPath(painter, model, surface_rect.height());
-
-    if (hazard_mix > 0.0f) {
-      QLinearGradient hazard_bg(0, surface_rect.height(), 0, 0);
-      hazard_bg.setColorAt(0.0f, QColor::fromRgbF(0.45f, 0.0f, 0.0f, 0.82f * hazard_mix));
-      hazard_bg.setColorAt(0.5f, QColor::fromRgbF(0.78f, 0.14f, 0.14f, 0.68f * hazard_mix));
-      hazard_bg.setColorAt(1.0f, QColor::fromRgbF(0.92f, 0.45f, 0.45f, 0.55f * hazard_mix));
-      painter.setBrush(hazard_bg);
-      painter.drawPolygon(track_vertices);
-    }
   }
 }
