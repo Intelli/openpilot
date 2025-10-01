@@ -204,8 +204,6 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       return wrapped < 0.0f ? wrapped + 1.0f : wrapped;
     };
 
-    float time_offset = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.0f;
     float accel_visibility = accel_presence;
     float rainbow_speed_multiplier = accel_visibility > 0.0f ? 1.5f : 1.0f;
     float animation_speed = base_wave_speed * rainbow_speed_multiplier;
