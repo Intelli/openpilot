@@ -4,7 +4,7 @@ set -euo pipefail
 NAME=opendbc
 SUBPATH=opendbc_repo
 REMOTE=origin
-BRANCH=hkg-angle-steering
+BRANCH=hkg-angle-steering-2025
 URL=https://github.com/sunnypilot/opendbc.git
 
 # 0) Keep local submodule config in sync with .gitmodules
