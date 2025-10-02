@@ -155,6 +155,7 @@ jobs:
 
       - name: Set environment variables
         id: set-env
+        shell: bash
         run: |
           echo "new_branch=${{ needs.prepare_strategy.outputs.new_branch }}" >> $GITHUB_OUTPUT
           echo "version=${{ needs.prepare_strategy.outputs.version }}" >> $GITHUB_OUTPUT
