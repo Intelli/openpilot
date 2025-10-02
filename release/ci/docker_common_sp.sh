@@ -2,14 +2,14 @@ if [ "$1" = "base" ]; then
   export DOCKER_IMAGE=sunnypilot-base
   export DOCKER_FILE=Dockerfile.sunnypilot_base
 elif [ "$1" = "prebuilt" ]; then
-  export DOCKER_IMAGE=sunnypilot-prebuilt
+  export DOCKER_IMAGE=intelli-openpilot-prebuilt
   export DOCKER_FILE=Dockerfile.sunnypilot
 else
   echo "Invalid docker build image: '$1'"
   exit 1
 fi
 
-export DOCKER_REGISTRY=ghcr.io/sunnypilot
+export DOCKER_REGISTRY=ghcr.io/intelli
 export COMMIT_SHA=$(git rev-parse HEAD)
 
 TAG_SUFFIX=$2

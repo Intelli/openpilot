@@ -5,18 +5,17 @@ env:
   OUTPUT_DIR: ${{ github.workspace }}/output
   CI_DIR: ${{ github.workspace }}/release/ci
   SCONS_CACHE_DIR: ${{ github.workspace }}/release/ci/scons_cache
-  PUBLIC_REPO_URL: "https://github.com/sunnypilot/sunnypilot"
-  
+  PUBLIC_REPO_URL: "https://github.com/Intelli/openpilot"
+
   # Branch configurations
-  STAGING_SOURCE_BRANCH: 'master'
-  
+  STAGING_SOURCE_BRANCH: 'ev9'
+
   # Runtime configuration
   SOURCE_BRANCH: "${{ github.head_ref || github.ref_name }}"
 
 on:
   push:
-    branches: [ master, master-dev ]
-    tags: [ 'release/*' ]
+    branches: [ ev9 ]
   pull_request_target:
     types: [ labeled ]
   workflow_dispatch:
@@ -56,17 +55,25 @@ jobs:
 
           BUILD="$(date '+%Y.%m.%d')-${{ github.run_number }}"
           if [[ -z "$CONFIG" || "$CONFIG" == "null" ]]; then
-            echo "No exact strategy match found. Falling back to feature/fork logic."
-            IS_FORK="${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}"
-            FORK_SUFFIX=$( [[ "$IS_FORK" == "true" ]] && echo "-fork" || echo "" )
-            NEW_BRANCH="${BRANCH}${FORK_SUFFIX}-prebuilt"
+            echo "No exact strategy match found. Falling back to Intelli ev9 defaults."
+            if [[ "$BRANCH" == "ev9" ]]; then
+              NEW_BRANCH="ev9-prebuilt"
+              echo "cancel_publish_in_progress=false" >> $GITHUB_OUTPUT
+              echo "publish_concurrency_group=publish-ev9" >> $GITHUB_OUTPUT
+              echo "environment=ev9" >> $GITHUB_OUTPUT
+              echo "extra_version_identifier=ev9" >> $GITHUB_OUTPUT
+            else
+              IS_FORK="${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}"
+              FORK_SUFFIX=$( [[ "$IS_FORK" == "true" ]] && echo "-fork" || echo "" )
+              NEW_BRANCH="${BRANCH}${FORK_SUFFIX}-prebuilt"
+              echo "cancel_publish_in_progress=true" >> $GITHUB_OUTPUT
+              echo "publish_concurrency_group=publish-${BRANCH}" >> $GITHUB_OUTPUT
+              echo "environment=feature-branch" >> $GITHUB_OUTPUT
+              echo "extra_version_identifier=feature-branch" >> $GITHUB_OUTPUT
+            fi
 
             echo "new_branch=$NEW_BRANCH" >> $GITHUB_OUTPUT
             echo "version=$BUILD" >> $GITHUB_OUTPUT
-            echo "cancel_publish_in_progress=true" >> $GITHUB_OUTPUT
-            echo "publish_concurrency_group=publish-${BRANCH}" >> $GITHUB_OUTPUT
-            echo "environment=feature-branch" >> $GITHUB_OUTPUT
-            echo "extra_version_identifier=feature-branch" >> $GITHUB_OUTPUT
           else
           echo "Matched config: $CONFIG"
             environment=$(echo "$CONFIG" | jq -r '.environment')
@@ -75,7 +82,7 @@ jobs:
             cancel="$(echo "$CONFIG" | jq -r '.cancel_publish_in_progress')";
             echo "cancel_publish_in_progress=$( [ "$cancel" = "null" ] && echo "true" || echo $cancel)" >> $GITHUB_OUTPUT
             echo "publish_concurrency_group=publish-${BRANCH}$( [ "$cancel" = "null" ] || [ "$cancel" = "true" ] || echo "${{ github.sha }}" )" >> $GITHUB_OUTPUT
-          
+
             is_stable_branch="$(echo "$CONFIG" | jq -r '.stable_branch // false')";
             echo "is_stable_branch=$is_stable_branch" >> $GITHUB_OUTPUT
 
@@ -85,7 +92,7 @@ jobs:
           fi
           echo "build=$BUILD" >> $GITHUB_OUTPUT
           cat $GITHUB_OUTPUT
-  
+
   validate_tests:
     runs-on: ubuntu-24.04
     needs: [ prepare_strategy ]
@@ -119,7 +126,7 @@ jobs:
       needs.prepare_strategy.result == 'success' &&
       (needs.validate_tests.result == 'success' || needs.validate_tests.result == 'skipped') &&
       (!contains(github.event_name, 'pull_request') ||
-      (github.event.action == 'labeled' && github.event.label.name == 'prebuilt')) 
+      (github.event.action == 'labeled' && github.event.label.name == 'prebuilt'))
       }}
     steps:
       - uses: actions/checkout@v4
@@ -134,7 +141,7 @@ jobs:
         with:
           path: ${{env.SCONS_CACHE_DIR}}
           key: scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}-${{ github.sha }}
-          # Note: GitHub Actions enforces cache isolation between different build sources (PR builds, workflow dispatches, etc.) 
+          # Note: GitHub Actions enforces cache isolation between different build sources (PR builds, workflow dispatches, etc.)
           #   for security. Only caches from the default branch are shared across all builds. This is by design and cannot be overridden.
           restore-keys: |
             scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}
@@ -148,7 +155,7 @@ jobs:
           echo "version=${{ needs.prepare_strategy.outputs.version }}" >> $GITHUB_OUTPUT
           echo "extra_version_identifier=${{ needs.prepare_strategy.outputs.extra_version_identifier }}" >> $GITHUB_OUTPUT
           echo "commit_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
-          
+
           # Set up common environment
           source /etc/profile;
           export UV_PROJECT_ENVIRONMENT=${HOME}/venv
@@ -241,8 +248,8 @@ jobs:
         if: always()
         run: |
           PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
-  
-  
+
+
   publish:
     concurrency:
       # We do a bit of a hack here to avoid canceling the publishing job if a new commit comes in while we're publishing by adding the sha to the group name.
@@ -284,7 +291,7 @@ jobs:
             "${{ env.OUTPUT_DIR }}" \
             "${{ needs.build.outputs.new_branch }}" \
             "${{ needs.build.outputs.version }}" \
-            "https://x-access-token:${{github.token}}@github.com/sunnypilot/sunnypilot.git" \
+            "https://x-access-token:${{secrets.PREBUILT_PUSH_TOKEN}}@github.com/Intelli/openpilot.git" \
             "${{ needs.build.outputs.extra_version_identifier }}"
 
           echo ""
@@ -293,7 +300,7 @@ jobs:
           echo "1. Go to: ${{ github.server_url }}/${{ github.repository }}/settings/variables/actions/AUTO_DEPLOY_PREBUILT_BRANCHES"
           echo "2. Current value: ${{ vars.AUTO_DEPLOY_PREBUILT_BRANCHES }}"
           echo "3. Update as needed (JSON array with no spaces)"
-      
+
       - name: Tag ${{ needs.prepare_strategy.outputs.environment }}
         if: ${{ needs.prepare_strategy.outputs.is_stable_branch == 'true' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')) }}
         run: |
