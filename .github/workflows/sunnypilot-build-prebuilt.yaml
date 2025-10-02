@@ -1,7 +1,7 @@
 name: sunnypilot prebuilt action
 
 env:
-  BUILD_DIR: "${{ github.workspace }}/build"
+  BUILD_DIR: "/data/openpilot"
   OUTPUT_DIR: ${{ github.workspace }}/output
   CI_DIR: ${{ github.workspace }}/release/ci
   SCONS_CACHE_DIR: ${{ github.workspace }}/release/ci/scons_cache
@@ -119,6 +119,8 @@ jobs:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/intelli/intelli-openpilot-prebuilt:latest
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}
@@ -171,7 +173,7 @@ jobs:
       - name: Setup build environment
         run: |
           mkdir -p "${BUILD_DIR}/"
-          rm -rf ${BUILD_DIR:?}/*
+          find ${BUILD_DIR} -mindepth 1 -delete || true
           echo "Starting build stage..."
           echo "BUILD_DIR: ${BUILD_DIR}"
           echo "CI_DIR: ${CI_DIR}"
@@ -182,7 +184,9 @@ jobs:
           if [[ "${{ runner.debug }}" == "1" ]]; then
             printenv
           fi
-          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable || true
+          if [[ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]]; then
+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
+          fi
 
       - name: Build Main Project
         run: |
@@ -249,7 +253,9 @@ jobs:
       - name: Re-enable powersave
         if: always()
         run: |
-          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable || true
+          if [[ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]]; then
+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
+          fi
 
 
   publish:
