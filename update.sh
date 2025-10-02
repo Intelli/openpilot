@@ -3,9 +3,9 @@ set -euo pipefail
 
 NAME=opendbc
 SUBPATH=opendbc_repo
-REMOTE=origin
-BRANCH=ev9
-URL=https://github.com/Intelli/opendbc.git
+REMOTE=upstream
+BRANCH=hkg-angle-steering
+URL=https://github.com/sunnypilot/opendbc.git
 
 # 0) Keep local submodule config in sync with .gitmodules
 git submodule sync --recursive
