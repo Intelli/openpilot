@@ -1,0 +1,57 @@
+name: Auto Sync Upstream
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"  # every 30 minutes
+  workflow_dispatch: {}      # allow manual runs
+  repository_dispatch:
+    types: [upstream_update] # optional: if upstream can ping this
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ev9-upstream branch
+        uses: actions/checkout@v4
+        with:
+          ref: ev9-upstream
+          fetch-depth: 0  # need full history to merge
+          submodules: false
+
+      - name: Configure Git author
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Ensure upstream remote
+        run: |
+          if ! git remote get-url upstream >/dev/null 2>&1; then
+            git remote add upstream https://github.com/sunnypilot/sunnypilot.git
+          fi
+          git remote -v
+
+      - name: Fetch upstream branch
+        run: |
+          git fetch upstream hkg-angle-steering-2025 --prune
+
+      - name: Run sync-upstream.sh
+        run: |
+          bash ./sync-upstream.sh
+
+      - name: Push if changed
+        run: |
+          BEFORE="$GITHUB_SHA"
+          AFTER="$(git rev-parse HEAD)"
+          if [ "$BEFORE" != "$AFTER" ]; then
+            echo "HEAD changed: pushing ev9-upstream..."
+            git push origin HEAD:ev9-upstream
+          else
+            echo "No changes to push."
+          fi
