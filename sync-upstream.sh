@@ -6,7 +6,7 @@ DEFAULT_REF="upstream/hkg-angle-steering-2025"
 EXCLUDES=(
   'AGENTS.md'
   'sync-upstream.sh'
-  'update.sh'
+  # 'update.sh'   # optional; file will be removed—leaving this commented is fine
   'apply_patch.sh'
   'create_patch.sh'
   'create_patch_manual.sh'
@@ -23,6 +23,7 @@ fi
 
 TARGET_REF="${1:-$DEFAULT_REF}"
 
+# Ensure we have the upstream ref locally
 git fetch upstream hkg-angle-steering-2025 --prune
 
 if ! git rev-parse --verify "${TARGET_REF}^{commit}" >/dev/null 2>&1; then
@@ -30,22 +31,11 @@ if ! git rev-parse --verify "${TARGET_REF}^{commit}" >/dev/null 2>&1; then
   exit 1
 fi
 
-OPENDBC_SUBMODULE_PATH="opendbc_repo"
-OPENDBC_UPSTREAM_URL="https://github.com/sunnypilot/opendbc.git"
-OPENDBC_TMP_REMOTE="__sync_upstream_opendbc__"
-
-# Ensure upstream opendbc commits are available locally so the merge can fast-forward the submodule.
-#git submodule update --init -- "${OPENDBC_SUBMODULE_PATH}"
-#if [[ -d "${OPENDBC_SUBMODULE_PATH}" ]]; then
-#  if git -C "${OPENDBC_SUBMODULE_PATH}" remote | grep -Fxq "${OPENDBC_TMP_REMOTE}"; then
-#    git -C "${OPENDBC_SUBMODULE_PATH}" remote remove "${OPENDBC_TMP_REMOTE}"
-#  fi
-#  git -C "${OPENDBC_SUBMODULE_PATH}" remote add "${OPENDBC_TMP_REMOTE}" "${OPENDBC_UPSTREAM_URL}"
-#  if ! git -C "${OPENDBC_SUBMODULE_PATH}" fetch "${OPENDBC_TMP_REMOTE}" --tags; then
-#    echo "Warning: unable to fetch upstream opendbc; proceeding with existing submodule objects." >&2
-#  fi
-#  git -C "${OPENDBC_SUBMODULE_PATH}" remote remove "${OPENDBC_TMP_REMOTE}" >/dev/null 2>&1 || true
-#fi
+# --- opendbc tracking config (we now do this here, not in update.sh) ---
+OPENDBC_PATH="opendbc_repo"
+OPENDBC_URL="https://github.com/sunnypilot/opendbc.git"
+OPENDBC_BRANCH="hkg-angle-steering-2025"
+OPENDBC_REMOTE="origin"
 
 PRE_SYNC_REF="$(git rev-parse --verify HEAD)"
 
@@ -65,7 +55,6 @@ restore_args=(
   --
   .
 )
-
 for path in "${EXCLUDES[@]}"; do
   restore_args+=(":(top,exclude)${path}")
 done
@@ -76,14 +65,13 @@ if [[ ${#EXCLUDES[@]} -gt 0 ]]; then
   git restore --source="${PRE_SYNC_REF}" --staged --worktree -- "${EXCLUDES[@]}"
 fi
 
-# Align submodules to upstream commit.
+# Align (other) submodules to the merged superproject commit.
 submodules=()
 while IFS= read -r submodule_path; do
   [[ -z "${submodule_path}" ]] && continue
   submodules+=("${submodule_path}")
 done < <(python3 - <<'PY_SUBMODULES'
 import configparser
-
 cfg = configparser.RawConfigParser()
 cfg.read('.gitmodules')
 for section in cfg.sections():
@@ -97,7 +85,24 @@ if [[ ${#submodules[@]} -gt 0 ]]; then
   git submodule sync --recursive -- "${submodules[@]}"
   git submodule update --init --recursive --checkout -- "${submodules[@]}"
 fi
-#git restore --source="${TARGET_REF}" --staged --worktree --no-overlay .
-#git clean -fd
-#git commit -m "Sync upstream"
-#git push origin ev9
+
+# --- Force opendbc_repo to the sunnypilot/opendbc branch tip we track ---
+# Keep our .gitmodules + opendbc pointer independent of upstream tree.
+git submodule set-url    "${OPENDBC_PATH}" "${OPENDBC_URL}"
+git submodule set-branch -b "${OPENDBC_BRANCH}" "${OPENDBC_PATH}"
+git submodule sync -- "${OPENDBC_PATH}"
+
+git submodule update --init "${OPENDBC_PATH}"
+
+git -C "${OPENDBC_PATH}" remote set-url "${OPENDBC_REMOTE}" "${OPENDBC_URL}"
+git -C "${OPENDBC_PATH}" fetch "${OPENDBC_REMOTE}" "refs/heads/${OPENDBC_BRANCH}:refs/remotes/${OPENDBC_REMOTE}/${OPENDBC_BRANCH}"
+git -C "${OPENDBC_PATH}" checkout --detach "${OPENDBC_REMOTE}/${OPENDBC_BRANCH}"
+
+git add "${OPENDBC_PATH}" .gitmodules
+if ! git diff --cached --quiet -- "${OPENDBC_PATH}" .gitmodules; then
+  NEW_SHA="$(git -C "${OPENDBC_PATH}" rev-parse --short=12 HEAD)"
+  git commit -m "Sync opendbc to ${NEW_SHA} (${OPENDBC_BRANCH})"
+fi
+
+echo "Upstream sync complete. Current HEAD: $(git rev-parse --short HEAD)"
+
