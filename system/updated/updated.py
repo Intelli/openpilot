@@ -451,24 +451,33 @@ def main() -> None:
           wait_helper.sleep(60)
           continue
 
+        user_request = wait_helper.user_request
+        if user_request == UserRequest.NONE:
+          cloudlog.info("no manual update request; skipping automatic update attempt")
+          wait_helper.sleep(60)
+          continue
+
+        user_requested_fetch = (user_request == UserRequest.FETCH)
+
         update_failed_count += 1
 
         # check for update
         params.put("UpdaterState", "checking...")
         updater.check_for_update()
 
-        # download update
-        last_fetch = params.get("UpdaterLastFetchTime")
-        timed_out = last_fetch is None or (datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - last_fetch > datetime.timedelta(days=3))
-        user_requested_fetch = wait_helper.user_request == UserRequest.FETCH
-        if params.get_bool("NetworkMetered") and not timed_out and not user_requested_fetch:
-          cloudlog.info("skipping fetch, connection metered")
-        elif wait_helper.user_request == UserRequest.CHECK:
-          cloudlog.info("skipping fetch, only checking")
+        if user_requested_fetch:
+          # download update
+          last_fetch = params.get("UpdaterLastFetchTime")
+          timed_out = last_fetch is None or (datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - last_fetch > datetime.timedelta(days=3))
+          if params.get_bool("NetworkMetered") and not timed_out and not user_requested_fetch:
+            cloudlog.info("skipping fetch, connection metered")
+          else:
+            updater.fetch_update()
+            write_time_to_param(params, "UpdaterLastFetchTime")
+          update_failed_count = 0
         else:
-          updater.fetch_update()
-          write_time_to_param(params, "UpdaterLastFetchTime")
-        update_failed_count = 0
+          cloudlog.info("manual update check requested; skipping download")
+          update_failed_count = 0
       except subprocess.CalledProcessError as e:
         cloudlog.event(
           "update process failed",
