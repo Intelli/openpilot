@@ -14,7 +14,7 @@ index 10ead53774..609ea729c7 100644
        false,
      },
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 5d92838f8a..7e301066db 100644
+index 5d92838f8a..b23c0fb1bb 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -7,6 +7,13 @@
@@ -31,7 +31,7 @@ index 5d92838f8a..7e301066db 100644
  
  void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
    ModelRenderer::update_model(model, lead);
-@@ -50,41 +57,220 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
+@@ -50,41 +57,228 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
    }
  
    bool rainbow = Params().getBool("RainbowMode");
@@ -258,6 +258,14 @@ index 5d92838f8a..7e301066db 100644
 -      // Alpha fades out towards the far end of the path
 -      float alpha = 0.8f * (1.0f - position * 0.3f);
 +      QColor rainbow_color = QColor::fromHslF(rainbow_hue / 360.0f, rainbow_saturation, rainbow_lightness, rainbow_alpha);
++      constexpr float wrap_fade_width = 0.08f;
++      float phase_edge = std::min(rainbow_phase, 1.0f - rainbow_phase);
++      float wrap_blend = clamp01((wrap_fade_width - phase_edge) / wrap_fade_width);
++      if (wrap_blend > 0.0f) {
++        float white_alpha = clamp01(0.55f + 0.25f * accel_visibility);
++        QColor white_color = QColor::fromRgbF(1.0f, 1.0f, 1.0f, white_alpha);
++        rainbow_color = blend_colors(rainbow_color, white_color, wrap_blend);
++      }
 +      QColor final_color = blend_colors(base_color, rainbow_color, accel_visibility);
  
 -      QColor color = QColor::fromHslF(hue / 360.0f, saturation, lightness, alpha);
