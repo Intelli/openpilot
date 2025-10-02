@@ -451,13 +451,6 @@ def main() -> None:
           wait_helper.sleep(60)
           continue
 
-        # Skip automatic updates - only allow manual updates via signals
-        user_requested_fetch = wait_helper.user_request == UserRequest.FETCH
-        if not user_requested_fetch:
-          cloudlog.info("skipping automatic update check - only manual updates allowed")
-          wait_helper.sleep(60)
-          continue
-
         update_failed_count += 1
 
         # check for update
@@ -467,6 +460,7 @@ def main() -> None:
         # download update
         last_fetch = params.get("UpdaterLastFetchTime")
         timed_out = last_fetch is None or (datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - last_fetch > datetime.timedelta(days=3))
+        user_requested_fetch = wait_helper.user_request == UserRequest.FETCH
         if params.get_bool("NetworkMetered") and not timed_out and not user_requested_fetch:
           cloudlog.info("skipping fetch, connection metered")
         elif wait_helper.user_request == UserRequest.CHECK:
