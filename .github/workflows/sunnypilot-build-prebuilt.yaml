@@ -49,6 +49,9 @@ jobs:
           echo "Current branch: $BRANCH"
 
           STRATEGY_JSON='${{ vars.DEPLOY_STRATEGY }}'
+          if [[ -z "$STRATEGY_JSON" || "$STRATEGY_JSON" == "null" ]]; then
+            STRATEGY_JSON='{ "configs": [] }'
+          fi
           CONFIG=$(echo "$STRATEGY_JSON" | jq -r --arg branch "$BRANCH" '
             .configs[] | select(.branch == $branch)
           ')
