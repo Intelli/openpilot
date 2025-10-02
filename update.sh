@@ -3,7 +3,7 @@ set -euo pipefail
 
 NAME=opendbc
 SUBPATH=opendbc_repo
-REMOTE=upstream
+REMOTE=origin
 BRANCH=hkg-angle-steering
 URL=https://github.com/sunnypilot/opendbc.git
 
