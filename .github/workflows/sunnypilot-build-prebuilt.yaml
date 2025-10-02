@@ -120,7 +120,7 @@ jobs:
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     container:
-      image: ghcr.io/intelli/intelli-openpilot-prebuilt:latest
+      image: ghcr.io/sunnypilot/sunnypilot-prebuilt:latest
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}
