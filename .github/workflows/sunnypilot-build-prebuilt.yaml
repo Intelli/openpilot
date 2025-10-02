@@ -197,12 +197,15 @@ jobs:
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
           touch ${BUILD_DIR}/prebuilt
-          if [[ "${{ runner.debug }}" == "1" ]]; then
+          if [ "${{ runner.debug }}" = "1" ]; then
             ls -la ${BUILD_DIR}
           fi
 
       - name: Prepare Output
         run: |
+          if [ "${{ runner.debug }}" = "1" ]; then
+            echo "Preparing output directory"
+          fi
           rm -rf ${OUTPUT_DIR}
           mkdir -p ${OUTPUT_DIR}
           rsync -am${RUNNER_DEBUG:+v} \
