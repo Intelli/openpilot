@@ -263,6 +263,14 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       float rainbow_alpha = clamp01(0.70f + 0.15f * accel_visibility + 0.08f * (0.5f - rainbow_wave));
 
       QColor rainbow_color = QColor::fromHslF(rainbow_hue / 360.0f, rainbow_saturation, rainbow_lightness, rainbow_alpha);
+      constexpr float wrap_fade_width = 0.08f;
+      float phase_edge = std::min(rainbow_phase, 1.0f - rainbow_phase);
+      float wrap_blend = clamp01((wrap_fade_width - phase_edge) / wrap_fade_width);
+      if (wrap_blend > 0.0f) {
+        float white_alpha = clamp01(0.55f + 0.25f * accel_visibility);
+        QColor white_color = QColor::fromRgbF(1.0f, 1.0f, 1.0f, white_alpha);
+        rainbow_color = blend_colors(rainbow_color, white_color, wrap_blend);
+      }
       QColor final_color = blend_colors(base_color, rainbow_color, accel_visibility);
 
       bg.setColorAt(position, final_color);
