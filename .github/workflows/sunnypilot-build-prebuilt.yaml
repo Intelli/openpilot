@@ -137,9 +137,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          lfs: true
           ref: ${{ env.SOURCE_BRANCH }}
           repository: ${{ github.event.pull_request.head.repo.fork && github.event.pull_request.head.repo.full_name || github.repository }}
-      - run: git lfs pull
 
       - name: Cache SCons
         uses: actions/cache@v4
