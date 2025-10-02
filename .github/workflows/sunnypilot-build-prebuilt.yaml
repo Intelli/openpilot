@@ -295,6 +295,11 @@ jobs:
           echo '${{ toJSON(needs.build.outputs) }}'
           ls -la ${{ env.OUTPUT_DIR }}
 
+          git config --global http.postBuffer 1048576000
+          git config --global transfer.fsckObjects false
+          git config --global fetch.fsckObjects false
+          git config --global receive.fsckObjects false
+
           ${{ env.CI_DIR }}/publish.sh \
             "${{ github.workspace }}" \
             "${{ env.OUTPUT_DIR }}" \
