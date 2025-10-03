@@ -210,6 +210,8 @@ jobs:
       - name: Build Main Project
         run: |
           export PYTHONPATH="$BUILD_DIR:$BUILD_DIR/third_party/acados"
+          export ACADOS_SOURCE_DIR="$BUILD_DIR/third_party/acados"
+          export ACADOS_PYTHON_INTERFACE_PATH="$BUILD_DIR/third_party/acados/acados_template"
           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
