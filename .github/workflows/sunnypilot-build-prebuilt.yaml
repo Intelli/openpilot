@@ -142,6 +142,8 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.fork && github.event.pull_request.head.repo.full_name || github.repository }}
 
       - name: Fetch required LFS assets
+        working-directory: ${{ github.workspace }}
+        shell: bash
         run: |
           git lfs install --local
           git lfs pull --include="third_party/acados/**/t_renderer" --exclude=""
