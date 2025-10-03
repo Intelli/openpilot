@@ -247,39 +247,9 @@ jobs:
           fi
           rm -rf ${OUTPUT_DIR}
           mkdir -p ${OUTPUT_DIR}
-          rsync -am${RUNNER_DEBUG:+v} \
-            --include='**/panda/board/' \
-            --include='**/panda/board/obj' \
-            --include='**/panda/board/obj/panda.bin.signed' \
-            --include='**/panda/board/obj/panda_h7.bin.signed' \
-            --include='**/panda/board/obj/bootstub.panda.bin' \
-            --include='**/panda/board/obj/bootstub.panda_h7.bin' \
-            --exclude='.sconsign.dblite' \
-            --exclude='*.a' \
-            --exclude='*.o' \
-            --exclude='*.os' \
-            --exclude='*.pyc' \
-            --exclude='moc_*' \
-            --exclude='*.cc' \
-            --exclude='Jenkinsfile' \
-            --exclude='supercombo.onnx' \
-            --exclude='**/panda/board/*' \
-            --exclude='**/panda/board/obj/**' \
-            --exclude='**/panda/certs/' \
-            --exclude='**/panda/crypto/' \
-            --exclude='**/release/' \
-            --exclude='**/.github/' \
-            --exclude='**/selfdrive/ui/replay/' \
-            --exclude='**/__pycache__/' \
-            --exclude='**/selfdrive/ui/*.h' \
-            --exclude='**/selfdrive/ui/**/*.h' \
-            --exclude='**/selfdrive/ui/qt/offroad/sunnypilot/' \
+          rsync -a${RUNNER_DEBUG:+v} \
+            --exclude='.git/' \
             --exclude='${{env.SCONS_CACHE_DIR}}' \
-            --exclude='**/.git/' \
-            --exclude='**/SConstruct' \
-            --exclude='**/SConscript' \
-            --exclude='**/.venv/' \
-            --delete-excluded \
             ${BUILD_DIR}/ ${OUTPUT_DIR}/
 
       - name: 'Tar.gz files'
