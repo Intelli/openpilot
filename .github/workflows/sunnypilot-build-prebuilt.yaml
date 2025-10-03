@@ -141,6 +141,11 @@ jobs:
           ref: ${{ env.SOURCE_BRANCH }}
           repository: ${{ github.event.pull_request.head.repo.fork && github.event.pull_request.head.repo.full_name || github.repository }}
 
+      - name: Fetch required LFS assets
+        run: |
+          git lfs install --local
+          git lfs pull --include="third_party/acados/**/t_renderer" --exclude=""
+
       - name: Cache SCons
         uses: actions/cache@v4
         with:
