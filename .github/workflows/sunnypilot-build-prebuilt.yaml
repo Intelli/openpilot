@@ -151,7 +151,6 @@ jobs:
           git rev-parse --is-inside-work-tree
           git lfs install --local
           git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
-          git config lfs.pushurl ssh://git@gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git
 
       - name: Fetch LFS objects from GitLab
         run: |
@@ -219,6 +218,27 @@ jobs:
           if [ "${{ runner.debug }}" = "1" ]; then
             ls -la ${BUILD_DIR}
           fi
+
+      - name: Cleanup build artifacts
+        run: |
+          if [ "${{ runner.debug }}" = "1" ]; then
+            echo "Cleaning up build artifacts"
+          fi
+          cd $BUILD_DIR
+          find . -name '*.a' -delete || true
+          find . -name '*.o' -delete || true
+          find . -name '*.os' -delete || true
+          find . -name '*.pyc' -delete || true
+          find . -name 'moc_*' -delete || true
+          rm -rf .sconsign.dblite Jenkinsfile release/ || true
+          rm -rf third_party/x86*/ third_party/*Darwin*/ || true
+          rm -f selfdrive/modeld/models/driving_vision.onnx selfdrive/modeld/models/driving_policy.onnx || true
+          rm -f sunnypilot/modeld*/models/supercombo.onnx || true
+
+      - name: Restore third_party
+        run: |
+          cd $BUILD_DIR
+          git checkout -- third_party/ || true
 
       - name: Prepare Output
         run: |
