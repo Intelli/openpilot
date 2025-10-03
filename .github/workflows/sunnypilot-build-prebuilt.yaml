@@ -209,15 +209,17 @@ jobs:
 
       - name: Build Main Project
         run: |
+          ARCH=${ARCH:-$(uname -m)}
+          TERA_BUNDLE_DIR="$BUILD_DIR/third_party/acados/$ARCH"
           export PYTHONPATH="$BUILD_DIR:$BUILD_DIR/third_party/acados"
           export ACADOS_SOURCE_DIR="$BUILD_DIR/third_party/acados"
           export ACADOS_PYTHON_INTERFACE_PATH="$BUILD_DIR/third_party/acados/acados_template"
           export ACADOS_TEMPLATES_PATH="$BUILD_DIR/third_party/acados/acados_template"
           export LD_LIBRARY_PATH="$BUILD_DIR/third_party/acados/${ARCH}/lib:$LD_LIBRARY_PATH"
-          export TERA_RENDERER_PATH="$BUILD_DIR/third_party/acados/x86_64/t_renderer"
+          export TERA_PATH="$TERA_BUNDLE_DIR/t_renderer"
           export PATH="$BUILD_DIR/third_party/acados/bin:$PATH"
-          if [ -f "$TERA_RENDERER_PATH" ]; then
-            chmod +x "$TERA_RENDERER_PATH"
+          if [ -f "$TERA_PATH" ]; then
+            chmod +x "$TERA_PATH"
           fi
           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
