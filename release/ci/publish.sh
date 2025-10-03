@@ -51,11 +51,17 @@ git config lfs.https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git.locks
 # set git username/password
 #source /data/identity.sh
 
-git rm -rf $OUTPUT_DIR/.git || true # Doing cleanup, but it might fail if the .git doesn't exist or not allowed to delete
 git remote remove origin || true # ensure cleanup
 git remote add origin $GIT_ORIGIN
-#git push origin -d $DEV_BRANCH || true # Ensuring we delete the remote branch if it exists as we are wiping it out
-git fetch origin $DEV_BRANCH || (git checkout -b $DEV_BRANCH && git commit --allow-empty -m "sunnypilot v$VERSION release" && git push -u origin $DEV_BRANCH)
+
+if git ls-remote --exit-code origin $DEV_BRANCH >/dev/null 2>&1; then
+  git fetch origin $DEV_BRANCH
+  git checkout -B $DEV_BRANCH origin/$DEV_BRANCH
+else
+  git checkout -b $DEV_BRANCH
+  git commit --allow-empty -m "sunnypilot v$VERSION release"
+  git push -u origin $DEV_BRANCH
+fi
 
 # ensure any existing commits with LFS pointers are hydrated before staging
 git lfs pull --exclude="" --include=""
