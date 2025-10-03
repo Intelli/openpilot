@@ -145,7 +145,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{env.SCONS_CACHE_DIR}}
-          key: scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}-${{ github.sha }}
+          key: scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}
           # Note: GitHub Actions enforces cache isolation between different build sources (PR builds, workflow dispatches, etc.)
           #   for security. Only caches from the default branch are shared across all builds. This is by design and cannot be overridden.
           restore-keys: |
@@ -241,7 +241,6 @@ jobs:
             --exclude='**/SConscript' \
             --exclude='**/.venv/' \
             --delete-excluded \
-            --chown=comma:comma \
             ${BUILD_DIR}/ ${OUTPUT_DIR}/
 
       - name: 'Tar.gz files'
