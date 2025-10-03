@@ -48,9 +48,6 @@ git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/i
 git config lfs.pushurl https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
 git config lfs.https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git.locksverify false
 
-# ensure any existing commits with LFS pointers are hydrated before staging
-git lfs pull --exclude="" --include=""
-
 # set git username/password
 #source /data/identity.sh
 
@@ -59,6 +56,9 @@ git remote remove origin || true # ensure cleanup
 git remote add origin $GIT_ORIGIN
 #git push origin -d $DEV_BRANCH || true # Ensuring we delete the remote branch if it exists as we are wiping it out
 git fetch origin $DEV_BRANCH || (git checkout -b $DEV_BRANCH && git commit --allow-empty -m "sunnypilot v$VERSION release" && git push -u origin $DEV_BRANCH)
+
+# ensure any existing commits with LFS pointers are hydrated before staging
+git lfs pull --exclude="" --include=""
 
 echo "[-] committing version $VERSION T=$SECONDS"
 git add -f .
