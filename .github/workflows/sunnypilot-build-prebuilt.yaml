@@ -147,6 +147,7 @@ jobs:
           echo "Using workspace: $GITHUB_WORKSPACE"
           pwd
           ls -a
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git rev-parse --is-inside-work-tree
           git lfs install --local
           git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
@@ -155,6 +156,7 @@ jobs:
       - name: Fetch LFS objects from GitLab
         run: |
           cd "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git rev-parse --is-inside-work-tree
           git lfs fetch --recent
           git lfs checkout
