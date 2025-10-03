@@ -48,23 +48,37 @@ git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/i
 git config lfs.pushurl https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
 git config lfs.https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git.locksverify false
 
+echo "[-] Syncing upstream models T=$SECONDS"
+python3 - <<'PY'
+from urllib.request import urlopen
+from pathlib import Path
+
+MODELS = [
+  "dmonitoring_model_tinygrad.pkl",
+  "driving_policy_tinygrad.pkl",
+  "driving_vision_tinygrad.pkl",
+  "driving_policy_metadata.pkl",
+  "driving_vision_metadata.pkl",
+]
+BASE = "https://raw.githubusercontent.com/sunnypilot/sunnypilot/hkg-angle-steering-2025-prebuilt/selfdrive/modeld/models/{}"
+root = Path("selfdrive/modeld/models")
+root.mkdir(parents=True, exist_ok=True)
+for name in MODELS:
+    url = BASE.format(name)
+    dest = root / name
+    with urlopen(url) as resp, open(dest, "wb") as out:
+        out.write(resp.read())
+    print(f"synced {name} -> {dest.stat().st_size} bytes")
+PY
+
 # set git username/password
 #source /data/identity.sh
 
 git remote remove origin || true # ensure cleanup
 git remote add origin $GIT_ORIGIN
 
-if git ls-remote --exit-code origin $DEV_BRANCH >/dev/null 2>&1; then
-  git fetch origin $DEV_BRANCH
-  git checkout -B $DEV_BRANCH origin/$DEV_BRANCH
-else
-  git checkout -b $DEV_BRANCH
-  git commit --allow-empty -m "sunnypilot v$VERSION release"
-  git push -u origin $DEV_BRANCH
-fi
-
-# ensure any existing commits with LFS pointers are hydrated before staging
-git lfs pull --exclude="" --include=""
+# start a fresh branch; we'll force-push after committing
+git checkout -B $DEV_BRANCH
 
 echo "[-] committing version $VERSION T=$SECONDS"
 git add -f .
