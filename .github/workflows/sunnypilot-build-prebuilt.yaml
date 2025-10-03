@@ -143,14 +143,16 @@ jobs:
 
       - name: Configure Git LFS mirror
         run: |
-          git -C "$GITHUB_WORKSPACE" lfs install --local
-          git -C "$GITHUB_WORKSPACE" config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
-          git -C "$GITHUB_WORKSPACE" config lfs.pushurl ssh://git@gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git
+          cd "$GITHUB_WORKSPACE"
+          git lfs install --workspace
+          git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
+          git config lfs.pushurl ssh://git@gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git
 
       - name: Fetch LFS objects from GitLab
         run: |
-          git -C "$GITHUB_WORKSPACE" lfs fetch --recent
-          git -C "$GITHUB_WORKSPACE" lfs checkout
+          cd "$GITHUB_WORKSPACE"
+          git lfs fetch --recent
+          git lfs checkout
 
       - name: Cache SCons
         uses: actions/cache@v4
