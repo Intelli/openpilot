@@ -62,7 +62,7 @@ MODELS = [
   "driving_policy_metadata.pkl",
   "driving_vision_metadata.pkl",
 ]
-BASE = "https://raw.githubusercontent.com/sunnypilot/sunnypilot/hkg-angle-steering-2025-prebuilt/selfdrive/modeld/models/{}"
+BASE = "https://raw.githubusercontent.com/sunnypilot/sunnypilot/staging/selfdrive/modeld/models/{}"
 root = Path("selfdrive/modeld/models")
 root.mkdir(parents=True, exist_ok=True)
 for name in MODELS:

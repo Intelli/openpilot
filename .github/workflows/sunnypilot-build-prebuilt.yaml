@@ -231,6 +231,11 @@ jobs:
             mkdir -p sunnypilot/modeld/models
             cp "$GITHUB_WORKSPACE"/sunnypilot/modeld/models/supercombo.onnx sunnypilot/modeld/models/
           fi
+          THNEED_BASE="https://raw.githubusercontent.com/sunnypilot/sunnypilot/staging/sunnypilot/modeld"
+          mkdir -p sunnypilot/modeld/runners
+          curl -fsSL "$THNEED_BASE/libthneed.so" -o sunnypilot/modeld/libthneed.so
+          curl -fsSL "$THNEED_BASE/runners/thneedmodel_pyx.cpp" -o sunnypilot/modeld/runners/thneedmodel_pyx.cpp
+          curl -fsSL "$THNEED_BASE/runners/thneedmodel_pyx.so" -o sunnypilot/modeld/runners/thneedmodel_pyx.so
           python3 selfdrive/controls/lib/lateral_mpc_lib/lat_mpc.py
           python3 selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
           python3 opendbc_repo/opendbc/dbc/generator/generator.py
