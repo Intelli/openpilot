@@ -209,14 +209,14 @@ jobs:
 
       - name: Build Main Project
         run: |
-          export PYTHONPATH="$BUILD_DIR"
+          export PYTHONPATH="$BUILD_DIR:$BUILD_DIR/third_party/acados"
           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
           cp "$GITHUB_WORKSPACE"/selfdrive/modeld/models/driving_vision.onnx selfdrive/modeld/models/
           cp "$GITHUB_WORKSPACE"/selfdrive/modeld/models/driving_policy.onnx selfdrive/modeld/models/
-          if compgen -G "$GITHUB_WORKSPACE"/sunnypilot/modeld/models/supercombo.onnx > /dev/null; then
+          if [ -f "$GITHUB_WORKSPACE"/sunnypilot/modeld/models/supercombo.onnx ]; then
             mkdir -p sunnypilot/modeld/models
             cp "$GITHUB_WORKSPACE"/sunnypilot/modeld/models/supercombo.onnx sunnypilot/modeld/models/
           fi
