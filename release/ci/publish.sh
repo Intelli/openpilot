@@ -47,6 +47,9 @@ git config lfs.fetchrecentcommitsdays 3650
 git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
 git config lfs.https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git.locksverify false
 
+# allow PKL artifacts to be stored directly in git to avoid LFS push failures
+sed -i '/^\*\.pkl filter=lfs/d' .gitattributes
+
 echo "[-] Syncing upstream models T=$SECONDS"
 python3 - <<'PY'
 from urllib.request import urlopen
