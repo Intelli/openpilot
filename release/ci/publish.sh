@@ -41,6 +41,11 @@ cd $OUTPUT_DIR
 git init
 git lfs install --local
 git lfs track "*.pkl"
+git config lfs.skipSmudge 1
+git config lfs.fetchrecentrefsdays 3650
+git config lfs.fetchrecentcommitsdays 3650
+git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
+git config lfs.pushurl ssh://git@gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git
 
 # set git username/password
 #source /data/identity.sh
