@@ -75,6 +75,7 @@ PY
 
 git remote remove origin || true # ensure cleanup
 git remote add origin $GIT_ORIGIN
+git fetch origin --depth=1 || true
 git checkout -B $DEV_BRANCH
 
 echo "[-] committing version $VERSION T=$SECONDS"
