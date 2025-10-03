@@ -39,6 +39,8 @@ echo "#define COMMA_VERSION \"$VERSION\"" > ${OUTPUT_DIR}/common/version.h
 echo "[-] Setting up repo T=$SECONDS"
 cd $OUTPUT_DIR
 git init
+git lfs install --local
+git lfs track "*.pkl"
 
 # set git username/password
 #source /data/identity.sh
