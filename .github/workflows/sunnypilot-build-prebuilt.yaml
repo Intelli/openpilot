@@ -144,13 +144,18 @@ jobs:
       - name: Configure Git LFS mirror
         run: |
           cd "$GITHUB_WORKSPACE"
-          git lfs install --workspace
+          echo "Using workspace: $GITHUB_WORKSPACE"
+          pwd
+          ls -a
+          git rev-parse --is-inside-work-tree
+          git lfs install --local
           git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
           git config lfs.pushurl ssh://git@gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git
 
       - name: Fetch LFS objects from GitLab
         run: |
           cd "$GITHUB_WORKSPACE"
+          git rev-parse --is-inside-work-tree
           git lfs fetch --recent
           git lfs checkout
 
