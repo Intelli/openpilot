@@ -136,8 +136,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     return;
   }
 
-  if (rainbow) {
-    // Kia EV9 "Ocean Blue" inspired gradient with subtle motion
+  if (rainbow) { // Kia EV9 "Ocean Blue" inspired gradient with subtle motion
 
     struct GradientStop {
       float position;
