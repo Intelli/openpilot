@@ -19,8 +19,9 @@ echo "updating uv..."
 # ok to fail, can also fail due to installing with brew
 uv self update || true
 
-echo "installing python packages..."
-uv sync --frozen --all-extras
+UV_SYNC_FLAGS=${UV_SYNC_FLAGS:-"--frozen --all-extras"}
+echo "installing python packages with uv sync $UV_SYNC_FLAGS"
+uv sync $UV_SYNC_FLAGS
 source .venv/bin/activate
 
 if [[ "$(uname)" == 'Darwin' ]]; then
