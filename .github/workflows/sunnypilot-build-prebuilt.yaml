@@ -246,36 +246,15 @@ jobs:
             rsync -a "$src/" "$dest/"
           done
           rsync -a "$PREBUILT_DIR/sunnypilot/selfdrive/locationd/" sunnypilot/selfdrive/locationd/
-          rsync -a --prune-empty-dirs \
-            --include='*/' \
-            --include='pandad' --include='pandad_api_impl.so' --include='*.so' --exclude='*' \
-            "$PREBUILT_DIR/selfdrive/pandad/" selfdrive/pandad/
-          rsync -a --prune-empty-dirs \
-            --include='*/' \
-            --include='locationd' --include='libcar.so' --include='libpose.so' --include='liblive.so' --exclude='*' \
-            "$PREBUILT_DIR/selfdrive/locationd/" selfdrive/locationd/
-          rsync -a --prune-empty-dirs \
-            --include='*/' \
-            --include='acados_ocp_*.json' --include='Makefile' --include='c_generated_code/***' --include='lib*.so' --exclude='*' \
-            "$PREBUILT_DIR/selfdrive/controls/lib/lateral_mpc_lib/" selfdrive/controls/lib/lateral_mpc_lib/
-          rsync -a --prune-empty-dirs \
-            --include='*/' \
-            --include='acados_ocp_*.json' --include='Makefile' --include='c_generated_code/***' --include='lib*.so' --exclude='*' \
-            "$PREBUILT_DIR/selfdrive/controls/lib/longitudinal_mpc_lib/" selfdrive/controls/lib/longitudinal_mpc_lib/
+          rsync -a "$PREBUILT_DIR/selfdrive/pandad/" selfdrive/pandad/
+          rsync -a "$PREBUILT_DIR/selfdrive/locationd/" selfdrive/locationd/
+          rsync -a "$PREBUILT_DIR/selfdrive/controls/lib/lateral_mpc_lib/" selfdrive/controls/lib/lateral_mpc_lib/
+          rsync -a "$PREBUILT_DIR/selfdrive/controls/lib/longitudinal_mpc_lib/" selfdrive/controls/lib/longitudinal_mpc_lib/
           rsync -a "$PREBUILT_DIR/common/params_pyx.so" common/
           rsync -a "$PREBUILT_DIR/msgq/" msgq/
-          rsync -a --prune-empty-dirs \
-            --include='*/' \
-            --include='ui' --include='*.qm' --exclude='*' \
-            "$PREBUILT_DIR/selfdrive/ui/" selfdrive/ui/
-          rsync -a --prune-empty-dirs \
-            --include='*/' \
-            --include='bootlog' --include='loggerd' --include='encoderd' --include='*.so' --exclude='*' \
-            "$PREBUILT_DIR/system/loggerd/" system/loggerd/
-          rsync -a --prune-empty-dirs \
-            --include='*/' \
-            --include='*.so' --include='*.bin' --include='*.bin.signed' --include='*.elf' --exclude='*' \
-            "$PREBUILT_DIR/panda/board/" panda/board/
+          rsync -a "$PREBUILT_DIR/selfdrive/ui/" selfdrive/ui/
+          rsync -a "$PREBUILT_DIR/system/loggerd/" system/loggerd/
+          rsync -a "$PREBUILT_DIR/panda/board/" panda/board/
           cp "$PREBUILT_DIR/compile_commands.json" ./
           rm -rf "$TMP_PREBUILT"
           python3 selfdrive/controls/lib/lateral_mpc_lib/lat_mpc.py
