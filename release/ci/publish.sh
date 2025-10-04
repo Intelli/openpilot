@@ -67,14 +67,50 @@ with tarfile.open(fileobj=data, mode="r:gz") as tar:
     members = [m for m in tar.getmembers() if m.name.startswith("sunnypilot-")]
     tar.extractall(path="/tmp", members=members)
 
-root_dir = next(Path("/tmp").glob("sunnypilot-*/selfdrive/modeld/models"))
-dest_root = Path("selfdrive/modeld/models")
-dest_root.mkdir(parents=True, exist_ok=True)
+root_dir = next(Path("/tmp").glob("sunnypilot-*") )
 
-for src in root_dir.glob("*.pkl"):
-    dest = dest_root / src.name
+model_src = root_dir / "selfdrive/modeld/models"
+model_dest = Path("selfdrive/modeld/models")
+model_dest.mkdir(parents=True, exist_ok=True)
+for src in model_src.glob("*.pkl"):
+    dest = model_dest / src.name
     dest.write_bytes(src.read_bytes())
     print(f"synced {src.name} -> {dest.stat().st_size} bytes")
+
+def rsync(src, dest):
+    if src.is_dir():
+        os.system(f"rsync -a '{src}/' '{dest}/'")
+    elif src.exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(src.read_bytes())
+
+import os
+
+rsync(model_src, model_dest)
+rsync(root_dir / "cereal/messaging", Path("cereal/messaging"))
+rsync(root_dir / "msgq", Path("msgq"))
+rsync(root_dir / "msgq_repo/msgq", Path("msgq_repo/msgq"))
+rsync(root_dir / "common/params_pyx.so", Path("common/params_pyx.so"))
+rsync(root_dir / "selfdrive/pandad", Path("selfdrive/pandad"))
+rsync(root_dir / "selfdrive/locationd", Path("selfdrive/locationd"))
+rsync(root_dir / "selfdrive/controls/lib/lateral_mpc_lib", Path("selfdrive/controls/lib/lateral_mpc_lib"))
+rsync(root_dir / "selfdrive/controls/lib/longitudinal_mpc_lib", Path("selfdrive/controls/lib/longitudinal_mpc_lib"))
+rsync(root_dir / "selfdrive/ui", Path("selfdrive/ui"))
+rsync(root_dir / "system/loggerd", Path("system/loggerd"))
+rsync(root_dir / "panda/board", Path("panda/board"))
+rsync(root_dir / "compile_commands.json", Path("compile_commands.json"))
+
+# ensure msgq pyx modules are accessible without hashed suffixes
+for pattern, link_name in [("ipc_pyx*.so", "ipc_pyx.so"), ("visionipc_pyx*.so", "visionipc_pyx.so")]:
+    matches = list((Path("msgq") ).glob(pattern))
+    if matches:
+        target = matches[0].name
+        link = Path("msgq") / link_name
+        if link.exists() or link.is_symlink():
+            link.unlink()
+        os.symlink(target, link)
+
+print("prebuilt assets synced")
 PY
 
 # set git username/password
