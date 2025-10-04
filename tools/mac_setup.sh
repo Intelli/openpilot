@@ -70,6 +70,8 @@ export PYCURL_CURL_CONFIG=/usr/bin/curl-config
 export PYCURL_SSL_LIBRARY=openssl
 
 # install python dependencies
+export UV_NO_VERIFY=1
+export UV_INSTALL_SKIP_HASH_CHECK=1
 $DIR/install_python_dependencies.sh
 echo "[ ] installed python dependencies t=$SECONDS"
 
