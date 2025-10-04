@@ -75,6 +75,24 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
     print(f"extracted prebuilt archive to {root_dir}")
 
+    DISALLOWED_SUFFIXES = {
+        ".py",
+        ".pyi",
+        ".pyx",
+        ".pxd",
+        ".pxi",
+        ".c",
+        ".cc",
+        ".cpp",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hh",
+    }
+
+    def should_copy_file(path: Path) -> bool:
+        return path.suffix not in DISALLOWED_SUFFIXES
+
     def copy_entry(rel_path: str):
         src = root_dir / rel_path
         dest = Path(rel_path)
@@ -82,8 +100,19 @@ with tempfile.TemporaryDirectory() as tmpdir:
             print(f"warning: missing {rel_path} in prebuilt archive")
             return
         if src.is_dir():
-            shutil.copytree(src, dest, dirs_exist_ok=True)
+            for root, _, files in os.walk(src):
+                rel_root = Path(root).relative_to(src)
+                (dest / rel_root).mkdir(parents=True, exist_ok=True)
+                for file in files:
+                    src_file = Path(root) / file
+                    if not should_copy_file(src_file):
+                        continue
+                    dest_file = dest / rel_root / file
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dest_file)
         else:
+            if not should_copy_file(src):
+                return
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
 
