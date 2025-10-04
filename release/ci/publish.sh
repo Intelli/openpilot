@@ -108,12 +108,27 @@ with tempfile.TemporaryDirectory() as tmpdir:
                         continue
                     dest_file = dest / rel_root / file
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    if dest_file.exists():
+                        continue
                     shutil.copy2(src_file, dest_file)
         else:
             if not should_copy_file(src):
                 return
             dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                return
             shutil.copy2(src, dest)
+
+    FILES_TO_COPY = [
+        "sunnypilot/modeld/libthneed.so",
+        "sunnypilot/modeld/runners/thneedmodel_pyx.cpp",
+        "sunnypilot/modeld/runners/thneedmodel_pyx.so",
+        "compile_commands.json",
+        "system/camerad/camerad",
+    ]
+
+    for rel in FILES_TO_COPY:
+        copy_entry(rel)
 
     DIRS_TO_COPY = [
         "cereal/messaging",
@@ -133,17 +148,6 @@ with tempfile.TemporaryDirectory() as tmpdir:
     ]
 
     for rel in DIRS_TO_COPY:
-        copy_entry(rel)
-
-    FILES_TO_COPY = [
-        "sunnypilot/modeld/libthneed.so",
-        "sunnypilot/modeld/runners/thneedmodel_pyx.cpp",
-        "sunnypilot/modeld/runners/thneedmodel_pyx.so",
-        "compile_commands.json",
-        "system/camerad/camerad",
-    ]
-
-    for rel in FILES_TO_COPY:
         copy_entry(rel)
 
     def ensure_unhashed(lib_dir: Path, pattern: str, target: str):
