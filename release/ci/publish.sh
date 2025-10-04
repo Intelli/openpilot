@@ -92,7 +92,9 @@ with tempfile.TemporaryDirectory() as tmpdir:
     def should_copy_file(path: Path) -> bool:
         return path.suffix not in DISALLOWED_SUFFIXES
 
-    OVERWRITE_CHECKS_ENABLED = 1
+    # When overwrite checks are enabled (1), files already present in OUTPUT_DIR are left intact.
+    # With value 0, upstream prebuilts overwrite whatever the local build produced.
+    OVERWRITE_CHECKS_ENABLED = 0
 
     OVERWRITE_PATHS = {
         "selfdrive/modeld/models",
@@ -117,9 +119,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
                     if not should_copy_file(src_file):
                         continue
                     dest_file = dest / rel_root / file
-                    rel_dest = Path(rel_path) / rel_root / file
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
-                    if (OVERWRITE_CHECKS_ENABLED and dest_file.exists() and not overwrite) or (dest_file.exists() and rel_dest in NO_OVERWRITE_FILES):
+                    if OVERWRITE_CHECKS_ENABLED and dest_file.exists() and not overwrite:
                         continue
                     shutil.copy2(src_file, dest_file)
         else:
@@ -127,7 +128,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
             if not should_copy_file(src):
                 return
             dest.parent.mkdir(parents=True, exist_ok=True)
-            if (OVERWRITE_CHECKS_ENABLED and dest.exists() and not overwrite) or (dest.exists() and Path(rel_path) in NO_OVERWRITE_FILES):
+            if OVERWRITE_CHECKS_ENABLED and dest.exists() and not overwrite:
                 return
             shutil.copy2(src, dest)
 
