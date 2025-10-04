@@ -231,19 +231,24 @@ jobs:
             mkdir -p sunnypilot/modeld/models
             cp "$GITHUB_WORKSPACE"/sunnypilot/modeld/models/supercombo.onnx sunnypilot/modeld/models/
           fi
-          THNEED_BASE="https://raw.githubusercontent.com/sunnypilot/sunnypilot/staging/sunnypilot/modeld"
-          mkdir -p sunnypilot/modeld/runners
-          curl -fsSL "$THNEED_BASE/libthneed.so" -o sunnypilot/modeld/libthneed.so
-          curl -fsSL "$THNEED_BASE/runners/thneedmodel_pyx.cpp" -o sunnypilot/modeld/runners/thneedmodel_pyx.cpp
-          curl -fsSL "$THNEED_BASE/runners/thneedmodel_pyx.so" -o sunnypilot/modeld/runners/thneedmodel_pyx.so
+          TMP_PREBUILT=$(mktemp -d)
+          curl -fsSL "https://codeload.github.com/sunnypilot/sunnypilot/tar.gz/refs/heads/hkg-angle-steering-2025-prebuilt" | tar -xz -C "$TMP_PREBUILT"
+          PREBUILT_DIR=$(find "$TMP_PREBUILT" -maxdepth 1 -type d -name 'sunnypilot-*' -print -quit)
+          for src in "$PREBUILT_DIR"/sunnypilot/modeld*; do
+            [ -d "$src" ] || continue
+            dest="sunnypilot/${src##*/}"
+            mkdir -p "$dest"
+            rsync -a "$src/" "$dest/"
+          done
+          rsync -a "$PREBUILT_DIR/sunnypilot/selfdrive/locationd/" sunnypilot/selfdrive/locationd/
           python3 selfdrive/controls/lib/lateral_mpc_lib/lat_mpc.py
           python3 selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
           python3 opendbc_repo/opendbc/dbc/generator/generator.py
           # scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --external-sconscript=system/camerad/SConscript system/camerad/camerad
-          curl -fsSL "https://raw.githubusercontent.com/sunnypilot/sunnypilot/staging/system/camerad/camerad" -o system/camerad/camerad
-          [ -f system/camerad/camerad ] && chmod 755 system/camerad/camerad
-          [ -f sunnypilot/modeld/libthneed.so ] && chmod 755 sunnypilot/modeld/libthneed.so
-          [ -f sunnypilot/modeld/runners/thneedmodel_pyx.so ] && chmod 755 sunnypilot/modeld/runners/thneedmodel_pyx.so
+          curl -fsSL "$PREBUILT_BASE/system/camerad/camerad" -o system/camerad/camerad
+          find system/camerad -maxdepth 1 -type f -exec chmod 755 {} +
+          find sunnypilot/modeld -maxdepth 2 -type f -name '*.so' -exec chmod 755 {} +
+          find sunnypilot/selfdrive/locationd -type f -name 'locationd' -exec chmod 755 {} +
           touch ${BUILD_DIR}/prebuilt
           if [ "${{ runner.debug }}" = "1" ]; then
             ls -la ${BUILD_DIR}

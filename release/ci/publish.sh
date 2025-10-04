@@ -55,22 +55,26 @@ python3 - <<'PY'
 from urllib.request import urlopen
 from pathlib import Path
 
-MODELS = [
-  "dmonitoring_model_tinygrad.pkl",
-  "driving_policy_tinygrad.pkl",
-  "driving_vision_tinygrad.pkl",
-  "driving_policy_metadata.pkl",
-  "driving_vision_metadata.pkl",
-]
-BASE = "https://raw.githubusercontent.com/sunnypilot/sunnypilot/staging/selfdrive/modeld/models/{}"
-root = Path("selfdrive/modeld/models")
-root.mkdir(parents=True, exist_ok=True)
-for name in MODELS:
-    url = BASE.format(name)
-    dest = root / name
-    with urlopen(url) as resp, open(dest, "wb") as out:
-        out.write(resp.read())
-    print(f"synced {name} -> {dest.stat().st_size} bytes")
+import tarfile
+from io import BytesIO
+
+BASE_URL = "https://codeload.github.com/sunnypilot/sunnypilot/tar.gz/refs/heads/hkg-angle-steering-2025-prebuilt"
+print("downloading prebuilt repo archive...")
+with urlopen(BASE_URL) as resp:
+    data = BytesIO(resp.read())
+
+with tarfile.open(fileobj=data, mode="r:gz") as tar:
+    members = [m for m in tar.getmembers() if m.name.startswith("sunnypilot-")]
+    tar.extractall(path="/tmp", members=members)
+
+root_dir = next(Path("/tmp").glob("sunnypilot-*/selfdrive/modeld/models"))
+dest_root = Path("selfdrive/modeld/models")
+dest_root.mkdir(parents=True, exist_ok=True)
+
+for src in root_dir.glob("*.pkl"):
+    dest = dest_root / src.name
+    dest.write_bytes(src.read_bytes())
+    print(f"synced {src.name} -> {dest.stat().st_size} bytes")
 PY
 
 # set git username/password
