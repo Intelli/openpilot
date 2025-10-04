@@ -141,12 +141,12 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          brew update
+          # brew update
           brew install git-lfs || true
           git lfs install --local
           ./tools/mac_setup.sh
           python3 -m pip install --upgrade pip
-          pip3 install -r requirements_openpilot.txt
+          pip3 install -e .
       - name: Configure Git LFS mirror
         run: |
           cd "$GITHUB_WORKSPACE"
