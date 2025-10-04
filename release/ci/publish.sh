@@ -138,6 +138,12 @@ with tempfile.TemporaryDirectory() as tmpdir:
         for src in ui_translations_src.glob("*.qm"):
             copy_entry(f"selfdrive/ui/translations/{src.name}")
 
+    model_src = root_dir / "selfdrive/modeld/models"
+    model_dest = Path("selfdrive/modeld/models")
+    model_dest.mkdir(parents=True, exist_ok=True)
+    for src in model_src.glob("*.pkl"):
+        copy_entry(f"selfdrive/modeld/models/{src.name}")
+
 print("prebuilt assets synced")
 PY
 
