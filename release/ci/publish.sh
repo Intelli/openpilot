@@ -91,6 +91,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
         "cereal/messaging",
         "msgq",
         "msgq_repo/msgq",
+        "selfdrive/modeld/models",
         "selfdrive/pandad",
         "selfdrive/locationd",
         "selfdrive/controls/lib/lateral_mpc_lib",
@@ -109,6 +110,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
     FILES_TO_COPY = [
         "common/params_pyx.so",
         "common/transformations/transformations.so",
+        "selfdrive/ui/ui",
         "sunnypilot/modeld/libthneed.so",
         "sunnypilot/modeld/runners/thneedmodel_pyx.cpp",
         "sunnypilot/modeld/runners/thneedmodel_pyx.so",
@@ -138,11 +140,6 @@ with tempfile.TemporaryDirectory() as tmpdir:
         for src in ui_translations_src.glob("*.qm"):
             copy_entry(f"selfdrive/ui/translations/{src.name}")
 
-    model_src = root_dir / "selfdrive/modeld/models"
-    model_dest = Path("selfdrive/modeld/models")
-    model_dest.mkdir(parents=True, exist_ok=True)
-    for src in model_src.glob("*.pkl"):
-        copy_entry(f"selfdrive/modeld/models/{src.name}")
 
 print("prebuilt assets synced")
 PY
