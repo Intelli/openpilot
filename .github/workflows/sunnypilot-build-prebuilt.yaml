@@ -231,15 +231,9 @@ jobs:
             mkdir -p sunnypilot/modeld/models
             cp "$GITHUB_WORKSPACE"/sunnypilot/modeld/models/supercombo.onnx sunnypilot/modeld/models/
           fi
-          PREBUILT_BASE="https://raw.githubusercontent.com/sunnypilot/sunnypilot/hkg-angle-steering-2025-prebuilt"
-          mkdir -p sunnypilot/modeld/runners
-          curl -fsSL "$PREBUILT_BASE/sunnypilot/modeld/libthneed.so" -o sunnypilot/modeld/libthneed.so
-          curl -fsSL "$PREBUILT_BASE/sunnypilot/modeld/runners/thneedmodel_pyx.cpp" -o sunnypilot/modeld/runners/thneedmodel_pyx.cpp
-          curl -fsSL "$PREBUILT_BASE/sunnypilot/modeld/runners/thneedmodel_pyx.so" -o sunnypilot/modeld/runners/thneedmodel_pyx.so
           python3 selfdrive/controls/lib/lateral_mpc_lib/lat_mpc.py
           python3 selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
           python3 opendbc_repo/opendbc/dbc/generator/generator.py
-          curl -fsSL "$PREBUILT_BASE/system/camerad/camerad" -o system/camerad/camerad
           touch ${BUILD_DIR}/prebuilt
           if [ "${{ runner.debug }}" = "1" ]; then
             ls -la ${BUILD_DIR}
