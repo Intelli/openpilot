@@ -101,8 +101,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
         "sunnypilot/modeld",
         "sunnypilot/modeld_v2",
         "sunnypilot/modeld/models",
+        "opendbc_repo/opendbc/dbc/generator",
     }
-    # "opendbc_repo/opendbc/dbc/generator",
 
     def copy_entry(rel_path: str):
         src = root_dir / rel_path
