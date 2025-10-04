@@ -232,8 +232,13 @@ jobs:
             cp "$GITHUB_WORKSPACE"/sunnypilot/modeld/models/supercombo.onnx sunnypilot/modeld/models/
           fi
           TMP_PREBUILT=$(mktemp -d)
-          curl -fsSL "https://codeload.github.com/sunnypilot/sunnypilot/tar.gz/refs/heads/hkg-angle-steering-2025-prebuilt" | tar -xz -C "$TMP_PREBUILT"
+          TARBALL_URL="https://codeload.github.com/sunnypilot/sunnypilot/tar.gz/refs/heads/hkg-angle-steering-2025-prebuilt"
+          curl -fsSL "$TARBALL_URL" | tar -xz -C "$TMP_PREBUILT"
           PREBUILT_DIR=$(find "$TMP_PREBUILT" -maxdepth 1 -type d -name 'sunnypilot-*' -print -quit)
+          if [ -z "$PREBUILT_DIR" ]; then
+            echo "Failed to extract prebuilt tarball" >&2
+            exit 1
+          fi
           for src in "$PREBUILT_DIR"/sunnypilot/modeld*; do
             [ -d "$src" ] || continue
             dest="sunnypilot/${src##*/}"
@@ -245,7 +250,7 @@ jobs:
           python3 selfdrive/controls/lib/lateral_mpc_lib/lat_mpc.py
           python3 selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
           python3 opendbc_repo/opendbc/dbc/generator/generator.py
-          # scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --external-sconscript=system/camerad/SConscript system/camerad/camerad
+          PREBUILT_BASE="https://raw.githubusercontent.com/sunnypilot/sunnypilot/hkg-angle-steering-2025-prebuilt"
           curl -fsSL "$PREBUILT_BASE/system/camerad/camerad" -o system/camerad/camerad
           find system/camerad -maxdepth 1 -type f -exec chmod 755 {} +
           find sunnypilot/modeld -maxdepth 2 -type f -name '*.so' -exec chmod 755 {} +
