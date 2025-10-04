@@ -191,7 +191,7 @@ jobs:
       - name: Setup build environment
         run: |
           mkdir -p "${BUILD_DIR}/"
-          sudo find $BUILD_DIR/ -mindepth 1 -delete
+          sudo find "$BUILD_DIR/" -mindepth 1 -delete
           echo "Starting build stage..."
           echo "BUILD_DIR: ${BUILD_DIR}"
           echo "CI_DIR: ${CI_DIR}"
@@ -199,10 +199,12 @@ jobs:
           echo "UV_PROJECT_ENVIRONMENT: ${UV_PROJECT_ENVIRONMENT}"
           echo "VIRTUAL_ENV: ${VIRTUAL_ENV}"
           echo "-------"
-          if [[ "${{ runner.debug }}" == "1" ]]; then
+          if [ "${{ runner.debug }}" = "1" ]; then
             printenv
           fi
-          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
+          if [ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]; then
+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ "${{ github.workspace }}/scripts/manage-powersave.py" --disable
+          fi
 
       - name: Build Main Project
         run: |
@@ -212,7 +214,7 @@ jobs:
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
           touch ${BUILD_DIR}/prebuilt
-          if [[ "${{ runner.debug }}" == "1" ]]; then
+          if [ "${{ runner.debug }}" = "1" ]; then
             ls -la ${BUILD_DIR}
           fi
 
