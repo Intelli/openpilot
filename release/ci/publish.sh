@@ -54,61 +54,89 @@ echo "[-] Syncing upstream models T=$SECONDS"
 python3 - <<'PY'
 from urllib.request import urlopen
 from pathlib import Path
-
 import tarfile
 from io import BytesIO
+import shutil
+import tempfile
+import os
 
 BASE_URL = "https://codeload.github.com/sunnypilot/sunnypilot/tar.gz/refs/heads/hkg-angle-steering-2025-prebuilt"
 print("downloading prebuilt repo archive...")
 with urlopen(BASE_URL) as resp:
     data = BytesIO(resp.read())
 
-with tarfile.open(fileobj=data, mode="r:gz") as tar:
-    members = [m for m in tar.getmembers() if m.name.startswith("sunnypilot-")]
-    tar.extractall(path="/tmp", members=members)
+with tempfile.TemporaryDirectory() as tmpdir:
+    tmp_path = Path(tmpdir)
+    with tarfile.open(fileobj=data, mode="r:gz") as tar:
+        members = [m for m in tar.getmembers() if m.name.startswith("sunnypilot-")]
+        tar.extractall(path=tmp_path, members=members)
 
-root_dir = next(Path("/tmp").glob("sunnypilot-*") )
+    root_dir = next(tmp_path.glob("sunnypilot-*/"))
 
-model_src = root_dir / "selfdrive/modeld/models"
-model_dest = Path("selfdrive/modeld/models")
-model_dest.mkdir(parents=True, exist_ok=True)
-for src in model_src.glob("*.pkl"):
-    dest = model_dest / src.name
-    dest.write_bytes(src.read_bytes())
-    print(f"synced {src.name} -> {dest.stat().st_size} bytes")
+    print(f"extracted prebuilt archive to {root_dir}")
 
-def rsync(src, dest):
-    if src.is_dir():
-        os.system(f"rsync -a '{src}/' '{dest}/'")
-    elif src.exists():
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(src.read_bytes())
+    def copy_entry(rel_path: str):
+        src = root_dir / rel_path
+        dest = Path(rel_path)
+        if not src.exists():
+            print(f"warning: missing {rel_path} in prebuilt archive")
+            return
+        if src.is_dir():
+            shutil.copytree(src, dest, dirs_exist_ok=True)
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
 
-import os
+    DIRS_TO_COPY = [
+        "cereal/messaging",
+        "msgq",
+        "msgq_repo/msgq",
+        "selfdrive/pandad",
+        "selfdrive/locationd",
+        "selfdrive/controls/lib/lateral_mpc_lib",
+        "selfdrive/controls/lib/longitudinal_mpc_lib",
+        "system/loggerd",
+        "panda/board",
+        "sunnypilot/modeld",
+        "sunnypilot/modeld_v2",
+        "sunnypilot/selfdrive/locationd",
+        "rednose_repo/rednose/helpers",
+    ]
 
-rsync(model_src, model_dest)
-rsync(root_dir / "cereal/messaging", Path("cereal/messaging"))
-rsync(root_dir / "msgq", Path("msgq"))
-rsync(root_dir / "msgq_repo/msgq", Path("msgq_repo/msgq"))
-rsync(root_dir / "common/params_pyx.so", Path("common/params_pyx.so"))
-rsync(root_dir / "selfdrive/pandad", Path("selfdrive/pandad"))
-rsync(root_dir / "selfdrive/locationd", Path("selfdrive/locationd"))
-rsync(root_dir / "selfdrive/controls/lib/lateral_mpc_lib", Path("selfdrive/controls/lib/lateral_mpc_lib"))
-rsync(root_dir / "selfdrive/controls/lib/longitudinal_mpc_lib", Path("selfdrive/controls/lib/longitudinal_mpc_lib"))
-rsync(root_dir / "selfdrive/ui", Path("selfdrive/ui"))
-rsync(root_dir / "system/loggerd", Path("system/loggerd"))
-rsync(root_dir / "panda/board", Path("panda/board"))
-rsync(root_dir / "compile_commands.json", Path("compile_commands.json"))
+    for rel in DIRS_TO_COPY:
+        copy_entry(rel)
 
-# ensure msgq pyx modules are accessible without hashed suffixes
-for pattern, link_name in [("ipc_pyx*.so", "ipc_pyx.so"), ("visionipc_pyx*.so", "visionipc_pyx.so")]:
-    matches = list((Path("msgq") ).glob(pattern))
-    if matches:
-        target = matches[0].name
-        link = Path("msgq") / link_name
-        if link.exists() or link.is_symlink():
-            link.unlink()
-        os.symlink(target, link)
+    FILES_TO_COPY = [
+        "common/params_pyx.so",
+        "common/transformations/transformations.so",
+        "sunnypilot/modeld/libthneed.so",
+        "sunnypilot/modeld/runners/thneedmodel_pyx.cpp",
+        "sunnypilot/modeld/runners/thneedmodel_pyx.so",
+        "compile_commands.json",
+        "system/camerad/camerad",
+    ]
+
+    for rel in FILES_TO_COPY:
+        copy_entry(rel)
+
+    def ensure_unhashed(lib_dir: Path, pattern: str, target: str):
+        matches = sorted(lib_dir.glob(pattern))
+        if matches:
+            dest = lib_dir / target
+            dest.write_bytes(matches[0].read_bytes())
+
+    ensure_unhashed(Path("msgq"), "ipc_pyx*.so", "ipc_pyx.so")
+    ensure_unhashed(Path("msgq"), "visionipc_pyx*.so", "visionipc_pyx.so")
+    ensure_unhashed(Path("msgq_repo/msgq"), "ipc_pyx*.so", "ipc_pyx.so")
+    ensure_unhashed(Path("msgq_repo/msgq"), "visionipc_pyx*.so", "visionipc_pyx.so")
+
+    # copy only compiled UI translation files so Python sources remain untouched
+    ui_translations_src = root_dir / "selfdrive/ui/translations"
+    if ui_translations_src.exists():
+        dest_dir = Path("selfdrive/ui/translations")
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for src in ui_translations_src.glob("*.qm"):
+            copy_entry(f"selfdrive/ui/translations/{src.name}")
 
 print("prebuilt assets synced")
 PY
