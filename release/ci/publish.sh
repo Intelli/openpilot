@@ -83,7 +83,6 @@ with tempfile.TemporaryDirectory() as tmpdir:
         ".pxi",
         ".c",
         ".cc",
-        ".cpp",
         ".cxx",
         ".h",
         ".hpp",
