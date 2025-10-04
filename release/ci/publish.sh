@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
     # When set to 1, we keep locally built artifacts and only fill in gaps.
     # When set to 0, upstream prebuilts always overwrite local build outputs.
-    DISABLE_UPSTREAM_OVERWRITES = 0
+    DISABLE_UPSTREAM_OVERWRITES = 1
 
     FORCE_UPSTREAM_OVERWRITES = {
         "selfdrive/modeld/models",
