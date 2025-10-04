@@ -213,6 +213,9 @@ jobs:
           cd $BUILD_DIR
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
+          python3 selfdrive/controls/lib/lateral_mpc_lib/lat_mpc.py
+          python3 selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
+          python3 opendbc_repo/opendbc/dbc/generator/generator.py
           touch ${BUILD_DIR}/prebuilt
           if [ "${{ runner.debug }}" = "1" ]; then
             ls -la ${BUILD_DIR}
@@ -277,8 +280,8 @@ jobs:
       - name: Re-enable powersave
         if: always()
         run: |
-          if [[ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]]; then
-            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
+          if [ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]; then
+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ "${{ github.workspace }}/scripts/manage-powersave.py" --enable
           fi
 
 

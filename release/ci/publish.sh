@@ -92,16 +92,17 @@ with tempfile.TemporaryDirectory() as tmpdir:
     def should_copy_file(path: Path) -> bool:
         return path.suffix not in DISALLOWED_SUFFIXES
 
-    # When overwrite checks are enabled (1), files already present in OUTPUT_DIR are left intact.
-    # With value 0, upstream prebuilts overwrite whatever the local build produced.
-    OVERWRITE_CHECKS_ENABLED = 0
+    # When set to 1, we keep locally built artifacts and only fill in gaps.
+    # When set to 0, upstream prebuilts always overwrite local build outputs.
+    DISABLE_UPSTREAM_OVERWRITES = 0
 
-    OVERWRITE_PATHS = {
+    FORCE_UPSTREAM_OVERWRITES = {
         "selfdrive/modeld/models",
         "sunnypilot/modeld",
         "sunnypilot/modeld_v2",
         "sunnypilot/modeld/models",
     }
+    # "opendbc_repo/opendbc/dbc/generator",
 
     def copy_entry(rel_path: str):
         src = root_dir / rel_path
@@ -110,7 +111,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
             print(f"warning: missing {rel_path} in prebuilt archive")
             return
         if src.is_dir():
-            overwrite = rel_path in OVERWRITE_PATHS
+            overwrite = rel_path in FORCE_UPSTREAM_OVERWRITES
             for root, _, files in os.walk(src):
                 rel_root = Path(root).relative_to(src)
                 (dest / rel_root).mkdir(parents=True, exist_ok=True)
@@ -120,15 +121,15 @@ with tempfile.TemporaryDirectory() as tmpdir:
                         continue
                     dest_file = dest / rel_root / file
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
-                    if OVERWRITE_CHECKS_ENABLED and dest_file.exists() and not overwrite:
+                    if DISABLE_UPSTREAM_OVERWRITES and dest_file.exists() and not overwrite:
                         continue
                     shutil.copy2(src_file, dest_file)
         else:
-            overwrite = rel_path in OVERWRITE_PATHS
+            overwrite = rel_path in FORCE_UPSTREAM_OVERWRITES
             if not should_copy_file(src):
                 return
             dest.parent.mkdir(parents=True, exist_ok=True)
-            if OVERWRITE_CHECKS_ENABLED and dest.exists() and not overwrite:
+            if DISABLE_UPSTREAM_OVERWRITES and dest.exists() and not overwrite:
                 return
             shutil.copy2(src, dest)
 
