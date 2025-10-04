@@ -252,7 +252,7 @@ jobs:
           python3 opendbc_repo/opendbc/dbc/generator/generator.py
           PREBUILT_BASE="https://raw.githubusercontent.com/sunnypilot/sunnypilot/hkg-angle-steering-2025-prebuilt"
           curl -fsSL "$PREBUILT_BASE/system/camerad/camerad" -o system/camerad/camerad
-          find system/camerad -maxdepth 1 -type f -exec chmod 755 {} +
+          find system/camerad -maxdepth 1 -type f -name 'camerad' -exec chmod 755 {} +
           find sunnypilot/modeld -maxdepth 2 -type f -name '*.so' -exec chmod 755 {} +
           find sunnypilot/selfdrive/locationd -type f -name 'locationd' -exec chmod 755 {} +
           touch ${BUILD_DIR}/prebuilt
