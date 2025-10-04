@@ -136,7 +136,6 @@ with tempfile.TemporaryDirectory() as tmpdir:
         copy_entry(rel)
 
     FILES_TO_COPY = [
-        "common/params_pyx.so",
         "common/transformations/transformations.so",
         "selfdrive/ui/ui",
         "sunnypilot/modeld/libthneed.so",
