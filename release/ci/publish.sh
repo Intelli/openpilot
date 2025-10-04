@@ -92,6 +92,13 @@ with tempfile.TemporaryDirectory() as tmpdir:
     def should_copy_file(path: Path) -> bool:
         return path.suffix not in DISALLOWED_SUFFIXES
 
+    OVERWRITE_PATHS = {
+        "selfdrive/modeld/models",
+        "sunnypilot/modeld",
+        "sunnypilot/modeld_v2",
+        "sunnypilot/modeld/models",
+    }
+
     def copy_entry(rel_path: str):
         src = root_dir / rel_path
         dest = Path(rel_path)
@@ -99,6 +106,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
             print(f"warning: missing {rel_path} in prebuilt archive")
             return
         if src.is_dir():
+            overwrite = rel_path in OVERWRITE_PATHS
             for root, _, files in os.walk(src):
                 rel_root = Path(root).relative_to(src)
                 (dest / rel_root).mkdir(parents=True, exist_ok=True)
@@ -108,14 +116,15 @@ with tempfile.TemporaryDirectory() as tmpdir:
                         continue
                     dest_file = dest / rel_root / file
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
-                    if dest_file.exists():
+                    if dest_file.exists() and not overwrite:
                         continue
                     shutil.copy2(src_file, dest_file)
         else:
+            overwrite = rel_path in OVERWRITE_PATHS
             if not should_copy_file(src):
                 return
             dest.parent.mkdir(parents=True, exist_ok=True)
-            if dest.exists():
+            if dest.exists() and not overwrite:
                 return
             shutil.copy2(src, dest)
 
