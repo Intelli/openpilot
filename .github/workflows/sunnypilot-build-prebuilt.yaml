@@ -140,7 +140,6 @@ jobs:
           lfs: false
           ref: ${{ env.SOURCE_BRANCH }}
           repository: ${{ github.event.pull_request.head.repo.fork && github.event.pull_request.head.repo.full_name || github.repository }}
-
       - name: Configure Git LFS mirror
         run: |
           cd "$GITHUB_WORKSPACE"
@@ -192,7 +191,7 @@ jobs:
       - name: Setup build environment
         run: |
           mkdir -p "${BUILD_DIR}/"
-          find ${BUILD_DIR} -mindepth 1 -delete || true
+          sudo find $BUILD_DIR/ -mindepth 1 -delete
           echo "Starting build stage..."
           echo "BUILD_DIR: ${BUILD_DIR}"
           echo "CI_DIR: ${CI_DIR}"
@@ -203,39 +202,17 @@ jobs:
           if [[ "${{ runner.debug }}" == "1" ]]; then
             printenv
           fi
-          if [[ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]]; then
-            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
-          fi
+          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
 
       - name: Build Main Project
         run: |
-          ARCH=${ARCH:-$(uname -m)}
-          TERA_BUNDLE_DIR="$BUILD_DIR/third_party/acados/$ARCH"
-          export PYTHONPATH="$BUILD_DIR:$BUILD_DIR/third_party/acados"
-          export ACADOS_SOURCE_DIR="$BUILD_DIR/third_party/acados"
-          export ACADOS_PYTHON_INTERFACE_PATH="$BUILD_DIR/third_party/acados/acados_template"
-          export ACADOS_TEMPLATES_PATH="$BUILD_DIR/third_party/acados/acados_template"
-          export LD_LIBRARY_PATH="$BUILD_DIR/third_party/acados/${ARCH}/lib:$LD_LIBRARY_PATH"
-          export TERA_PATH="$TERA_BUNDLE_DIR/t_renderer"
-          export PATH="$BUILD_DIR/third_party/acados/bin:$PATH"
-          if [ -f "$TERA_PATH" ]; then
-            chmod +x "$TERA_PATH"
-          fi
+          export PYTHONPATH="$BUILD_DIR"
           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
-          cp "$GITHUB_WORKSPACE"/selfdrive/modeld/models/driving_vision.onnx selfdrive/modeld/models/
-          cp "$GITHUB_WORKSPACE"/selfdrive/modeld/models/driving_policy.onnx selfdrive/modeld/models/
-          if [ -f "$GITHUB_WORKSPACE"/sunnypilot/modeld/models/supercombo.onnx ]; then
-            mkdir -p sunnypilot/modeld/models
-            cp "$GITHUB_WORKSPACE"/sunnypilot/modeld/models/supercombo.onnx sunnypilot/modeld/models/
-          fi
-          python3 selfdrive/controls/lib/lateral_mpc_lib/lat_mpc.py
-          python3 selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
-          python3 opendbc_repo/opendbc/dbc/generator/generator.py
           touch ${BUILD_DIR}/prebuilt
-          if [ "${{ runner.debug }}" = "1" ]; then
+          if [[ "${{ runner.debug }}" == "1" ]]; then
             ls -la ${BUILD_DIR}
           fi
 
@@ -260,14 +237,28 @@ jobs:
 
       - name: Prepare Output
         run: |
-          if [ "${{ runner.debug }}" = "1" ]; then
-            echo "Preparing output directory"
-          fi
-          rm -rf ${OUTPUT_DIR}
+          sudo rm -rf ${OUTPUT_DIR}
           mkdir -p ${OUTPUT_DIR}
-          rsync -a${RUNNER_DEBUG:+v} \
-            --exclude='.git/' \
+          rsync -am${RUNNER_DEBUG:+v} \
+            --exclude='.sconsign.dblite' \
+            --exclude='*.a' \
+            --exclude='*.o' \
+            --exclude='*.os' \
+            --exclude='*.pyc' \
+            --exclude='moc_*' \
+            --exclude='*.cc' \
+            --exclude='supercombo.onnx' \
+            --exclude='**/.github/' \
+            --exclude='**/__pycache__/' \
+            --exclude='**/selfdrive/ui/*.h' \
+            --exclude='**/selfdrive/ui/**/*.h' \
             --exclude='${{env.SCONS_CACHE_DIR}}' \
+            --exclude='**/.git/' \
+            --exclude='**/SConstruct' \
+            --exclude='**/SConscript' \
+            --exclude='**/.venv/' \
+            --delete-excluded \
+            --chown=comma:comma \
             ${BUILD_DIR}/ ${OUTPUT_DIR}/
 
       - name: 'Tar.gz files'
