@@ -118,7 +118,7 @@ jobs:
     concurrency:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
-    runs-on: ubuntu-22.04-arm64
+    runs-on: macos-latest
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}
@@ -141,11 +141,13 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3-venv git-lfs
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements_openpilot.txt
+          brew update
+          brew install git-lfs || true
+          git lfs install --local
+          ./tools/mac_setup.sh
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
+          pip3 install -r requirements_openpilot.txt
       - name: Configure Git LFS mirror
         run: |
           cd "$GITHUB_WORKSPACE"
