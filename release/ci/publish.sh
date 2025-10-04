@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
     # When set to 1, we keep locally built artifacts and only fill in gaps.
     # When set to 0, upstream prebuilts always overwrite local build outputs.
-    DISABLE_UPSTREAM_OVERWRITES = 1
+    DISABLE_UPSTREAM_OVERWRITES = 0
 
     FORCE_UPSTREAM_OVERWRITES = {
         "selfdrive/modeld/models",
@@ -102,6 +102,10 @@ with tempfile.TemporaryDirectory() as tmpdir:
         "sunnypilot/modeld_v2",
         "sunnypilot/modeld/models",
         "opendbc_repo/opendbc/dbc/generator",
+    }
+    PROTECTED_FILES = {
+        Path("common/params_pyx.so"),
+        Path("common/transformations/transformations.so"),
     }
 
     def copy_entry(rel_path: str):
@@ -121,6 +125,9 @@ with tempfile.TemporaryDirectory() as tmpdir:
                         continue
                     dest_file = dest / rel_root / file
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    rel_target = Path(rel_path) / rel_root / file
+                    if rel_target in PROTECTED_FILES:
+                        continue
                     if DISABLE_UPSTREAM_OVERWRITES and dest_file.exists() and not overwrite:
                         continue
                     shutil.copy2(src_file, dest_file)
@@ -129,6 +136,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
             if not should_copy_file(src):
                 return
             dest.parent.mkdir(parents=True, exist_ok=True)
+            if Path(rel_path) in PROTECTED_FILES:
+                return
             if DISABLE_UPSTREAM_OVERWRITES and dest.exists() and not overwrite:
                 return
             shutil.copy2(src, dest)
