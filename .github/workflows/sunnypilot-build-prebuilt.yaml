@@ -241,6 +241,7 @@ jobs:
             rsync -a "$src/" "$dest/"
           done
           rsync -a "$PREBUILT_DIR/sunnypilot/selfdrive/locationd/" sunnypilot/selfdrive/locationd/
+          rm -rf "$TMP_PREBUILT"
           python3 selfdrive/controls/lib/lateral_mpc_lib/lat_mpc.py
           python3 selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
           python3 opendbc_repo/opendbc/dbc/generator/generator.py
