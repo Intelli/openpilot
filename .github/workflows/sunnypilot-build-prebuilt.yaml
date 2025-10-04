@@ -118,9 +118,7 @@ jobs:
     concurrency:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
-    runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/sunnypilot/sunnypilot-prebuilt:latest
+    runs-on: ubuntu-22.04-arm64
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}
@@ -140,6 +138,14 @@ jobs:
           lfs: false
           ref: ${{ env.SOURCE_BRANCH }}
           repository: ${{ github.event.pull_request.head.repo.fork && github.event.pull_request.head.repo.full_name || github.repository }}
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-venv git-lfs
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements_openpilot.txt
       - name: Configure Git LFS mirror
         run: |
           cd "$GITHUB_WORKSPACE"
@@ -213,6 +219,8 @@ jobs:
           cd $BUILD_DIR
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
+          # python3 selfdrive/controls/lib/lateral_mpc_lib/lat_mpc.py
+          # python3 selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
           python3 opendbc_repo/opendbc/dbc/generator/generator.py
           touch ${BUILD_DIR}/prebuilt
           if [ "${{ runner.debug }}" = "1" ]; then
