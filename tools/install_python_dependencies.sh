@@ -20,7 +20,11 @@ echo "updating uv..."
 uv self update || true
 
 echo "installing python packages..."
-uv sync --frozen --all-extras
+SYNC_FLAGS=(--frozen --all-extras)
+if [[ "${UV_NO_DEARPYGUI:-}" == "1" ]]; then
+  SYNC_FLAGS=(--frozen)
+fi
+uv sync "${SYNC_FLAGS[@]}"
 source .venv/bin/activate
 
 if [[ "$(uname)" == 'Darwin' ]]; then

@@ -199,7 +199,7 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
           echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
-          uv sync --frozen
+          uv sync --frozen --no-dev
           mkdir -p "${BUILD_DIR}/"
           sudo find "$BUILD_DIR/" -mindepth 1 -delete
           echo "Starting build stage..."
