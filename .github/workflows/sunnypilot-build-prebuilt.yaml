@@ -145,7 +145,7 @@ jobs:
           export HOMEBREW_NO_AUTO_UPDATE=1
           brew install git-lfs || true
           git lfs install --local
-          SKIP_MAC_PY_DEPS=1 UV_SYNC_FLAGS="--frozen" ./tools/mac_setup.sh
+          SKIP_MAC_PY_DEPS=1 ./tools/mac_setup.sh
 
       - name: Configure Git LFS mirror
         run: |
