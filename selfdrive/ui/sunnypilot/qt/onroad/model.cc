@@ -59,8 +59,8 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   bool rainbow = Params().getBool("RainbowMode");
   float a_ego = sm["carState"].getCarState().getAEgo();
   bool hands_on_wheel = sm["carState"].getCarState().getSteeringPressed();
-  constexpr float accel_start_threshold = 0.24f;
-  constexpr float accel_stop_threshold = 0.14f;
+  constexpr float accel_start_threshold = 0.25f;
+  constexpr float accel_stop_threshold = 0.15f;
   constexpr float accel_fade_in_seconds = 0.5f;
   constexpr float accel_fade_out_seconds = 1.0f;
   constexpr float hands_on_transition_seconds = 0.5f;
