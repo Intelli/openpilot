@@ -23,9 +23,6 @@ uv self update || true
 
 UV_SYNC_FLAGS=${UV_SYNC_FLAGS:-"--frozen --all-extras"}
 echo "installing python packages with uv sync $UV_SYNC_FLAGS"
-
-# Build argv array from flags so we can safely append optional parameters.
-read -r -a UV_SYNC_ARGS <<< "$UV_SYNC_FLAGS"
 # The mac setup script injects a sitecustomize module through PYTHONPATH to
 # normalize platform.machine() for environment markers when running on
 # Apple Silicon. Make sure we retain that behavior if PYTHONPATH is already
@@ -36,14 +33,8 @@ fi
 
 if [[ -n "$UV_EXCLUDE_PACKAGES" ]]; then
   echo "excluding packages: $UV_EXCLUDE_PACKAGES"
-  IFS=',' read -r -a UV_EXCLUDE_ARRAY <<< "${UV_EXCLUDE_PACKAGES// /,}"
-  for pkg in "${UV_EXCLUDE_ARRAY[@]}"; do
-    if [[ -n "$pkg" ]]; then
-      UV_SYNC_ARGS+=("--no-install-package" "$pkg")
-    fi
-  done
 fi
-uv sync "${UV_SYNC_ARGS[@]}"
+uv sync $UV_SYNC_FLAGS
 source .venv/bin/activate
 
 if [[ "$(uname)" == 'Darwin' ]]; then
