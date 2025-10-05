@@ -145,7 +145,7 @@ jobs:
           export HOMEBREW_NO_AUTO_UPDATE=1
           brew install git-lfs || true
           git lfs install --local
-          SKIP_MAC_PY_DEPS=0 UV_EXCLUDE_PACKAGES="metadrive-simulator" ./tools/mac_setup.sh
+          SKIP_MAC_PY_DEPS=1 UV_SYNC_FLAGS="--frozen" ./tools/mac_setup.sh
 
       - name: Configure Git LFS mirror
         run: |
@@ -210,8 +210,9 @@ jobs:
           if [ "${{ runner.debug }}" = "1" ]; then
             printenv
           fi
-          # manage-powersave.py is Linux-specific; skip on macOS
-          echo "Skipping manage-powersave.py on macOS"
+          if [ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]; then
+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ "${{ github.workspace }}/scripts/manage-powersave.py" --disable
+          fi
 
       - name: Build Main Project
         run: |

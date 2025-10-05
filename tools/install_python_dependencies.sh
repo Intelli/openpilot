@@ -3,8 +3,6 @@ set -e
 
 # Increase the pip timeout to handle TimeoutError
 export PIP_DEFAULT_TIMEOUT=200
-export UV_NO_VERIFY=1
-export UV_INSTALL_SKIP_HASH_CHECK=1
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 ROOT="$DIR"/../
@@ -23,17 +21,6 @@ uv self update || true
 
 UV_SYNC_FLAGS=${UV_SYNC_FLAGS:-"--frozen --all-extras"}
 echo "installing python packages with uv sync $UV_SYNC_FLAGS"
-# The mac setup script injects a sitecustomize module through PYTHONPATH to
-# normalize platform.machine() for environment markers when running on
-# Apple Silicon. Make sure we retain that behavior if PYTHONPATH is already
-# set by the caller.
-if [[ -n "$PYTHONPATH" ]]; then
-  export PYTHONPATH="$PYTHONPATH"
-fi
-
-if [[ -n "$UV_EXCLUDE_PACKAGES" ]]; then
-  echo "excluding packages: $UV_EXCLUDE_PACKAGES"
-fi
 uv sync $UV_SYNC_FLAGS
 source .venv/bin/activate
 
