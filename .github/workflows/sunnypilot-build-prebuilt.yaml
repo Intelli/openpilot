@@ -191,14 +191,6 @@ jobs:
 
       - name: Setup build environment
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-venv python3-pip curl
-          python3 -m venv ${UV_PROJECT_ENVIRONMENT}
-          source ${UV_PROJECT_ENVIRONMENT}/bin/activate
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          export PATH="$HOME/.local/bin:$PATH"
-          echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
-          uv sync --frozen --all-extras
           mkdir -p "${BUILD_DIR}/"
           sudo find "$BUILD_DIR/" -mindepth 1 -delete
           echo "Starting build stage..."
