@@ -30,7 +30,7 @@ index dde290d5c5..6e8850e2fd 100644
      - name: Build and Push docker image
        run: |
 diff --git b/.github/workflows/sunnypilot-build-prebuilt.yaml a/.github/workflows/sunnypilot-build-prebuilt.yaml
-index 00ae1e28bf..8c24ec510b 100644
+index 00ae1e28bf..285b5294ec 100644
 --- b/.github/workflows/sunnypilot-build-prebuilt.yaml
 +++ a/.github/workflows/sunnypilot-build-prebuilt.yaml
 @@ -5,18 +5,17 @@ env:
@@ -129,7 +129,7 @@ index 00ae1e28bf..8c24ec510b 100644
      outputs:
        new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
        version: ${{ needs.prepare_strategy.outputs.version }}
-@@ -119,22 +131,22 @@ jobs:
+@@ -119,22 +131,39 @@ jobs:
        needs.prepare_strategy.result == 'success' &&
        (needs.validate_tests.result == 'success' || needs.validate_tests.result == 'skipped') &&
        (!contains(github.event_name, 'pull_request') ||
@@ -140,10 +140,27 @@ index 00ae1e28bf..8c24ec510b 100644
        - uses: actions/checkout@v4
          with:
            submodules: recursive
-+          lfs: true
++          lfs: false
            ref: ${{ env.SOURCE_BRANCH }}
            repository: ${{ github.event.pull_request.head.repo.fork && github.event.pull_request.head.repo.full_name || github.repository }}
 -      - run: git lfs pull
++      - name: Configure Git LFS mirror
++        run: |
++          cd "$GITHUB_WORKSPACE"
++          echo "Using workspace: $GITHUB_WORKSPACE"
++          pwd
++          ls -a
++          git config --global --add safe.directory "$GITHUB_WORKSPACE"
++          git rev-parse --is-inside-work-tree
++          git lfs install --local
++          git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
++
++      - name: Fetch LFS objects from GitLab
++        run: |
++          cd "$GITHUB_WORKSPACE"
++          git config --global --add safe.directory "$GITHUB_WORKSPACE"
++          git rev-parse --is-inside-work-tree
++          git lfs pull --exclude="" --include=""
  
        - name: Cache SCons
          uses: actions/cache@v4
@@ -156,7 +173,7 @@ index 00ae1e28bf..8c24ec510b 100644
            #   for security. Only caches from the default branch are shared across all builds. This is by design and cannot be overridden.
            restore-keys: |
              scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}
-@@ -143,12 +155,13 @@ jobs:
+@@ -143,12 +172,13 @@ jobs:
  
        - name: Set environment variables
          id: set-env
@@ -171,69 +188,110 @@ index 00ae1e28bf..8c24ec510b 100644
            # Set up common environment
            source /etc/profile;
            export UV_PROJECT_ENVIRONMENT=${HOME}/venv
-@@ -161,7 +174,7 @@ jobs:
+@@ -161,7 +191,7 @@ jobs:
        - name: Setup build environment
          run: |
            mkdir -p "${BUILD_DIR}/"
 -          sudo find $BUILD_DIR/ -mindepth 1 -delete
-+          find ${BUILD_DIR} -mindepth 1 -delete || true
++          sudo find "$BUILD_DIR/" -mindepth 1 -delete
            echo "Starting build stage..."
            echo "BUILD_DIR: ${BUILD_DIR}"
            echo "CI_DIR: ${CI_DIR}"
-@@ -172,7 +185,9 @@ jobs:
-           if [[ "${{ runner.debug }}" == "1" ]]; then
+@@ -169,10 +199,12 @@ jobs:
+           echo "UV_PROJECT_ENVIRONMENT: ${UV_PROJECT_ENVIRONMENT}"
+           echo "VIRTUAL_ENV: ${VIRTUAL_ENV}"
+           echo "-------"
+-          if [[ "${{ runner.debug }}" == "1" ]]; then
++          if [ "${{ runner.debug }}" = "1" ]; then
              printenv
            fi
 -          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
-+          if [[ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]]; then
-+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
++          if [ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]; then
++            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ "${{ github.workspace }}/scripts/manage-powersave.py" --disable
 +          fi
  
        - name: Build Main Project
          run: |
-@@ -182,13 +197,16 @@ jobs:
+@@ -181,22 +213,36 @@ jobs:
+           cd $BUILD_DIR
            sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
            scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
++          python3 opendbc_repo/opendbc/dbc/generator/generator.py
            touch ${BUILD_DIR}/prebuilt
 -          if [[ "${{ runner.debug }}" == "1" ]]; then
 +          if [ "${{ runner.debug }}" = "1" ]; then
              ls -la ${BUILD_DIR}
            fi
  
++      - name: Cleanup build artifacts
++        run: |
++          if [ "${{ runner.debug }}" = "1" ]; then
++            echo "Cleaning up build artifacts"
++          fi
++          cd $BUILD_DIR
++          find . -name '*.a' -delete || true
++          find . -name '*.o' -delete || true
++          find . -name '*.os' -delete || true
++          find . -name '*.pyc' -delete || true
++          find . -name 'moc_*' -delete || true
++          rm -rf .sconsign.dblite Jenkinsfile release/ || true
++          rm -rf third_party/x86*/ third_party/*Darwin*/ || true
++
++      - name: Restore third_party
++        run: |
++          cd $BUILD_DIR
++          git checkout -- third_party/ || true
++
        - name: Prepare Output
          run: |
--          sudo rm -rf ${OUTPUT_DIR}
-+          if [ "${{ runner.debug }}" = "1" ]; then
-+            echo "Preparing output directory"
-+          fi
-+          rm -rf ${OUTPUT_DIR}
+           sudo rm -rf ${OUTPUT_DIR}
            mkdir -p ${OUTPUT_DIR}
            rsync -am${RUNNER_DEBUG:+v} \
-             --include='**/panda/board/' \
-@@ -223,7 +241,6 @@ jobs:
-             --exclude='**/SConscript' \
-             --exclude='**/.venv/' \
-             --delete-excluded \
--            --chown=comma:comma \
-             ${BUILD_DIR}/ ${OUTPUT_DIR}/
- 
-       - name: 'Tar.gz files'
-@@ -240,9 +257,11 @@ jobs:
+-            --include='**/panda/board/' \
+-            --include='**/panda/board/obj' \
+-            --include='**/panda/board/obj/panda.bin.signed' \
+-            --include='**/panda/board/obj/panda_h7.bin.signed' \
+-            --include='**/panda/board/obj/bootstub.panda.bin' \
+-            --include='**/panda/board/obj/bootstub.panda_h7.bin' \
+             --exclude='.sconsign.dblite' \
+             --exclude='*.a' \
+             --exclude='*.o' \
+@@ -204,19 +250,11 @@ jobs:
+             --exclude='*.pyc' \
+             --exclude='moc_*' \
+             --exclude='*.cc' \
+-            --exclude='Jenkinsfile' \
+             --exclude='supercombo.onnx' \
+-            --exclude='**/panda/board/*' \
+-            --exclude='**/panda/board/obj/**' \
+-            --exclude='**/panda/certs/' \
+-            --exclude='**/panda/crypto/' \
+-            --exclude='**/release/' \
+             --exclude='**/.github/' \
+-            --exclude='**/selfdrive/ui/replay/' \
+             --exclude='**/__pycache__/' \
+             --exclude='**/selfdrive/ui/*.h' \
+             --exclude='**/selfdrive/ui/**/*.h' \
+-            --exclude='**/selfdrive/ui/qt/offroad/sunnypilot/' \
+             --exclude='${{env.SCONS_CACHE_DIR}}' \
+             --exclude='**/.git/' \
+             --exclude='**/SConstruct' \
+@@ -240,9 +278,11 @@ jobs:
        - name: Re-enable powersave
          if: always()
          run: |
 -          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
 -  
 -  
-+          if [[ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]]; then
-+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
++          if [ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]; then
++            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ "${{ github.workspace }}/scripts/manage-powersave.py" --enable
 +          fi
 +
 +
    publish:
      concurrency:
        # We do a bit of a hack here to avoid canceling the publishing job if a new commit comes in while we're publishing by adding the sha to the group name.
-@@ -279,12 +298,17 @@ jobs:
+@@ -279,12 +319,17 @@ jobs:
            echo '${{ toJSON(needs.build.outputs) }}'
            ls -la ${{ env.OUTPUT_DIR }}
  
@@ -252,7 +310,7 @@ index 00ae1e28bf..8c24ec510b 100644
              "${{ needs.build.outputs.extra_version_identifier }}"
  
            echo ""
-@@ -293,7 +317,7 @@ jobs:
+@@ -293,7 +338,7 @@ jobs:
            echo "1. Go to: ${{ github.server_url }}/${{ github.repository }}/settings/variables/actions/AUTO_DEPLOY_PREBUILT_BRANCHES"
            echo "2. Current value: ${{ vars.AUTO_DEPLOY_PREBUILT_BRANCHES }}"
            echo "3. Update as needed (JSON array with no spaces)"
@@ -261,7 +319,7 @@ index 00ae1e28bf..8c24ec510b 100644
        - name: Tag ${{ needs.prepare_strategy.outputs.environment }}
          if: ${{ needs.prepare_strategy.outputs.is_stable_branch == 'true' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')) }}
          run: |
-@@ -301,38 +325,6 @@ jobs:
+@@ -301,38 +346,6 @@ jobs:
              git tag -f -a ${TAG} -m "${{ needs.prepare_strategy.outputs.environment }} @ ${{ needs.prepare_strategy.outputs.version }} of build ${{ needs.build.outputs.build }}."
              git push -f origin ${TAG}
  
@@ -300,3 +358,194 @@ index 00ae1e28bf..8c24ec510b 100644
    manage-pr-labels:
      name: Remove prebuilt label
      runs-on: ubuntu-latest
+diff --git b/release/ci/docker_common_sp.sh a/release/ci/docker_common_sp.sh
+index e8f515762a..bf49e39bce 100755
+--- b/release/ci/docker_common_sp.sh
++++ a/release/ci/docker_common_sp.sh
+@@ -2,14 +2,14 @@ if [ "$1" = "base" ]; then
+   export DOCKER_IMAGE=sunnypilot-base
+   export DOCKER_FILE=Dockerfile.sunnypilot_base
+ elif [ "$1" = "prebuilt" ]; then
+-  export DOCKER_IMAGE=sunnypilot-prebuilt
++  export DOCKER_IMAGE=intelli-openpilot-prebuilt
+   export DOCKER_FILE=Dockerfile.sunnypilot
+ else
+   echo "Invalid docker build image: '$1'"
+   exit 1
+ fi
+ 
+-export DOCKER_REGISTRY=ghcr.io/sunnypilot
++export DOCKER_REGISTRY=ghcr.io/intelli
+ export COMMIT_SHA=$(git rev-parse HEAD)
+ 
+ TAG_SUFFIX=$2
+diff --git b/release/ci/publish.sh a/release/ci/publish.sh
+index 4aecbacc4a..f3fffc00c0 100755
+--- b/release/ci/publish.sh
++++ a/release/ci/publish.sh
+@@ -39,6 +39,165 @@ echo "#define COMMA_VERSION \"$VERSION\"" > ${OUTPUT_DIR}/common/version.h
+ echo "[-] Setting up repo T=$SECONDS"
+ cd $OUTPUT_DIR
+ git init
++git lfs install --local
++git lfs track "*.pkl"
++git config lfs.skipSmudge 1
++git config lfs.fetchrecentrefsdays 3650
++git config lfs.fetchrecentcommitsdays 3650
++git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
++git config lfs.https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git.locksverify false
++
++# allow PKL artifacts to be stored directly in git to avoid LFS push failures
++sed -i '/^\*\.pkl filter=lfs/d' .gitattributes
++
++echo "[-] Syncing upstream models T=$SECONDS"
++python3 - <<'PY'
++from urllib.request import urlopen
++from pathlib import Path
++import tarfile
++from io import BytesIO
++import shutil
++import tempfile
++import os
++
++BASE_URL = "https://codeload.github.com/sunnypilot/sunnypilot/tar.gz/refs/heads/hkg-angle-steering-2025-prebuilt"
++print("downloading prebuilt repo archive...")
++with urlopen(BASE_URL) as resp:
++    data = BytesIO(resp.read())
++
++with tempfile.TemporaryDirectory() as tmpdir:
++    tmp_path = Path(tmpdir)
++    with tarfile.open(fileobj=data, mode="r:gz") as tar:
++        members = [m for m in tar.getmembers() if m.name.startswith("sunnypilot-")]
++        tar.extractall(path=tmp_path, members=members)
++
++    root_dir = next(tmp_path.glob("sunnypilot-*/"))
++
++    print(f"extracted prebuilt archive to {root_dir}")
++
++    DISALLOWED_SUFFIXES = {
++        ".py",
++        ".pyi",
++        ".pyx",
++        ".pxd",
++        ".pxi",
++        ".c",
++        ".cc",
++        ".cxx",
++        ".h",
++        ".hpp",
++        ".hh",
++    }
++
++    def should_copy_file(path: Path) -> bool:
++        return path.suffix not in DISALLOWED_SUFFIXES
++
++    # When set to 1, we keep locally built artifacts and only fill in gaps.
++    # When set to 0, upstream prebuilts always overwrite local build outputs.
++    DISABLE_UPSTREAM_OVERWRITES = 0
++
++    FORCE_UPSTREAM_OVERWRITES = {
++        "selfdrive/modeld/models",
++        "sunnypilot/modeld",
++        "sunnypilot/modeld_v2",
++        "sunnypilot/modeld/models",
++        "opendbc_repo/opendbc/dbc/generator",
++    }
++    PROTECTED_FILES = {
++        Path("common/params_pyx.so"),
++        Path("common/transformations/transformations.so"),
++    }
++
++    def copy_entry(rel_path: str):
++        src = root_dir / rel_path
++        dest = Path(rel_path)
++        if not src.exists():
++            print(f"warning: missing {rel_path} in prebuilt archive")
++            return
++        if src.is_dir():
++            overwrite = rel_path in FORCE_UPSTREAM_OVERWRITES
++            for root, _, files in os.walk(src):
++                rel_root = Path(root).relative_to(src)
++                (dest / rel_root).mkdir(parents=True, exist_ok=True)
++                for file in files:
++                    src_file = Path(root) / file
++                    if not should_copy_file(src_file):
++                        continue
++                    dest_file = dest / rel_root / file
++                    dest_file.parent.mkdir(parents=True, exist_ok=True)
++                    rel_target = Path(rel_path) / rel_root / file
++                    if rel_target in PROTECTED_FILES:
++                        continue
++                    if DISABLE_UPSTREAM_OVERWRITES and dest_file.exists() and not overwrite:
++                        continue
++                    shutil.copy2(src_file, dest_file)
++        else:
++            overwrite = rel_path in FORCE_UPSTREAM_OVERWRITES
++            if not should_copy_file(src):
++                return
++            dest.parent.mkdir(parents=True, exist_ok=True)
++            if Path(rel_path) in PROTECTED_FILES:
++                return
++            if DISABLE_UPSTREAM_OVERWRITES and dest.exists() and not overwrite:
++                return
++            shutil.copy2(src, dest)
++
++    FILES_TO_COPY = [
++        "common/params_pyx.so",
++        "common/transformations/transformations.so",
++        "selfdrive/ui/ui",
++        "sunnypilot/modeld/libthneed.so",
++        "sunnypilot/modeld/runners/thneedmodel_pyx.cpp",
++        "sunnypilot/modeld/runners/thneedmodel_pyx.so",
++        "compile_commands.json",
++        "system/camerad/camerad",
++    ]
++
++    for rel in FILES_TO_COPY:
++        copy_entry(rel)
++
++    DIRS_TO_COPY = [
++        "cereal/messaging",
++        "msgq",
++        "msgq_repo/msgq",
++        "selfdrive/modeld/models",
++        "selfdrive/pandad",
++        "selfdrive/locationd",
++        "selfdrive/controls/lib/lateral_mpc_lib",
++        "selfdrive/controls/lib/longitudinal_mpc_lib",
++        "system/loggerd",
++        "panda/board",
++        "sunnypilot/modeld",
++        "sunnypilot/modeld_v2",
++        "sunnypilot/selfdrive/locationd",
++        "rednose_repo/rednose/helpers",
++    ]
++
++    for rel in DIRS_TO_COPY:
++        copy_entry(rel)
++
++    def ensure_unhashed(lib_dir: Path, pattern: str, target: str):
++        matches = sorted(lib_dir.glob(pattern))
++        if matches:
++            dest = lib_dir / target
++            dest.write_bytes(matches[0].read_bytes())
++
++    ensure_unhashed(Path("msgq"), "ipc_pyx*.so", "ipc_pyx.so")
++    ensure_unhashed(Path("msgq"), "visionipc_pyx*.so", "visionipc_pyx.so")
++    ensure_unhashed(Path("msgq_repo/msgq"), "ipc_pyx*.so", "ipc_pyx.so")
++    ensure_unhashed(Path("msgq_repo/msgq"), "visionipc_pyx*.so", "visionipc_pyx.so")
++
++    # copy only compiled UI translation files so Python sources remain untouched
++    ui_translations_src = root_dir / "selfdrive/ui/translations"
++    if ui_translations_src.exists():
++        dest_dir = Path("selfdrive/ui/translations")
++        dest_dir.mkdir(parents=True, exist_ok=True)
++        for src in ui_translations_src.glob("*.qm"):
++            copy_entry(f"selfdrive/ui/translations/{src.name}")
++
++
++print("prebuilt assets synced")
++PY
+ 
+ # set git username/password
+ #source /data/identity.sh
