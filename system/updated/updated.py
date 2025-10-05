@@ -446,12 +446,20 @@ def main() -> None:
         # ensure we have some params written soon after startup
         updater.set_params(False, update_failed_count, exception)
 
-        if not system_time_valid() or first_run:
+        user_request = wait_helper.user_request
+        manual_request = (user_request != UserRequest.NONE)
+
+        if first_run and not manual_request:
           first_run = False
           wait_helper.sleep(60)
           continue
 
-        user_request = wait_helper.user_request
+        first_run = False
+
+        if not system_time_valid() and not manual_request:
+          wait_helper.sleep(60)
+          continue
+
         if user_request == UserRequest.NONE:
           cloudlog.info("no manual update request; skipping automatic update attempt")
           wait_helper.sleep(60)
