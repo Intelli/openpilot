@@ -197,9 +197,8 @@ jobs:
 
       - name: Setup build environment
         run: |
-          BUILD_DIR=${BUILD_DIR:-$HOME/openpilot_build}
-          mkdir -p "$BUILD_DIR"
-          find "$BUILD_DIR" -mindepth 1 -delete || true
+          mkdir -p "${BUILD_DIR}/"
+          sudo find "$BUILD_DIR/" -mindepth 1 -delete
           echo "Starting build stage..."
           echo "BUILD_DIR: ${BUILD_DIR}"
           echo "CI_DIR: ${CI_DIR}"
@@ -216,7 +215,6 @@ jobs:
 
       - name: Build Main Project
         run: |
-          BUILD_DIR=${BUILD_DIR:-$HOME/openpilot_build}
           export PYTHONPATH="$BUILD_DIR"
           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
