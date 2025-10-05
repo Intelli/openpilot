@@ -212,11 +212,11 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     float alpha_boost = 0.08f * accel_visibility;
 
     constexpr float kTau = 6.283185307f;
-    auto smooth_cycle = [kTau, &wrap_unit](float phase) {
+    auto smooth_cycle = [&wrap_unit](float phase) {
       float wrapped = wrap_unit(phase);
       return 0.5f - 0.5f * std::cos(wrapped * kTau);
     };
-    auto seam_cycle = [kTau, &wrap_unit](float phase) {
+    auto seam_cycle = [&wrap_unit](float phase) {
       float wrapped = wrap_unit(phase + 0.5f);
       return 0.5f - 0.5f * std::cos(wrapped * kTau);
     };
