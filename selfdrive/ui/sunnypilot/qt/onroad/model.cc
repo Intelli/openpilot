@@ -58,13 +58,16 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
   bool rainbow = Params().getBool("RainbowMode");
   float a_ego = sm["carState"].getCarState().getAEgo();
+  bool hands_on_wheel = sm["carState"].getCarState().getSteeringPressed();
   constexpr float accel_start_threshold = 0.24f;
   constexpr float accel_stop_threshold = 0.14f;
   constexpr float accel_fade_in_seconds = 0.5f;
   constexpr float accel_fade_out_seconds = 1.0f;
+  constexpr float hands_on_transition_seconds = 0.5f;
   static float accel_presence = 0.0f;
   static bool accel_state = false;
   static auto last_accel_update = std::chrono::steady_clock::now();
+  static float rainbow_presence = 0.0f;
   if (!accel_state && a_ego >= accel_start_threshold) {
     accel_state = true;
   } else if (accel_state && a_ego <= accel_stop_threshold) {
@@ -96,6 +99,16 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   static auto last_frame_time = std::chrono::steady_clock::now();
   float frame_dt = std::chrono::duration<float>(now - last_frame_time).count();
   last_frame_time = now;
+
+  float target_rainbow_presence = (rainbow && !hands_on_wheel && hazard_mix <= 0.0f) ? 1.0f : 0.0f;
+  if (frame_dt > 0.0f) {
+    float transition_step = frame_dt / std::max(hands_on_transition_seconds, 1e-3f);
+    if (target_rainbow_presence > rainbow_presence) {
+      rainbow_presence = std::min(target_rainbow_presence, rainbow_presence + transition_step);
+    } else if (rainbow_presence > target_rainbow_presence) {
+      rainbow_presence = std::max(target_rainbow_presence, rainbow_presence - transition_step);
+    }
+  }
 
   constexpr float hazard_hold_seconds = 0.5f;
   constexpr float hazard_fade_seconds = 1.0f;
@@ -136,7 +149,20 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     return;
   }
 
-  if (rainbow) { // Kia EV9 "Ocean Blue" inspired gradient with subtle motion
+  const bool show_rainbow = rainbow;
+  if ((!show_rainbow && rainbow_presence <= 0.0f) || rainbow_presence <= 0.0f) {
+    ModelRenderer::drawPath(painter, model, surface_rect.height());
+    return;
+  }
+
+  if (rainbow_presence < 1.0f) {
+    painter.save();
+    painter.setOpacity(1.0f - rainbow_presence);
+    ModelRenderer::drawPath(painter, model, surface_rect.height());
+    painter.restore();
+  }
+
+  if (show_rainbow) { // Kia EV9 "Ocean Blue" inspired gradient with subtle motion
 
     struct GradientStop {
       float position;
@@ -282,9 +308,10 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       bg.setColorAt(position, final_color);
     }
 
+    painter.save();
+    painter.setOpacity(rainbow_presence);
     painter.setBrush(bg);
     painter.drawPolygon(track_vertices);
-  } else {
-    ModelRenderer::drawPath(painter, model, surface_rect.height());
+    painter.restore();
   }
 }
