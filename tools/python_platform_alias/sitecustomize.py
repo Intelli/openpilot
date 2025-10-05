@@ -45,9 +45,7 @@ def _patch_platform_machine(machine: str, alias: str) -> None:
 
     def uname_override() -> platform.uname_result:
       result = original_uname()
-      if getattr(result, "machine", None) == machine:
-        return result._replace(machine=alias)
-      return result
+      return _with_machine_override(result, machine, alias)
 
     platform.uname = uname_override  # type: ignore[assignment]
 
@@ -56,9 +54,7 @@ def _patch_platform_machine(machine: str, alias: str) -> None:
 
     def os_uname_override(*args, **kwargs) -> os.uname_result:
       result = original_os_uname(*args, **kwargs)
-      if getattr(result, "machine", None) == machine:
-        return result._replace(machine=alias)
-      return result
+      return _with_machine_override(result, machine, alias)
 
     os.uname = os_uname_override  # type: ignore[assignment]
 
@@ -73,5 +69,26 @@ def _apply_alias_if_needed() -> None:
 
 
 _apply_alias_if_needed()
+
+
+def _with_machine_override(result, machine: str, alias: str):
+  if getattr(result, "machine", None) != machine:
+    return result
+
+  if hasattr(result, "_replace"):
+    return result._replace(machine=alias)  # type: ignore[attr-defined]
+
+  try:
+    items = tuple(result)
+    if len(items) >= 5:
+      updated = (*items[:-1], alias)
+      try:
+        return type(result)(*updated)
+      except TypeError:
+        return updated
+  except Exception:
+    pass
+
+  return result
 
 
