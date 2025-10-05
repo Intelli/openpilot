@@ -69,15 +69,11 @@ export CPPFLAGS="$CPPFLAGS -I${BREW_PREFIX}/opt/openssl@3/include"
 export PYCURL_CURL_CONFIG=/usr/bin/curl-config
 export PYCURL_SSL_LIBRARY=openssl
 
-# install python dependencies unless explicitly skipped
-if [[ "$SKIP_MAC_PY_DEPS" != "1" ]]; then
-  export UV_NO_VERIFY=1
-  export UV_INSTALL_SKIP_HASH_CHECK=1
-  $DIR/install_python_dependencies.sh
-  echo "[ ] installed python dependencies t=$SECONDS"
-else
-  echo "[ ] skipping python dependency install (SKIP_MAC_PY_DEPS=1)"
-fi
+# install python dependencies
+export UV_NO_VERIFY=1
+export UV_INSTALL_SKIP_HASH_CHECK=1
+$DIR/install_python_dependencies.sh
+echo "[ ] installed python dependencies t=$SECONDS"
 
 # brew does not link qt5 by default
 # check if qt5 can be linked, if not, prompt the user to link it
