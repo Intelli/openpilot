@@ -6,6 +6,7 @@ env:
   CI_DIR: ${{ github.workspace }}/release/ci
   SCONS_CACHE_DIR: ${{ github.workspace }}/release/ci/scons_cache
   PUBLIC_REPO_URL: "https://github.com/Intelli/openpilot"
+  UV_NO_DEARPYGUI: "1"
 
   # Branch configurations
   STAGING_SOURCE_BRANCH: 'ev9'
@@ -198,7 +199,7 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
           echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
-          uv sync --frozen --groups "default" "testing"
+          uv sync --frozen
           mkdir -p "${BUILD_DIR}/"
           sudo find "$BUILD_DIR/" -mindepth 1 -delete
           echo "Starting build stage..."
