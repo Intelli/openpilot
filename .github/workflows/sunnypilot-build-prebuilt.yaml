@@ -119,9 +119,9 @@ jobs:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
     runs-on: ubuntu-22.04-arm
-    container:
-      image: ghcr.io/sunnypilot/sunnypilot-prebuilt:latest
-      options: --platform linux/amd64
+    #container:
+    #  image: ghcr.io/sunnypilot/sunnypilot-prebuilt:latest
+    #  options: --platform linux/amd64
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}
