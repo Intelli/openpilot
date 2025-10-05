@@ -14,7 +14,7 @@ index 10ead53774..609ea729c7 100644
        false,
      },
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 5d92838f8a..218a105db3 100644
+index 5d92838f8a..8090252e7a 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -7,6 +7,13 @@
@@ -37,8 +37,8 @@ index 5d92838f8a..218a105db3 100644
    bool rainbow = Params().getBool("RainbowMode");
 +  float a_ego = sm["carState"].getCarState().getAEgo();
 +  bool hands_on_wheel = sm["carState"].getCarState().getSteeringPressed();
-+  constexpr float accel_start_threshold = 0.24f;
-+  constexpr float accel_stop_threshold = 0.14f;
++  constexpr float accel_start_threshold = 0.25f;
++  constexpr float accel_stop_threshold = 0.15f;
 +  constexpr float accel_fade_in_seconds = 0.5f;
 +  constexpr float accel_fade_out_seconds = 1.0f;
 +  constexpr float hands_on_transition_seconds = 0.5f;
