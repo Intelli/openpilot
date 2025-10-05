@@ -14,7 +14,7 @@ index 10ead53774..609ea729c7 100644
        false,
      },
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 5d92838f8a..bd1050b70b 100644
+index 5d92838f8a..f614570bdf 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -7,6 +7,13 @@
@@ -194,11 +194,11 @@ index 5d92838f8a..bd1050b70b 100644
 +    float alpha_boost = 0.08f * accel_visibility;
 +
 +    constexpr float kTau = 6.283185307f;
-+    auto smooth_cycle = [kTau, &wrap_unit](float phase) {
++    auto smooth_cycle = [&wrap_unit](float phase) {
 +      float wrapped = wrap_unit(phase);
 +      return 0.5f - 0.5f * std::cos(wrapped * kTau);
 +    };
-+    auto seam_cycle = [kTau, &wrap_unit](float phase) {
++    auto seam_cycle = [&wrap_unit](float phase) {
 +      float wrapped = wrap_unit(phase + 0.5f);
 +      return 0.5f - 0.5f * std::cos(wrapped * kTau);
 +    };
