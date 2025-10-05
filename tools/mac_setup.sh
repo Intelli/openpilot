@@ -73,6 +73,11 @@ export PYCURL_SSL_LIBRARY=openssl
 if [[ "$SKIP_MAC_PY_DEPS" != "1" ]]; then
   export UV_NO_VERIFY=1
   export UV_INSTALL_SKIP_HASH_CHECK=1
+
+  # Ensure our sitecustomize shim participates in the Python interpreter's
+  # startup sequence so uv sees the patched platform.machine() value.
+  export PYTHONPATH="$DIR/python_platform_alias${PYTHONPATH:+:$PYTHONPATH}"
+
   $DIR/install_python_dependencies.sh
   echo "[ ] installed python dependencies t=$SECONDS"
 else
