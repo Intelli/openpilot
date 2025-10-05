@@ -97,7 +97,7 @@ jobs:
           cat $GITHUB_OUTPUT
 
   validate_tests:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04-arm
     needs: [ prepare_strategy ]
     if: ${{
       ((github.event_name == 'workflow_dispatch' && inputs.wait_for_tests) ||
@@ -118,7 +118,7 @@ jobs:
     concurrency:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04-arm
     container:
       image: ghcr.io/sunnypilot/sunnypilot-prebuilt:latest
     outputs:
@@ -292,7 +292,7 @@ jobs:
       cancel-in-progress: ${{ needs.prepare_strategy.outputs.cancel_publish_in_progress == 'true' }}
     if: ${{ (always() && !cancelled() && !failure()) && needs.build.result == 'success' && needs.prepare_strategy.result == 'success' && (!contains(github.event_name, 'pull_request') || (github.event.action == 'labeled' && github.event.label.name == 'prebuilt')) }}
     needs: [ build, prepare_strategy ]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04-arm
     environment: ${{ needs.prepare_strategy.outputs.environment }}
     steps:
       - uses: actions/checkout@v4
@@ -348,7 +348,7 @@ jobs:
 
   manage-pr-labels:
     name: Remove prebuilt label
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-arm
     if: (always() && contains(github.event_name, 'pull_request') && (github.event.action == 'labeled' && github.event.label.name == 'prebuilt'))
     env:
       LABEL: prebuilt
