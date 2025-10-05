@@ -1,13 +1,3 @@
-diff --git b/common/params_keys.h a/common/params_keys.h
-index cad02cb97a..9f3238ee2e 100644
---- b/common/params_keys.h
-+++ a/common/params_keys.h
-@@ -246,4 +246,5 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
-     {"HkgTuningAngleCustomLimitMaxSpeedKph", {PERSISTENT | BACKUP, INT, "32"}},
-     {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT | BACKUP, INT, "40"}},
-     {"HkgTuningOverridingCycles", {PERSISTENT | BACKUP, INT, "17"}},
-+    {"UploadsActive", {CLEAR_ON_MANAGER_START, BOOL}},
- };
 diff --git b/system/athena/athenad.py a/system/athena/athenad.py
 index 42c9cf8a1c..051145d0ad 100755
 --- b/system/athena/athenad.py
