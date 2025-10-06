@@ -86,6 +86,16 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
     cache_size -= f.stat().st_size
     f.unlink()
 
+  try:
+    from openpilot.common.params import Params
+
+    params = Params()
+    if params.get_bool("UsePrebuiltToggle"):
+      open(Path(BASEDIR) / "prebuilt", 'a').close()
+      params.put_bool("QuickBootPendingRebuild", False)
+  except Exception:
+    cloudlog.exception("failed to finalize quickboot state after build")
+
 
 if __name__ == "__main__":
   spinner = Spinner()
