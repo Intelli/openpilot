@@ -58,12 +58,10 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
   bool rainbow = Params().getBool("RainbowMode");
   float a_ego = sm["carState"].getCarState().getAEgo();
-  bool hands_on_wheel = sm["carState"].getCarState().getSteeringPressed();
   constexpr float accel_start_threshold = 0.25f;
   constexpr float accel_stop_threshold = 0.15f;
   constexpr float accel_fade_in_seconds = 0.5f;
   constexpr float accel_fade_out_seconds = 1.0f;
-  constexpr float hands_on_transition_seconds = 0.5f;
   static float accel_presence = 0.0f;
   static bool accel_state = false;
   static auto last_accel_update = std::chrono::steady_clock::now();
@@ -100,9 +98,10 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   float frame_dt = std::chrono::duration<float>(now - last_frame_time).count();
   last_frame_time = now;
 
-  float target_rainbow_presence = (rainbow && !hands_on_wheel && hazard_mix <= 0.0f) ? 1.0f : 0.0f;
+  constexpr float rainbow_transition_seconds = 0.5f;
+  float target_rainbow_presence = (rainbow && hazard_mix <= 0.0f) ? 1.0f : 0.0f;
   if (frame_dt > 0.0f) {
-    float transition_step = frame_dt / std::max(hands_on_transition_seconds, 1e-3f);
+    float transition_step = frame_dt / std::max(rainbow_transition_seconds, 1e-3f);
     if (target_rainbow_presence > rainbow_presence) {
       rainbow_presence = std::min(target_rainbow_presence, rainbow_presence + transition_step);
     } else if (rainbow_presence > target_rainbow_presence) {
@@ -150,7 +149,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   }
 
   const bool show_rainbow = rainbow;
-  if ((!show_rainbow && rainbow_presence <= 0.0f) || rainbow_presence <= 0.0f) {
+  if (rainbow_presence <= 0.0f) {
     ModelRenderer::drawPath(painter, model, surface_rect.height());
     return;
   }
