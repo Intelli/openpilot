@@ -1,17 +1,3 @@
-diff --git b/common/params_keys.h a/common/params_keys.h
-index 9f3238ee2e..97704f21ac 100644
---- b/common/params_keys.h
-+++ a/common/params_keys.h
-@@ -157,7 +157,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
-     {"ModelRunnerTypeCache", {CLEAR_ON_ONROAD_TRANSITION, INT}},
-     {"OffroadMode", {CLEAR_ON_MANAGER_START, BOOL}},
-     {"Offroad_TiciSupport", {CLEAR_ON_MANAGER_START, JSON}},
--    {"QuickBootToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
-+    {"UsePrebuiltToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
-+    {"QuickBootPendingRebuild", {PERSISTENT | BACKUP, BOOL, "0"}},
-     {"QuietMode", {PERSISTENT | BACKUP, BOOL, "0"}},
-     {"RainbowMode", {PERSISTENT | BACKUP, BOOL, "0"}},
-     {"ShowAdvancedControls", {PERSISTENT | BACKUP, BOOL, "0"}},
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
 index 9c36097f1b..eb7a5e2bca 100644
 --- b/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc

@@ -1,5 +1,5 @@
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 2d759abcdb..cc9a1bbfc6 100644
+index 2148a73494..cc9a1bbfc6 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -37,7 +37,7 @@ index 2d759abcdb..cc9a1bbfc6 100644
      {"BlinkerMinLateralControlSpeed", {PERSISTENT | BACKUP, INT, "20"}},  // MPH or km/h
      {"BlinkerPauseLateralControl", {PERSISTENT | BACKUP, INT, "0"}},
      {"Brightness", {PERSISTENT | BACKUP, INT, "0"}},
-@@ -153,16 +153,16 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -153,15 +153,16 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"InteractivityTimeout", {PERSISTENT | BACKUP, INT, "0"}},
      {"IsDevelopmentBranch", {CLEAR_ON_MANAGER_START, BOOL}},
      {"LastGPSPositionLLK", {PERSISTENT, STRING}},
@@ -46,8 +46,9 @@ index 2d759abcdb..cc9a1bbfc6 100644
      {"ModelRunnerTypeCache", {CLEAR_ON_ONROAD_TRANSITION, INT}},
      {"OffroadMode", {CLEAR_ON_MANAGER_START, BOOL}},
      {"Offroad_TiciSupport", {CLEAR_ON_MANAGER_START, JSON}},
-     {"UsePrebuiltToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
-     {"QuickBootPendingRebuild", {PERSISTENT | BACKUP, BOOL, "0"}},
+-    {"QuickBootToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
++    {"UsePrebuiltToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
++    {"QuickBootPendingRebuild", {PERSISTENT | BACKUP, BOOL, "0"}},
      {"QuietMode", {PERSISTENT | BACKUP, BOOL, "0"}},
 -    {"RainbowMode", {PERSISTENT | BACKUP, BOOL, "0"}},
 +    {"RainbowMode", {PERSISTENT | BACKUP, BOOL, "1"}},
@@ -57,7 +58,7 @@ index 2d759abcdb..cc9a1bbfc6 100644
  
      // MADS params
      {"Mads", {PERSISTENT | BACKUP, BOOL, "1"}},
-@@ -198,14 +198,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -197,14 +198,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"HyundaiLongitudinalTuning", {PERSISTENT | BACKUP, INT, "0"}},
  
      {"DynamicExperimentalControl", {PERSISTENT | BACKUP, BOOL, "0"}},
@@ -75,7 +76,7 @@ index 2d759abcdb..cc9a1bbfc6 100644
  
      // mapd
      {"MapAdvisorySpeedLimit", {CLEAR_ON_ONROAD_TRANSITION, FLOAT}},
-@@ -226,7 +226,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -225,7 +226,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"OsmStateTitle", {PERSISTENT, STRING}},
      {"OsmWayTest", {PERSISTENT, STRING}},
      {"RoadName", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
@@ -84,7 +85,7 @@ index 2d759abcdb..cc9a1bbfc6 100644
  
      // Speed Limit
      {"SpeedLimitMode", {PERSISTENT | BACKUP, INT, "1"}},
-@@ -241,8 +241,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -240,8 +241,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
  
      // Tuning keys
      {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
