@@ -7,7 +7,7 @@ index 787bd2dbe1..dee5604b78 100644
    def __init__(self, CP, CP_SP, CI):
      super().__init__(CP, CP_SP, CI)
 -    self.sat_check_min_speed = 5.
-+    self.sat_check_min_speed = 5.0 / 3.6  # 5 km/h
++    self.sat_check_min_speed = 2.5 / 3.6  # 2.5 km/h
      self.use_steer_limited_by_safety = CP.brand == "tesla"
  
    def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited):
