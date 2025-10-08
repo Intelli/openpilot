@@ -229,7 +229,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     };
 
     float accel_visibility = accel_presence;
-    float rainbow_speed_multiplier = accel_visibility > 0.0f ? 1.5f : 1.0f;
+    float rainbow_speed_multiplier = accel_visibility > 0.0f ? 1.5f + accel_visibility * 0.4f : 1.0f;
     float animation_speed = base_wave_speed * rainbow_speed_multiplier;
     float rainbow_scroll_speed = base_scroll_speed * rainbow_speed_multiplier;
     float lightness_boost = 0.05f * accel_visibility;
@@ -237,14 +237,6 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     float alpha_boost = 0.08f * accel_visibility;
 
     constexpr float kTau = 6.283185307f;
-    auto smooth_cycle = [&wrap_unit](float phase) {
-      float wrapped = wrap_unit(phase);
-      return 0.5f - 0.5f * std::cos(wrapped * kTau);
-    };
-    auto seam_cycle = [&wrap_unit](float phase) {
-      float wrapped = wrap_unit(phase + 0.5f);
-      return 0.5f - 0.5f * std::cos(wrapped * kTau);
-    };
     static constexpr std::array<float, 9> sample_positions = {{
         0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f,
     }};
@@ -288,20 +280,15 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       QColor base_color = QColor::fromHslF(base_hue / 360.0f, base_saturation, base_lightness, clamp01(0.45f + 0.45f * base_alpha));
 
       float rainbow_phase = wrap_unit(position + rainbow_phase_shift);
-      float rainbow_wave = 0.5f * std::sin(rainbow_wave_phase + position * (kTau * 0.6f)) + 0.5f;
-      float trimmed_phase = smooth_cycle(rainbow_phase);
-      float rainbow_hue = 160.0f + trimmed_phase * 120.0f;
-      float rainbow_saturation = clamp01(0.78f + 0.10f * accel_visibility + 0.08f * (rainbow_wave - 0.5f));
-      float rainbow_lightness = clamp01(0.50f + 0.08f * accel_visibility + 0.10f * (0.5f - rainbow_wave));
-      float rainbow_alpha = clamp01(0.68f + 0.15f * accel_visibility + 0.08f * (0.5f - rainbow_wave));
+      float rainbow_wave_primary = 0.5f * std::sin(rainbow_wave_phase + position * (kTau * 0.8f)) + 0.5f;
+      float rainbow_wave_secondary = 0.5f * std::sin(rainbow_wave_phase * 1.3f + position * (kTau * 0.45f)) + 0.5f;
+      float hue_cycle = wrap_unit(rainbow_phase + (rainbow_wave_primary - 0.5f) * 0.25f);
+      float rainbow_hue = hue_cycle * 360.0f;
+      float rainbow_saturation = clamp01(0.80f + 0.14f * accel_visibility + (rainbow_wave_secondary - 0.5f) * 0.24f);
+      float rainbow_lightness = clamp01(0.52f + accel_visibility * 0.10f + (0.5f - rainbow_wave_primary) * 0.20f);
+      float rainbow_alpha = clamp01(0.66f + 0.18f * accel_visibility + (rainbow_wave_secondary - 0.5f) * 0.12f);
 
       QColor rainbow_color = QColor::fromHslF(rainbow_hue / 360.0f, rainbow_saturation, rainbow_lightness, rainbow_alpha);
-      float white_mix = std::pow(seam_cycle(rainbow_phase), 2.0f);
-      if (white_mix > 0.0f) {
-        float white_alpha = clamp01(0.50f + 0.25f * accel_visibility);
-        QColor white_color = QColor::fromRgbF(1.0f, 1.0f, 1.0f, white_alpha);
-        rainbow_color = blend_colors(rainbow_color, white_color, clamp01(white_mix));
-      }
       QColor final_color = blend_colors(base_color, rainbow_color, accel_visibility);
 
       bg.setColorAt(position, final_color);
