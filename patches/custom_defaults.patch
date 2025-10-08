@@ -1,5 +1,5 @@
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 2148a73494..cc9a1bbfc6 100644
+index 2148a73494..3a2a54c101 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -85,7 +85,7 @@ index 2148a73494..cc9a1bbfc6 100644
  
      // Speed Limit
      {"SpeedLimitMode", {PERSISTENT | BACKUP, INT, "1"}},
-@@ -240,8 +241,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -240,8 +241,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
  
      // Tuning keys
      {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
@@ -96,7 +96,6 @@ index 2148a73494..cc9a1bbfc6 100644
 +    {"HkgTuningAngleCustomLimitMaxSpeedKph", {PERSISTENT | BACKUP, INT, "40"}},
 +    {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT | BACKUP, INT, "40"}},
      {"HkgTuningOverridingCycles", {PERSISTENT | BACKUP, INT, "17"}},
-+    {"UploadsActive", {CLEAR_ON_MANAGER_START, BOOL}},
  };
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc
 index c3f795e18c..eafbf52176 100644
