@@ -57,7 +57,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   }
 
   bool rainbow = Params().getBool("RainbowMode");
-  bool disable_accel_effect = false;
+  bool disable_accel_effect = !rainbow;
   float a_ego = sm["carState"].getCarState().getAEgo();
   constexpr float accel_start_threshold = 0.25f;
   constexpr float accel_stop_threshold = 0.15f;
@@ -100,7 +100,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   last_frame_time = now;
 
   constexpr float rainbow_transition_seconds = 0.5f;
-  float target_rainbow_presence = (rainbow && hazard_mix <= 0.0f) ? 1.0f : 0.0f;
+  float target_rainbow_presence = (hazard_mix <= 0.0f) ? 1.0f : 0.0f;
   if (frame_dt > 0.0f) {
     float transition_step = frame_dt / std::max(rainbow_transition_seconds, 1e-3f);
     if (target_rainbow_presence > rainbow_presence) {
@@ -136,6 +136,10 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
   float base_wave_speed = 0.35f;
   float base_scroll_speed = 0.10f;
+  float base_speed_multiplier = 1.0f;
+  if (disable_accel_effect) {
+    base_speed_multiplier += 0.6f * std::clamp(accel_presence, 0.0f, 1.0f);
+  }
 
   if (hazard_mix > 0.0f) {
     ModelRenderer::drawPath(painter, model, surface_rect.height());
@@ -149,7 +153,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     return;
   }
 
-  const bool show_rainbow = rainbow;
+  const bool show_rainbow = true;
   if (rainbow_presence <= 0.0f) {
     ModelRenderer::drawPath(painter, model, surface_rect.height());
     return;
@@ -230,9 +234,9 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     };
 
     float accel_visibility = disable_accel_effect ? 0.0f : accel_presence;
-    float rainbow_speed_multiplier = accel_visibility > 0.0f ? 1.5f + accel_visibility * 0.4f : 1.0f;
-    float animation_speed = base_wave_speed * rainbow_speed_multiplier;
-    float rainbow_scroll_speed = base_scroll_speed * rainbow_speed_multiplier;
+    float rainbow_speed_multiplier = (!disable_accel_effect && accel_visibility > 0.0f) ? 1.5f + accel_visibility * 0.4f : 1.0f;
+    float animation_speed = base_wave_speed * base_speed_multiplier * rainbow_speed_multiplier;
+    float rainbow_scroll_speed = base_scroll_speed * base_speed_multiplier * rainbow_speed_multiplier;
     float lightness_boost = 0.05f * accel_visibility;
     float saturation_boost = 0.08f * accel_visibility;
     float alpha_boost = 0.08f * accel_visibility;
