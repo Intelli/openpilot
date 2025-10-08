@@ -164,9 +164,6 @@ class UploadQueueCache:
       queue: list[UploadItem | None] = list(upload_queue.queue)
       items = [asdict(i) for i in queue if i is not None and (i.id not in cancelled_uploads)]
       Params().put("AthenadUploadQueue", items)
-      queued_items_present = any(item is not None for item in queue)
-      uploads_active = any(item and item.current for item in cur_upload_items.values()) or queued_items_present
-      Params().put_bool_nonblocking("UploadsActive", uploads_active)
     except Exception:
       cloudlog.exception("athena.UploadQueueCache.cache.exception")
 
