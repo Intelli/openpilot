@@ -57,6 +57,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   }
 
   bool rainbow = Params().getBool("RainbowMode");
+  bool disable_accel_effect = false;
   float a_ego = sm["carState"].getCarState().getAEgo();
   constexpr float accel_start_threshold = 0.25f;
   constexpr float accel_stop_threshold = 0.15f;
@@ -228,7 +229,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       return wrapped < 0.0f ? wrapped + 1.0f : wrapped;
     };
 
-    float accel_visibility = accel_presence;
+    float accel_visibility = disable_accel_effect ? 0.0f : accel_presence;
     float rainbow_speed_multiplier = accel_visibility > 0.0f ? 1.5f + accel_visibility * 0.4f : 1.0f;
     float animation_speed = base_wave_speed * rainbow_speed_multiplier;
     float rainbow_scroll_speed = base_scroll_speed * rainbow_speed_multiplier;
