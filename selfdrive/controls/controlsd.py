@@ -42,9 +42,9 @@ CENTERING_PROB_ENTER_THRESHOLD = 0.6
 CENTERING_PROB_EXIT_THRESHOLD = 0.5
 CENTERING_MIN_SPEED_MS = 1.0
 CENTERING_MAX_CURVATURE_DELTA = 0.01
-CENTERING_MIN_DISPLAY_DELTA = 5e-5
+CENTERING_MIN_DISPLAY_DELTA = 1e-6
 CENTERING_RATE_LIMIT_M_PER_S = 0.1
-CENTERING_CURVATURE_GAIN = 0.6
+CENTERING_CURVATURE_GAIN = 0.55
 CENTERING_EDGE_STD_MAX_ENTER = 1.0
 CENTERING_EDGE_STD_MAX_EXIT = 1.2
 CENTERING_EDGE_STD_SAMPLES = 10
@@ -53,6 +53,7 @@ CENTERING_DEADBAND_ENTER_M = 0.08
 CENTERING_DEADBAND_EXIT_M = 0.05
 CENTERING_SIGN_FLIP_MIN_M = 0.12
 CENTERING_TARGET_FILTER_TC = 0.6
+CENTERING_EDGE_MARGIN_M = 0.07
 
 LANE_CENTERING_SOURCE_MAP = {
   None: LaneCenteringSourceEnum.none,
@@ -211,9 +212,9 @@ class Controls(ControlsExt, ModelStateBase):
 
     if CC.latActive:
       self.centering_correction = self.desired_curvature - base_desired_curvature
-      active_offset_threshold = CENTERING_MIN_OFFSET_M
-      self.centering_active = abs(self.centering_offset_m) > active_offset_threshold and \
-                              abs(self.centering_correction) > CENTERING_MIN_DISPLAY_DELTA
+      has_offset = abs(self.centering_offset_m) > (CENTERING_MIN_OFFSET_M / 2)
+      has_correction = abs(self.centering_correction) > CENTERING_MIN_DISPLAY_DELTA
+      self.centering_active = centering_available and (has_offset or has_correction)
       if not self.centering_active:
         self.centering_correction = 0.0
     else:
@@ -273,8 +274,8 @@ class Controls(ControlsExt, ModelStateBase):
 
     left_candidates, right_candidates = self._collect_boundary_candidates(model_v2)
 
-    left_boundary, left_source = self._select_boundary(left_candidates, "left")
-    right_boundary, right_source = self._select_boundary(right_candidates, "right")
+    left_boundary, left_source = self._select_closest_boundary(left_candidates, "left")
+    right_boundary, right_source = self._select_closest_boundary(right_candidates, "right")
 
     if left_boundary is None or right_boundary is None:
       self.centering_source = None
@@ -377,9 +378,11 @@ class Controls(ControlsExt, ModelStateBase):
           edge_val, edge_ok = self._edge_boundary(edge_reader)
           if edge_ok and edge_val is not None:
             if edge_val > 0.0:
-              left_candidates.append(("edge", float(edge_val)))
+              adjusted = max(edge_val - CENTERING_EDGE_MARGIN_M, CENTERING_MIN_OFFSET_M)
+              left_candidates.append(("edge", float(adjusted)))
             elif edge_val < 0.0:
-              right_candidates.append(("edge", float(edge_val)))
+              adjusted = min(edge_val + CENTERING_EDGE_MARGIN_M, -CENTERING_MIN_OFFSET_M)
+              right_candidates.append(("edge", float(adjusted)))
 
     return left_candidates, right_candidates
 
@@ -412,22 +415,28 @@ class Controls(ControlsExt, ModelStateBase):
 
     return float(y_val), True
 
-  def _select_boundary(self, candidates: list[tuple[str, float]], side: str) -> tuple[float | None, str | None]:
-    if not candidates:
+  def _select_closest_boundary(self, candidates: list[tuple[str, float]], side: str) -> tuple[float | None, str | None]:
+    closest_value: float | None = None
+    closest_source: str | None = None
+
+    for source, value in candidates:
+      if side == "left" and value <= 0.0:
+        continue
+      if side == "right" and value >= 0.0:
+        continue
+
+      if closest_value is None or abs(value) < abs(closest_value):
+        closest_value = value
+        closest_source = source
+      elif closest_value is not None and math.isclose(abs(value), abs(closest_value), rel_tol=0.0, abs_tol=1e-4):
+        if closest_source != "lane" and source == "lane":
+          closest_value = value
+          closest_source = source
+
+    if closest_value is None:
       return None, None
 
-    if side == "left":
-      filtered = [(source, value) for source, value in candidates if value > 0.0]
-      if not filtered:
-        return None, None
-      source, value = min(filtered, key=lambda item: item[1])
-    else:
-      filtered = [(source, value) for source, value in candidates if value < 0.0]
-      if not filtered:
-        return None, None
-      source, value = max(filtered, key=lambda item: item[1])
-
-    return value, source
+    return closest_value, closest_source
 
   def _edge_std_average(self, stds: list[float]) -> float | None:
     if not stds:
