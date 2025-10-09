@@ -26,7 +26,7 @@ index 8925bca8ae..fed7bc2907 100644
    vEgoDEPRECATED @0 :Float32;
    vEgoRawDEPRECATED @32 :Float32;
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
-index 3751efc87a..69105b6b6e 100755
+index 3751efc87a..b8a52af268 100755
 --- b/selfdrive/controls/controlsd.py
 +++ a/selfdrive/controls/controlsd.py
 @@ -1,17 +1,18 @@
@@ -117,10 +117,10 @@ index 3751efc87a..69105b6b6e 100755
 +    target_offset_m = 0.0
 +    centering_available = False
 +    centering_source: str | None = None
-+    if CC.latActive and not self._prev_lat_active:
-+      self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
 +    advanced_centering_enabled = self._advanced_centering_enabled
 +    centering_released = not advanced_centering_enabled
++    if CC.latActive and not self._prev_lat_active:
++      self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
 +    if CC.latActive and self._lane_centering_enabled() and advanced_centering_enabled:
 +      target_offset_raw, centering_available, centering_source = self._calculate_centering_target_offset(model_v2, CS.vEgo)
 +      if centering_available:
@@ -288,7 +288,7 @@ index 3751efc87a..69105b6b6e 100755
 +  def _filter_centering_target(self, target_offset_m: float) -> float:
 +    alpha = DT_CTRL / (CENTERING_TARGET_FILTER_TC + DT_CTRL)
 +    self._centering_target_filtered += alpha * (target_offset_m - self._centering_target_filtered)
-+    if abs(self._centering_target_filtered) < CENTERING_MIN_OFFSET_M / 2:
++    if abs(target_offset_m) < CENTERING_MIN_OFFSET_M / 2 and abs(self._centering_target_filtered) < CENTERING_MIN_OFFSET_M / 2:
 +      self._centering_target_filtered = 0.0
 +    return self._centering_target_filtered
 +
@@ -498,7 +498,7 @@ index 1a39800dde..08681bc197 100644
    QFrame *supercomboFrame;
    QProgressBar *navigationProgressBar;
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 1fb0df8dee..9abdb49190 100644
+index 1fb0df8dee..12e498d0ad 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -14,6 +14,215 @@
@@ -547,8 +547,8 @@ index 1fb0df8dee..9abdb49190 100644
 +  if (sm.alive("controlsState")) {
 +    const auto &controls_state = sm["controlsState"].getControlsState();
 +    centering_signal = selfdrive_state.getEnabled() && controls_state.getLaneCenteringActive();
-+    const int64_t controls_mono_time = sm.logMonoTime("controlsState");
-+    const double age = std::abs((double)(sm.frameTime("controlsState") - controls_mono_time)) / 1e9;
++    const int64_t controls_mono_time = sm.rcv_time("controlsState");
++    const double age = std::abs((double)(nanos_since_boot() - controls_mono_time)) / 1e9;
 +    controls_state_stale = age > 0.5;
 +    if (centering_signal) {
 +      centering_indicator_last_signal = now;
@@ -648,7 +648,7 @@ index 1fb0df8dee..9abdb49190 100644
 +    painter.setOpacity(centering_indicator_opacity);
 +
 +    const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE;
-+    const QString feature_text = edge_based ? QStringLiteral("road edge") : QStringLiteral("lane line");
++    const QString feature_text = edge_based ? QStringLiteral("edge") : QStringLiteral("line");
 +    const float capped_shift_cm = std::clamp(centering_indicator_magnitude * 100.0f, 0.0f, CENTERING_DISPLAY_MAX_OFFSET_CM);
 +    const QString magnitude_text = QStringLiteral("≈ %1 cm").arg(QString::number(capped_shift_cm, 'f', capped_shift_cm < 10.0f ? 1 : 0));
 +
@@ -663,26 +663,26 @@ index 1fb0df8dee..9abdb49190 100644
 +
 +    const QString secondary_text = magnitude_text;
 +
-+    const int indicator_width = 600;
-+    const int indicator_height = 128;
++    const int indicator_width = 720;
++    const int indicator_height = 160;
 +    QRect indicator_rect(QPoint(surface_rect.center().x() - indicator_width / 2,
-+                                surface_rect.bottom() - indicator_height - 160),
++                                surface_rect.bottom() - indicator_height - 148),
 +                         QSize(indicator_width, indicator_height));
 +
 +    painter.setPen(Qt::NoPen);
-+    painter.setBrush(QColor(0, 0, 0, 180));
-+    painter.drawRoundedRect(indicator_rect, 32, 32);
++    painter.setBrush(QColor(0, 0, 0, 190));
++    painter.drawRoundedRect(indicator_rect, 36, 36);
 +
-+    painter.setPen(QColor(255, 255, 255, 240));
-+    QFont title_font = InterFont(44, QFont::DemiBold);
-+    QFont detail_font = InterFont(34, QFont::Medium);
++    painter.setPen(QColor(255, 255, 255, 245));
++    QFont title_font = InterFont(56, QFont::DemiBold);
++    QFont detail_font = InterFont(42, QFont::Medium);
 +
 +    painter.setFont(title_font);
-+    QRect title_rect = indicator_rect.adjusted(24, 18, -24, -indicator_height / 2);
++    QRect title_rect = indicator_rect.adjusted(32, 26, -32, -indicator_height / 2);
 +    painter.drawText(title_rect, Qt::AlignCenter | Qt::TextWordWrap, primary_text);
 +
 +    painter.setFont(detail_font);
-+    painter.drawText(indicator_rect.adjusted(24, indicator_height / 2 - 6, -24, -18), Qt::AlignCenter, secondary_text);
++    painter.drawText(indicator_rect.adjusted(32, indicator_height / 2 - 2, -32, -26), Qt::AlignCenter, secondary_text);
 +
 +    painter.restore();
 +  }
