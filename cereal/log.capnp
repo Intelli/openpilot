@@ -864,9 +864,9 @@ struct ControlsState @0x97ff69c53601abf1 {
   ufAccelCmd @33 :Float32;
   curvature @37 :Float32;  # path curvature from vehicle model
   desiredCurvature @61 :Float32;  # lag adjusted curvatures used by lateral controllers
-  laneCenteringOffset @69 :Float32;  # lateral offset correction applied by centering helper (m)
-  laneCenteringActive @70 :Bool;
-  laneCenteringSource @71 :LaneCenteringSource;
+  laneCenteringOffset @67 :Float32;  # lateral offset correction applied by centering helper (m)
+  laneCenteringActive @68 :Bool;
+  laneCenteringSource @69 :LaneCenteringSource;
   forceDecel @51 :Bool;
 
   lateralControlState :union {
