@@ -38,13 +38,15 @@ CENTERING_MAX_OFFSET_M = 0.5
 CENTERING_MIN_OFFSET_M = 0.03
 CENTERING_LANE_WIDTH_MIN_M = 2.4
 CENTERING_LANE_WIDTH_MAX_M = 5.0
-CENTERING_PROB_THRESHOLD = 0.6
+CENTERING_PROB_ENTER_THRESHOLD = 0.6
+CENTERING_PROB_EXIT_THRESHOLD = 0.5
 CENTERING_MIN_SPEED_MS = 1.0
 CENTERING_MAX_CURVATURE_DELTA = 0.01
 CENTERING_MIN_DISPLAY_DELTA = 5e-5
 CENTERING_RATE_LIMIT_M_PER_S = 0.1
 CENTERING_MIN_EDGE_DISTANCE_M = 0.3048  # 1 ft
-CENTERING_EDGE_STD_MAX = 1.0
+CENTERING_EDGE_STD_MAX_ENTER = 1.0
+CENTERING_EDGE_STD_MAX_EXIT = 1.2
 CENTERING_EDGE_STD_SAMPLES = 10
 CENTERING_EDGE_MIN_CORRECTION_M = 0.01
 
@@ -81,6 +83,8 @@ class Controls(ControlsExt, ModelStateBase):
     self.centering_active = False
     self.centering_offset_m = 0.0
     self.centering_source: str | None = None
+    self._lanes_reliable = False
+    self._edges_reliable = False
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -269,44 +273,58 @@ class Controls(ControlsExt, ModelStateBase):
       return False, None
 
     if len(model_v2.laneLines) < 3 or len(model_v2.laneLineProbs) < 3:
+      self._lanes_reliable = False
       return False, None
 
     left_prob = model_v2.laneLineProbs[1]
     right_prob = model_v2.laneLineProbs[2]
-    if left_prob < CENTERING_PROB_THRESHOLD or right_prob < CENTERING_PROB_THRESHOLD:
+    prob_threshold = CENTERING_PROB_ENTER_THRESHOLD if not self._lanes_reliable else CENTERING_PROB_EXIT_THRESHOLD
+    if left_prob < prob_threshold or right_prob < prob_threshold:
+      self._lanes_reliable = False
       return False, None
 
-    left_y = self._lane_y_at_distance(model_v2.laneLines[1], CENTERING_LOOKAHEAD_M)
-    right_y = self._lane_y_at_distance(model_v2.laneLines[2], CENTERING_LOOKAHEAD_M)
+    left_y_raw = self._lane_y_at_distance(model_v2.laneLines[1], CENTERING_LOOKAHEAD_M)
+    right_y_raw = self._lane_y_at_distance(model_v2.laneLines[2], CENTERING_LOOKAHEAD_M)
+    left_y, right_y = self._extract_signed_boundaries(left_y_raw, right_y_raw)
     if left_y is None or right_y is None:
+      self._lanes_reliable = False
       return False, None
 
     lane_width = left_y - right_y
     if lane_width < CENTERING_LANE_WIDTH_MIN_M or lane_width > CENTERING_LANE_WIDTH_MAX_M:
+      self._lanes_reliable = False
       return False, None
 
     center_offset = 0.5 * (left_y + right_y)
     if abs(center_offset) < CENTERING_MIN_OFFSET_M:
+      self._lanes_reliable = True
       return True, None
 
     limited_offset = max(-CENTERING_MAX_OFFSET_M, min(center_offset, CENTERING_MAX_OFFSET_M))
+    self._lanes_reliable = True
     return True, limited_offset
 
   def _calculate_edge_offset(self, model_v2, v_ego: float) -> float | None:
     if v_ego < CENTERING_MIN_SPEED_MS:
+      self._edges_reliable = False
       return None
 
     if len(model_v2.roadEdges) < 2:
+      self._edges_reliable = False
       return None
 
-    left_y = self._lane_y_at_distance(model_v2.roadEdges[0], CENTERING_LOOKAHEAD_M)
-    right_y = self._lane_y_at_distance(model_v2.roadEdges[1], CENTERING_LOOKAHEAD_M)
+    left_y_raw = self._lane_y_at_distance(model_v2.roadEdges[0], CENTERING_LOOKAHEAD_M)
+    right_y_raw = self._lane_y_at_distance(model_v2.roadEdges[1], CENTERING_LOOKAHEAD_M)
 
+    left_y, right_y = self._extract_signed_boundaries(left_y_raw, right_y_raw)
     if left_y is None and right_y is None:
+      self._edges_reliable = False
       return None
 
     edge_std = self._edge_std_average(model_v2.roadEdgeStds)
-    if edge_std is not None and edge_std > CENTERING_EDGE_STD_MAX:
+    std_threshold = CENTERING_EDGE_STD_MAX_ENTER if not self._edges_reliable else CENTERING_EDGE_STD_MAX_EXIT
+    if edge_std is not None and edge_std > std_threshold:
+      self._edges_reliable = False
       return None
 
     constraints_min = -CENTERING_MAX_OFFSET_M
@@ -318,6 +336,7 @@ class Controls(ControlsExt, ModelStateBase):
       constraints_min = max(constraints_min, CENTERING_MIN_EDGE_DISTANCE_M + right_y)
 
     if constraints_min > constraints_max:
+      self._edges_reliable = False
       return None
 
     candidates: list[float] = []
@@ -328,9 +347,11 @@ class Controls(ControlsExt, ModelStateBase):
 
     close_candidates = [y for y in candidates if abs(y) < CENTERING_MIN_EDGE_DISTANCE_M]
     if not close_candidates:
+      self._edges_reliable = True
       return None
 
     if len(close_candidates) >= 2 and left_y is not None and right_y is not None:
+      self._edges_reliable = False
       return None
 
     closest_y = min(close_candidates, key=lambda y: abs(y))
@@ -339,20 +360,45 @@ class Controls(ControlsExt, ModelStateBase):
 
     if correction < constraints_min or correction > constraints_max:
       # No feasible correction that preserves minimum distance to both edges
+      self._edges_reliable = False
       return None
 
     if abs(correction) < CENTERING_EDGE_MIN_CORRECTION_M:
+      self._edges_reliable = True
       return None
 
+    self._edges_reliable = True
     return correction
 
   def _edge_std_average(self, stds: list[float]) -> float | None:
     if not stds:
       return None
-    sample_count = min(len(stds), CENTERING_EDGE_STD_SAMPLES)
-    if sample_count == 0:
+    total = 0.0
+    count = 0
+    for value in stds:
+      if not isinstance(value, (int, float)):
+        continue
+      total += float(value)
+      count += 1
+      if count >= CENTERING_EDGE_STD_SAMPLES:
+        break
+    if count == 0:
       return None
-    return sum(stds[:sample_count]) / sample_count
+    return total / count
+
+  def _extract_signed_boundaries(self, first: float | None, second: float | None) -> tuple[float | None, float | None]:
+    positives = [v for v in (first, second) if v is not None and v > 0.0]
+    negatives = [v for v in (first, second) if v is not None and v < 0.0]
+
+    left_val = max(positives) if positives else None
+    right_val = min(negatives) if negatives else None
+
+    if left_val is None and right_val is not None:
+      right_val = min((v for v in (first, second) if v is not None), default=None)
+    if right_val is None and left_val is not None:
+      left_val = max((v for v in (first, second) if v is not None), default=None)
+
+    return left_val, right_val
 
   def _offset_to_curvature(self, offset_m: float, min_offset: float) -> float:
     if abs(offset_m) < min_offset:
