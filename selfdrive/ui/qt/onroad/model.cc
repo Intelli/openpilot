@@ -44,7 +44,7 @@ void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
     centering_indicator_active = false;
     centering_indicator_edge_sign = 0.0f;
     centering_indicator_magnitude = 0.0f;
-    centering_indicator_source = cereal::ControlsState::LaneCenteringSource::none;
+    centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
   }
 
   update_model(model, lead_one);
@@ -65,7 +65,7 @@ void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
 
   if (centering_indicator_active) {
     painter.save();
-    const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::edge;
+    const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE;
     const bool avoiding_right = centering_indicator_edge_sign > 0.0f;
     const QString edge_side_text = avoiding_right ? QStringLiteral("right") : QStringLiteral("left");
     const QString feature_text = edge_based ? QStringLiteral("road edge") : QStringLiteral("lane line");
@@ -137,7 +137,7 @@ void ModelRenderer::drawLaneLines(QPainter &painter) {
   for (int i = 0; i < std::size(lane_line_vertices); ++i) {
     float alpha = std::clamp<float>(lane_line_probs[i], 0.0, 0.7);
     if (centering_indicator_active &&
-        centering_indicator_source == cereal::ControlsState::LaneCenteringSource::lane &&
+        centering_indicator_source == cereal::ControlsState::LaneCenteringSource::LANE &&
         (i == 1 || i == 2)) {
       bool highlight = (centering_indicator_edge_sign < 0.0f && i == 1) ||
                        (centering_indicator_edge_sign > 0.0f && i == 2);
@@ -156,7 +156,7 @@ void ModelRenderer::drawLaneLines(QPainter &painter) {
   for (int i = 0; i < std::size(road_edge_vertices); ++i) {
     float edge_alpha = std::clamp<float>(1.0 - road_edge_stds[i], 0.0, 1.0);
     if (centering_indicator_active &&
-        centering_indicator_source == cereal::ControlsState::LaneCenteringSource::edge) {
+        centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE) {
       bool highlight_edge = (centering_indicator_edge_sign > 0.0f && i == 1) ||
                             (centering_indicator_edge_sign < 0.0f && i == 0);
       if (highlight_edge) {
