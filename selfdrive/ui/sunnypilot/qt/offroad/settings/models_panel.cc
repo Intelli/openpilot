@@ -127,6 +127,15 @@ ModelsPanel::ModelsPanel(QWidget *parent) : QWidget(parent) {
   connect(lane_turn_desire_toggle, &ParamControlSP::toggleFlipped, this, &ModelsPanel::refreshLaneTurnValueControl);
   connect(lane_turn_value_control, &OptionControlSP::updateLabels, this, &ModelsPanel::refreshLaneTurnValueControl);
 
+  // Advanced Lane Centering toggle
+  advanced_lane_centering_toggle = new ParamControlSP(
+    "AdvancedLaneCentering",
+    tr("Advanced Lane Centering"),
+    tr("Enable enhanced lane centering logic with dynamic offset corrections and UI feedback."),
+    "../assets/offroad/icon_shell.png");
+  advanced_lane_centering_toggle->showDescription();
+  list->addItem(advanced_lane_centering_toggle);
+
   // LiveDelay toggle
   lagd_toggle_control = new ParamControlSP("LagdToggle", tr("Live Learning Steer Delay"), "", "../assets/offroad/icon_shell.png");
   lagd_toggle_control->showDescription();

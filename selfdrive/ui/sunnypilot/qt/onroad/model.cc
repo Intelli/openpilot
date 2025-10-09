@@ -14,7 +14,18 @@
 #include <iterator>
 #include <QString>
 
+#include "common/timing.h"
+
 constexpr float CENTERING_DISPLAY_MAX_OFFSET_CM = 50.0f;
+constexpr float CENTERING_INDICATOR_HOLD_S = 0.6f;
+constexpr float CENTERING_INDICATOR_FADE_S = 0.5f;
+constexpr float CENTERING_INDICATOR_FADE_IN_S = 0.15f;
+constexpr float CENTERING_INDICATOR_MIN_OPACITY = 1e-3f;
+constexpr float CENTERING_BLINK_DISTANCE_ENTER_M = 0.12f;
+constexpr float CENTERING_BLINK_DISTANCE_FULL_M = 0.28f;
+constexpr float CENTERING_BLINK_RISE_S = 0.1f;
+constexpr float CENTERING_BLINK_DECAY_S = 0.4f;
+constexpr float CENTERING_BLINK_FREQ_HZ = 4.0f;
 
 void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   auto *s = uiState();
@@ -24,7 +35,6 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
       sm.rcv_frame("modelV2") < s->scene.started_frame) {
     return;
   }
-
   clip_region = surface_rect.adjusted(-CLIP_MARGIN, -CLIP_MARGIN, CLIP_MARGIN, CLIP_MARGIN);
   experimental_mode = sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
   longitudinal_control = sm["carParams"].getCarParams().getOpenpilotLongitudinalControl();
@@ -37,25 +47,94 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   const auto &lead_one = radar_state.getLeadOne();
   const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
 
-  centering_indicator_active = false;
-  centering_indicator_edge_sign = 0.0f;
-  centering_indicator_magnitude = 0.0f;
-  centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
+  const auto now = std::chrono::steady_clock::now();
+  const float frame_dt = std::chrono::duration<float>(now - centering_indicator_last_update).count();
+  centering_indicator_last_update = now;
+
+  bool centering_signal = false;
+  bool controls_state_stale = true;
   if (sm.alive("controlsState")) {
     const auto &controls_state = sm["controlsState"].getControlsState();
-    if (selfdrive_state.getEnabled() && controls_state.getLaneCenteringActive()) {
-      centering_indicator_active = true;
+    centering_signal = selfdrive_state.getEnabled() && controls_state.getLaneCenteringActive();
+    const int64_t controls_mono_time = sm.logMonoTime("controlsState");
+    const double age = std::abs((double)(sm.frameTime("controlsState") - controls_mono_time)) / 1e9;
+    controls_state_stale = age > 0.5;
+    if (centering_signal) {
+      centering_indicator_last_signal = now;
       const float centering_offset_m = controls_state.getLaneCenteringOffset();
-      if (std::abs(centering_offset_m) > 1e-4f) {
+      centering_indicator_source = controls_state.getLaneCenteringSource();
+      if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
+          centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE) {
+        centering_indicator_source = centering_indicator_last_nonzero_source;
+      }
+
+      const float abs_offset = std::abs(centering_offset_m);
+      centering_indicator_magnitude = abs_offset;
+      if (abs_offset > 1e-4f) {
         centering_indicator_edge_sign = centering_offset_m > 0.0f ? 1.0f : -1.0f;
-        centering_indicator_magnitude = std::abs(centering_offset_m);
       } else {
         centering_indicator_edge_sign = 0.0f;
-        centering_indicator_magnitude = 0.0f;
       }
-      centering_indicator_source = controls_state.getLaneCenteringSource();
+      if (centering_indicator_source != cereal::ControlsState::LaneCenteringSource::NONE) {
+        centering_indicator_last_nonzero_source = centering_indicator_source;
+      }
     }
   }
+
+  if (controls_state_stale) {
+    centering_indicator_opacity = std::max(0.0f, centering_indicator_opacity - frame_dt / std::max(CENTERING_INDICATOR_FADE_S, 1e-3f));
+  }
+
+  const float time_since_signal = std::chrono::duration<float>(now - centering_indicator_last_signal).count();
+  float target_opacity = 0.0f;
+  if (centering_signal || time_since_signal < CENTERING_INDICATOR_HOLD_S) {
+    target_opacity = 1.0f;
+  } else if (time_since_signal < CENTERING_INDICATOR_HOLD_S + CENTERING_INDICATOR_FADE_S) {
+    const float fade_t = (time_since_signal - CENTERING_INDICATOR_HOLD_S) / std::max(CENTERING_INDICATOR_FADE_S, 1e-3f);
+    target_opacity = std::clamp(1.0f - fade_t, 0.0f, 1.0f);
+  }
+
+  if (target_opacity > centering_indicator_opacity) {
+    const float rise = frame_dt / std::max(CENTERING_INDICATOR_FADE_IN_S, 1e-3f);
+    centering_indicator_opacity = std::min(1.0f, centering_indicator_opacity + rise);
+  } else if (target_opacity < centering_indicator_opacity) {
+    const float fall = frame_dt / std::max(CENTERING_INDICATOR_FADE_S, 1e-3f);
+    centering_indicator_opacity = std::max(target_opacity, centering_indicator_opacity - fall);
+  }
+
+  centering_indicator_opacity = std::clamp(centering_indicator_opacity, 0.0f, 1.0f);
+  if (centering_indicator_opacity <= CENTERING_INDICATOR_MIN_OPACITY) {
+    centering_indicator_opacity = 0.0f;
+  }
+  centering_indicator_active = centering_indicator_opacity > 0.0f;
+
+  const float previous_magnitude = centering_indicator_prev_magnitude;
+  bool moving_toward_center = false;
+  if (centering_signal) {
+    moving_toward_center = (previous_magnitude - centering_indicator_magnitude) > 1e-4f;
+  }
+
+  float target_blink_intensity = 0.0f;
+  if (!controls_state_stale && centering_signal && centering_indicator_edge_sign != 0.0f &&
+      centering_indicator_magnitude >= CENTERING_BLINK_DISTANCE_ENTER_M && moving_toward_center) {
+    const float span = std::max(CENTERING_BLINK_DISTANCE_FULL_M - CENTERING_BLINK_DISTANCE_ENTER_M, 1e-3f);
+    const float normalized = (centering_indicator_magnitude - CENTERING_BLINK_DISTANCE_ENTER_M) / span;
+    target_blink_intensity = std::clamp(normalized, 0.0f, 1.0f);
+  }
+  if (!centering_indicator_active || controls_state_stale) {
+    target_blink_intensity = 0.0f;
+  }
+
+  const float blink_rise = frame_dt / std::max(CENTERING_BLINK_RISE_S, 1e-3f);
+  const float blink_decay = frame_dt / std::max(CENTERING_BLINK_DECAY_S, 1e-3f);
+  if (target_blink_intensity > centering_indicator_blink_intensity) {
+    centering_indicator_blink_intensity = std::min(target_blink_intensity, centering_indicator_blink_intensity + blink_rise);
+  } else {
+    centering_indicator_blink_intensity = std::max(target_blink_intensity, centering_indicator_blink_intensity - blink_decay);
+  }
+
+  centering_indicator_blink_phase = std::fmod(centering_indicator_blink_phase + frame_dt * CENTERING_BLINK_FREQ_HZ * float(2.0 * M_PI), float(2.0 * M_PI));
+  centering_indicator_prev_magnitude = centering_indicator_magnitude;
 
   update_model(model, lead_one);
   drawLaneLines(painter);
@@ -75,35 +154,73 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 
   if (centering_indicator_active) {
     painter.save();
+    painter.setOpacity(centering_indicator_opacity);
+
     const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE;
     const QString feature_text = edge_based ? QStringLiteral("road edge") : QStringLiteral("lane line");
     const float capped_shift_cm = std::clamp(centering_indicator_magnitude * 100.0f, 0.0f, CENTERING_DISPLAY_MAX_OFFSET_CM);
-    const QString magnitude_text = QStringLiteral(" (≈ %1 cm)").arg(QString::number(capped_shift_cm, 'f', 0));
+    const QString magnitude_text = QStringLiteral("≈ %1 cm").arg(QString::number(capped_shift_cm, 'f', capped_shift_cm < 10.0f ? 1 : 0));
 
-    QString display_text;
+    QString primary_text;
     if (centering_indicator_edge_sign > 0.0f) {
-      display_text = QStringLiteral("Avoiding right %1%2").arg(feature_text, magnitude_text);
+      primary_text = QStringLiteral("Avoiding right %1").arg(feature_text);
     } else if (centering_indicator_edge_sign < 0.0f) {
-      display_text = QStringLiteral("Avoiding left %1%2").arg(feature_text, magnitude_text);
+      primary_text = QStringLiteral("Avoiding left %1").arg(feature_text);
     } else {
-      display_text = QStringLiteral("Centering using %1%2").arg(feature_text, magnitude_text);
+      primary_text = QStringLiteral("Centering using %1").arg(feature_text);
     }
 
-    const QSize text_box(440, 76);
-    QRect indicator_rect(QPoint(surface_rect.center().x() - text_box.width() / 2,
-                                surface_rect.bottom() - 188),
-                         text_box);
+    const QString secondary_text = magnitude_text;
+
+    const int indicator_width = 600;
+    const int indicator_height = 128;
+    QRect indicator_rect(QPoint(surface_rect.center().x() - indicator_width / 2,
+                                surface_rect.bottom() - indicator_height - 160),
+                         QSize(indicator_width, indicator_height));
 
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(0, 0, 0, 160));
-    painter.drawRoundedRect(indicator_rect, 28, 28);
+    painter.setBrush(QColor(0, 0, 0, 180));
+    painter.drawRoundedRect(indicator_rect, 32, 32);
 
-    painter.setPen(QColor(255, 255, 255, 230));
-    painter.setFont(InterFont(40, QFont::DemiBold));
-    painter.drawText(indicator_rect, Qt::AlignCenter, display_text);
+    painter.setPen(QColor(255, 255, 255, 240));
+    QFont title_font = InterFont(44, QFont::DemiBold);
+    QFont detail_font = InterFont(34, QFont::Medium);
+
+    painter.setFont(title_font);
+    QRect title_rect = indicator_rect.adjusted(24, 18, -24, -indicator_height / 2);
+    painter.drawText(title_rect, Qt::AlignCenter | Qt::TextWordWrap, primary_text);
+
+    painter.setFont(detail_font);
+    painter.drawText(indicator_rect.adjusted(24, indicator_height / 2 - 6, -24, -18), Qt::AlignCenter, secondary_text);
+
     painter.restore();
   }
 
+  painter.restore();
+}
+
+void ModelRendererSP::drawLaneLines(QPainter &painter) {
+  ModelRenderer::drawLaneLines(painter);
+
+  if (centering_indicator_blink_intensity <= 0.0f || std::abs(centering_indicator_edge_sign) < 1e-4f) {
+    return;
+  }
+
+  const int highlight_idx = centering_indicator_edge_sign > 0.0f ? 2 : 1;
+  if (highlight_idx < 0 || highlight_idx >= static_cast<int>(std::size(lane_line_vertices))) {
+    return;
+  }
+
+  const float blink_wave = 0.5f * (1.0f + std::sin(centering_indicator_blink_phase));
+  const float alpha_float = 190.0f * centering_indicator_blink_intensity * blink_wave;
+  if (alpha_float <= 1.0f) {
+    return;
+  }
+
+  const int alpha = std::clamp(static_cast<int>(std::lround(alpha_float)), 0, 255);
+  painter.save();
+  painter.setBrush(QColor(255, 255, 255, alpha));
+  painter.drawPolygon(lane_line_vertices[highlight_idx]);
   painter.restore();
 }
 

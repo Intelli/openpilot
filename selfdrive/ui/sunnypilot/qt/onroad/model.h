@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <chrono>
+
 #include "selfdrive/ui/qt/onroad/model.h"
 
 class ModelRendererSP : public ModelRenderer {
@@ -17,6 +19,7 @@ public:
 private:
   void update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) override;
   void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, const QRect &rect) override;
+  void drawLaneLines(QPainter &painter);
 
   QPolygonF left_blindspot_vertices;
   QPolygonF right_blindspot_vertices;
@@ -24,4 +27,12 @@ private:
   float centering_indicator_edge_sign = 0.0f;
   float centering_indicator_magnitude = 0.0f;
   cereal::ControlsState::LaneCenteringSource centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
+  float centering_indicator_opacity = 0.0f;
+  std::chrono::steady_clock::time_point centering_indicator_last_update = std::chrono::steady_clock::now();
+  std::chrono::steady_clock::time_point centering_indicator_last_signal = std::chrono::steady_clock::now();
+  std::chrono::steady_clock::time_point centering_indicator_last_controls_update = std::chrono::steady_clock::now();
+  cereal::ControlsState::LaneCenteringSource centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
+  float centering_indicator_prev_magnitude = 0.0f;
+  float centering_indicator_blink_intensity = 0.0f;
+  float centering_indicator_blink_phase = 0.0f;
 };

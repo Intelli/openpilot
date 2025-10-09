@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import math
-import threading
 import time
+import threading
 from numbers import Number
 
 from cereal import car, log
@@ -53,7 +53,7 @@ CENTERING_DEADBAND_ENTER_M = 0.08
 CENTERING_DEADBAND_EXIT_M = 0.05
 CENTERING_SIGN_FLIP_MIN_M = 0.12
 CENTERING_TARGET_FILTER_TC = 0.6
-CENTERING_EDGE_MARGIN_M = 0.07
+CENTERING_EDGE_MARGIN_M = 0.14
 
 LANE_CENTERING_SOURCE_MAP = {
   None: LaneCenteringSourceEnum.none,
@@ -88,10 +88,13 @@ class Controls(ControlsExt, ModelStateBase):
     self.centering_active = False
     self.centering_offset_m = 0.0
     self.centering_source: str | None = None
+    self._centering_last_source: str | None = None
     self._lane_reliability: dict[int, bool] = {}
     self._edges_reliable = False
     self._centering_lock_sign = 0
     self._centering_target_filtered = 0.0
+    self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
+    self._prev_lat_active = False
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -180,18 +183,30 @@ class Controls(ControlsExt, ModelStateBase):
 
     target_offset_m = 0.0
     centering_available = False
-    self.centering_source = None
-    if CC.latActive and self._lane_centering_enabled():
-      target_offset_raw, centering_available = self._calculate_centering_target_offset(model_v2, CS.vEgo)
-      target_offset_m, centering_available = self._apply_offset_hysteresis(target_offset_raw, centering_available)
-      if not centering_available:
-        self.centering_source = None
+    centering_source: str | None = None
+    if CC.latActive and not self._prev_lat_active:
+      self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
+    advanced_centering_enabled = self._advanced_centering_enabled
+    centering_released = not advanced_centering_enabled
+    if CC.latActive and self._lane_centering_enabled() and advanced_centering_enabled:
+      target_offset_raw, centering_available, centering_source = self._calculate_centering_target_offset(model_v2, CS.vEgo)
+      if centering_available:
+        filtered_target = self._filter_centering_target(target_offset_raw)
+      else:
+        filtered_target = 0.0
+        self._centering_target_filtered = 0.0
+      target_offset_m, centering_available, centering_released = self._apply_offset_hysteresis(filtered_target, centering_available)
 
     if not CC.latActive:
       self.centering_offset_m = 0.0
       self._centering_lock_sign = 0
       self._centering_target_filtered = 0.0
+      self.centering_source = None
+      self._centering_last_source = None
     else:
+      if centering_released:
+        self.centering_offset_m = 0.0
+        self._centering_target_filtered = 0.0
       rate_step = CENTERING_RATE_LIMIT_M_PER_S * DT_CTRL
       offset_error = target_offset_m - self.centering_offset_m
       if offset_error > rate_step:
@@ -212,16 +227,27 @@ class Controls(ControlsExt, ModelStateBase):
 
     if CC.latActive:
       self.centering_correction = self.desired_curvature - base_desired_curvature
-      has_offset = abs(self.centering_offset_m) > (CENTERING_MIN_OFFSET_M / 2)
-      has_correction = abs(self.centering_correction) > CENTERING_MIN_DISPLAY_DELTA
-      self.centering_active = centering_available and (has_offset or has_correction)
+      correction_mag = abs(self.centering_correction)
+      offset_mag = abs(self.centering_offset_m)
+      has_offset = offset_mag > (CENTERING_MIN_OFFSET_M / 2)
+      has_correction = correction_mag > CENTERING_MIN_DISPLAY_DELTA
+      if centering_source is not None:
+        self.centering_source = centering_source
+        self._centering_last_source = centering_source
+      elif self.centering_source is None and self._centering_last_source is not None and (has_offset or has_correction):
+        self.centering_source = self._centering_last_source
+
+      self.centering_active = has_correction or (centering_available and has_offset)
       if not self.centering_active:
         self.centering_correction = 0.0
+        if not has_offset:
+          self.centering_source = None
     else:
       self.centering_offset_m = 0.0
       self.centering_correction = 0.0
       self.centering_active = False
       self.centering_source = None
+      self._centering_last_source = None
       self._centering_lock_sign = 0
 
     actuators.curvature = self.desired_curvature
@@ -239,6 +265,8 @@ class Controls(ControlsExt, ModelStateBase):
       if not math.isfinite(attr):
         cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
         setattr(actuators, p, 0.0)
+
+    self._prev_lat_active = CC.latActive
 
     return CC, lac_log
 
@@ -265,12 +293,11 @@ class Controls(ControlsExt, ModelStateBase):
 
     return accum / count
 
-  def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool]:
+  def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool, str | None]:
     if v_ego < CENTERING_MIN_SPEED_MS:
       self._lane_reliability.clear()
       self._edges_reliable = False
-      self.centering_source = None
-      return 0.0, False
+      return 0.0, False, None
 
     left_candidates, right_candidates = self._collect_boundary_candidates(model_v2)
 
@@ -278,27 +305,23 @@ class Controls(ControlsExt, ModelStateBase):
     right_boundary, right_source = self._select_closest_boundary(right_candidates, "right")
 
     if left_boundary is None or right_boundary is None:
-      self.centering_source = None
-      return 0.0, False
+      return 0.0, False, None
 
     lane_width = left_boundary - right_boundary
     if lane_width < CENTERING_LANE_WIDTH_MIN_M or lane_width > CENTERING_LANE_WIDTH_MAX_M:
-      self.centering_source = None
-      return 0.0, False
+      return 0.0, False, None
 
     left_distance = max(left_boundary, CENTERING_MIN_OFFSET_M)
     right_distance = max(abs(right_boundary), CENTERING_MIN_OFFSET_M)
     ratio = max(left_distance, right_distance) / max(min(left_distance, right_distance), CENTERING_MIN_OFFSET_M)
     if ratio > CENTERING_DISTANCE_RATIO_MAX:
-      self.centering_source = None
-      return 0.0, False
+      return 0.0, False, None
 
     center_offset = 0.5 * (left_boundary + right_boundary)
     center_offset = max(-CENTERING_MAX_OFFSET_M, min(center_offset, CENTERING_MAX_OFFSET_M))
 
     if abs(center_offset) < CENTERING_MIN_OFFSET_M:
-      self.centering_source = None
-      return 0.0, False
+      return 0.0, False, None
 
     left_distance = left_boundary
     right_distance = abs(right_boundary)
@@ -309,36 +332,34 @@ class Controls(ControlsExt, ModelStateBase):
       primary_source = right_source
       secondary_source = left_source
 
-    self.centering_source = primary_source or secondary_source
+    source = primary_source or secondary_source
 
-    return center_offset, True
+    return center_offset, True, source
 
-  def _apply_offset_hysteresis(self, target_offset_m: float, available: bool) -> tuple[float, bool]:
+  def _apply_offset_hysteresis(self, target_offset_m: float, available: bool) -> tuple[float, bool, bool]:
     if not available:
       self._centering_lock_sign = 0
-      return 0.0, False
+      return 0.0, False, False
 
     magnitude = abs(target_offset_m)
     if magnitude < CENTERING_DEADBAND_EXIT_M:
       if self._centering_lock_sign != 0:
         self._centering_lock_sign = 0
-      return 0.0, False
+      return 0.0, False, False
 
     desired_sign = 1 if target_offset_m > 0.0 else -1
 
     if self._centering_lock_sign == 0:
       if magnitude < CENTERING_DEADBAND_ENTER_M:
-        return 0.0, False
+        return 0.0, False, False
       self._centering_lock_sign = desired_sign
     else:
       if desired_sign != self._centering_lock_sign:
-        if magnitude < CENTERING_SIGN_FLIP_MIN_M:
-          self._centering_lock_sign = 0
-          return 0.0, False
-        self._centering_lock_sign = desired_sign
+        self._centering_lock_sign = 0
+        return 0.0, False, True
 
     locked_offset = self._centering_lock_sign * magnitude
-    return locked_offset, True
+    return locked_offset, True, False
 
   def _filter_centering_target(self, target_offset_m: float) -> float:
     alpha = DT_CTRL / (CENTERING_TARGET_FILTER_TC + DT_CTRL)
@@ -521,7 +542,7 @@ class Controls(ControlsExt, ModelStateBase):
     cs.lateralPlanMonoTime = self.sm.logMonoTime['modelV2']
     cs.desiredCurvature = self.desired_curvature
     cs.laneCenteringActive = bool(self.centering_active)
-    cs.laneCenteringOffset = float(self.centering_offset_m if self.centering_active else 0.0)
+    cs.laneCenteringOffset = float(self.centering_offset_m)
     cs.laneCenteringSource = LANE_CENTERING_SOURCE_MAP.get(self.centering_source, LaneCenteringSourceEnum.none)
     cs.longControlState = self.LoC.long_control_state
     cs.upAccelCmd = float(self.LoC.pid.p)

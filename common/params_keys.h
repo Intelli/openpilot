@@ -133,6 +133,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ApiCache_DriveStats", {PERSISTENT, JSON}},
     {"AutoLaneChangeBsmDelay", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"AutoLaneChangeTimer", {PERSISTENT | BACKUP, INT, "1"}},
+    {"AdvancedLaneCentering", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"BlinkerMinLateralControlSpeed", {PERSISTENT | BACKUP, INT, "20"}},  // MPH or km/h
     {"BlinkerPauseLateralControl", {PERSISTENT | BACKUP, INT, "0"}},
     {"Brightness", {PERSISTENT | BACKUP, INT, "0"}},
