@@ -56,8 +56,8 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   if (sm.alive("controlsState")) {
     const auto &controls_state = sm["controlsState"].getControlsState();
     centering_signal = selfdrive_state.getEnabled() && controls_state.getLaneCenteringActive();
-    const int64_t controls_mono_time = sm.logMonoTime("controlsState");
-    const double age = std::abs((double)(sm.frameTime("controlsState") - controls_mono_time)) / 1e9;
+    const int64_t controls_mono_time = sm.rcv_time("controlsState");
+    const double age = std::abs((double)(nanos_since_boot() - controls_mono_time)) / 1e9;
     controls_state_stale = age > 0.5;
     if (centering_signal) {
       centering_indicator_last_signal = now;
