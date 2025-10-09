@@ -4,10 +4,6 @@
 
 #include "selfdrive/ui/qt/util.h"
 
-constexpr int CENTERING_ARROW_BOX_SIZE_PX = 120;
-constexpr int CENTERING_ARROW_MARGIN_PX = 48;
-constexpr float CENTERING_ARROW_MIN_OFFSET_M = 0.02f;
-
 void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
   auto *s = uiState();
   auto &sm = *(s->sm);
@@ -26,22 +22,6 @@ void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
   const auto &model = sm["modelV2"].getModelV2();
   const auto &radar_state = sm["radarState"].getRadarState();
   const auto &lead_one = radar_state.getLeadOne();
-  const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
-
-  bool centering_indicator_active = false;
-  bool centering_indicator_on_right = false;
-  QString centering_indicator_symbol;
-  if (sm.alive("controlsState")) {
-    const auto &controls_state = sm["controlsState"].getControlsState();
-    if (selfdrive_state.getEnabled() && controls_state.getLaneCenteringActive()) {
-      const float centering_offset_m = controls_state.getLaneCenteringOffset();
-      if (std::abs(centering_offset_m) > CENTERING_ARROW_MIN_OFFSET_M) {
-        centering_indicator_active = true;
-        centering_indicator_on_right = centering_offset_m > 0.0f;
-        centering_indicator_symbol = centering_indicator_on_right ? QStringLiteral("<") : QStringLiteral(">");
-      }
-    }
-  }
 
   update_model(model, lead_one);
   drawLaneLines(painter);
@@ -58,30 +38,6 @@ void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
     }
   }
   drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
-
-  if (centering_indicator_active) {
-    painter.save();
-    painter.setRenderHint(QPainter::Antialiasing);
-
-    const QSize indicator_size(CENTERING_ARROW_BOX_SIZE_PX, CENTERING_ARROW_BOX_SIZE_PX);
-    const int vertical_center = surface_rect.center().y();
-    const int top = vertical_center - indicator_size.height() / 2;
-    const int left = centering_indicator_on_right ?
-                     surface_rect.right() - CENTERING_ARROW_MARGIN_PX - indicator_size.width() :
-                     surface_rect.left() + CENTERING_ARROW_MARGIN_PX;
-
-    QRect indicator_rect(QPoint(left, top), indicator_size);
-
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(0, 0, 0, 190));
-    painter.drawRoundedRect(indicator_rect, 26, 26);
-
-    painter.setPen(QColor(255, 255, 255, 255));
-    painter.setFont(InterFont(80, QFont::Bold));
-    painter.drawText(indicator_rect, Qt::AlignCenter, centering_indicator_symbol);
-
-    painter.restore();
-  }
 
   painter.restore();
 }

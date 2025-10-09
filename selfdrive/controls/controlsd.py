@@ -49,6 +49,10 @@ CENTERING_EDGE_STD_MAX_ENTER = 1.0
 CENTERING_EDGE_STD_MAX_EXIT = 1.2
 CENTERING_EDGE_STD_SAMPLES = 10
 CENTERING_DISTANCE_RATIO_MAX = 3.0
+CENTERING_DEADBAND_ENTER_M = 0.08
+CENTERING_DEADBAND_EXIT_M = 0.05
+CENTERING_SIGN_FLIP_MIN_M = 0.12
+CENTERING_TARGET_FILTER_TC = 0.6
 
 LANE_CENTERING_SOURCE_MAP = {
   None: LaneCenteringSourceEnum.none,
@@ -83,8 +87,10 @@ class Controls(ControlsExt, ModelStateBase):
     self.centering_active = False
     self.centering_offset_m = 0.0
     self.centering_source: str | None = None
-    self._lane_side_reliable = {"left": False, "right": False}
+    self._lane_reliability: dict[int, bool] = {}
     self._edges_reliable = False
+    self._centering_lock_sign = 0
+    self._centering_target_filtered = 0.0
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -175,10 +181,15 @@ class Controls(ControlsExt, ModelStateBase):
     centering_available = False
     self.centering_source = None
     if CC.latActive and self._lane_centering_enabled():
-      target_offset_m, centering_available = self._calculate_centering_target_offset(model_v2, CS.vEgo)
+      target_offset_raw, centering_available = self._calculate_centering_target_offset(model_v2, CS.vEgo)
+      target_offset_m, centering_available = self._apply_offset_hysteresis(target_offset_raw, centering_available)
+      if not centering_available:
+        self.centering_source = None
 
     if not CC.latActive:
       self.centering_offset_m = 0.0
+      self._centering_lock_sign = 0
+      self._centering_target_filtered = 0.0
     else:
       rate_step = CENTERING_RATE_LIMIT_M_PER_S * DT_CTRL
       offset_error = target_offset_m - self.centering_offset_m
@@ -210,6 +221,7 @@ class Controls(ControlsExt, ModelStateBase):
       self.centering_correction = 0.0
       self.centering_active = False
       self.centering_source = None
+      self._centering_lock_sign = 0
 
     actuators.curvature = self.desired_curvature
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
@@ -254,8 +266,7 @@ class Controls(ControlsExt, ModelStateBase):
 
   def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool]:
     if v_ego < CENTERING_MIN_SPEED_MS:
-      self._lane_side_reliable["left"] = False
-      self._lane_side_reliable["right"] = False
+      self._lane_reliability.clear()
       self._edges_reliable = False
       self.centering_source = None
       return 0.0, False
@@ -301,20 +312,57 @@ class Controls(ControlsExt, ModelStateBase):
 
     return center_offset, True
 
+  def _apply_offset_hysteresis(self, target_offset_m: float, available: bool) -> tuple[float, bool]:
+    if not available:
+      self._centering_lock_sign = 0
+      return 0.0, False
+
+    magnitude = abs(target_offset_m)
+    if magnitude < CENTERING_DEADBAND_EXIT_M:
+      if self._centering_lock_sign != 0:
+        self._centering_lock_sign = 0
+      return 0.0, False
+
+    desired_sign = 1 if target_offset_m > 0.0 else -1
+
+    if self._centering_lock_sign == 0:
+      if magnitude < CENTERING_DEADBAND_ENTER_M:
+        return 0.0, False
+      self._centering_lock_sign = desired_sign
+    else:
+      if desired_sign != self._centering_lock_sign:
+        if magnitude < CENTERING_SIGN_FLIP_MIN_M:
+          self._centering_lock_sign = 0
+          return 0.0, False
+        self._centering_lock_sign = desired_sign
+
+    locked_offset = self._centering_lock_sign * magnitude
+    return locked_offset, True
+
+  def _filter_centering_target(self, target_offset_m: float) -> float:
+    alpha = DT_CTRL / (CENTERING_TARGET_FILTER_TC + DT_CTRL)
+    self._centering_target_filtered += alpha * (target_offset_m - self._centering_target_filtered)
+    if abs(self._centering_target_filtered) < CENTERING_MIN_OFFSET_M / 2:
+      self._centering_target_filtered = 0.0
+    return self._centering_target_filtered
+
   def _collect_boundary_candidates(self, model_v2) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
     left_candidates: list[tuple[str, float]] = []
     right_candidates: list[tuple[str, float]] = []
 
-    if len(model_v2.laneLines) < 3 or len(model_v2.laneLineProbs) < 3:
-      self._lane_side_reliable["left"] = False
-      self._lane_side_reliable["right"] = False
+    lane_lines = model_v2.laneLines
+    lane_probs = model_v2.laneLineProbs
+    lane_count = min(len(lane_lines), len(lane_probs))
+    if lane_count == 0:
+      self._lane_reliability.clear()
     else:
-      left_lane, left_ok = self._lane_boundary(model_v2.laneLines[1], model_v2.laneLineProbs[1], "left")
-      if left_ok:
-        left_candidates.append(("lane", float(left_lane)))
-      right_lane, right_ok = self._lane_boundary(model_v2.laneLines[2], model_v2.laneLineProbs[2], "right")
-      if right_ok:
-        right_candidates.append(("lane", float(right_lane)))
+      for idx in range(lane_count):
+        lane_val, lane_ok = self._lane_boundary(idx, lane_lines[idx], lane_probs[idx])
+        if lane_ok and lane_val is not None:
+          if lane_val > 0.0:
+            left_candidates.append(("lane", float(lane_val)))
+          elif lane_val < 0.0:
+            right_candidates.append(("lane", float(lane_val)))
 
     if len(model_v2.roadEdges) < 2:
       self._edges_reliable = False
@@ -325,45 +373,41 @@ class Controls(ControlsExt, ModelStateBase):
         self._edges_reliable = False
       else:
         self._edges_reliable = True
-        left_edge, left_ok = self._edge_boundary(model_v2.roadEdges[0], "left")
-        if left_ok:
-          left_candidates.append(("edge", float(left_edge)))
-        right_edge, right_ok = self._edge_boundary(model_v2.roadEdges[1], "right")
-        if right_ok:
-          right_candidates.append(("edge", float(right_edge)))
+        for edge_reader in model_v2.roadEdges:
+          edge_val, edge_ok = self._edge_boundary(edge_reader)
+          if edge_ok and edge_val is not None:
+            if edge_val > 0.0:
+              left_candidates.append(("edge", float(edge_val)))
+            elif edge_val < 0.0:
+              right_candidates.append(("edge", float(edge_val)))
 
     return left_candidates, right_candidates
 
-  def _lane_boundary(self, lane_line, probability: float, side: str) -> tuple[float | None, bool]:
-    reliable = self._lane_side_reliable[side]
+  def _lane_boundary(self, index: int, lane_line, probability: float) -> tuple[float | None, bool]:
+    reliable = self._lane_reliability.get(index, False)
     threshold = CENTERING_PROB_EXIT_THRESHOLD if reliable else CENTERING_PROB_ENTER_THRESHOLD
     if probability < threshold:
-      self._lane_side_reliable[side] = False
+      self._lane_reliability[index] = False
       return None, False
 
     y_val = self._lane_y_at_distance(lane_line, CENTERING_LOOKAHEAD_M)
     if y_val is None:
-      self._lane_side_reliable[side] = False
+      self._lane_reliability[index] = False
       return None, False
 
-    expected_sign = 1.0 if side == "left" else -1.0
-    if y_val * expected_sign <= 0.0:
-      self._lane_side_reliable[side] = False
+    if abs(y_val) < CENTERING_MIN_OFFSET_M:
+      self._lane_reliability[index] = reliable
       return None, False
 
-    self._lane_side_reliable[side] = True
+    self._lane_reliability[index] = True
     return float(y_val), True
 
-  def _edge_boundary(self, road_edge, side: str) -> tuple[float | None, bool]:
+  def _edge_boundary(self, road_edge) -> tuple[float | None, bool]:
     if not self._edges_reliable:
       return None, False
 
     y_val = self._lane_y_at_distance(road_edge, CENTERING_LOOKAHEAD_M)
-    if y_val is None:
-      return None, False
-
-    expected_sign = 1.0 if side == "left" else -1.0
-    if y_val * expected_sign <= 0.0:
+    if y_val is None or abs(y_val) < CENTERING_MIN_OFFSET_M:
       return None, False
 
     return float(y_val), True

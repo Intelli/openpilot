@@ -14,6 +14,91 @@
 #include <iterator>
 #include <QString>
 
+constexpr float CENTERING_DISPLAY_MAX_OFFSET_CM = 50.0f;
+constexpr float CENTERING_DISPLAY_MIN_OFFSET_M = 0.01f;
+
+void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+  auto *s = uiState();
+  auto &sm = *(s->sm);
+
+  if (sm.rcv_frame("liveCalibration") < s->scene.started_frame ||
+      sm.rcv_frame("modelV2") < s->scene.started_frame) {
+    return;
+  }
+
+  clip_region = surface_rect.adjusted(-CLIP_MARGIN, -CLIP_MARGIN, CLIP_MARGIN, CLIP_MARGIN);
+  experimental_mode = sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
+  longitudinal_control = sm["carParams"].getCarParams().getOpenpilotLongitudinalControl();
+  path_offset_z = sm["liveCalibration"].getLiveCalibration().getHeight()[0];
+
+  painter.save();
+
+  const auto &model = sm["modelV2"].getModelV2();
+  const auto &radar_state = sm["radarState"].getRadarState();
+  const auto &lead_one = radar_state.getLeadOne();
+  const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
+
+  centering_indicator_active = false;
+  centering_indicator_edge_sign = 0.0f;
+  centering_indicator_magnitude = 0.0f;
+  centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
+  if (sm.alive("controlsState")) {
+    const auto &controls_state = sm["controlsState"].getControlsState();
+    if (selfdrive_state.getEnabled() && controls_state.getLaneCenteringActive()) {
+      const float centering_offset_m = controls_state.getLaneCenteringOffset();
+      if (std::abs(centering_offset_m) > CENTERING_DISPLAY_MIN_OFFSET_M) {
+        centering_indicator_active = true;
+        centering_indicator_edge_sign = centering_offset_m > 0.0f ? 1.0f : -1.0f;
+        centering_indicator_magnitude = std::abs(centering_offset_m);
+        centering_indicator_source = controls_state.getLaneCenteringSource();
+      }
+    }
+  }
+
+  update_model(model, lead_one);
+  drawLaneLinesAndEdges(painter);
+  drawPath(painter, model, surface_rect);
+
+  if (longitudinal_control && sm.alive("radarState")) {
+    update_leads(radar_state, model.getPosition());
+    const auto &lead_two = radar_state.getLeadTwo();
+    if (lead_one.getStatus()) {
+      drawLead(painter, lead_one, lead_vertices[0], surface_rect);
+    }
+    if (lead_two.getStatus() && (std::abs(lead_one.getDRel() - lead_two.getDRel()) > 3.0)) {
+      drawLead(painter, lead_two, lead_vertices[1], surface_rect);
+    }
+  }
+  drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
+
+  if (centering_indicator_active) {
+    painter.save();
+    const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE;
+    const bool avoiding_right = centering_indicator_edge_sign > 0.0f;
+    const QString edge_side_text = avoiding_right ? QStringLiteral("right") : QStringLiteral("left");
+    const QString feature_text = edge_based ? QStringLiteral("road edge") : QStringLiteral("lane line");
+    const float capped_shift_cm = std::clamp(centering_indicator_magnitude * 100.0f, 0.0f, CENTERING_DISPLAY_MAX_OFFSET_CM);
+    const QString magnitude_text = QStringLiteral(" (≈ %1 cm)").arg(QString::number(capped_shift_cm, 'f', 0));
+    const QString display_text = QStringLiteral("Avoiding %1 %2%3")
+                                     .arg(edge_side_text, feature_text, magnitude_text);
+
+    const QSize text_box(440, 76);
+    QRect indicator_rect(QPoint(surface_rect.center().x() - text_box.width() / 2,
+                                surface_rect.bottom() - 188),
+                         text_box);
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0, 0, 0, 160));
+    painter.drawRoundedRect(indicator_rect, 28, 28);
+
+    painter.setPen(QColor(255, 255, 255, 230));
+    painter.setFont(InterFont(40, QFont::DemiBold));
+    painter.drawText(indicator_rect, Qt::AlignCenter, display_text);
+    painter.restore();
+  }
+
+  painter.restore();
+}
 
 void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
   ModelRenderer::update_model(model, lead);
@@ -299,10 +384,44 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       bg.setColorAt(position, final_color);
     }
 
-    painter.save();
-    painter.setOpacity(rainbow_presence);
     painter.setBrush(bg);
     painter.drawPolygon(track_vertices);
-    painter.restore();
+  }
+}
+
+void ModelRendererSP::drawLaneLinesAndEdges(QPainter &painter) {
+  for (int i = 0; i < std::size(lane_line_vertices); ++i) {
+    float alpha = std::clamp<float>(lane_line_probs[i], 0.0f, 0.7f);
+    if (centering_indicator_active &&
+        centering_indicator_source == cereal::ControlsState::LaneCenteringSource::LANE &&
+        (i == 1 || i == 2)) {
+      bool highlight = (centering_indicator_edge_sign < 0.0f && i == 1) ||
+                       (centering_indicator_edge_sign > 0.0f && i == 2);
+      if (highlight) {
+        painter.setBrush(QColor::fromRgbF(0.2f, 0.8f, 1.0f, std::clamp(alpha + 0.1f, 0.0f, 0.85f)));
+      } else {
+        painter.setBrush(QColor::fromRgbF(0.8f, 0.8f, 0.8f, alpha));
+      }
+    } else {
+      painter.setBrush(QColor::fromRgbF(1.0f, 1.0f, 1.0f, alpha));
+    }
+    painter.drawPolygon(lane_line_vertices[i]);
+  }
+
+  for (int i = 0; i < std::size(road_edge_vertices); ++i) {
+    float edge_alpha = std::clamp<float>(1.0f - road_edge_stds[i], 0.0f, 1.0f);
+    if (centering_indicator_active &&
+        centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE) {
+      bool highlight_edge = (centering_indicator_edge_sign > 0.0f && i == 1) ||
+                            (centering_indicator_edge_sign < 0.0f && i == 0);
+      if (highlight_edge) {
+        painter.setBrush(QColor::fromRgbF(1.0f, 0.4f, 0.0f, std::clamp(edge_alpha + 0.2f, 0.0f, 1.0f)));
+      } else {
+        painter.setBrush(QColor::fromRgbF(1.0f, 0.0f, 0.0f, edge_alpha));
+      }
+    } else {
+      painter.setBrush(QColor::fromRgbF(1.0f, 0.0f, 0.0f, edge_alpha));
+    }
+    painter.drawPolygon(road_edge_vertices[i]);
   }
 }
