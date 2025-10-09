@@ -8,10 +8,11 @@ from cereal import car, log
 import cereal.messaging as messaging
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
-from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper
+from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper, DT_CTRL
 from openpilot.common.swaglog import cloudlog
 
 from opendbc.car.car_helpers import interfaces
+from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
 from opendbc.car.vehicle_model import VehicleModel
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
@@ -28,8 +29,30 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
+LaneCenteringSourceEnum = log.ControlsState.LaneCenteringSource
 
 ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
+
+CENTERING_LOOKAHEAD_M = 10.0
+CENTERING_MAX_OFFSET_M = 0.5
+CENTERING_MIN_OFFSET_M = 0.03
+CENTERING_LANE_WIDTH_MIN_M = 2.4
+CENTERING_LANE_WIDTH_MAX_M = 5.0
+CENTERING_PROB_THRESHOLD = 0.6
+CENTERING_MIN_SPEED_MS = 1.0
+CENTERING_MAX_CURVATURE_DELTA = 0.01
+CENTERING_MIN_DISPLAY_DELTA = 5e-5
+CENTERING_RATE_LIMIT_M_PER_S = 0.1
+CENTERING_MIN_EDGE_DISTANCE_M = 0.3048  # 1 ft
+CENTERING_EDGE_STD_MAX = 1.0
+CENTERING_EDGE_STD_SAMPLES = 10
+CENTERING_EDGE_MIN_CORRECTION_M = 0.01
+
+LANE_CENTERING_SOURCE_MAP = {
+  None: LaneCenteringSourceEnum.none,
+  "lane": LaneCenteringSourceEnum.lane,
+  "edge": LaneCenteringSourceEnum.edge,
+}
 
 
 class Controls(ControlsExt, ModelStateBase):
@@ -54,6 +77,10 @@ class Controls(ControlsExt, ModelStateBase):
     self.steer_limited_by_safety = False
     self.curvature = 0.0
     self.desired_curvature = 0.0
+    self.centering_correction = 0.0
+    self.centering_active = False
+    self.centering_offset_m = 0.0
+    self.centering_source: str | None = None
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -138,8 +165,47 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
-    new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    base_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+
+    target_offset_m = 0.0
+    centering_available = False
+    self.centering_source = None
+    if CC.latActive and self._lane_centering_enabled():
+      target_offset_m, centering_available = self._calculate_centering_target_offset(model_v2, CS.vEgo)
+
+    if not CC.latActive:
+      self.centering_offset_m = 0.0
+    else:
+      rate_step = CENTERING_RATE_LIMIT_M_PER_S * DT_CTRL
+      offset_error = target_offset_m - self.centering_offset_m
+      if offset_error > rate_step:
+        offset_error = rate_step
+      elif offset_error < -rate_step:
+        offset_error = -rate_step
+      self.centering_offset_m += offset_error
+      self.centering_offset_m = max(-CENTERING_MAX_OFFSET_M, min(self.centering_offset_m, CENTERING_MAX_OFFSET_M))
+
+      reset_threshold = CENTERING_EDGE_MIN_CORRECTION_M if self.centering_source == "edge" else CENTERING_MIN_OFFSET_M
+      if not centering_available and abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
+        self.centering_offset_m = 0.0
+
+    min_offset_for_curvature = CENTERING_EDGE_MIN_CORRECTION_M if self.centering_source == "edge" else CENTERING_MIN_OFFSET_M
+    centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature) if centering_available else 0.0
+    new_desired_curvature = base_desired_curvature + centering_delta
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
+
+    if CC.latActive:
+      self.centering_correction = self.desired_curvature - base_desired_curvature
+      active_offset_threshold = CENTERING_EDGE_MIN_CORRECTION_M if self.centering_source == "edge" else CENTERING_MIN_OFFSET_M
+      self.centering_active = abs(self.centering_offset_m) > active_offset_threshold and \
+                              abs(self.centering_correction) > CENTERING_MIN_DISPLAY_DELTA
+      if not self.centering_active:
+        self.centering_correction = 0.0
+    else:
+      self.centering_offset_m = 0.0
+      self.centering_correction = 0.0
+      self.centering_active = False
+      self.centering_source = None
 
     actuators.curvature = self.desired_curvature
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
@@ -159,8 +225,155 @@ class Controls(ControlsExt, ModelStateBase):
 
     return CC, lac_log
 
+  def _lane_centering_enabled(self) -> bool:
+    return self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9 and \
+           self.CP.steerControlType == car.CarParams.SteerControlType.angle
+
+  def _lane_y_at_distance(self, lane_line, distance_m: float) -> float | None:
+    xs = lane_line.x
+    ys = lane_line.y
+    if len(xs) == 0 or len(ys) == 0:
+      return None
+
+    accum = 0.0
+    count = 0
+    for x_val, y_val in zip(xs, ys):
+      if x_val > distance_m:
+        break
+      accum += y_val
+      count += 1
+
+    if count == 0:
+      return float(ys[0])
+
+    return accum / count
+
+  def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool]:
+    self.centering_source = None
+    lanes_available, lane_offset = self._calculate_lane_offset(model_v2, v_ego)
+    if lanes_available:
+      if lane_offset is not None:
+        self.centering_source = "lane"
+        return lane_offset, True
+      return 0.0, False
+
+    edge_offset = self._calculate_edge_offset(model_v2, v_ego)
+    if edge_offset is not None:
+      self.centering_source = "edge"
+      return edge_offset, True
+
+    return 0.0, False
+
+  def _calculate_lane_offset(self, model_v2, v_ego: float) -> tuple[bool, float | None]:
+    if v_ego < CENTERING_MIN_SPEED_MS:
+      return False, None
+
+    if len(model_v2.laneLines) < 3 or len(model_v2.laneLineProbs) < 3:
+      return False, None
+
+    left_prob = model_v2.laneLineProbs[1]
+    right_prob = model_v2.laneLineProbs[2]
+    if left_prob < CENTERING_PROB_THRESHOLD or right_prob < CENTERING_PROB_THRESHOLD:
+      return False, None
+
+    left_y = self._lane_y_at_distance(model_v2.laneLines[1], CENTERING_LOOKAHEAD_M)
+    right_y = self._lane_y_at_distance(model_v2.laneLines[2], CENTERING_LOOKAHEAD_M)
+    if left_y is None or right_y is None:
+      return False, None
+
+    lane_width = left_y - right_y
+    if lane_width < CENTERING_LANE_WIDTH_MIN_M or lane_width > CENTERING_LANE_WIDTH_MAX_M:
+      return False, None
+
+    center_offset = 0.5 * (left_y + right_y)
+    if abs(center_offset) < CENTERING_MIN_OFFSET_M:
+      return True, None
+
+    limited_offset = max(-CENTERING_MAX_OFFSET_M, min(center_offset, CENTERING_MAX_OFFSET_M))
+    return True, limited_offset
+
+  def _calculate_edge_offset(self, model_v2, v_ego: float) -> float | None:
+    if v_ego < CENTERING_MIN_SPEED_MS:
+      return None
+
+    if len(model_v2.roadEdges) < 2:
+      return None
+
+    left_y = self._lane_y_at_distance(model_v2.roadEdges[0], CENTERING_LOOKAHEAD_M)
+    right_y = self._lane_y_at_distance(model_v2.roadEdges[1], CENTERING_LOOKAHEAD_M)
+
+    if left_y is None and right_y is None:
+      return None
+
+    edge_std = self._edge_std_average(model_v2.roadEdgeStds)
+    if edge_std is not None and edge_std > CENTERING_EDGE_STD_MAX:
+      return None
+
+    constraints_min = -CENTERING_MAX_OFFSET_M
+    constraints_max = CENTERING_MAX_OFFSET_M
+
+    if left_y is not None:
+      constraints_max = min(constraints_max, left_y - CENTERING_MIN_EDGE_DISTANCE_M)
+    if right_y is not None:
+      constraints_min = max(constraints_min, CENTERING_MIN_EDGE_DISTANCE_M + right_y)
+
+    if constraints_min > constraints_max:
+      return None
+
+    candidates: list[float] = []
+    if left_y is not None:
+      candidates.append(left_y)
+    if right_y is not None:
+      candidates.append(right_y)
+
+    close_candidates = [y for y in candidates if abs(y) < CENTERING_MIN_EDGE_DISTANCE_M]
+    if not close_candidates:
+      return None
+
+    if len(close_candidates) >= 2 and left_y is not None and right_y is not None:
+      return None
+
+    closest_y = min(close_candidates, key=lambda y: abs(y))
+    needed_shift = CENTERING_MIN_EDGE_DISTANCE_M - abs(closest_y)
+    correction = -math.copysign(needed_shift, closest_y)
+
+    if correction < constraints_min or correction > constraints_max:
+      # No feasible correction that preserves minimum distance to both edges
+      return None
+
+    if abs(correction) < CENTERING_EDGE_MIN_CORRECTION_M:
+      return None
+
+    return correction
+
+  def _edge_std_average(self, stds: list[float]) -> float | None:
+    if not stds:
+      return None
+    sample_count = min(len(stds), CENTERING_EDGE_STD_SAMPLES)
+    if sample_count == 0:
+      return None
+    return sum(stds[:sample_count]) / sample_count
+
+  def _offset_to_curvature(self, offset_m: float, min_offset: float) -> float:
+    if abs(offset_m) < min_offset:
+      return 0.0
+
+    curvature_delta = (2.0 * offset_m) / (CENTERING_LOOKAHEAD_M ** 2)
+    if curvature_delta > CENTERING_MAX_CURVATURE_DELTA:
+      curvature_delta = CENTERING_MAX_CURVATURE_DELTA
+    elif curvature_delta < -CENTERING_MAX_CURVATURE_DELTA:
+      curvature_delta = -CENTERING_MAX_CURVATURE_DELTA
+
+    if abs(curvature_delta) < CENTERING_MIN_DISPLAY_DELTA:
+      return 0.0
+
+    return curvature_delta
+
   def publish(self, CC, lac_log):
     CS = self.sm['carState']
+
+    if not self.centering_active:
+      self.centering_correction = 0.0
 
     # Orientation and angle rates can be useful for carcontroller
     # Only calibrated (car) frame is relevant for the carcontroller
@@ -207,6 +420,9 @@ class Controls(ControlsExt, ModelStateBase):
     cs.longitudinalPlanMonoTime = self.sm.logMonoTime['longitudinalPlan']
     cs.lateralPlanMonoTime = self.sm.logMonoTime['modelV2']
     cs.desiredCurvature = self.desired_curvature
+    cs.laneCenteringActive = bool(self.centering_active)
+    cs.laneCenteringOffset = float(self.centering_offset_m if self.centering_active else 0.0)
+    cs.laneCenteringSource = LANE_CENTERING_SOURCE_MAP.get(self.centering_source, LaneCenteringSourceEnum.none)
     cs.longControlState = self.LoC.long_control_state
     cs.upAccelCmd = float(self.LoC.pid.p)
     cs.uiAccelCmd = float(self.LoC.pid.i)

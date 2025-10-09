@@ -69,4 +69,9 @@ protected:
   QPointF lead_status_pos;
   QString lead_status_text;
   QColor lead_status_color;
+
+  bool centering_indicator_active = false;
+  float centering_indicator_edge_sign = 0.0f;  // +1 avoids right edge, -1 avoids left edge
+  float centering_indicator_magnitude = 0.0f;
+  cereal::ControlsState::LaneCenteringSource centering_indicator_source = cereal::ControlsState::LaneCenteringSource::none;
 };
