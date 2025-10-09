@@ -26,7 +26,7 @@ index 8925bca8ae..fed7bc2907 100644
    vEgoDEPRECATED @0 :Float32;
    vEgoRawDEPRECATED @32 :Float32;
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
-index 3751efc87a..618a61c3bc 100755
+index 3751efc87a..8482740de8 100755
 --- b/selfdrive/controls/controlsd.py
 +++ a/selfdrive/controls/controlsd.py
 @@ -8,10 +8,11 @@ from cereal import car, log
@@ -42,7 +42,7 @@ index 3751efc87a..618a61c3bc 100755
  from opendbc.car.vehicle_model import VehicleModel
  from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
  from openpilot.selfdrive.controls.lib.latcontrol import LatControl
-@@ -28,9 +29,37 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+@@ -28,9 +29,38 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
  State = log.SelfdriveState.OpenpilotState
  LaneChangeState = log.LaneChangeState
  LaneChangeDirection = log.LaneChangeDirection
@@ -59,9 +59,9 @@ index 3751efc87a..618a61c3bc 100755
 +CENTERING_PROB_EXIT_THRESHOLD = 0.5
 +CENTERING_MIN_SPEED_MS = 1.0
 +CENTERING_MAX_CURVATURE_DELTA = 0.01
-+CENTERING_MIN_DISPLAY_DELTA = 5e-5
++CENTERING_MIN_DISPLAY_DELTA = 1e-6
 +CENTERING_RATE_LIMIT_M_PER_S = 0.1
-+CENTERING_CURVATURE_GAIN = 0.6
++CENTERING_CURVATURE_GAIN = 0.55
 +CENTERING_EDGE_STD_MAX_ENTER = 1.0
 +CENTERING_EDGE_STD_MAX_EXIT = 1.2
 +CENTERING_EDGE_STD_SAMPLES = 10
@@ -70,6 +70,7 @@ index 3751efc87a..618a61c3bc 100755
 +CENTERING_DEADBAND_EXIT_M = 0.05
 +CENTERING_SIGN_FLIP_MIN_M = 0.12
 +CENTERING_TARGET_FILTER_TC = 0.6
++CENTERING_EDGE_MARGIN_M = 0.07
 +
 +LANE_CENTERING_SOURCE_MAP = {
 +  None: LaneCenteringSourceEnum.none,
@@ -80,7 +81,7 @@ index 3751efc87a..618a61c3bc 100755
  
  class Controls(ControlsExt, ModelStateBase):
    def __init__(self) -> None:
-@@ -54,6 +83,14 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -54,6 +84,14 @@ class Controls(ControlsExt, ModelStateBase):
      self.steer_limited_by_safety = False
      self.curvature = 0.0
      self.desired_curvature = 0.0
@@ -95,7 +96,7 @@ index 3751efc87a..618a61c3bc 100755
  
      self.pose_calibrator = PoseCalibrator()
      self.calibrated_pose: Pose | None = None
-@@ -138,9 +175,54 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -138,9 +176,54 @@ class Controls(ControlsExt, ModelStateBase):
  
      # Steering PID loop and lateral MPC
      # Reset desired curvature to current to avoid violating the limits on engage
@@ -136,9 +137,9 @@ index 3751efc87a..618a61c3bc 100755
  
 +    if CC.latActive:
 +      self.centering_correction = self.desired_curvature - base_desired_curvature
-+      active_offset_threshold = CENTERING_MIN_OFFSET_M
-+      self.centering_active = abs(self.centering_offset_m) > active_offset_threshold and \
-+                              abs(self.centering_correction) > CENTERING_MIN_DISPLAY_DELTA
++      has_offset = abs(self.centering_offset_m) > (CENTERING_MIN_OFFSET_M / 2)
++      has_correction = abs(self.centering_correction) > CENTERING_MIN_DISPLAY_DELTA
++      self.centering_active = centering_available and (has_offset or has_correction)
 +      if not self.centering_active:
 +        self.centering_correction = 0.0
 +    else:
@@ -151,7 +152,7 @@ index 3751efc87a..618a61c3bc 100755
      actuators.curvature = self.desired_curvature
      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                         self.steer_limited_by_safety, self.desired_curvature,
-@@ -159,9 +241,231 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -159,9 +242,239 @@ class Controls(ControlsExt, ModelStateBase):
  
      return CC, lac_log
  
@@ -187,8 +188,8 @@ index 3751efc87a..618a61c3bc 100755
 +
 +    left_candidates, right_candidates = self._collect_boundary_candidates(model_v2)
 +
-+    left_boundary, left_source = self._select_boundary(left_candidates, "left")
-+    right_boundary, right_source = self._select_boundary(right_candidates, "right")
++    left_boundary, left_source = self._select_closest_boundary(left_candidates, "left")
++    right_boundary, right_source = self._select_closest_boundary(right_candidates, "right")
 +
 +    if left_boundary is None or right_boundary is None:
 +      self.centering_source = None
@@ -291,9 +292,11 @@ index 3751efc87a..618a61c3bc 100755
 +          edge_val, edge_ok = self._edge_boundary(edge_reader)
 +          if edge_ok and edge_val is not None:
 +            if edge_val > 0.0:
-+              left_candidates.append(("edge", float(edge_val)))
++              adjusted = max(edge_val - CENTERING_EDGE_MARGIN_M, CENTERING_MIN_OFFSET_M)
++              left_candidates.append(("edge", float(adjusted)))
 +            elif edge_val < 0.0:
-+              right_candidates.append(("edge", float(edge_val)))
++              adjusted = min(edge_val + CENTERING_EDGE_MARGIN_M, -CENTERING_MIN_OFFSET_M)
++              right_candidates.append(("edge", float(adjusted)))
 +
 +    return left_candidates, right_candidates
 +
@@ -326,22 +329,28 @@ index 3751efc87a..618a61c3bc 100755
 +
 +    return float(y_val), True
 +
-+  def _select_boundary(self, candidates: list[tuple[str, float]], side: str) -> tuple[float | None, str | None]:
-+    if not candidates:
++  def _select_closest_boundary(self, candidates: list[tuple[str, float]], side: str) -> tuple[float | None, str | None]:
++    closest_value: float | None = None
++    closest_source: str | None = None
++
++    for source, value in candidates:
++      if side == "left" and value <= 0.0:
++        continue
++      if side == "right" and value >= 0.0:
++        continue
++
++      if closest_value is None or abs(value) < abs(closest_value):
++        closest_value = value
++        closest_source = source
++      elif closest_value is not None and math.isclose(abs(value), abs(closest_value), rel_tol=0.0, abs_tol=1e-4):
++        if closest_source != "lane" and source == "lane":
++          closest_value = value
++          closest_source = source
++
++    if closest_value is None:
 +      return None, None
 +
-+    if side == "left":
-+      filtered = [(source, value) for source, value in candidates if value > 0.0]
-+      if not filtered:
-+        return None, None
-+      source, value = min(filtered, key=lambda item: item[1])
-+    else:
-+      filtered = [(source, value) for source, value in candidates if value < 0.0]
-+      if not filtered:
-+        return None, None
-+      source, value = max(filtered, key=lambda item: item[1])
-+
-+    return value, source
++    return closest_value, closest_source
 +
 +  def _edge_std_average(self, stds: list[float]) -> float | None:
 +    if not stds:
@@ -383,7 +392,7 @@ index 3751efc87a..618a61c3bc 100755
      # Orientation and angle rates can be useful for carcontroller
      # Only calibrated (car) frame is relevant for the carcontroller
      CC.currentCurvature = self.curvature
-@@ -207,6 +511,9 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -207,6 +520,9 @@ class Controls(ControlsExt, ModelStateBase):
      cs.longitudinalPlanMonoTime = self.sm.logMonoTime['longitudinalPlan']
      cs.lateralPlanMonoTime = self.sm.logMonoTime['modelV2']
      cs.desiredCurvature = self.desired_curvature
@@ -426,15 +435,14 @@ index e40f832c37..14b376093a 100644
 +
  };
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 1fb0df8dee..ecd02fcfe0 100644
+index 1fb0df8dee..cd76d91233 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-@@ -14,6 +14,91 @@
+@@ -14,6 +14,98 @@
  #include <iterator>
  #include <QString>
  
 +constexpr float CENTERING_DISPLAY_MAX_OFFSET_CM = 50.0f;
-+constexpr float CENTERING_DISPLAY_MIN_OFFSET_M = 0.01f;
 +
 +void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 +  auto *s = uiState();
@@ -464,18 +472,21 @@ index 1fb0df8dee..ecd02fcfe0 100644
 +  if (sm.alive("controlsState")) {
 +    const auto &controls_state = sm["controlsState"].getControlsState();
 +    if (selfdrive_state.getEnabled() && controls_state.getLaneCenteringActive()) {
++      centering_indicator_active = true;
 +      const float centering_offset_m = controls_state.getLaneCenteringOffset();
-+      if (std::abs(centering_offset_m) > CENTERING_DISPLAY_MIN_OFFSET_M) {
-+        centering_indicator_active = true;
++      if (std::abs(centering_offset_m) > 1e-4f) {
 +        centering_indicator_edge_sign = centering_offset_m > 0.0f ? 1.0f : -1.0f;
 +        centering_indicator_magnitude = std::abs(centering_offset_m);
-+        centering_indicator_source = controls_state.getLaneCenteringSource();
++      } else {
++        centering_indicator_edge_sign = 0.0f;
++        centering_indicator_magnitude = 0.0f;
 +      }
++      centering_indicator_source = controls_state.getLaneCenteringSource();
 +    }
 +  }
 +
 +  update_model(model, lead_one);
-+  drawLaneLinesAndEdges(painter);
++  drawLaneLines(painter);
 +  drawPath(painter, model, surface_rect);
 +
 +  if (longitudinal_control && sm.alive("radarState")) {
@@ -493,13 +504,18 @@ index 1fb0df8dee..ecd02fcfe0 100644
 +  if (centering_indicator_active) {
 +    painter.save();
 +    const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE;
-+    const bool avoiding_right = centering_indicator_edge_sign > 0.0f;
-+    const QString edge_side_text = avoiding_right ? QStringLiteral("right") : QStringLiteral("left");
 +    const QString feature_text = edge_based ? QStringLiteral("road edge") : QStringLiteral("lane line");
 +    const float capped_shift_cm = std::clamp(centering_indicator_magnitude * 100.0f, 0.0f, CENTERING_DISPLAY_MAX_OFFSET_CM);
 +    const QString magnitude_text = QStringLiteral(" (≈ %1 cm)").arg(QString::number(capped_shift_cm, 'f', 0));
-+    const QString display_text = QStringLiteral("Avoiding %1 %2%3")
-+                                     .arg(edge_side_text, feature_text, magnitude_text);
++
++    QString display_text;
++    if (centering_indicator_edge_sign > 0.0f) {
++      display_text = QStringLiteral("Avoiding right %1%2").arg(feature_text, magnitude_text);
++    } else if (centering_indicator_edge_sign < 0.0f) {
++      display_text = QStringLiteral("Avoiding left %1%2").arg(feature_text, magnitude_text);
++    } else {
++      display_text = QStringLiteral("Centering using %1%2").arg(feature_text, magnitude_text);
++    }
 +
 +    const QSize text_box(440, 76);
 +    QRect indicator_rect(QPoint(surface_rect.center().x() - text_box.width() / 2,
@@ -521,7 +537,7 @@ index 1fb0df8dee..ecd02fcfe0 100644
  
  void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
    ModelRenderer::update_model(model, lead);
-@@ -299,10 +384,44 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
+@@ -299,10 +391,8 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
        bg.setColorAt(position, final_color);
      }
  
@@ -530,50 +546,14 @@ index 1fb0df8dee..ecd02fcfe0 100644
      painter.setBrush(bg);
      painter.drawPolygon(track_vertices);
 -    painter.restore();
-+  }
-+}
-+
-+void ModelRendererSP::drawLaneLinesAndEdges(QPainter &painter) {
-+  for (int i = 0; i < std::size(lane_line_vertices); ++i) {
-+    float alpha = std::clamp<float>(lane_line_probs[i], 0.0f, 0.7f);
-+    if (centering_indicator_active &&
-+        centering_indicator_source == cereal::ControlsState::LaneCenteringSource::LANE &&
-+        (i == 1 || i == 2)) {
-+      bool highlight = (centering_indicator_edge_sign < 0.0f && i == 1) ||
-+                       (centering_indicator_edge_sign > 0.0f && i == 2);
-+      if (highlight) {
-+        painter.setBrush(QColor::fromRgbF(0.2f, 0.8f, 1.0f, std::clamp(alpha + 0.1f, 0.0f, 0.85f)));
-+      } else {
-+        painter.setBrush(QColor::fromRgbF(0.8f, 0.8f, 0.8f, alpha));
-+      }
-+    } else {
-+      painter.setBrush(QColor::fromRgbF(1.0f, 1.0f, 1.0f, alpha));
-+    }
-+    painter.drawPolygon(lane_line_vertices[i]);
-+  }
-+
-+  for (int i = 0; i < std::size(road_edge_vertices); ++i) {
-+    float edge_alpha = std::clamp<float>(1.0f - road_edge_stds[i], 0.0f, 1.0f);
-+    if (centering_indicator_active &&
-+        centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE) {
-+      bool highlight_edge = (centering_indicator_edge_sign > 0.0f && i == 1) ||
-+                            (centering_indicator_edge_sign < 0.0f && i == 0);
-+      if (highlight_edge) {
-+        painter.setBrush(QColor::fromRgbF(1.0f, 0.4f, 0.0f, std::clamp(edge_alpha + 0.2f, 0.0f, 1.0f)));
-+      } else {
-+        painter.setBrush(QColor::fromRgbF(1.0f, 0.0f, 0.0f, edge_alpha));
-+      }
-+    } else {
-+      painter.setBrush(QColor::fromRgbF(1.0f, 0.0f, 0.0f, edge_alpha));
-+    }
-+    painter.drawPolygon(road_edge_vertices[i]);
    }
  }
++
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.h a/selfdrive/ui/sunnypilot/qt/onroad/model.h
-index 24404f32f0..1a2852ad59 100644
+index 24404f32f0..7f1a5d7c7d 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.h
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.h
-@@ -12,11 +12,18 @@
+@@ -12,6 +12,7 @@
  class ModelRendererSP : public ModelRenderer {
  public:
    ModelRendererSP() = default;
@@ -581,10 +561,8 @@ index 24404f32f0..1a2852ad59 100644
  
  private:
    void update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) override;
-   void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, const QRect &rect) override;
+@@ -19,4 +20,8 @@ private:
  
-+  void drawLaneLinesAndEdges(QPainter &painter);
-+
    QPolygonF left_blindspot_vertices;
    QPolygonF right_blindspot_vertices;
 +  bool centering_indicator_active = false;
