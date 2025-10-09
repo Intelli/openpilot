@@ -44,11 +44,11 @@ CENTERING_MIN_SPEED_MS = 1.0
 CENTERING_MAX_CURVATURE_DELTA = 0.01
 CENTERING_MIN_DISPLAY_DELTA = 5e-5
 CENTERING_RATE_LIMIT_M_PER_S = 0.1
-CENTERING_MIN_EDGE_DISTANCE_M = 0.3048  # 1 ft
+CENTERING_CURVATURE_GAIN = 0.6
 CENTERING_EDGE_STD_MAX_ENTER = 1.0
 CENTERING_EDGE_STD_MAX_EXIT = 1.2
 CENTERING_EDGE_STD_SAMPLES = 10
-CENTERING_EDGE_MIN_CORRECTION_M = 0.01
+CENTERING_DISTANCE_RATIO_MAX = 3.0
 
 LANE_CENTERING_SOURCE_MAP = {
   None: LaneCenteringSourceEnum.none,
@@ -83,7 +83,7 @@ class Controls(ControlsExt, ModelStateBase):
     self.centering_active = False
     self.centering_offset_m = 0.0
     self.centering_source: str | None = None
-    self._lanes_reliable = False
+    self._lane_side_reliable = {"left": False, "right": False}
     self._edges_reliable = False
 
     self.pose_calibrator = PoseCalibrator()
@@ -189,18 +189,18 @@ class Controls(ControlsExt, ModelStateBase):
       self.centering_offset_m += offset_error
       self.centering_offset_m = max(-CENTERING_MAX_OFFSET_M, min(self.centering_offset_m, CENTERING_MAX_OFFSET_M))
 
-      reset_threshold = CENTERING_EDGE_MIN_CORRECTION_M if self.centering_source == "edge" else CENTERING_MIN_OFFSET_M
+      reset_threshold = CENTERING_MIN_OFFSET_M
       if not centering_available and abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
         self.centering_offset_m = 0.0
 
-    min_offset_for_curvature = CENTERING_EDGE_MIN_CORRECTION_M if self.centering_source == "edge" else CENTERING_MIN_OFFSET_M
+    min_offset_for_curvature = CENTERING_MIN_OFFSET_M
     centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature) if centering_available else 0.0
     new_desired_curvature = base_desired_curvature + centering_delta
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
 
     if CC.latActive:
       self.centering_correction = self.desired_curvature - base_desired_curvature
-      active_offset_threshold = CENTERING_EDGE_MIN_CORRECTION_M if self.centering_source == "edge" else CENTERING_MIN_OFFSET_M
+      active_offset_threshold = CENTERING_MIN_OFFSET_M
       self.centering_active = abs(self.centering_offset_m) > active_offset_threshold and \
                               abs(self.centering_correction) > CENTERING_MIN_DISPLAY_DELTA
       if not self.centering_active:
@@ -253,122 +253,137 @@ class Controls(ControlsExt, ModelStateBase):
     return accum / count
 
   def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool]:
-    self.centering_source = None
-    lanes_available, lane_offset = self._calculate_lane_offset(model_v2, v_ego)
-    if lanes_available:
-      if lane_offset is not None:
-        self.centering_source = "lane"
-        return lane_offset, True
+    if v_ego < CENTERING_MIN_SPEED_MS:
+      self._lane_side_reliable["left"] = False
+      self._lane_side_reliable["right"] = False
+      self._edges_reliable = False
+      self.centering_source = None
       return 0.0, False
 
-    edge_offset = self._calculate_edge_offset(model_v2, v_ego)
-    if edge_offset is not None:
-      self.centering_source = "edge"
-      return edge_offset, True
+    left_candidates, right_candidates = self._collect_boundary_candidates(model_v2)
 
-    return 0.0, False
+    left_boundary, left_source = self._select_boundary(left_candidates, "left")
+    right_boundary, right_source = self._select_boundary(right_candidates, "right")
 
-  def _calculate_lane_offset(self, model_v2, v_ego: float) -> tuple[bool, float | None]:
-    if v_ego < CENTERING_MIN_SPEED_MS:
-      return False, None
+    if left_boundary is None or right_boundary is None:
+      self.centering_source = None
+      return 0.0, False
+
+    lane_width = left_boundary - right_boundary
+    if lane_width < CENTERING_LANE_WIDTH_MIN_M or lane_width > CENTERING_LANE_WIDTH_MAX_M:
+      self.centering_source = None
+      return 0.0, False
+
+    left_distance = max(left_boundary, CENTERING_MIN_OFFSET_M)
+    right_distance = max(abs(right_boundary), CENTERING_MIN_OFFSET_M)
+    ratio = max(left_distance, right_distance) / max(min(left_distance, right_distance), CENTERING_MIN_OFFSET_M)
+    if ratio > CENTERING_DISTANCE_RATIO_MAX:
+      self.centering_source = None
+      return 0.0, False
+
+    center_offset = 0.5 * (left_boundary + right_boundary)
+    center_offset = max(-CENTERING_MAX_OFFSET_M, min(center_offset, CENTERING_MAX_OFFSET_M))
+
+    if abs(center_offset) < CENTERING_MIN_OFFSET_M:
+      self.centering_source = None
+      return 0.0, False
+
+    left_distance = left_boundary
+    right_distance = abs(right_boundary)
+    if left_distance <= right_distance:
+      primary_source = left_source
+      secondary_source = right_source
+    else:
+      primary_source = right_source
+      secondary_source = left_source
+
+    self.centering_source = primary_source or secondary_source
+
+    return center_offset, True
+
+  def _collect_boundary_candidates(self, model_v2) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
+    left_candidates: list[tuple[str, float]] = []
+    right_candidates: list[tuple[str, float]] = []
 
     if len(model_v2.laneLines) < 3 or len(model_v2.laneLineProbs) < 3:
-      self._lanes_reliable = False
-      return False, None
-
-    left_prob = model_v2.laneLineProbs[1]
-    right_prob = model_v2.laneLineProbs[2]
-    prob_threshold = CENTERING_PROB_ENTER_THRESHOLD if not self._lanes_reliable else CENTERING_PROB_EXIT_THRESHOLD
-    if left_prob < prob_threshold or right_prob < prob_threshold:
-      self._lanes_reliable = False
-      return False, None
-
-    left_y_raw = self._lane_y_at_distance(model_v2.laneLines[1], CENTERING_LOOKAHEAD_M)
-    right_y_raw = self._lane_y_at_distance(model_v2.laneLines[2], CENTERING_LOOKAHEAD_M)
-    left_y, right_y = self._extract_signed_boundaries(left_y_raw, right_y_raw)
-    if left_y is None or right_y is None:
-      self._lanes_reliable = False
-      return False, None
-
-    lane_width = left_y - right_y
-    if lane_width < CENTERING_LANE_WIDTH_MIN_M or lane_width > CENTERING_LANE_WIDTH_MAX_M:
-      self._lanes_reliable = False
-      return False, None
-
-    center_offset = 0.5 * (left_y + right_y)
-    if abs(center_offset) < CENTERING_MIN_OFFSET_M:
-      self._lanes_reliable = True
-      return True, None
-
-    limited_offset = max(-CENTERING_MAX_OFFSET_M, min(center_offset, CENTERING_MAX_OFFSET_M))
-    self._lanes_reliable = True
-    return True, limited_offset
-
-  def _calculate_edge_offset(self, model_v2, v_ego: float) -> float | None:
-    if v_ego < CENTERING_MIN_SPEED_MS:
-      self._edges_reliable = False
-      return None
+      self._lane_side_reliable["left"] = False
+      self._lane_side_reliable["right"] = False
+    else:
+      left_lane, left_ok = self._lane_boundary(model_v2.laneLines[1], model_v2.laneLineProbs[1], "left")
+      if left_ok:
+        left_candidates.append(("lane", float(left_lane)))
+      right_lane, right_ok = self._lane_boundary(model_v2.laneLines[2], model_v2.laneLineProbs[2], "right")
+      if right_ok:
+        right_candidates.append(("lane", float(right_lane)))
 
     if len(model_v2.roadEdges) < 2:
       self._edges_reliable = False
-      return None
+    else:
+      edge_std = self._edge_std_average(model_v2.roadEdgeStds)
+      std_threshold = CENTERING_EDGE_STD_MAX_EXIT if self._edges_reliable else CENTERING_EDGE_STD_MAX_ENTER
+      if edge_std is not None and edge_std > std_threshold:
+        self._edges_reliable = False
+      else:
+        self._edges_reliable = True
+        left_edge, left_ok = self._edge_boundary(model_v2.roadEdges[0], "left")
+        if left_ok:
+          left_candidates.append(("edge", float(left_edge)))
+        right_edge, right_ok = self._edge_boundary(model_v2.roadEdges[1], "right")
+        if right_ok:
+          right_candidates.append(("edge", float(right_edge)))
 
-    left_y_raw = self._lane_y_at_distance(model_v2.roadEdges[0], CENTERING_LOOKAHEAD_M)
-    right_y_raw = self._lane_y_at_distance(model_v2.roadEdges[1], CENTERING_LOOKAHEAD_M)
+    return left_candidates, right_candidates
 
-    left_y, right_y = self._extract_signed_boundaries(left_y_raw, right_y_raw)
-    if left_y is None and right_y is None:
-      self._edges_reliable = False
-      return None
+  def _lane_boundary(self, lane_line, probability: float, side: str) -> tuple[float | None, bool]:
+    reliable = self._lane_side_reliable[side]
+    threshold = CENTERING_PROB_EXIT_THRESHOLD if reliable else CENTERING_PROB_ENTER_THRESHOLD
+    if probability < threshold:
+      self._lane_side_reliable[side] = False
+      return None, False
 
-    edge_std = self._edge_std_average(model_v2.roadEdgeStds)
-    std_threshold = CENTERING_EDGE_STD_MAX_ENTER if not self._edges_reliable else CENTERING_EDGE_STD_MAX_EXIT
-    if edge_std is not None and edge_std > std_threshold:
-      self._edges_reliable = False
-      return None
+    y_val = self._lane_y_at_distance(lane_line, CENTERING_LOOKAHEAD_M)
+    if y_val is None:
+      self._lane_side_reliable[side] = False
+      return None, False
 
-    constraints_min = -CENTERING_MAX_OFFSET_M
-    constraints_max = CENTERING_MAX_OFFSET_M
+    expected_sign = 1.0 if side == "left" else -1.0
+    if y_val * expected_sign <= 0.0:
+      self._lane_side_reliable[side] = False
+      return None, False
 
-    if left_y is not None:
-      constraints_max = min(constraints_max, left_y - CENTERING_MIN_EDGE_DISTANCE_M)
-    if right_y is not None:
-      constraints_min = max(constraints_min, CENTERING_MIN_EDGE_DISTANCE_M + right_y)
+    self._lane_side_reliable[side] = True
+    return float(y_val), True
 
-    if constraints_min > constraints_max:
-      self._edges_reliable = False
-      return None
+  def _edge_boundary(self, road_edge, side: str) -> tuple[float | None, bool]:
+    if not self._edges_reliable:
+      return None, False
 
-    candidates: list[float] = []
-    if left_y is not None:
-      candidates.append(left_y)
-    if right_y is not None:
-      candidates.append(right_y)
+    y_val = self._lane_y_at_distance(road_edge, CENTERING_LOOKAHEAD_M)
+    if y_val is None:
+      return None, False
 
-    close_candidates = [y for y in candidates if abs(y) < CENTERING_MIN_EDGE_DISTANCE_M]
-    if not close_candidates:
-      self._edges_reliable = True
-      return None
+    expected_sign = 1.0 if side == "left" else -1.0
+    if y_val * expected_sign <= 0.0:
+      return None, False
 
-    if len(close_candidates) >= 2 and left_y is not None and right_y is not None:
-      self._edges_reliable = False
-      return None
+    return float(y_val), True
 
-    closest_y = min(close_candidates, key=lambda y: abs(y))
-    needed_shift = CENTERING_MIN_EDGE_DISTANCE_M - abs(closest_y)
-    correction = -math.copysign(needed_shift, closest_y)
+  def _select_boundary(self, candidates: list[tuple[str, float]], side: str) -> tuple[float | None, str | None]:
+    if not candidates:
+      return None, None
 
-    if correction < constraints_min or correction > constraints_max:
-      # No feasible correction that preserves minimum distance to both edges
-      self._edges_reliable = False
-      return None
+    if side == "left":
+      filtered = [(source, value) for source, value in candidates if value > 0.0]
+      if not filtered:
+        return None, None
+      source, value = min(filtered, key=lambda item: item[1])
+    else:
+      filtered = [(source, value) for source, value in candidates if value < 0.0]
+      if not filtered:
+        return None, None
+      source, value = max(filtered, key=lambda item: item[1])
 
-    if abs(correction) < CENTERING_EDGE_MIN_CORRECTION_M:
-      self._edges_reliable = True
-      return None
-
-    self._edges_reliable = True
-    return correction
+    return value, source
 
   def _edge_std_average(self, stds: list[float]) -> float | None:
     if not stds:
@@ -386,25 +401,11 @@ class Controls(ControlsExt, ModelStateBase):
       return None
     return total / count
 
-  def _extract_signed_boundaries(self, first: float | None, second: float | None) -> tuple[float | None, float | None]:
-    positives = [v for v in (first, second) if v is not None and v > 0.0]
-    negatives = [v for v in (first, second) if v is not None and v < 0.0]
-
-    left_val = max(positives) if positives else None
-    right_val = min(negatives) if negatives else None
-
-    if left_val is None and right_val is not None:
-      right_val = min((v for v in (first, second) if v is not None), default=None)
-    if right_val is None and left_val is not None:
-      left_val = max((v for v in (first, second) if v is not None), default=None)
-
-    return left_val, right_val
-
   def _offset_to_curvature(self, offset_m: float, min_offset: float) -> float:
     if abs(offset_m) < min_offset:
       return 0.0
 
-    curvature_delta = (2.0 * offset_m) / (CENTERING_LOOKAHEAD_M ** 2)
+    curvature_delta = CENTERING_CURVATURE_GAIN * (2.0 * offset_m) / (CENTERING_LOOKAHEAD_M ** 2)
     if curvature_delta > CENTERING_MAX_CURVATURE_DELTA:
       curvature_delta = CENTERING_MAX_CURVATURE_DELTA
     elif curvature_delta < -CENTERING_MAX_CURVATURE_DELTA:
