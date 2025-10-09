@@ -157,7 +157,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     painter.setOpacity(centering_indicator_opacity);
 
     const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE;
-    const QString feature_text = edge_based ? QStringLiteral("road edge") : QStringLiteral("lane line");
+    const QString feature_text = edge_based ? QStringLiteral("edge") : QStringLiteral("line");
     const float capped_shift_cm = std::clamp(centering_indicator_magnitude * 100.0f, 0.0f, CENTERING_DISPLAY_MAX_OFFSET_CM);
     const QString magnitude_text = QStringLiteral("≈ %1 cm").arg(QString::number(capped_shift_cm, 'f', capped_shift_cm < 10.0f ? 1 : 0));
 
@@ -172,26 +172,26 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 
     const QString secondary_text = magnitude_text;
 
-    const int indicator_width = 600;
-    const int indicator_height = 128;
+    const int indicator_width = 720;
+    const int indicator_height = 160;
     QRect indicator_rect(QPoint(surface_rect.center().x() - indicator_width / 2,
-                                surface_rect.bottom() - indicator_height - 160),
+                                surface_rect.bottom() - indicator_height - 148),
                          QSize(indicator_width, indicator_height));
 
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(0, 0, 0, 180));
-    painter.drawRoundedRect(indicator_rect, 32, 32);
+    painter.setBrush(QColor(0, 0, 0, 190));
+    painter.drawRoundedRect(indicator_rect, 36, 36);
 
-    painter.setPen(QColor(255, 255, 255, 240));
-    QFont title_font = InterFont(44, QFont::DemiBold);
-    QFont detail_font = InterFont(34, QFont::Medium);
+    painter.setPen(QColor(255, 255, 255, 245));
+    QFont title_font = InterFont(56, QFont::DemiBold);
+    QFont detail_font = InterFont(42, QFont::Medium);
 
     painter.setFont(title_font);
-    QRect title_rect = indicator_rect.adjusted(24, 18, -24, -indicator_height / 2);
+    QRect title_rect = indicator_rect.adjusted(32, 26, -32, -indicator_height / 2);
     painter.drawText(title_rect, Qt::AlignCenter | Qt::TextWordWrap, primary_text);
 
     painter.setFont(detail_font);
-    painter.drawText(indicator_rect.adjusted(24, indicator_height / 2 - 6, -24, -18), Qt::AlignCenter, secondary_text);
+    painter.drawText(indicator_rect.adjusted(32, indicator_height / 2 - 2, -32, -26), Qt::AlignCenter, secondary_text);
 
     painter.restore();
   }

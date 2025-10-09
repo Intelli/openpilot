@@ -184,10 +184,10 @@ class Controls(ControlsExt, ModelStateBase):
     target_offset_m = 0.0
     centering_available = False
     centering_source: str | None = None
-    if CC.latActive and not self._prev_lat_active:
-      self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
     advanced_centering_enabled = self._advanced_centering_enabled
     centering_released = not advanced_centering_enabled
+    if CC.latActive and not self._prev_lat_active:
+      self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
     if CC.latActive and self._lane_centering_enabled() and advanced_centering_enabled:
       target_offset_raw, centering_available, centering_source = self._calculate_centering_target_offset(model_v2, CS.vEgo)
       if centering_available:
@@ -364,7 +364,7 @@ class Controls(ControlsExt, ModelStateBase):
   def _filter_centering_target(self, target_offset_m: float) -> float:
     alpha = DT_CTRL / (CENTERING_TARGET_FILTER_TC + DT_CTRL)
     self._centering_target_filtered += alpha * (target_offset_m - self._centering_target_filtered)
-    if abs(self._centering_target_filtered) < CENTERING_MIN_OFFSET_M / 2:
+    if abs(target_offset_m) < CENTERING_MIN_OFFSET_M / 2 and abs(self._centering_target_filtered) < CENTERING_MIN_OFFSET_M / 2:
       self._centering_target_filtered = 0.0
     return self._centering_target_filtered
 
