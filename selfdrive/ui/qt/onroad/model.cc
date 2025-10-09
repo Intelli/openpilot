@@ -27,15 +27,13 @@ void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
   const auto &radar_state = sm["radarState"].getRadarState();
   const auto &lead_one = radar_state.getLeadOne();
   const auto &controls_state = sm["controlsState"].getControlsState();
-  const auto &car_params = sm["carParams"].getCarParams();
   const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
 
-  const bool is_ev9 = car_params.getCarFingerprint() == cereal::CarParams::CarFingerprint::KIA_EV9;
   const bool engaged = selfdrive_state.getEnabled();
   const bool centering_active = controls_state.getLaneCenteringActive();
   const float centering_offset_m = controls_state.getLaneCenteringOffset();
   const auto centering_source = controls_state.getLaneCenteringSource();
-  if (is_ev9 && engaged && centering_active && std::abs(centering_offset_m) > CENTERING_DISPLAY_MIN_OFFSET_M) {
+  if (engaged && centering_active && std::abs(centering_offset_m) > CENTERING_DISPLAY_MIN_OFFSET_M) {
     centering_indicator_active = true;
     centering_indicator_edge_sign = centering_offset_m > 0.0f ? 1.0f : -1.0f;
     centering_indicator_magnitude = std::abs(centering_offset_m);
