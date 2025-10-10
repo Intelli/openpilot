@@ -35,7 +35,7 @@ ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
 
 CENTERING_LOOKAHEAD_M = 10.0
 CENTERING_MAX_OFFSET_M = 0.5
-CENTERING_MIN_OFFSET_M = 0.03
+CENTERING_MIN_OFFSET_M = 0.015
 CENTERING_LANE_WIDTH_MIN_M = 2.4
 CENTERING_LANE_WIDTH_MAX_M = 5.0
 CENTERING_PROB_ENTER_THRESHOLD = 0.6
@@ -43,17 +43,25 @@ CENTERING_PROB_EXIT_THRESHOLD = 0.5
 CENTERING_MIN_SPEED_MS = 1.0
 CENTERING_MAX_CURVATURE_DELTA = 0.01
 CENTERING_MIN_DISPLAY_DELTA = 1e-6
-CENTERING_RATE_LIMIT_M_PER_S = 0.1
+CENTERING_RATE_LIMIT_M_PER_S = 0.08
+CENTERING_CURVATURE_MIN_OFFSET_M = 0.008
 CENTERING_CURVATURE_GAIN = 0.55
 CENTERING_EDGE_STD_MAX_ENTER = 1.0
 CENTERING_EDGE_STD_MAX_EXIT = 1.2
 CENTERING_EDGE_STD_SAMPLES = 10
 CENTERING_DISTANCE_RATIO_MAX = 3.0
-CENTERING_DEADBAND_ENTER_M = 0.08
-CENTERING_DEADBAND_EXIT_M = 0.05
+CENTERING_DEADBAND_ENTER_M = 0.045
+CENTERING_DEADBAND_EXIT_M = 0.02
 CENTERING_SIGN_FLIP_MIN_M = 0.12
 CENTERING_TARGET_FILTER_TC = 0.6
 CENTERING_EDGE_MARGIN_M = 0.14
+CENTERING_SOFT_GAIN_MIN = 0.3
+CENTERING_SOFT_GAIN_THRESHOLD_M = 0.08
+CENTERING_POST_CROSS_SLACK_M = 0.025
+CENTERING_SLACK_DECAY_RATE_M_PER_S = 0.02
+CENTERING_CURVE_ATTENUATION_START = 0.0025
+CENTERING_CURVE_ATTENUATION_FULL = 0.0075
+CENTERING_CURVE_MIN_SCALE = 0.35
 
 LANE_CENTERING_SOURCE_MAP = {
   None: LaneCenteringSourceEnum.none,
@@ -93,6 +101,7 @@ class Controls(ControlsExt, ModelStateBase):
     self._edges_reliable = False
     self._centering_lock_sign = 0
     self._centering_target_filtered = 0.0
+    self._centering_cross_slack = 0.0
     self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
     self._prev_lat_active = False
 
@@ -220,8 +229,8 @@ class Controls(ControlsExt, ModelStateBase):
       if not centering_available and abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
         self.centering_offset_m = 0.0
 
-    min_offset_for_curvature = CENTERING_MIN_OFFSET_M
-    centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature) if centering_available else 0.0
+    min_offset_for_curvature = CENTERING_CURVATURE_MIN_OFFSET_M
+    centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature, base_desired_curvature) if centering_available else 0.0
     new_desired_curvature = base_desired_curvature + centering_delta
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
 
@@ -237,7 +246,8 @@ class Controls(ControlsExt, ModelStateBase):
       elif self.centering_source is None and self._centering_last_source is not None and (has_offset or has_correction):
         self.centering_source = self._centering_last_source
 
-      self.centering_active = has_correction or (centering_available and has_offset)
+      centering_feature_active = advanced_centering_enabled and (has_correction or has_offset)
+      self.centering_active = centering_feature_active
       if not self.centering_active:
         self.centering_correction = 0.0
         if not has_offset:
@@ -339,23 +349,31 @@ class Controls(ControlsExt, ModelStateBase):
   def _apply_offset_hysteresis(self, target_offset_m: float, available: bool) -> tuple[float, bool, bool]:
     if not available:
       self._centering_lock_sign = 0
+      self._centering_cross_slack = 0.0
       return 0.0, False, False
 
     magnitude = abs(target_offset_m)
+    if self._centering_cross_slack > 0.0:
+      decay = CENTERING_SLACK_DECAY_RATE_M_PER_S * DT_CTRL
+      self._centering_cross_slack = max(0.0, self._centering_cross_slack - decay)
     if magnitude < CENTERING_DEADBAND_EXIT_M:
       if self._centering_lock_sign != 0:
         self._centering_lock_sign = 0
+      self._centering_cross_slack = 0.0
       return 0.0, False, False
 
     desired_sign = 1 if target_offset_m > 0.0 else -1
 
     if self._centering_lock_sign == 0:
-      if magnitude < CENTERING_DEADBAND_ENTER_M:
+      threshold = CENTERING_DEADBAND_ENTER_M + self._centering_cross_slack
+      if magnitude < threshold:
         return 0.0, False, False
       self._centering_lock_sign = desired_sign
+      self._centering_cross_slack = 0.0
     else:
       if desired_sign != self._centering_lock_sign:
         self._centering_lock_sign = 0
+        self._centering_cross_slack = CENTERING_POST_CROSS_SLACK_M
         return 0.0, False, True
 
     locked_offset = self._centering_lock_sign * magnitude
@@ -475,11 +493,24 @@ class Controls(ControlsExt, ModelStateBase):
       return None
     return total / count
 
-  def _offset_to_curvature(self, offset_m: float, min_offset: float) -> float:
-    if abs(offset_m) < min_offset:
+  def _offset_to_curvature(self, offset_m: float, min_offset: float, base_curvature: float) -> float:
+    offset_abs = abs(offset_m)
+    if offset_abs < min_offset:
       return 0.0
 
-    curvature_delta = CENTERING_CURVATURE_GAIN * (2.0 * offset_m) / (CENTERING_LOOKAHEAD_M ** 2)
+    ratio = min(1.0, offset_abs / CENTERING_SOFT_GAIN_THRESHOLD_M) if CENTERING_SOFT_GAIN_THRESHOLD_M > 0.0 else 1.0
+    gain = CENTERING_SOFT_GAIN_MIN + (CENTERING_CURVATURE_GAIN - CENTERING_SOFT_GAIN_MIN) * (ratio ** 1.5)
+
+    curvature_delta = gain * (2.0 * offset_m) / (CENTERING_LOOKAHEAD_M ** 2)
+
+    curve_mag = abs(base_curvature)
+    if curve_mag > CENTERING_CURVE_ATTENUATION_START:
+      atten_span = max(1e-6, CENTERING_CURVE_ATTENUATION_FULL - CENTERING_CURVE_ATTENUATION_START)
+      attenuation_ratio = min(1.0, (curve_mag - CENTERING_CURVE_ATTENUATION_START) / atten_span)
+      curve_scale = 1.0 - attenuation_ratio * (1.0 - CENTERING_CURVE_MIN_SCALE)
+      curve_scale = max(CENTERING_CURVE_MIN_SCALE, curve_scale)
+      curvature_delta *= curve_scale
+
     if curvature_delta > CENTERING_MAX_CURVATURE_DELTA:
       curvature_delta = CENTERING_MAX_CURVATURE_DELTA
     elif curvature_delta < -CENTERING_MAX_CURVATURE_DELTA:

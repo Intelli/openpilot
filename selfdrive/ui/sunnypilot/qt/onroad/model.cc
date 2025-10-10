@@ -26,6 +26,7 @@ constexpr float CENTERING_BLINK_DISTANCE_FULL_M = 0.28f;
 constexpr float CENTERING_BLINK_RISE_S = 0.1f;
 constexpr float CENTERING_BLINK_DECAY_S = 0.4f;
 constexpr float CENTERING_BLINK_FREQ_HZ = 4.0f;
+constexpr float CENTERING_INDICATOR_OFFSET_WAKE_M = 0.012f;
 
 void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   auto *s = uiState();
@@ -52,16 +53,20 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   centering_indicator_last_update = now;
 
   bool centering_signal = false;
+  bool centering_flag_active = false;
+  float centering_offset_m = 0.0f;
   bool controls_state_stale = true;
   if (sm.alive("controlsState")) {
     const auto &controls_state = sm["controlsState"].getControlsState();
-    centering_signal = selfdrive_state.getEnabled() && controls_state.getLaneCenteringActive();
+    centering_flag_active = controls_state.getLaneCenteringActive();
+    centering_offset_m = controls_state.getLaneCenteringOffset();
+    const bool offset_significant = std::abs(centering_offset_m) > CENTERING_INDICATOR_OFFSET_WAKE_M;
+    centering_signal = selfdrive_state.getEnabled() && (centering_flag_active || offset_significant);
     const int64_t controls_mono_time = sm.rcv_time("controlsState");
     const double age = std::abs((double)(nanos_since_boot() - controls_mono_time)) / 1e9;
     controls_state_stale = age > 0.5;
     if (centering_signal) {
       centering_indicator_last_signal = now;
-      const float centering_offset_m = controls_state.getLaneCenteringOffset();
       centering_indicator_source = controls_state.getLaneCenteringSource();
       if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
           centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE) {
@@ -219,7 +224,7 @@ void ModelRendererSP::drawLaneLines(QPainter &painter) {
 
   const int alpha = std::clamp(static_cast<int>(std::lround(alpha_float)), 0, 255);
   painter.save();
-  painter.setBrush(QColor(255, 255, 255, alpha));
+  painter.setBrush(QColor(178, 102, 255, alpha));
   painter.drawPolygon(lane_line_vertices[highlight_idx]);
   painter.restore();
 }
