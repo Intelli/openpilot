@@ -18,6 +18,7 @@ EXCLUDES=(
 
 if [[ $# -gt 1 ]]; then
   echo "Usage: $0 [commit|ref]" >&2
+  return 1 2>/dev/null
   exit 1
 fi
 
@@ -27,6 +28,7 @@ git fetch upstream hkg-angle-steering-2025 --prune
 
 if ! git rev-parse --verify "${TARGET_REF}^{commit}" >/dev/null 2>&1; then
   echo "Unable to resolve '${TARGET_REF}' to a commit. Did you fetch the right branch?" >&2
+  return 1 2>/dev/null
   exit 1
 fi
 
@@ -52,9 +54,37 @@ PRE_SYNC_REF="$(git rev-parse --verify HEAD)"
 # Prefer upstream changes on overlap; excluded files get restored after.
 # Ignore submodule commits during merge, they get synced separately.
 if ! git -c submodule.recurse=false merge --no-edit -X theirs "${TARGET_REF}"; then
-  echo "Merge with '${TARGET_REF}' failed. Aborting merge; please resolve issues manually." >&2
-  git merge --abort >/dev/null 2>&1 || true
-  exit 1
+  merge_resolved=0
+
+  if git rev-parse --verify MERGE_HEAD >/dev/null 2>&1; then
+    mapfile -t merge_conflicts < <(git diff --name-only --diff-filter=U)
+    unresolved_conflicts=()
+
+    for path in "${merge_conflicts[@]}"; do
+      if [[ "${path}" == "${OPENDBC_SUBMODULE_PATH}" ]]; then
+        echo "Resetting submodule '${path}' to '${TARGET_REF}'." >&2
+        if git restore --source="${TARGET_REF}" --staged --worktree --no-overlay -- "${path}"; then
+          continue
+        fi
+      fi
+      unresolved_conflicts+=("${path}")
+    done
+
+    if [[ ${#merge_conflicts[@]} -gt 0 && ${#unresolved_conflicts[@]} -eq 0 ]]; then
+      if ! git diff --name-only --diff-filter=U | grep -q .; then
+        if GIT_MERGE_AUTOEDIT=no git merge --continue >/dev/null 2>&1; then
+          merge_resolved=1
+        fi
+      fi
+    fi
+  fi
+
+  if [[ ${merge_resolved} -ne 1 ]]; then
+    echo "Merge with '${TARGET_REF}' failed. Aborting merge; please resolve issues manually." >&2
+    git merge --abort >/dev/null 2>&1 || true
+    return 1 2>/dev/null
+    exit 1
+  fi
 fi
 
 restore_args=(
