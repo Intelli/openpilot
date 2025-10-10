@@ -866,9 +866,9 @@ struct ControlsState @0x97ff69c53601abf1 {
   desiredCurvature @61 :Float32;  # lag adjusted curvatures used by lateral controllers
   laneCenteringOffset @67 :Float32;  # lateral offset correction applied by centering helper (m)
   laneCenteringActive @68 :Bool;
-  laneCenteringSource @130 :LaneCenteringSource;
-  edgeClearanceActive @131 :Bool;
-  edgeClearanceOffset @132 :Float32;
+  laneCenteringSource @69 :LaneCenteringSource;
+  edgeClearanceActive @70 :Bool;
+  edgeClearanceOffset @71 :Float32;
   forceDecel @51 :Bool;
 
   lateralControlState :union {
