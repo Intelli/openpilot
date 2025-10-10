@@ -16,7 +16,6 @@
 
 #include "common/timing.h"
 
-constexpr float CENTERING_DISPLAY_MAX_OFFSET_CM = 50.0f;
 constexpr float CENTERING_INDICATOR_MIN_OPACITY = 1e-3f;
 constexpr float CENTERING_SIGNAL_STALE_S = 1.0f;
 constexpr float CENTERING_INDICATOR_RAMP_UP_S = 0.18f;
