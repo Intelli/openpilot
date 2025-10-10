@@ -114,7 +114,6 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     centering_status_active || centering_display_valid || centering_adjusting_display || centering_edge_mode || panel_offset_available);
 
   const bool display_offset_valid = panel_offset_available;
-  const float display_offset_m = display_offset_valid ? panel_offset_m : 0.0f;
 
   float highlight_dt = std::chrono::duration<float>(highlight_now - centering_highlight_last_update).count();
   centering_highlight_last_update = highlight_now;
@@ -149,6 +148,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     const bool use_edge_mode = centering_edge_mode || (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE && centering_adjusting_display);
     const QString feature_text = use_edge_mode ? QStringLiteral("road edge") : QStringLiteral("lane line");
 
+    const float display_offset_m = display_offset_valid ? panel_offset_m : 0.0f;
     const float display_offset_cm = std::abs(display_offset_m) * 100.0f;
     const bool offset_small = display_offset_cm < 1.0f;
     const int decimal_precision = display_offset_cm < 10.0f ? 1 : 0;
