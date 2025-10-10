@@ -121,7 +121,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     centering_highlight_phase = 0.0f;
   } else {
     if (highlight_dt < 0.0f) highlight_dt = 0.0f;
-    constexpr float HIGHLIGHT_FREQ_HZ = 3.0f;
+    constexpr float HIGHLIGHT_FREQ_HZ = 1.0f;
     centering_highlight_phase = std::fmod(centering_highlight_phase + highlight_dt * HIGHLIGHT_FREQ_HZ * float(2.0 * M_PI), float(2.0 * M_PI));
   }
 
@@ -146,7 +146,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     painter.setOpacity(1.0f);
 
     const bool use_edge_mode = centering_edge_mode || (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE && centering_adjusting_display);
-    const QString feature_text = use_edge_mode ? QStringLiteral("road edge") : QStringLiteral("lane line");
+    const QString feature_text = use_edge_mode ? QStringLiteral("Edge") : QStringLiteral("Lane");
 
     const float display_offset_m = display_offset_valid ? panel_offset_m : 0.0f;
     const float display_offset_cm = std::abs(display_offset_m) * 100.0f;
@@ -162,31 +162,29 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 
     QString primary_text;
     if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
-      primary_text = QStringLiteral("Lane centering: offset unknown");
+      primary_text = QStringLiteral("Center Unknown");
     } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
-      const float edge_sign = centering_indicator_edge_sign != 0.0f ? centering_indicator_edge_sign : (display_offset_m >= 0.0f ? 1.0f : -1.0f);
+      const float edge_sign = centering_indicator_edge_sign != 0.0f ? centering_indicator_edge_sign :
+          (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
       if (edge_sign > 0.0f) {
-        primary_text = QStringLiteral("Maintaining clearance from right %1").arg(feature_text);
+        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
       } else if (edge_sign < 0.0f) {
-        primary_text = QStringLiteral("Maintaining clearance from left %1").arg(feature_text);
+        primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
       } else {
-        primary_text = QStringLiteral("Maintaining road edge clearance");
+        primary_text = QStringLiteral("Centering (%1)").arg(feature_text);
       }
     } else if (centering_adjusting_display) {
-      const float sign = centering_indicator_edge_sign != 0.0f ? centering_indicator_edge_sign : (display_offset_m >= 0.0f ? 1.0f : -1.0f);
+      const float sign = centering_indicator_edge_sign != 0.0f ? centering_indicator_edge_sign :
+          (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
       if (sign > 0.0f) {
-        primary_text = QStringLiteral("Adjusting left from right %1").arg(feature_text);
+        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
       } else if (sign < 0.0f) {
-        primary_text = QStringLiteral("Adjusting right from left %1").arg(feature_text);
+        primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
       } else {
-        primary_text = QStringLiteral("Centering using %1").arg(feature_text);
+        primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered");
       }
     } else if (display_offset_valid) {
-      if (offset_small) {
-        primary_text = QStringLiteral("Lane centered");
-      } else {
-        primary_text = QStringLiteral("Vehicle %1 of center").arg(direction_from_sign(display_offset_m));
-      }
+      primary_text = QStringLiteral("Centered");
     } else {
       primary_text = QStringLiteral("Lane centering standby");
     }
@@ -194,14 +192,14 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     QString secondary_text;
     if (display_offset_valid) {
       if (offset_small) {
-        secondary_text = QStringLiteral("Offset: < 1 cm from center");
+        secondary_text = QStringLiteral("< 1 cm from center");
       } else {
-        secondary_text = QStringLiteral("Offset: %1 cm %2 of center")
+        secondary_text = QStringLiteral("%1 cm %2 of center")
                             .arg(QString::number(display_offset_cm, 'f', decimal_precision))
                             .arg(direction_from_sign(display_offset_m));
       }
     } else {
-      secondary_text = QStringLiteral("Offset: unknown");
+      secondary_text = QStringLiteral("Offset unknown");
     }
 
     const int indicator_width = 720;
@@ -244,15 +242,25 @@ void ModelRendererSP::drawLaneLines(QPainter &painter) {
     return;
   }
 
-  const float pulse = 0.5f * (1.0f + std::sin(centering_highlight_phase));
-  const float alpha_float = (120.0f + 100.0f * pulse) * centering_highlight_strength;
-  if (alpha_float <= 1.0f) {
+  if (std::sin(centering_highlight_phase) <= 0.0f) {
     return;
   }
 
-  const int alpha = std::clamp(static_cast<int>(std::lround(alpha_float)), 0, 255);
+  const float clamped_strength = std::clamp(centering_highlight_strength, 0.0f, 1.0f);
+  const int alpha = std::clamp(static_cast<int>(std::lround(200.0f * clamped_strength)), 0, 255);
+  if (alpha <= 0) {
+    return;
+  }
+
+  const QRectF bounds = lane_line_vertices[highlight_idx].boundingRect();
+  QLinearGradient gradient = highlight_idx == 2 ?
+      QLinearGradient(bounds.right(), bounds.top(), bounds.left(), bounds.top()) :
+      QLinearGradient(bounds.left(), bounds.top(), bounds.right(), bounds.top());
+  gradient.setColorAt(0.0, QColor(178, 102, 255, alpha));
+  gradient.setColorAt(1.0, QColor(132, 70, 214, alpha));
+
   painter.save();
-  painter.setBrush(QColor(178, 102, 255, alpha));
+  painter.setBrush(gradient);
   painter.drawPolygon(lane_line_vertices[highlight_idx]);
   painter.restore();
 }
