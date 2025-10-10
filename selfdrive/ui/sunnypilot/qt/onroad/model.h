@@ -23,20 +23,15 @@ private:
 
   QPolygonF left_blindspot_vertices;
   QPolygonF right_blindspot_vertices;
-  bool centering_indicator_active = false;
   float centering_indicator_edge_sign = 0.0f;
-  float centering_indicator_magnitude = 0.0f;
   cereal::ControlsState::LaneCenteringSource centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
-  float centering_indicator_opacity = 0.0f;
-  std::chrono::steady_clock::time_point centering_indicator_last_update = std::chrono::steady_clock::now();
-  std::chrono::steady_clock::time_point centering_indicator_last_signal = std::chrono::steady_clock::now();
-  std::chrono::steady_clock::time_point centering_indicator_last_controls_update = std::chrono::steady_clock::now();
   cereal::ControlsState::LaneCenteringSource centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
-  float centering_indicator_prev_magnitude = 0.0f;
-  float centering_indicator_blink_intensity = 0.0f;
-  float centering_indicator_blink_phase = 0.0f;
   bool centering_display_valid = false;
   float centering_display_offset_m = 0.0f;
   bool centering_adjusting_display = false;
   bool centering_edge_mode = false;
+  bool centering_status_active = false;
+  float centering_highlight_strength = 0.0f;
+  float centering_highlight_phase = 0.0f;
+  std::chrono::steady_clock::time_point centering_highlight_last_update = std::chrono::steady_clock::now();
 };

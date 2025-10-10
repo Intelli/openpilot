@@ -16,13 +16,7 @@
 
 #include "common/timing.h"
 
-constexpr float CENTERING_INDICATOR_MIN_OPACITY = 1e-3f;
 constexpr float CENTERING_SIGNAL_STALE_S = 1.0f;
-constexpr float CENTERING_INDICATOR_RAMP_UP_S = 0.18f;
-constexpr float CENTERING_INDICATOR_RAMP_DOWN_S = 0.7f;
-constexpr float CENTERING_LANE_HIGHLIGHT_MIN_M = 0.06f;
-constexpr float CENTERING_LANE_HIGHLIGHT_FULL_M = 0.25f;
-constexpr float CENTERING_LANE_PULSE_FREQ_HZ = 3.0f;
 
 void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   auto *s = uiState();
@@ -44,131 +38,88 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   const auto &lead_one = radar_state.getLeadOne();
   const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
 
-  const auto now = std::chrono::steady_clock::now();
-  const float frame_dt = std::chrono::duration<float>(now - centering_indicator_last_update).count();
-  centering_indicator_last_update = now;
 
-  bool centering_signal = false;
-  bool edge_clearance_signal = false;
-  float centering_offset_m = 0.0f;
-  float edge_clearance_offset_m = 0.0f;
-  cereal::ControlsState::LaneCenteringSource centering_source = cereal::ControlsState::LaneCenteringSource::NONE;
-  bool controls_state_stale = true;
-  bool centering_valid_now = false;
-  float display_offset_now = 0.0f;
-  bool centering_adjusting_now = false;
+centering_status_active = false;
+centering_display_valid = false;
+centering_display_offset_m = 0.0f;
+centering_adjusting_display = false;
+centering_edge_mode = false;
+centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
+centering_indicator_edge_sign = 0.0f;
+centering_highlight_strength = 0.0f;
 
-  if (sm.alive("controlsState")) {
-    const auto &controls_state = sm["controlsState"].getControlsState();
-    centering_offset_m = controls_state.getLaneCenteringOffset();
-    centering_source = controls_state.getLaneCenteringSource();
-    edge_clearance_offset_m = controls_state.getEdgeClearanceOffset();
-    centering_valid_now = controls_state.getLaneCenteringValid();
-    display_offset_now = controls_state.getLaneCenteringDisplayOffset();
-    centering_adjusting_now = controls_state.getLaneCenteringAdjusting();
-    centering_signal = selfdrive_state.getEnabled() && centering_adjusting_now;
-    edge_clearance_signal = selfdrive_state.getEnabled() && controls_state.getEdgeClearanceActive();
-    const int64_t controls_mono_time = sm.rcv_time("controlsState");
-    const double age = std::abs((double)(nanos_since_boot() - controls_mono_time)) / 1e9;
-    controls_state_stale = age > CENTERING_SIGNAL_STALE_S;
+bool panel_offset_available = false;
+float panel_offset_m = 0.0f;
 
-    if (!controls_state_stale) {
-      centering_indicator_last_controls_update = now;
-      centering_display_valid = centering_valid_now;
-      centering_display_offset_m = centering_valid_now ? display_offset_now : 0.0f;
-    }
+const bool enabled = selfdrive_state.getEnabled();
+const auto highlight_now = std::chrono::steady_clock::now();
 
-    const bool guard_signal = centering_signal || edge_clearance_signal;
-    if (guard_signal) {
-      const float display_offset = centering_signal ? centering_offset_m : edge_clearance_offset_m;
-      const auto display_source = centering_signal ? centering_source : cereal::ControlsState::LaneCenteringSource::EDGE;
+if (enabled && sm.alive("controlsState")) {
+  const auto &controls_state = sm["controlsState"].getControlsState();
+  const int64_t controls_mono_time = sm.rcv_time("controlsState");
+  const double age = std::abs(static_cast<double>(nanos_since_boot() - controls_mono_time)) / 1e9;
+  const bool controls_state_stale = age > CENTERING_SIGNAL_STALE_S;
 
-      centering_indicator_last_signal = now;
-      centering_indicator_magnitude = std::abs(display_offset);
-      centering_indicator_edge_sign = display_offset > 0.0f ? 1.0f : (display_offset < 0.0f ? -1.0f : 0.0f);
-      centering_indicator_source = display_source;
-      if (centering_indicator_source != cereal::ControlsState::LaneCenteringSource::NONE) {
-        centering_indicator_last_nonzero_source = centering_indicator_source;
-      }
+  if (!controls_state_stale) {
+    centering_status_active = controls_state.getLaneCenteringActive();
+    centering_adjusting_display = controls_state.getLaneCenteringAdjusting();
+    centering_edge_mode = controls_state.getEdgeClearanceActive();
+    centering_display_valid = controls_state.getLaneCenteringValid();
+
+    if (centering_adjusting_display) {
+      panel_offset_available = true;
+      panel_offset_m = controls_state.getLaneCenteringOffset();
+      centering_indicator_source = controls_state.getLaneCenteringSource();
+    } else if (centering_edge_mode) {
+      panel_offset_available = true;
+      panel_offset_m = controls_state.getEdgeClearanceOffset();
+      centering_indicator_source = cereal::ControlsState::LaneCenteringSource::EDGE;
+    } else if (centering_display_valid) {
+      panel_offset_available = true;
+      panel_offset_m = controls_state.getLaneCenteringDisplayOffset();
+      centering_indicator_source = controls_state.getLaneCenteringSource();
     }
   } else {
-    centering_display_valid = false;
-    centering_display_offset_m = 0.0f;
+    centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
   }
+} else {
+  centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
+}
 
-  if (controls_state_stale || !selfdrive_state.getEnabled()) {
-    centering_adjusting_display = false;
-    centering_edge_mode = false;
-    if (controls_state_stale) {
-      centering_display_valid = false;
-      centering_display_offset_m = 0.0f;
-    }
-  } else {
-    centering_adjusting_display = centering_signal;
-    centering_edge_mode = edge_clearance_signal;
-  }
+if (!panel_offset_available && centering_display_valid) {
+  panel_offset_available = true;
+  panel_offset_m = centering_display_offset_m;
+}
 
-  const bool any_signal = centering_signal || edge_clearance_signal;
-  if (any_signal) {
-    centering_indicator_active = true;
-  } else if (controls_state_stale || !selfdrive_state.getEnabled()) {
-    centering_indicator_active = false;
-  }
+if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
+    centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE) {
+  centering_indicator_source = centering_indicator_last_nonzero_source;
+}
 
-  const float target_opacity = centering_indicator_active ? 1.0f : 0.0f;
-  const float ramp = centering_indicator_active ? CENTERING_INDICATOR_RAMP_UP_S : CENTERING_INDICATOR_RAMP_DOWN_S;
-  if (ramp > 1e-3f && frame_dt > 0.0f) {
-    const float step = frame_dt / ramp;
-    if (target_opacity > centering_indicator_opacity) {
-      centering_indicator_opacity = std::min(target_opacity, centering_indicator_opacity + step);
-    } else {
-      centering_indicator_opacity = std::max(target_opacity, centering_indicator_opacity - step);
-    }
-  } else {
-    centering_indicator_opacity = target_opacity;
-  }
+if (centering_indicator_source != cereal::ControlsState::LaneCenteringSource::NONE) {
+  centering_indicator_last_nonzero_source = centering_indicator_source;
+}
 
-  if (centering_indicator_opacity <= CENTERING_INDICATOR_MIN_OPACITY) {
-    centering_indicator_opacity = 0.0f;
-  }
+if (panel_offset_available) {
+  centering_indicator_edge_sign = (panel_offset_m > 0.0f) ? 1.0f : (panel_offset_m < 0.0f ? -1.0f : 0.0f);
+  centering_highlight_strength = std::clamp(std::abs(panel_offset_m) / 0.6f, 0.0f, 1.0f);
+}
 
-  if (centering_indicator_opacity <= 0.0f) {
-    centering_indicator_blink_intensity = 0.0f;
-    centering_indicator_edge_sign = 0.0f;
-    centering_indicator_prev_magnitude = 0.0f;
-    centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
-  } else {
-    const float prev_mag = centering_indicator_prev_magnitude;
-    centering_indicator_prev_magnitude = centering_indicator_magnitude;
+const bool panel_visible = enabled && (
+  centering_status_active || centering_display_valid || centering_adjusting_display || centering_edge_mode || panel_offset_available);
 
-    float highlight_progress = 0.0f;
-    if (centering_indicator_magnitude > CENTERING_LANE_HIGHLIGHT_MIN_M && centering_indicator_edge_sign != 0.0f) {
-      const float span = std::max(CENTERING_LANE_HIGHLIGHT_FULL_M - CENTERING_LANE_HIGHLIGHT_MIN_M, 1e-3f);
-      const float normalized = (centering_indicator_magnitude - CENTERING_LANE_HIGHLIGHT_MIN_M) / span;
-      highlight_progress = std::clamp(normalized, 0.0f, 1.0f);
-      const bool reducing = (prev_mag - centering_indicator_magnitude) > 1e-3f;
-      if (!reducing) {
-        highlight_progress *= 0.35f;
-      }
-    }
+const bool display_offset_valid = panel_offset_available;
+const float display_offset_m = display_offset_valid ? panel_offset_m : 0.0f;
 
-    const float target_blink = centering_indicator_active ? highlight_progress : 0.0f;
-    const float rise = frame_dt / 0.12f;
-    const float fall = frame_dt / 0.4f;
-    if (target_blink > centering_indicator_blink_intensity) {
-      centering_indicator_blink_intensity = std::min(target_blink, centering_indicator_blink_intensity + rise);
-    } else {
-      centering_indicator_blink_intensity = std::max(target_blink, centering_indicator_blink_intensity - fall);
-    }
-
-    centering_indicator_blink_phase = std::fmod(centering_indicator_blink_phase + frame_dt * CENTERING_LANE_PULSE_FREQ_HZ * float(2.0 * M_PI), float(2.0 * M_PI));
-
-    if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
-        centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE &&
-        centering_indicator_active) {
-      centering_indicator_source = centering_indicator_last_nonzero_source;
-    }
-  }
+float highlight_dt = std::chrono::duration<float>(highlight_now - centering_highlight_last_update).count();
+centering_highlight_last_update = highlight_now;
+if (centering_highlight_strength <= 0.0f) {
+  centering_highlight_phase = 0.0f;
+} else {
+  if (highlight_dt < 0.0f) highlight_dt = 0.0f;
+  constexpr float HIGHLIGHT_FREQ_HZ = 3.0f;
+  centering_highlight_phase = std::fmod(centering_highlight_phase + highlight_dt * HIGHLIGHT_FREQ_HZ * float(2.0 * M_PI), float(2.0 * M_PI));
+}
 
   update_model(model, lead_one);
   drawLaneLines(painter);
@@ -186,16 +137,9 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   }
   drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
 
-  const bool panel_visible = selfdrive_state.getEnabled() && (centering_display_valid || centering_indicator_opacity > 0.0f || centering_adjusting_display || centering_edge_mode);
   if (panel_visible) {
     painter.save();
-    float panel_opacity = centering_indicator_opacity;
-    if (!centering_adjusting_display && !centering_edge_mode) {
-      panel_opacity = centering_display_valid ? 1.0f : 0.6f;
-    } else {
-      panel_opacity = std::max(centering_indicator_opacity, 0.75f);
-    }
-    painter.setOpacity(std::clamp(panel_opacity, 0.0f, 1.0f));
+    painter.setOpacity(1.0f);
 
     const bool use_edge_mode = centering_edge_mode || (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE && centering_adjusting_display);
     const QString feature_text = use_edge_mode ? QStringLiteral("road edge") : QStringLiteral("lane line");
@@ -213,7 +157,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     };
 
     QString primary_text;
-    if (!centering_display_valid && !centering_adjusting_display && !centering_edge_mode) {
+    if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
       primary_text = QStringLiteral("Lane centering: offset unknown");
     } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
       const float edge_sign = centering_indicator_edge_sign != 0.0f ? centering_indicator_edge_sign : (display_offset_m >= 0.0f ? 1.0f : -1.0f);
@@ -233,7 +177,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
       } else {
         primary_text = QStringLiteral("Centering using %1").arg(feature_text);
       }
-    } else if (centering_display_valid) {
+    } else if (display_offset_valid) {
       if (offset_small) {
         primary_text = QStringLiteral("Lane centered");
       } else {
@@ -244,7 +188,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     }
 
     QString secondary_text;
-    if (centering_display_valid) {
+    if (display_offset_valid) {
       if (offset_small) {
         secondary_text = QStringLiteral("Offset: < 1 cm from center");
       } else {
@@ -283,10 +227,11 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   painter.restore();
 }
 
+
 void ModelRendererSP::drawLaneLines(QPainter &painter) {
   ModelRenderer::drawLaneLines(painter);
 
-  if (centering_indicator_blink_intensity <= 0.0f || std::abs(centering_indicator_edge_sign) < 1e-4f) {
+  if (centering_highlight_strength <= 0.0f || std::abs(centering_indicator_edge_sign) < 1e-4f) {
     return;
   }
 
@@ -295,8 +240,8 @@ void ModelRendererSP::drawLaneLines(QPainter &painter) {
     return;
   }
 
-  const float blink_wave = 0.5f * (1.0f + std::sin(centering_indicator_blink_phase));
-  const float alpha_float = 210.0f * centering_indicator_blink_intensity * blink_wave;
+  const float pulse = 0.5f * (1.0f + std::sin(centering_highlight_phase));
+  const float alpha_float = (120.0f + 100.0f * pulse) * centering_highlight_strength;
   if (alpha_float <= 1.0f) {
     return;
   }

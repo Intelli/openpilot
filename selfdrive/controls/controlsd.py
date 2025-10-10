@@ -272,8 +272,17 @@ class Controls(ControlsExt, ModelStateBase):
       if not centering_available and abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
         self.centering_offset_m = 0.0
 
+    steering_angle_limit_deg = 45.0
+    desired_angle_deg = getattr(self.LaC, 'steeringAngleDesiredDeg', None)
+    allow_centering = True
+    if desired_angle_deg is not None and abs(desired_angle_deg) >= steering_angle_limit_deg:
+      allow_centering = False
+
     min_offset_for_curvature = CENTERING_CURVATURE_MIN_OFFSET_M
-    centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature, base_desired_curvature) if centering_available else 0.0
+    centering_delta = 0.0
+    if allow_centering and centering_available:
+      centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature, base_desired_curvature)
+
     new_desired_curvature = base_desired_curvature + centering_delta
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
 
@@ -283,7 +292,7 @@ class Controls(ControlsExt, ModelStateBase):
       self.centering_correction = self.desired_curvature - base_desired_curvature
       offset_mag = abs(self.centering_offset_m)
       correction_mag = abs(self.centering_correction)
-      self.centering_adjusting = correction_mag > CENTERING_MIN_DISPLAY_DELTA or offset_mag > (CENTERING_MIN_OFFSET_M / 2)
+      self.centering_adjusting = allow_centering and (correction_mag > CENTERING_MIN_DISPLAY_DELTA or offset_mag > (CENTERING_MIN_OFFSET_M / 2))
 
       if advanced_centering_enabled and self._lane_centering_enabled() and target_mode == "lane":
         if tracking_ready:
