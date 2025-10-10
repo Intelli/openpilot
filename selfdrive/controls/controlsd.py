@@ -62,6 +62,8 @@ CENTERING_SLACK_DECAY_RATE_M_PER_S = 0.02
 CENTERING_CURVE_ATTENUATION_START = 0.0025
 CENTERING_CURVE_ATTENUATION_FULL = 0.0075
 CENTERING_CURVE_MIN_SCALE = 0.35
+CENTERING_STATUS_HOLD_S = 1.0
+EDGE_CLEARANCE_MIN_M = 0.381
 
 LANE_CENTERING_SOURCE_MAP = {
   None: LaneCenteringSourceEnum.none,
@@ -104,6 +106,11 @@ class Controls(ControlsExt, ModelStateBase):
     self._centering_cross_slack = 0.0
     self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
     self._prev_lat_active = False
+    self._centering_tracking_ready = False
+    self._centering_status_hold = 0.0
+    self._centering_source_hold = 0.0
+    self.edge_clearance_active = False
+    self.edge_clearance_offset_m = 0.0
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -190,21 +197,33 @@ class Controls(ControlsExt, ModelStateBase):
     # Reset desired curvature to current to avoid violating the limits on engage
     base_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
 
+    target_mode: str | None = None
     target_offset_m = 0.0
     centering_available = False
     centering_source: str | None = None
+    tracking_ready = False
+    edge_clearance_active = False
     advanced_centering_enabled = self._advanced_centering_enabled
     centering_released = not advanced_centering_enabled
     if CC.latActive and not self._prev_lat_active:
       self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
     if CC.latActive and self._lane_centering_enabled() and advanced_centering_enabled:
-      target_offset_raw, centering_available, centering_source = self._calculate_centering_target_offset(model_v2, CS.vEgo)
+      self._centering_tracking_ready = False
+      lane_offset_raw, centering_available, centering_source, edge_offset_raw, edge_active = self._calculate_centering_target_offset(model_v2, CS.vEgo)
+      tracking_ready = self._centering_tracking_ready
       if centering_available:
-        filtered_target = self._filter_centering_target(target_offset_raw)
+        target_mode = "lane"
+        filtered_target = self._filter_centering_target(lane_offset_raw)
+        target_offset_m, centering_available, centering_released = self._apply_offset_hysteresis(filtered_target, True)
+      elif edge_active:
+        target_mode = "edge"
+        filtered_target = self._filter_centering_target(edge_offset_raw)
+        target_offset_m, centering_available, _ = self._apply_offset_hysteresis(filtered_target, True)
+        edge_clearance_active = centering_available
+        centering_released = False
       else:
         filtered_target = 0.0
         self._centering_target_filtered = 0.0
-      target_offset_m, centering_available, centering_released = self._apply_offset_hysteresis(filtered_target, centering_available)
 
     if not CC.latActive:
       self.centering_offset_m = 0.0
@@ -212,6 +231,11 @@ class Controls(ControlsExt, ModelStateBase):
       self._centering_target_filtered = 0.0
       self.centering_source = None
       self._centering_last_source = None
+      self._centering_status_hold = 0.0
+      self._centering_source_hold = 0.0
+      self._centering_tracking_ready = False
+      self.edge_clearance_active = False
+      self.edge_clearance_offset_m = 0.0
     else:
       if centering_released:
         self.centering_offset_m = 0.0
@@ -236,22 +260,56 @@ class Controls(ControlsExt, ModelStateBase):
 
     if CC.latActive:
       self.centering_correction = self.desired_curvature - base_desired_curvature
-      correction_mag = abs(self.centering_correction)
       offset_mag = abs(self.centering_offset_m)
-      has_offset = offset_mag > (CENTERING_MIN_OFFSET_M / 2)
-      has_correction = correction_mag > CENTERING_MIN_DISPLAY_DELTA
-      if centering_source is not None:
-        self.centering_source = centering_source
-        self._centering_last_source = centering_source
-      elif self.centering_source is None and self._centering_last_source is not None and (has_offset or has_correction):
-        self.centering_source = self._centering_last_source
+      correction_mag = abs(self.centering_correction)
 
-      centering_feature_active = advanced_centering_enabled and (has_correction or has_offset)
-      self.centering_active = centering_feature_active
-      if not self.centering_active:
-        self.centering_correction = 0.0
-        if not has_offset:
+      if advanced_centering_enabled and self._lane_centering_enabled() and target_mode == "lane":
+        if tracking_ready:
+          self._centering_status_hold = CENTERING_STATUS_HOLD_S
+          self._centering_source_hold = CENTERING_STATUS_HOLD_S
+        else:
+          self._centering_status_hold = max(0.0, self._centering_status_hold - DT_CTRL)
+          self._centering_source_hold = max(0.0, self._centering_source_hold - DT_CTRL)
+
+        engaged = tracking_ready or centering_available or \
+                  offset_mag > (CENTERING_MIN_OFFSET_M / 2) or \
+                  correction_mag > CENTERING_MIN_DISPLAY_DELTA or \
+                  self._centering_status_hold > 0.0
+
+        self.centering_active = engaged
+
+        if centering_source is not None:
+          self.centering_source = centering_source
+          self._centering_last_source = centering_source
+        elif self._centering_source_hold > 0.0 and self._centering_last_source is not None:
+          self.centering_source = self._centering_last_source
+        else:
+          if self._centering_source_hold <= 0.0:
+            self._centering_last_source = None
           self.centering_source = None
+
+        if not engaged and self._centering_status_hold <= 0.0:
+          self.centering_correction = 0.0
+        self.edge_clearance_active = False
+        self.edge_clearance_offset_m = 0.0
+      else:
+        if target_mode == "edge" and edge_clearance_active:
+          self.centering_active = False
+          self.centering_source = None
+          self._centering_last_source = None
+          self._centering_status_hold = 0.0
+          self._centering_source_hold = 0.0
+          self.edge_clearance_active = True
+          self.edge_clearance_offset_m = self.centering_offset_m
+        else:
+          self.centering_active = False
+          self.centering_correction = 0.0
+          self.centering_source = None
+          self._centering_last_source = None
+          self._centering_status_hold = 0.0
+          self._centering_source_hold = 0.0
+          self.edge_clearance_active = False
+          self.edge_clearance_offset_m = 0.0
     else:
       self.centering_offset_m = 0.0
       self.centering_correction = 0.0
@@ -259,6 +317,11 @@ class Controls(ControlsExt, ModelStateBase):
       self.centering_source = None
       self._centering_last_source = None
       self._centering_lock_sign = 0
+      self._centering_status_hold = 0.0
+      self._centering_source_hold = 0.0
+      self._centering_tracking_ready = False
+      self.edge_clearance_active = False
+      self.edge_clearance_offset_m = 0.0
 
     actuators.curvature = self.desired_curvature
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
@@ -303,35 +366,43 @@ class Controls(ControlsExt, ModelStateBase):
 
     return accum / count
 
-  def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool, str | None]:
+  def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool, str | None, float, bool]:
     if v_ego < CENTERING_MIN_SPEED_MS:
       self._lane_reliability.clear()
       self._edges_reliable = False
-      return 0.0, False, None
+      self._centering_tracking_ready = False
+      return 0.0, False, None, 0.0, False
 
-    left_candidates, right_candidates = self._collect_boundary_candidates(model_v2)
+    left_candidates, right_candidates, left_edge_dist, right_edge_dist = self._collect_boundary_candidates(model_v2)
 
     left_boundary, left_source = self._select_closest_boundary(left_candidates, "left")
     right_boundary, right_source = self._select_closest_boundary(right_candidates, "right")
 
+    edge_offset, edge_active = self._edge_clearance_target(left_edge_dist, right_edge_dist)
+
     if left_boundary is None or right_boundary is None:
-      return 0.0, False, None
+      self._centering_tracking_ready = False
+      return 0.0, False, None, edge_offset, edge_active
 
     lane_width = left_boundary - right_boundary
     if lane_width < CENTERING_LANE_WIDTH_MIN_M or lane_width > CENTERING_LANE_WIDTH_MAX_M:
-      return 0.0, False, None
+      self._centering_tracking_ready = False
+      return 0.0, False, None, edge_offset, edge_active
 
     left_distance = max(left_boundary, CENTERING_MIN_OFFSET_M)
     right_distance = max(abs(right_boundary), CENTERING_MIN_OFFSET_M)
     ratio = max(left_distance, right_distance) / max(min(left_distance, right_distance), CENTERING_MIN_OFFSET_M)
     if ratio > CENTERING_DISTANCE_RATIO_MAX:
-      return 0.0, False, None
+      self._centering_tracking_ready = False
+      return 0.0, False, None, edge_offset, edge_active
 
     center_offset = 0.5 * (left_boundary + right_boundary)
     center_offset = max(-CENTERING_MAX_OFFSET_M, min(center_offset, CENTERING_MAX_OFFSET_M))
 
+    self._centering_tracking_ready = True
+
     if abs(center_offset) < CENTERING_MIN_OFFSET_M:
-      return 0.0, False, None
+      return 0.0, False, None, edge_offset, edge_active
 
     left_distance = left_boundary
     right_distance = abs(right_boundary)
@@ -344,7 +415,7 @@ class Controls(ControlsExt, ModelStateBase):
 
     source = primary_source or secondary_source
 
-    return center_offset, True, source
+    return center_offset, True, source, 0.0, False
 
   def _apply_offset_hysteresis(self, target_offset_m: float, available: bool) -> tuple[float, bool, bool]:
     if not available:
@@ -386,9 +457,11 @@ class Controls(ControlsExt, ModelStateBase):
       self._centering_target_filtered = 0.0
     return self._centering_target_filtered
 
-  def _collect_boundary_candidates(self, model_v2) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
+  def _collect_boundary_candidates(self, model_v2) -> tuple[list[tuple[str, float]], list[tuple[str, float]], float | None, float | None]:
     left_candidates: list[tuple[str, float]] = []
     right_candidates: list[tuple[str, float]] = []
+    left_edge_distance: float | None = None
+    right_edge_distance: float | None = None
 
     lane_lines = model_v2.laneLines
     lane_probs = model_v2.laneLineProbs
@@ -417,13 +490,13 @@ class Controls(ControlsExt, ModelStateBase):
           edge_val, edge_ok = self._edge_boundary(edge_reader)
           if edge_ok and edge_val is not None:
             if edge_val > 0.0:
-              adjusted = max(edge_val - CENTERING_EDGE_MARGIN_M, CENTERING_MIN_OFFSET_M)
-              left_candidates.append(("edge", float(adjusted)))
+              if left_edge_distance is None or edge_val < left_edge_distance:
+                left_edge_distance = float(edge_val)
             elif edge_val < 0.0:
-              adjusted = min(edge_val + CENTERING_EDGE_MARGIN_M, -CENTERING_MIN_OFFSET_M)
-              right_candidates.append(("edge", float(adjusted)))
+              if right_edge_distance is None or abs(edge_val) < abs(right_edge_distance):
+                right_edge_distance = float(edge_val)
 
-    return left_candidates, right_candidates
+    return left_candidates, right_candidates, left_edge_distance, right_edge_distance
 
   def _lane_boundary(self, index: int, lane_line, probability: float) -> tuple[float | None, bool]:
     reliable = self._lane_reliability.get(index, False)
@@ -453,6 +526,25 @@ class Controls(ControlsExt, ModelStateBase):
       return None, False
 
     return float(y_val), True
+
+  def _edge_clearance_target(self, left_edge: float | None, right_edge: float | None) -> tuple[float, bool]:
+    left_violation = 0.0
+    right_violation = 0.0
+    if left_edge is not None and left_edge > 0.0 and left_edge < EDGE_CLEARANCE_MIN_M:
+      left_violation = EDGE_CLEARANCE_MIN_M - left_edge
+    if right_edge is not None and right_edge < 0.0 and abs(right_edge) < EDGE_CLEARANCE_MIN_M:
+      right_violation = EDGE_CLEARANCE_MIN_M - abs(right_edge)
+
+    if left_violation <= 0.0 and right_violation <= 0.0:
+      return 0.0, False
+
+    if left_violation >= right_violation:
+      offset = -max(left_violation, CENTERING_MIN_OFFSET_M)
+    else:
+      offset = max(right_violation, CENTERING_MIN_OFFSET_M)
+
+    offset = max(-CENTERING_MAX_OFFSET_M, min(offset, CENTERING_MAX_OFFSET_M))
+    return offset, True
 
   def _select_closest_boundary(self, candidates: list[tuple[str, float]], side: str) -> tuple[float | None, str | None]:
     closest_value: float | None = None
@@ -575,6 +667,8 @@ class Controls(ControlsExt, ModelStateBase):
     cs.laneCenteringActive = bool(self.centering_active)
     cs.laneCenteringOffset = float(self.centering_offset_m)
     cs.laneCenteringSource = LANE_CENTERING_SOURCE_MAP.get(self.centering_source, LaneCenteringSourceEnum.none)
+    cs.edgeClearanceActive = bool(self.edge_clearance_active)
+    cs.edgeClearanceOffset = float(self.edge_clearance_offset_m)
     cs.longControlState = self.LoC.long_control_state
     cs.upAccelCmd = float(self.LoC.pid.p)
     cs.uiAccelCmd = float(self.LoC.pid.i)
