@@ -35,4 +35,8 @@ private:
   float centering_indicator_prev_magnitude = 0.0f;
   float centering_indicator_blink_intensity = 0.0f;
   float centering_indicator_blink_phase = 0.0f;
+  bool centering_display_valid = false;
+  float centering_display_offset_m = 0.0f;
+  bool centering_adjusting_display = false;
+  bool centering_edge_mode = false;
 };

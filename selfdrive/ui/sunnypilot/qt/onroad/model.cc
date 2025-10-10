@@ -55,17 +55,30 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   float edge_clearance_offset_m = 0.0f;
   cereal::ControlsState::LaneCenteringSource centering_source = cereal::ControlsState::LaneCenteringSource::NONE;
   bool controls_state_stale = true;
+  bool centering_valid_now = false;
+  float display_offset_now = 0.0f;
+  bool centering_adjusting_now = false;
+
   if (sm.alive("controlsState")) {
     const auto &controls_state = sm["controlsState"].getControlsState();
-    const bool centering_flag_active = controls_state.getLaneCenteringActive();
     centering_offset_m = controls_state.getLaneCenteringOffset();
     centering_source = controls_state.getLaneCenteringSource();
-    centering_signal = selfdrive_state.getEnabled() && centering_flag_active;
-    edge_clearance_signal = selfdrive_state.getEnabled() && controls_state.getEdgeClearanceActive();
     edge_clearance_offset_m = controls_state.getEdgeClearanceOffset();
+    centering_valid_now = controls_state.getLaneCenteringValid();
+    display_offset_now = controls_state.getLaneCenteringDisplayOffset();
+    centering_adjusting_now = controls_state.getLaneCenteringAdjusting();
+    centering_signal = selfdrive_state.getEnabled() && centering_adjusting_now;
+    edge_clearance_signal = selfdrive_state.getEnabled() && controls_state.getEdgeClearanceActive();
     const int64_t controls_mono_time = sm.rcv_time("controlsState");
     const double age = std::abs((double)(nanos_since_boot() - controls_mono_time)) / 1e9;
     controls_state_stale = age > CENTERING_SIGNAL_STALE_S;
+
+    if (!controls_state_stale) {
+      centering_indicator_last_controls_update = now;
+      centering_display_valid = centering_valid_now;
+      centering_display_offset_m = centering_valid_now ? display_offset_now : 0.0f;
+    }
+
     const bool guard_signal = centering_signal || edge_clearance_signal;
     if (guard_signal) {
       const float display_offset = centering_signal ? centering_offset_m : edge_clearance_offset_m;
@@ -79,12 +92,27 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
         centering_indicator_last_nonzero_source = centering_indicator_source;
       }
     }
+  } else {
+    centering_display_valid = false;
+    centering_display_offset_m = 0.0f;
+  }
+
+  if (controls_state_stale || !selfdrive_state.getEnabled()) {
+    centering_adjusting_display = false;
+    centering_edge_mode = false;
+    if (controls_state_stale) {
+      centering_display_valid = false;
+      centering_display_offset_m = 0.0f;
+    }
+  } else {
+    centering_adjusting_display = centering_signal;
+    centering_edge_mode = edge_clearance_signal;
   }
 
   const bool any_signal = centering_signal || edge_clearance_signal;
   if (any_signal) {
     centering_indicator_active = true;
-  } else if (controls_state_stale) {
+  } else if (controls_state_stale || !selfdrive_state.getEnabled()) {
     centering_indicator_active = false;
   }
 
@@ -159,38 +187,74 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   }
   drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
 
-  if (centering_indicator_opacity > 0.0f) {
+  const bool panel_visible = selfdrive_state.getEnabled() && (centering_display_valid || centering_indicator_opacity > 0.0f || centering_adjusting_display || centering_edge_mode);
+  if (panel_visible) {
     painter.save();
-    painter.setOpacity(centering_indicator_opacity);
+    float panel_opacity = centering_indicator_opacity;
+    if (!centering_adjusting_display && !centering_edge_mode) {
+      panel_opacity = centering_display_valid ? 1.0f : 0.6f;
+    } else {
+      panel_opacity = std::max(centering_indicator_opacity, 0.75f);
+    }
+    painter.setOpacity(std::clamp(panel_opacity, 0.0f, 1.0f));
 
-    const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE && !centering_signal;
-    const QString feature_text = edge_based ? QStringLiteral("road edge") : QStringLiteral("lane line");
-    const float capped_shift_cm = std::clamp(centering_indicator_magnitude * 100.0f, 0.0f, CENTERING_DISPLAY_MAX_OFFSET_CM);
+    const bool use_edge_mode = centering_edge_mode || (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE && centering_adjusting_display);
+    const QString feature_text = use_edge_mode ? QStringLiteral("road edge") : QStringLiteral("lane line");
+
+    const float display_offset_m = centering_display_valid ? centering_display_offset_m : 0.0f;
+    const float display_offset_cm = std::abs(display_offset_m) * 100.0f;
+    const bool offset_small = display_offset_cm < 1.0f;
+    const int decimal_precision = display_offset_cm < 10.0f ? 1 : 0;
+
+    auto direction_from_sign = [](float value) {
+      if (std::abs(value) < 1e-4f) {
+        return QStringLiteral("center");
+      }
+      return value > 0.0f ? QStringLiteral("right") : QStringLiteral("left");
+    };
 
     QString primary_text;
-    if (!centering_indicator_active) {
-      primary_text = QStringLiteral("Lane centering ready");
-    } else if (edge_based) {
-      if (centering_indicator_edge_sign > 0.0f) {
+    if (!centering_display_valid && !centering_adjusting_display && !centering_edge_mode) {
+      primary_text = QStringLiteral("Lane centering: offset unknown");
+    } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
+      const float edge_sign = centering_indicator_edge_sign != 0.0f ? centering_indicator_edge_sign : (display_offset_m >= 0.0f ? 1.0f : -1.0f);
+      if (edge_sign > 0.0f) {
         primary_text = QStringLiteral("Maintaining clearance from right %1").arg(feature_text);
-      } else if (centering_indicator_edge_sign < 0.0f) {
+      } else if (edge_sign < 0.0f) {
         primary_text = QStringLiteral("Maintaining clearance from left %1").arg(feature_text);
       } else {
         primary_text = QStringLiteral("Maintaining road edge clearance");
       }
-    } else if (centering_indicator_edge_sign > 0.0f) {
-      primary_text = QStringLiteral("Shifting left from right %1").arg(feature_text);
-    } else if (centering_indicator_edge_sign < 0.0f) {
-      primary_text = QStringLiteral("Shifting right from left %1").arg(feature_text);
+    } else if (centering_adjusting_display) {
+      const float sign = centering_indicator_edge_sign != 0.0f ? centering_indicator_edge_sign : (display_offset_m >= 0.0f ? 1.0f : -1.0f);
+      if (sign > 0.0f) {
+        primary_text = QStringLiteral("Adjusting left from right %1").arg(feature_text);
+      } else if (sign < 0.0f) {
+        primary_text = QStringLiteral("Adjusting right from left %1").arg(feature_text);
+      } else {
+        primary_text = QStringLiteral("Centering using %1").arg(feature_text);
+      }
+    } else if (centering_display_valid) {
+      if (offset_small) {
+        primary_text = QStringLiteral("Lane centered");
+      } else {
+        primary_text = QStringLiteral("Vehicle %1 of center").arg(direction_from_sign(display_offset_m));
+      }
     } else {
-      primary_text = QStringLiteral("Centering using %1").arg(feature_text);
+      primary_text = QStringLiteral("Lane centering standby");
     }
 
     QString secondary_text;
-    if (capped_shift_cm >= 1.0f) {
-      secondary_text = QStringLiteral("Offset ≈ %1 cm").arg(QString::number(capped_shift_cm, 'f', capped_shift_cm < 10.0f ? 1 : 0));
+    if (centering_display_valid) {
+      if (offset_small) {
+        secondary_text = QStringLiteral("Offset: < 1 cm from center");
+      } else {
+        secondary_text = QStringLiteral("Offset: %1 cm %2 of center")
+                            .arg(QString::number(display_offset_cm, 'f', decimal_precision))
+                            .arg(direction_from_sign(display_offset_m));
+      }
     } else {
-      secondary_text = QStringLiteral("Offset < 1 cm");
+      secondary_text = QStringLiteral("Offset: unknown");
     }
 
     const int indicator_width = 720;

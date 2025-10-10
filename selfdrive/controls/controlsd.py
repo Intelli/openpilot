@@ -98,6 +98,9 @@ class Controls(ControlsExt, ModelStateBase):
     self.centering_active = False
     self.centering_offset_m = 0.0
     self.centering_source: str | None = None
+    self.centering_display_offset = 0.0
+    self.centering_valid = False
+    self.centering_adjusting = False
     self._centering_last_source: str | None = None
     self._lane_reliability: dict[int, bool] = {}
     self._edges_reliable = False
@@ -205,25 +208,38 @@ class Controls(ControlsExt, ModelStateBase):
     edge_clearance_active = False
     advanced_centering_enabled = self._advanced_centering_enabled
     centering_released = not advanced_centering_enabled
+    display_valid = False
+    display_offset_m = 0.0
+
+    lane_offset_raw = 0.0
+    edge_offset_raw = 0.0
+    edge_active = False
+
     if CC.latActive and not self._prev_lat_active:
       self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
-    if CC.latActive and self._lane_centering_enabled() and advanced_centering_enabled:
+      advanced_centering_enabled = self._advanced_centering_enabled
+      centering_released = not advanced_centering_enabled
+
+    if CC.latActive and self._lane_centering_enabled():
       self._centering_tracking_ready = False
       lane_offset_raw, centering_available, centering_source, edge_offset_raw, edge_active = self._calculate_centering_target_offset(model_v2, CS.vEgo)
       tracking_ready = self._centering_tracking_ready
-      if centering_available:
-        target_mode = "lane"
-        filtered_target = self._filter_centering_target(lane_offset_raw)
-        target_offset_m, centering_available, centering_released = self._apply_offset_hysteresis(filtered_target, True)
-      elif edge_active:
-        target_mode = "edge"
-        filtered_target = self._filter_centering_target(edge_offset_raw)
-        target_offset_m, centering_available, _ = self._apply_offset_hysteresis(filtered_target, True)
-        edge_clearance_active = centering_available
-        centering_released = False
-      else:
-        filtered_target = 0.0
-        self._centering_target_filtered = 0.0
+      display_valid = tracking_ready
+      if display_valid:
+        display_offset_m = lane_offset_raw
+      if advanced_centering_enabled:
+        if centering_available:
+          target_mode = "lane"
+          filtered_target = self._filter_centering_target(lane_offset_raw)
+          target_offset_m, centering_available, centering_released = self._apply_offset_hysteresis(filtered_target, True)
+        elif edge_active:
+          target_mode = "edge"
+          filtered_target = self._filter_centering_target(edge_offset_raw)
+          target_offset_m, centering_available, _ = self._apply_offset_hysteresis(filtered_target, True)
+          edge_clearance_active = centering_available
+          centering_released = False
+        else:
+          self._centering_target_filtered = 0.0
 
     if not CC.latActive:
       self.centering_offset_m = 0.0
@@ -236,6 +252,9 @@ class Controls(ControlsExt, ModelStateBase):
       self._centering_tracking_ready = False
       self.edge_clearance_active = False
       self.edge_clearance_offset_m = 0.0
+      self.centering_valid = False
+      self.centering_display_offset = 0.0
+      self.centering_adjusting = False
     else:
       if centering_released:
         self.centering_offset_m = 0.0
@@ -259,9 +278,12 @@ class Controls(ControlsExt, ModelStateBase):
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
 
     if CC.latActive:
+      self.centering_valid = display_valid
+      self.centering_display_offset = display_offset_m if display_valid else 0.0
       self.centering_correction = self.desired_curvature - base_desired_curvature
       offset_mag = abs(self.centering_offset_m)
       correction_mag = abs(self.centering_correction)
+      self.centering_adjusting = correction_mag > CENTERING_MIN_DISPLAY_DELTA or offset_mag > (CENTERING_MIN_OFFSET_M / 2)
 
       if advanced_centering_enabled and self._lane_centering_enabled() and target_mode == "lane":
         if tracking_ready:
@@ -322,6 +344,9 @@ class Controls(ControlsExt, ModelStateBase):
       self._centering_tracking_ready = False
       self.edge_clearance_active = False
       self.edge_clearance_offset_m = 0.0
+      self.centering_valid = False
+      self.centering_display_offset = 0.0
+      self.centering_adjusting = False
 
     actuators.curvature = self.desired_curvature
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
@@ -669,6 +694,9 @@ class Controls(ControlsExt, ModelStateBase):
     cs.laneCenteringSource = LANE_CENTERING_SOURCE_MAP.get(self.centering_source, LaneCenteringSourceEnum.none)
     cs.edgeClearanceActive = bool(self.edge_clearance_active)
     cs.edgeClearanceOffset = float(self.edge_clearance_offset_m)
+    cs.laneCenteringDisplayOffset = float(self.centering_display_offset)
+    cs.laneCenteringValid = bool(self.centering_valid)
+    cs.laneCenteringAdjusting = bool(self.centering_adjusting)
     cs.longControlState = self.LoC.long_control_state
     cs.upAccelCmd = float(self.LoC.pid.p)
     cs.uiAccelCmd = float(self.LoC.pid.i)

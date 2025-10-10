@@ -869,6 +869,9 @@ struct ControlsState @0x97ff69c53601abf1 {
   laneCenteringSource @69 :LaneCenteringSource;
   edgeClearanceActive @70 :Bool;
   edgeClearanceOffset @71 :Float32;
+  laneCenteringDisplayOffset @72 :Float32;  # raw centering estimate from perception (m)
+  laneCenteringValid @73 :Bool;
+  laneCenteringAdjusting @74 :Bool;
   forceDecel @51 :Bool;
 
   lateralControlState :union {
