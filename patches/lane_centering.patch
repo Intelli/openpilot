@@ -1,18 +1,20 @@
 diff --git b/cereal/log.capnp a/cereal/log.capnp
-index 8925bca8ae..fed7bc2907 100644
+index 8925bca8ae..a4e25dbdec 100644
 --- b/cereal/log.capnp
 +++ a/cereal/log.capnp
-@@ -864,6 +864,9 @@ struct ControlsState @0x97ff69c53601abf1 {
+@@ -864,6 +864,11 @@ struct ControlsState @0x97ff69c53601abf1 {
    ufAccelCmd @33 :Float32;
    curvature @37 :Float32;  # path curvature from vehicle model
    desiredCurvature @61 :Float32;  # lag adjusted curvatures used by lateral controllers
 +  laneCenteringOffset @67 :Float32;  # lateral offset correction applied by centering helper (m)
 +  laneCenteringActive @68 :Bool;
-+  laneCenteringSource @69 :LaneCenteringSource;
++  laneCenteringSource @130 :LaneCenteringSource;
++  edgeClearanceActive @131 :Bool;
++  edgeClearanceOffset @132 :Float32;
    forceDecel @51 :Bool;
  
    lateralControlState :union {
-@@ -957,6 +960,12 @@ struct ControlsState @0x97ff69c53601abf1 {
+@@ -957,6 +962,12 @@ struct ControlsState @0x97ff69c53601abf1 {
      saturated @3 :Bool;
    }
  
@@ -26,7 +28,7 @@ index 8925bca8ae..fed7bc2907 100644
    vEgoDEPRECATED @0 :Float32;
    vEgoRawDEPRECATED @32 :Float32;
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
-index 3751efc87a..85fe1ee886 100755
+index 3751efc87a..573fe5ef8a 100755
 --- b/selfdrive/controls/controlsd.py
 +++ a/selfdrive/controls/controlsd.py
 @@ -1,17 +1,18 @@
@@ -50,7 +52,7 @@ index 3751efc87a..85fe1ee886 100755
  from opendbc.car.vehicle_model import VehicleModel
  from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
  from openpilot.selfdrive.controls.lib.latcontrol import LatControl
-@@ -28,9 +29,46 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+@@ -28,9 +29,48 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
  State = log.SelfdriveState.OpenpilotState
  LaneChangeState = log.LaneChangeState
  LaneChangeDirection = log.LaneChangeDirection
@@ -87,6 +89,8 @@ index 3751efc87a..85fe1ee886 100755
 +CENTERING_CURVE_ATTENUATION_START = 0.0025
 +CENTERING_CURVE_ATTENUATION_FULL = 0.0075
 +CENTERING_CURVE_MIN_SCALE = 0.35
++CENTERING_STATUS_HOLD_S = 0.3
++EDGE_CLEARANCE_MIN_M = 0.381
 +
 +LANE_CENTERING_SOURCE_MAP = {
 +  None: LaneCenteringSourceEnum.none,
@@ -97,7 +101,7 @@ index 3751efc87a..85fe1ee886 100755
  
  class Controls(ControlsExt, ModelStateBase):
    def __init__(self) -> None:
-@@ -54,6 +92,18 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -54,6 +94,23 @@ class Controls(ControlsExt, ModelStateBase):
      self.steer_limited_by_safety = False
      self.curvature = 0.0
      self.desired_curvature = 0.0
@@ -113,31 +117,48 @@ index 3751efc87a..85fe1ee886 100755
 +    self._centering_cross_slack = 0.0
 +    self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
 +    self._prev_lat_active = False
++    self._centering_tracking_ready = False
++    self._centering_status_hold = 0.0
++    self._centering_source_hold = 0.0
++    self.edge_clearance_active = False
++    self.edge_clearance_offset_m = 0.0
  
      self.pose_calibrator = PoseCalibrator()
      self.calibrated_pose: Pose | None = None
-@@ -138,9 +188,78 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -138,9 +195,134 @@ class Controls(ControlsExt, ModelStateBase):
  
      # Steering PID loop and lateral MPC
      # Reset desired curvature to current to avoid violating the limits on engage
 -    new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
 +    base_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
 +
++    target_mode: str | None = None
 +    target_offset_m = 0.0
 +    centering_available = False
 +    centering_source: str | None = None
++    tracking_ready = False
++    edge_clearance_active = False
 +    advanced_centering_enabled = self._advanced_centering_enabled
 +    centering_released = not advanced_centering_enabled
 +    if CC.latActive and not self._prev_lat_active:
 +      self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
 +    if CC.latActive and self._lane_centering_enabled() and advanced_centering_enabled:
-+      target_offset_raw, centering_available, centering_source = self._calculate_centering_target_offset(model_v2, CS.vEgo)
++      self._centering_tracking_ready = False
++      lane_offset_raw, centering_available, centering_source, edge_offset_raw, edge_active = self._calculate_centering_target_offset(model_v2, CS.vEgo)
++      tracking_ready = self._centering_tracking_ready
 +      if centering_available:
-+        filtered_target = self._filter_centering_target(target_offset_raw)
++        target_mode = "lane"
++        filtered_target = self._filter_centering_target(lane_offset_raw)
++        target_offset_m, centering_available, centering_released = self._apply_offset_hysteresis(filtered_target, True)
++      elif edge_active:
++        target_mode = "edge"
++        filtered_target = self._filter_centering_target(edge_offset_raw)
++        target_offset_m, centering_available, _ = self._apply_offset_hysteresis(filtered_target, True)
++        edge_clearance_active = centering_available
++        centering_released = False
 +      else:
 +        filtered_target = 0.0
 +        self._centering_target_filtered = 0.0
-+      target_offset_m, centering_available, centering_released = self._apply_offset_hysteresis(filtered_target, centering_available)
 +
 +    if not CC.latActive:
 +      self.centering_offset_m = 0.0
@@ -145,6 +166,11 @@ index 3751efc87a..85fe1ee886 100755
 +      self._centering_target_filtered = 0.0
 +      self.centering_source = None
 +      self._centering_last_source = None
++      self._centering_status_hold = 0.0
++      self._centering_source_hold = 0.0
++      self._centering_tracking_ready = False
++      self.edge_clearance_active = False
++      self.edge_clearance_offset_m = 0.0
 +    else:
 +      if centering_released:
 +        self.centering_offset_m = 0.0
@@ -169,22 +195,56 @@ index 3751efc87a..85fe1ee886 100755
  
 +    if CC.latActive:
 +      self.centering_correction = self.desired_curvature - base_desired_curvature
-+      correction_mag = abs(self.centering_correction)
 +      offset_mag = abs(self.centering_offset_m)
-+      has_offset = offset_mag > (CENTERING_MIN_OFFSET_M / 2)
-+      has_correction = correction_mag > CENTERING_MIN_DISPLAY_DELTA
-+      if centering_source is not None:
-+        self.centering_source = centering_source
-+        self._centering_last_source = centering_source
-+      elif self.centering_source is None and self._centering_last_source is not None and (has_offset or has_correction):
-+        self.centering_source = self._centering_last_source
++      correction_mag = abs(self.centering_correction)
 +
-+      centering_feature_active = advanced_centering_enabled and (has_correction or has_offset)
-+      self.centering_active = centering_feature_active
-+      if not self.centering_active:
-+        self.centering_correction = 0.0
-+        if not has_offset:
++      if advanced_centering_enabled and self._lane_centering_enabled() and target_mode == "lane":
++        if tracking_ready:
++          self._centering_status_hold = CENTERING_STATUS_HOLD_S
++          self._centering_source_hold = CENTERING_STATUS_HOLD_S
++        else:
++          self._centering_status_hold = max(0.0, self._centering_status_hold - DT_CTRL)
++          self._centering_source_hold = max(0.0, self._centering_source_hold - DT_CTRL)
++
++        engaged = tracking_ready or centering_available or \
++                  offset_mag > (CENTERING_MIN_OFFSET_M / 2) or \
++                  correction_mag > CENTERING_MIN_DISPLAY_DELTA or \
++                  self._centering_status_hold > 0.0
++
++        self.centering_active = engaged
++
++        if centering_source is not None:
++          self.centering_source = centering_source
++          self._centering_last_source = centering_source
++        elif self._centering_source_hold > 0.0 and self._centering_last_source is not None:
++          self.centering_source = self._centering_last_source
++        else:
++          if self._centering_source_hold <= 0.0:
++            self._centering_last_source = None
 +          self.centering_source = None
++
++        if not engaged and self._centering_status_hold <= 0.0:
++          self.centering_correction = 0.0
++        self.edge_clearance_active = False
++        self.edge_clearance_offset_m = 0.0
++      else:
++        if target_mode == "edge" and edge_clearance_active:
++          self.centering_active = False
++          self.centering_source = None
++          self._centering_last_source = None
++          self._centering_status_hold = 0.0
++          self._centering_source_hold = 0.0
++          self.edge_clearance_active = True
++          self.edge_clearance_offset_m = self.centering_offset_m
++        else:
++          self.centering_active = False
++          self.centering_correction = 0.0
++          self.centering_source = None
++          self._centering_last_source = None
++          self._centering_status_hold = 0.0
++          self._centering_source_hold = 0.0
++          self.edge_clearance_active = False
++          self.edge_clearance_offset_m = 0.0
 +    else:
 +      self.centering_offset_m = 0.0
 +      self.centering_correction = 0.0
@@ -192,11 +252,16 @@ index 3751efc87a..85fe1ee886 100755
 +      self.centering_source = None
 +      self._centering_last_source = None
 +      self._centering_lock_sign = 0
++      self._centering_status_hold = 0.0
++      self._centering_source_hold = 0.0
++      self._centering_tracking_ready = False
++      self.edge_clearance_active = False
++      self.edge_clearance_offset_m = 0.0
 +
      actuators.curvature = self.desired_curvature
      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                         self.steer_limited_by_safety, self.desired_curvature,
-@@ -157,11 +276,257 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -157,11 +339,286 @@ class Controls(ControlsExt, ModelStateBase):
          cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
          setattr(actuators, p, 0.0)
  
@@ -227,35 +292,43 @@ index 3751efc87a..85fe1ee886 100755
 +
 +    return accum / count
 +
-+  def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool, str | None]:
++  def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool, str | None, float, bool]:
 +    if v_ego < CENTERING_MIN_SPEED_MS:
 +      self._lane_reliability.clear()
 +      self._edges_reliable = False
-+      return 0.0, False, None
++      self._centering_tracking_ready = False
++      return 0.0, False, None, 0.0, False
 +
-+    left_candidates, right_candidates = self._collect_boundary_candidates(model_v2)
++    left_candidates, right_candidates, left_edge_dist, right_edge_dist = self._collect_boundary_candidates(model_v2)
 +
 +    left_boundary, left_source = self._select_closest_boundary(left_candidates, "left")
 +    right_boundary, right_source = self._select_closest_boundary(right_candidates, "right")
 +
++    edge_offset, edge_active = self._edge_clearance_target(left_edge_dist, right_edge_dist)
++
 +    if left_boundary is None or right_boundary is None:
-+      return 0.0, False, None
++      self._centering_tracking_ready = False
++      return 0.0, False, None, edge_offset, edge_active
 +
 +    lane_width = left_boundary - right_boundary
 +    if lane_width < CENTERING_LANE_WIDTH_MIN_M or lane_width > CENTERING_LANE_WIDTH_MAX_M:
-+      return 0.0, False, None
++      self._centering_tracking_ready = False
++      return 0.0, False, None, edge_offset, edge_active
 +
 +    left_distance = max(left_boundary, CENTERING_MIN_OFFSET_M)
 +    right_distance = max(abs(right_boundary), CENTERING_MIN_OFFSET_M)
 +    ratio = max(left_distance, right_distance) / max(min(left_distance, right_distance), CENTERING_MIN_OFFSET_M)
 +    if ratio > CENTERING_DISTANCE_RATIO_MAX:
-+      return 0.0, False, None
++      self._centering_tracking_ready = False
++      return 0.0, False, None, edge_offset, edge_active
 +
 +    center_offset = 0.5 * (left_boundary + right_boundary)
 +    center_offset = max(-CENTERING_MAX_OFFSET_M, min(center_offset, CENTERING_MAX_OFFSET_M))
 +
++    self._centering_tracking_ready = True
++
 +    if abs(center_offset) < CENTERING_MIN_OFFSET_M:
-+      return 0.0, False, None
++      return 0.0, False, None, edge_offset, edge_active
 +
 +    left_distance = left_boundary
 +    right_distance = abs(right_boundary)
@@ -268,7 +341,7 @@ index 3751efc87a..85fe1ee886 100755
 +
 +    source = primary_source or secondary_source
 +
-+    return center_offset, True, source
++    return center_offset, True, source, 0.0, False
 +
 +  def _apply_offset_hysteresis(self, target_offset_m: float, available: bool) -> tuple[float, bool, bool]:
 +    if not available:
@@ -310,9 +383,11 @@ index 3751efc87a..85fe1ee886 100755
 +      self._centering_target_filtered = 0.0
 +    return self._centering_target_filtered
 +
-+  def _collect_boundary_candidates(self, model_v2) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
++  def _collect_boundary_candidates(self, model_v2) -> tuple[list[tuple[str, float]], list[tuple[str, float]], float | None, float | None]:
 +    left_candidates: list[tuple[str, float]] = []
 +    right_candidates: list[tuple[str, float]] = []
++    left_edge_distance: float | None = None
++    right_edge_distance: float | None = None
 +
 +    lane_lines = model_v2.laneLines
 +    lane_probs = model_v2.laneLineProbs
@@ -341,13 +416,13 @@ index 3751efc87a..85fe1ee886 100755
 +          edge_val, edge_ok = self._edge_boundary(edge_reader)
 +          if edge_ok and edge_val is not None:
 +            if edge_val > 0.0:
-+              adjusted = max(edge_val - CENTERING_EDGE_MARGIN_M, CENTERING_MIN_OFFSET_M)
-+              left_candidates.append(("edge", float(adjusted)))
++              if left_edge_distance is None or edge_val < left_edge_distance:
++                left_edge_distance = float(edge_val)
 +            elif edge_val < 0.0:
-+              adjusted = min(edge_val + CENTERING_EDGE_MARGIN_M, -CENTERING_MIN_OFFSET_M)
-+              right_candidates.append(("edge", float(adjusted)))
++              if right_edge_distance is None or abs(edge_val) < abs(right_edge_distance):
++                right_edge_distance = float(edge_val)
 +
-+    return left_candidates, right_candidates
++    return left_candidates, right_candidates, left_edge_distance, right_edge_distance
 +
 +  def _lane_boundary(self, index: int, lane_line, probability: float) -> tuple[float | None, bool]:
 +    reliable = self._lane_reliability.get(index, False)
@@ -377,6 +452,25 @@ index 3751efc87a..85fe1ee886 100755
 +      return None, False
 +
 +    return float(y_val), True
++
++  def _edge_clearance_target(self, left_edge: float | None, right_edge: float | None) -> tuple[float, bool]:
++    left_violation = 0.0
++    right_violation = 0.0
++    if left_edge is not None and left_edge > 0.0 and left_edge < EDGE_CLEARANCE_MIN_M:
++      left_violation = EDGE_CLEARANCE_MIN_M - left_edge
++    if right_edge is not None and right_edge < 0.0 and abs(right_edge) < EDGE_CLEARANCE_MIN_M:
++      right_violation = EDGE_CLEARANCE_MIN_M - abs(right_edge)
++
++    if left_violation <= 0.0 and right_violation <= 0.0:
++      return 0.0, False
++
++    if left_violation >= right_violation:
++      offset = -max(left_violation, CENTERING_MIN_OFFSET_M)
++    else:
++      offset = max(right_violation, CENTERING_MIN_OFFSET_M)
++
++    offset = max(-CENTERING_MAX_OFFSET_M, min(offset, CENTERING_MAX_OFFSET_M))
++    return offset, True
 +
 +  def _select_closest_boundary(self, candidates: list[tuple[str, float]], side: str) -> tuple[float | None, str | None]:
 +    closest_value: float | None = None
@@ -454,13 +548,15 @@ index 3751efc87a..85fe1ee886 100755
      # Orientation and angle rates can be useful for carcontroller
      # Only calibrated (car) frame is relevant for the carcontroller
      CC.currentCurvature = self.curvature
-@@ -207,6 +572,9 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -207,6 +664,11 @@ class Controls(ControlsExt, ModelStateBase):
      cs.longitudinalPlanMonoTime = self.sm.logMonoTime['longitudinalPlan']
      cs.lateralPlanMonoTime = self.sm.logMonoTime['modelV2']
      cs.desiredCurvature = self.desired_curvature
 +    cs.laneCenteringActive = bool(self.centering_active)
 +    cs.laneCenteringOffset = float(self.centering_offset_m)
 +    cs.laneCenteringSource = LANE_CENTERING_SOURCE_MAP.get(self.centering_source, LaneCenteringSourceEnum.none)
++    cs.edgeClearanceActive = bool(self.edge_clearance_active)
++    cs.edgeClearanceOffset = float(self.edge_clearance_offset_m)
      cs.longControlState = self.LoC.long_control_state
      cs.upAccelCmd = float(self.LoC.pid.p)
      cs.uiAccelCmd = float(self.LoC.pid.i)
@@ -529,26 +625,23 @@ index 1a39800dde..08681bc197 100644
    QFrame *supercomboFrame;
    QProgressBar *navigationProgressBar;
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 1fb0df8dee..12778da02f 100644
+index 1fb0df8dee..1fa6f0e7d5 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-@@ -14,6 +14,220 @@
+@@ -14,6 +14,236 @@
  #include <iterator>
  #include <QString>
  
 +#include "common/timing.h"
 +
 +constexpr float CENTERING_DISPLAY_MAX_OFFSET_CM = 50.0f;
-+constexpr float CENTERING_INDICATOR_HOLD_S = 0.6f;
-+constexpr float CENTERING_INDICATOR_FADE_S = 0.5f;
-+constexpr float CENTERING_INDICATOR_FADE_IN_S = 0.15f;
 +constexpr float CENTERING_INDICATOR_MIN_OPACITY = 1e-3f;
-+constexpr float CENTERING_BLINK_DISTANCE_ENTER_M = 0.12f;
-+constexpr float CENTERING_BLINK_DISTANCE_FULL_M = 0.28f;
-+constexpr float CENTERING_BLINK_RISE_S = 0.1f;
-+constexpr float CENTERING_BLINK_DECAY_S = 0.4f;
-+constexpr float CENTERING_BLINK_FREQ_HZ = 4.0f;
-+constexpr float CENTERING_INDICATOR_OFFSET_WAKE_M = 0.012f;
++constexpr float CENTERING_SIGNAL_STALE_S = 1.0f;
++constexpr float CENTERING_INDICATOR_RAMP_UP_S = 0.18f;
++constexpr float CENTERING_INDICATOR_RAMP_DOWN_S = 0.7f;
++constexpr float CENTERING_LANE_HIGHLIGHT_MIN_M = 0.06f;
++constexpr float CENTERING_LANE_HIGHLIGHT_FULL_M = 0.25f;
++constexpr float CENTERING_LANE_PULSE_FREQ_HZ = 3.0f;
 +
 +void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 +  auto *s = uiState();
@@ -575,93 +668,98 @@ index 1fb0df8dee..12778da02f 100644
 +  centering_indicator_last_update = now;
 +
 +  bool centering_signal = false;
-+  bool centering_flag_active = false;
++  bool edge_clearance_signal = false;
 +  float centering_offset_m = 0.0f;
++  float edge_clearance_offset_m = 0.0f;
++  cereal::ControlsState::LaneCenteringSource centering_source = cereal::ControlsState::LaneCenteringSource::NONE;
 +  bool controls_state_stale = true;
 +  if (sm.alive("controlsState")) {
 +    const auto &controls_state = sm["controlsState"].getControlsState();
-+    centering_flag_active = controls_state.getLaneCenteringActive();
++    const bool centering_flag_active = controls_state.getLaneCenteringActive();
 +    centering_offset_m = controls_state.getLaneCenteringOffset();
-+    const bool offset_significant = std::abs(centering_offset_m) > CENTERING_INDICATOR_OFFSET_WAKE_M;
-+    centering_signal = selfdrive_state.getEnabled() && (centering_flag_active || offset_significant);
++    centering_source = controls_state.getLaneCenteringSource();
++    centering_signal = selfdrive_state.getEnabled() && centering_flag_active;
++    edge_clearance_signal = selfdrive_state.getEnabled() && controls_state.getEdgeClearanceActive();
++    edge_clearance_offset_m = controls_state.getEdgeClearanceOffset();
 +    const int64_t controls_mono_time = sm.rcv_time("controlsState");
 +    const double age = std::abs((double)(nanos_since_boot() - controls_mono_time)) / 1e9;
-+    controls_state_stale = age > 0.5;
-+    if (centering_signal) {
-+      centering_indicator_last_signal = now;
-+      centering_indicator_source = controls_state.getLaneCenteringSource();
-+      if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
-+          centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE) {
-+        centering_indicator_source = centering_indicator_last_nonzero_source;
-+      }
++    controls_state_stale = age > CENTERING_SIGNAL_STALE_S;
++    const bool guard_signal = centering_signal || edge_clearance_signal;
++    if (guard_signal) {
++      const float display_offset = centering_signal ? centering_offset_m : edge_clearance_offset_m;
++      const auto display_source = centering_signal ? centering_source : cereal::ControlsState::LaneCenteringSource::EDGE;
 +
-+      const float abs_offset = std::abs(centering_offset_m);
-+      centering_indicator_magnitude = abs_offset;
-+      if (abs_offset > 1e-4f) {
-+        centering_indicator_edge_sign = centering_offset_m > 0.0f ? 1.0f : -1.0f;
-+      } else {
-+        centering_indicator_edge_sign = 0.0f;
-+      }
++      centering_indicator_last_signal = now;
++      centering_indicator_magnitude = std::abs(display_offset);
++      centering_indicator_edge_sign = display_offset > 0.0f ? 1.0f : (display_offset < 0.0f ? -1.0f : 0.0f);
++      centering_indicator_source = display_source;
 +      if (centering_indicator_source != cereal::ControlsState::LaneCenteringSource::NONE) {
 +        centering_indicator_last_nonzero_source = centering_indicator_source;
 +      }
 +    }
 +  }
 +
-+  if (controls_state_stale) {
-+    centering_indicator_opacity = std::max(0.0f, centering_indicator_opacity - frame_dt / std::max(CENTERING_INDICATOR_FADE_S, 1e-3f));
++  const bool any_signal = centering_signal || edge_clearance_signal;
++  if (any_signal) {
++    centering_indicator_active = true;
++  } else if (controls_state_stale) {
++    centering_indicator_active = false;
 +  }
 +
-+  const float time_since_signal = std::chrono::duration<float>(now - centering_indicator_last_signal).count();
-+  float target_opacity = 0.0f;
-+  if (centering_signal || time_since_signal < CENTERING_INDICATOR_HOLD_S) {
-+    target_opacity = 1.0f;
-+  } else if (time_since_signal < CENTERING_INDICATOR_HOLD_S + CENTERING_INDICATOR_FADE_S) {
-+    const float fade_t = (time_since_signal - CENTERING_INDICATOR_HOLD_S) / std::max(CENTERING_INDICATOR_FADE_S, 1e-3f);
-+    target_opacity = std::clamp(1.0f - fade_t, 0.0f, 1.0f);
++  const float target_opacity = centering_indicator_active ? 1.0f : 0.0f;
++  const float ramp = centering_indicator_active ? CENTERING_INDICATOR_RAMP_UP_S : CENTERING_INDICATOR_RAMP_DOWN_S;
++  if (ramp > 1e-3f && frame_dt > 0.0f) {
++    const float step = frame_dt / ramp;
++    if (target_opacity > centering_indicator_opacity) {
++      centering_indicator_opacity = std::min(target_opacity, centering_indicator_opacity + step);
++    } else {
++      centering_indicator_opacity = std::max(target_opacity, centering_indicator_opacity - step);
++    }
++  } else {
++    centering_indicator_opacity = target_opacity;
 +  }
 +
-+  if (target_opacity > centering_indicator_opacity) {
-+    const float rise = frame_dt / std::max(CENTERING_INDICATOR_FADE_IN_S, 1e-3f);
-+    centering_indicator_opacity = std::min(1.0f, centering_indicator_opacity + rise);
-+  } else if (target_opacity < centering_indicator_opacity) {
-+    const float fall = frame_dt / std::max(CENTERING_INDICATOR_FADE_S, 1e-3f);
-+    centering_indicator_opacity = std::max(target_opacity, centering_indicator_opacity - fall);
-+  }
-+
-+  centering_indicator_opacity = std::clamp(centering_indicator_opacity, 0.0f, 1.0f);
 +  if (centering_indicator_opacity <= CENTERING_INDICATOR_MIN_OPACITY) {
 +    centering_indicator_opacity = 0.0f;
 +  }
-+  centering_indicator_active = centering_indicator_opacity > 0.0f;
 +
-+  const float previous_magnitude = centering_indicator_prev_magnitude;
-+  bool moving_toward_center = false;
-+  if (centering_signal) {
-+    moving_toward_center = (previous_magnitude - centering_indicator_magnitude) > 1e-4f;
-+  }
-+
-+  float target_blink_intensity = 0.0f;
-+  if (!controls_state_stale && centering_signal && centering_indicator_edge_sign != 0.0f &&
-+      centering_indicator_magnitude >= CENTERING_BLINK_DISTANCE_ENTER_M && moving_toward_center) {
-+    const float span = std::max(CENTERING_BLINK_DISTANCE_FULL_M - CENTERING_BLINK_DISTANCE_ENTER_M, 1e-3f);
-+    const float normalized = (centering_indicator_magnitude - CENTERING_BLINK_DISTANCE_ENTER_M) / span;
-+    target_blink_intensity = std::clamp(normalized, 0.0f, 1.0f);
-+  }
-+  if (!centering_indicator_active || controls_state_stale) {
-+    target_blink_intensity = 0.0f;
-+  }
-+
-+  const float blink_rise = frame_dt / std::max(CENTERING_BLINK_RISE_S, 1e-3f);
-+  const float blink_decay = frame_dt / std::max(CENTERING_BLINK_DECAY_S, 1e-3f);
-+  if (target_blink_intensity > centering_indicator_blink_intensity) {
-+    centering_indicator_blink_intensity = std::min(target_blink_intensity, centering_indicator_blink_intensity + blink_rise);
++  if (centering_indicator_opacity <= 0.0f) {
++    centering_indicator_blink_intensity = 0.0f;
++    centering_indicator_edge_sign = 0.0f;
++    centering_indicator_prev_magnitude = 0.0f;
++    centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
 +  } else {
-+    centering_indicator_blink_intensity = std::max(target_blink_intensity, centering_indicator_blink_intensity - blink_decay);
-+  }
++    const float prev_mag = centering_indicator_prev_magnitude;
++    centering_indicator_prev_magnitude = centering_indicator_magnitude;
 +
-+  centering_indicator_blink_phase = std::fmod(centering_indicator_blink_phase + frame_dt * CENTERING_BLINK_FREQ_HZ * float(2.0 * M_PI), float(2.0 * M_PI));
-+  centering_indicator_prev_magnitude = centering_indicator_magnitude;
++    float highlight_progress = 0.0f;
++    if (centering_indicator_magnitude > CENTERING_LANE_HIGHLIGHT_MIN_M && centering_indicator_edge_sign != 0.0f) {
++      const float span = std::max(CENTERING_LANE_HIGHLIGHT_FULL_M - CENTERING_LANE_HIGHLIGHT_MIN_M, 1e-3f);
++      const float normalized = (centering_indicator_magnitude - CENTERING_LANE_HIGHLIGHT_MIN_M) / span;
++      highlight_progress = std::clamp(normalized, 0.0f, 1.0f);
++      const bool reducing = (prev_mag - centering_indicator_magnitude) > 1e-3f;
++      if (!reducing) {
++        highlight_progress *= 0.35f;
++      }
++    }
++
++    const float target_blink = centering_indicator_active ? highlight_progress : 0.0f;
++    const float rise = frame_dt / 0.12f;
++    const float fall = frame_dt / 0.4f;
++    if (target_blink > centering_indicator_blink_intensity) {
++      centering_indicator_blink_intensity = std::min(target_blink, centering_indicator_blink_intensity + rise);
++    } else {
++      centering_indicator_blink_intensity = std::max(target_blink, centering_indicator_blink_intensity - fall);
++    }
++
++    centering_indicator_blink_phase = std::fmod(centering_indicator_blink_phase + frame_dt * CENTERING_LANE_PULSE_FREQ_HZ * float(2.0 * M_PI), float(2.0 * M_PI));
++
++    if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
++        centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE &&
++        centering_indicator_active) {
++      centering_indicator_source = centering_indicator_last_nonzero_source;
++    }
++  }
 +
 +  update_model(model, lead_one);
 +  drawLaneLines(painter);
@@ -679,25 +777,39 @@ index 1fb0df8dee..12778da02f 100644
 +  }
 +  drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
 +
-+  if (centering_indicator_active) {
++  if (centering_indicator_opacity > 0.0f) {
 +    painter.save();
 +    painter.setOpacity(centering_indicator_opacity);
 +
-+    const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE;
-+    const QString feature_text = edge_based ? QStringLiteral("edge") : QStringLiteral("line");
++    const bool edge_based = centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE && !centering_signal;
++    const QString feature_text = edge_based ? QStringLiteral("road edge") : QStringLiteral("lane line");
 +    const float capped_shift_cm = std::clamp(centering_indicator_magnitude * 100.0f, 0.0f, CENTERING_DISPLAY_MAX_OFFSET_CM);
-+    const QString magnitude_text = QStringLiteral("≈ %1 cm").arg(QString::number(capped_shift_cm, 'f', capped_shift_cm < 10.0f ? 1 : 0));
 +
 +    QString primary_text;
-+    if (centering_indicator_edge_sign > 0.0f) {
-+      primary_text = QStringLiteral("Avoiding right %1").arg(feature_text);
++    if (!centering_indicator_active) {
++      primary_text = QStringLiteral("Lane centering ready");
++    } else if (edge_based) {
++      if (centering_indicator_edge_sign > 0.0f) {
++        primary_text = QStringLiteral("Maintaining clearance from right %1").arg(feature_text);
++      } else if (centering_indicator_edge_sign < 0.0f) {
++        primary_text = QStringLiteral("Maintaining clearance from left %1").arg(feature_text);
++      } else {
++        primary_text = QStringLiteral("Maintaining road edge clearance");
++      }
++    } else if (centering_indicator_edge_sign > 0.0f) {
++      primary_text = QStringLiteral("Shifting left from right %1").arg(feature_text);
 +    } else if (centering_indicator_edge_sign < 0.0f) {
-+      primary_text = QStringLiteral("Avoiding left %1").arg(feature_text);
++      primary_text = QStringLiteral("Shifting right from left %1").arg(feature_text);
 +    } else {
 +      primary_text = QStringLiteral("Centering using %1").arg(feature_text);
 +    }
 +
-+    const QString secondary_text = magnitude_text;
++    QString secondary_text;
++    if (capped_shift_cm >= 1.0f) {
++      secondary_text = QStringLiteral("Offset ≈ %1 cm").arg(QString::number(capped_shift_cm, 'f', capped_shift_cm < 10.0f ? 1 : 0));
++    } else {
++      secondary_text = QStringLiteral("Offset < 1 cm");
++    }
 +
 +    const int indicator_width = 720;
 +    const int indicator_height = 160;
@@ -739,7 +851,7 @@ index 1fb0df8dee..12778da02f 100644
 +  }
 +
 +  const float blink_wave = 0.5f * (1.0f + std::sin(centering_indicator_blink_phase));
-+  const float alpha_float = 190.0f * centering_indicator_blink_intensity * blink_wave;
++  const float alpha_float = 210.0f * centering_indicator_blink_intensity * blink_wave;
 +  if (alpha_float <= 1.0f) {
 +    return;
 +  }
@@ -753,7 +865,7 @@ index 1fb0df8dee..12778da02f 100644
  
  void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
    ModelRenderer::update_model(model, lead);
-@@ -299,10 +513,8 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
+@@ -299,10 +529,8 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
        bg.setColorAt(position, final_color);
      }
  
