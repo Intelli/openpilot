@@ -26,7 +26,7 @@ index 8925bca8ae..fed7bc2907 100644
    vEgoDEPRECATED @0 :Float32;
    vEgoRawDEPRECATED @32 :Float32;
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
-index 3751efc87a..b8a52af268 100755
+index 3751efc87a..85fe1ee886 100755
 --- b/selfdrive/controls/controlsd.py
 +++ a/selfdrive/controls/controlsd.py
 @@ -1,17 +1,18 @@
@@ -50,7 +50,7 @@ index 3751efc87a..b8a52af268 100755
  from opendbc.car.vehicle_model import VehicleModel
  from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
  from openpilot.selfdrive.controls.lib.latcontrol import LatControl
-@@ -28,9 +29,38 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+@@ -28,9 +29,46 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
  State = log.SelfdriveState.OpenpilotState
  LaneChangeState = log.LaneChangeState
  LaneChangeDirection = log.LaneChangeDirection
@@ -60,7 +60,7 @@ index 3751efc87a..b8a52af268 100755
  
 +CENTERING_LOOKAHEAD_M = 10.0
 +CENTERING_MAX_OFFSET_M = 0.5
-+CENTERING_MIN_OFFSET_M = 0.03
++CENTERING_MIN_OFFSET_M = 0.015
 +CENTERING_LANE_WIDTH_MIN_M = 2.4
 +CENTERING_LANE_WIDTH_MAX_M = 5.0
 +CENTERING_PROB_ENTER_THRESHOLD = 0.6
@@ -68,17 +68,25 @@ index 3751efc87a..b8a52af268 100755
 +CENTERING_MIN_SPEED_MS = 1.0
 +CENTERING_MAX_CURVATURE_DELTA = 0.01
 +CENTERING_MIN_DISPLAY_DELTA = 1e-6
-+CENTERING_RATE_LIMIT_M_PER_S = 0.1
++CENTERING_RATE_LIMIT_M_PER_S = 0.08
++CENTERING_CURVATURE_MIN_OFFSET_M = 0.008
 +CENTERING_CURVATURE_GAIN = 0.55
 +CENTERING_EDGE_STD_MAX_ENTER = 1.0
 +CENTERING_EDGE_STD_MAX_EXIT = 1.2
 +CENTERING_EDGE_STD_SAMPLES = 10
 +CENTERING_DISTANCE_RATIO_MAX = 3.0
-+CENTERING_DEADBAND_ENTER_M = 0.08
-+CENTERING_DEADBAND_EXIT_M = 0.05
++CENTERING_DEADBAND_ENTER_M = 0.045
++CENTERING_DEADBAND_EXIT_M = 0.02
 +CENTERING_SIGN_FLIP_MIN_M = 0.12
 +CENTERING_TARGET_FILTER_TC = 0.6
 +CENTERING_EDGE_MARGIN_M = 0.14
++CENTERING_SOFT_GAIN_MIN = 0.3
++CENTERING_SOFT_GAIN_THRESHOLD_M = 0.08
++CENTERING_POST_CROSS_SLACK_M = 0.025
++CENTERING_SLACK_DECAY_RATE_M_PER_S = 0.02
++CENTERING_CURVE_ATTENUATION_START = 0.0025
++CENTERING_CURVE_ATTENUATION_FULL = 0.0075
++CENTERING_CURVE_MIN_SCALE = 0.35
 +
 +LANE_CENTERING_SOURCE_MAP = {
 +  None: LaneCenteringSourceEnum.none,
@@ -89,7 +97,7 @@ index 3751efc87a..b8a52af268 100755
  
  class Controls(ControlsExt, ModelStateBase):
    def __init__(self) -> None:
-@@ -54,6 +84,17 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -54,6 +92,18 @@ class Controls(ControlsExt, ModelStateBase):
      self.steer_limited_by_safety = False
      self.curvature = 0.0
      self.desired_curvature = 0.0
@@ -102,12 +110,13 @@ index 3751efc87a..b8a52af268 100755
 +    self._edges_reliable = False
 +    self._centering_lock_sign = 0
 +    self._centering_target_filtered = 0.0
++    self._centering_cross_slack = 0.0
 +    self._advanced_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
 +    self._prev_lat_active = False
  
      self.pose_calibrator = PoseCalibrator()
      self.calibrated_pose: Pose | None = None
-@@ -138,9 +179,77 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -138,9 +188,78 @@ class Controls(ControlsExt, ModelStateBase):
  
      # Steering PID loop and lateral MPC
      # Reset desired curvature to current to avoid violating the limits on engage
@@ -153,8 +162,8 @@ index 3751efc87a..b8a52af268 100755
 +      if not centering_available and abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
 +        self.centering_offset_m = 0.0
 +
-+    min_offset_for_curvature = CENTERING_MIN_OFFSET_M
-+    centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature) if centering_available else 0.0
++    min_offset_for_curvature = CENTERING_CURVATURE_MIN_OFFSET_M
++    centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature, base_desired_curvature) if centering_available else 0.0
 +    new_desired_curvature = base_desired_curvature + centering_delta
      self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
  
@@ -170,7 +179,8 @@ index 3751efc87a..b8a52af268 100755
 +      elif self.centering_source is None and self._centering_last_source is not None and (has_offset or has_correction):
 +        self.centering_source = self._centering_last_source
 +
-+      self.centering_active = has_correction or (centering_available and has_offset)
++      centering_feature_active = advanced_centering_enabled and (has_correction or has_offset)
++      self.centering_active = centering_feature_active
 +      if not self.centering_active:
 +        self.centering_correction = 0.0
 +        if not has_offset:
@@ -186,7 +196,7 @@ index 3751efc87a..b8a52af268 100755
      actuators.curvature = self.desired_curvature
      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                         self.steer_limited_by_safety, self.desired_curvature,
-@@ -157,11 +266,236 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -157,11 +276,257 @@ class Controls(ControlsExt, ModelStateBase):
          cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
          setattr(actuators, p, 0.0)
  
@@ -263,23 +273,31 @@ index 3751efc87a..b8a52af268 100755
 +  def _apply_offset_hysteresis(self, target_offset_m: float, available: bool) -> tuple[float, bool, bool]:
 +    if not available:
 +      self._centering_lock_sign = 0
++      self._centering_cross_slack = 0.0
 +      return 0.0, False, False
 +
 +    magnitude = abs(target_offset_m)
++    if self._centering_cross_slack > 0.0:
++      decay = CENTERING_SLACK_DECAY_RATE_M_PER_S * DT_CTRL
++      self._centering_cross_slack = max(0.0, self._centering_cross_slack - decay)
 +    if magnitude < CENTERING_DEADBAND_EXIT_M:
 +      if self._centering_lock_sign != 0:
 +        self._centering_lock_sign = 0
++      self._centering_cross_slack = 0.0
 +      return 0.0, False, False
 +
 +    desired_sign = 1 if target_offset_m > 0.0 else -1
 +
 +    if self._centering_lock_sign == 0:
-+      if magnitude < CENTERING_DEADBAND_ENTER_M:
++      threshold = CENTERING_DEADBAND_ENTER_M + self._centering_cross_slack
++      if magnitude < threshold:
 +        return 0.0, False, False
 +      self._centering_lock_sign = desired_sign
++      self._centering_cross_slack = 0.0
 +    else:
 +      if desired_sign != self._centering_lock_sign:
 +        self._centering_lock_sign = 0
++        self._centering_cross_slack = CENTERING_POST_CROSS_SLACK_M
 +        return 0.0, False, True
 +
 +    locked_offset = self._centering_lock_sign * magnitude
@@ -399,11 +417,24 @@ index 3751efc87a..b8a52af268 100755
 +      return None
 +    return total / count
 +
-+  def _offset_to_curvature(self, offset_m: float, min_offset: float) -> float:
-+    if abs(offset_m) < min_offset:
++  def _offset_to_curvature(self, offset_m: float, min_offset: float, base_curvature: float) -> float:
++    offset_abs = abs(offset_m)
++    if offset_abs < min_offset:
 +      return 0.0
 +
-+    curvature_delta = CENTERING_CURVATURE_GAIN * (2.0 * offset_m) / (CENTERING_LOOKAHEAD_M ** 2)
++    ratio = min(1.0, offset_abs / CENTERING_SOFT_GAIN_THRESHOLD_M) if CENTERING_SOFT_GAIN_THRESHOLD_M > 0.0 else 1.0
++    gain = CENTERING_SOFT_GAIN_MIN + (CENTERING_CURVATURE_GAIN - CENTERING_SOFT_GAIN_MIN) * (ratio ** 1.5)
++
++    curvature_delta = gain * (2.0 * offset_m) / (CENTERING_LOOKAHEAD_M ** 2)
++
++    curve_mag = abs(base_curvature)
++    if curve_mag > CENTERING_CURVE_ATTENUATION_START:
++      atten_span = max(1e-6, CENTERING_CURVE_ATTENUATION_FULL - CENTERING_CURVE_ATTENUATION_START)
++      attenuation_ratio = min(1.0, (curve_mag - CENTERING_CURVE_ATTENUATION_START) / atten_span)
++      curve_scale = 1.0 - attenuation_ratio * (1.0 - CENTERING_CURVE_MIN_SCALE)
++      curve_scale = max(CENTERING_CURVE_MIN_SCALE, curve_scale)
++      curvature_delta *= curve_scale
++
 +    if curvature_delta > CENTERING_MAX_CURVATURE_DELTA:
 +      curvature_delta = CENTERING_MAX_CURVATURE_DELTA
 +    elif curvature_delta < -CENTERING_MAX_CURVATURE_DELTA:
@@ -423,7 +454,7 @@ index 3751efc87a..b8a52af268 100755
      # Orientation and angle rates can be useful for carcontroller
      # Only calibrated (car) frame is relevant for the carcontroller
      CC.currentCurvature = self.curvature
-@@ -207,6 +541,9 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -207,6 +572,9 @@ class Controls(ControlsExt, ModelStateBase):
      cs.longitudinalPlanMonoTime = self.sm.logMonoTime['longitudinalPlan']
      cs.lateralPlanMonoTime = self.sm.logMonoTime['modelV2']
      cs.desiredCurvature = self.desired_curvature
@@ -498,10 +529,10 @@ index 1a39800dde..08681bc197 100644
    QFrame *supercomboFrame;
    QProgressBar *navigationProgressBar;
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 1fb0df8dee..12e498d0ad 100644
+index 1fb0df8dee..12778da02f 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-@@ -14,6 +14,215 @@
+@@ -14,6 +14,220 @@
  #include <iterator>
  #include <QString>
  
@@ -517,6 +548,7 @@ index 1fb0df8dee..12e498d0ad 100644
 +constexpr float CENTERING_BLINK_RISE_S = 0.1f;
 +constexpr float CENTERING_BLINK_DECAY_S = 0.4f;
 +constexpr float CENTERING_BLINK_FREQ_HZ = 4.0f;
++constexpr float CENTERING_INDICATOR_OFFSET_WAKE_M = 0.012f;
 +
 +void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 +  auto *s = uiState();
@@ -543,16 +575,20 @@ index 1fb0df8dee..12e498d0ad 100644
 +  centering_indicator_last_update = now;
 +
 +  bool centering_signal = false;
++  bool centering_flag_active = false;
++  float centering_offset_m = 0.0f;
 +  bool controls_state_stale = true;
 +  if (sm.alive("controlsState")) {
 +    const auto &controls_state = sm["controlsState"].getControlsState();
-+    centering_signal = selfdrive_state.getEnabled() && controls_state.getLaneCenteringActive();
++    centering_flag_active = controls_state.getLaneCenteringActive();
++    centering_offset_m = controls_state.getLaneCenteringOffset();
++    const bool offset_significant = std::abs(centering_offset_m) > CENTERING_INDICATOR_OFFSET_WAKE_M;
++    centering_signal = selfdrive_state.getEnabled() && (centering_flag_active || offset_significant);
 +    const int64_t controls_mono_time = sm.rcv_time("controlsState");
 +    const double age = std::abs((double)(nanos_since_boot() - controls_mono_time)) / 1e9;
 +    controls_state_stale = age > 0.5;
 +    if (centering_signal) {
 +      centering_indicator_last_signal = now;
-+      const float centering_offset_m = controls_state.getLaneCenteringOffset();
 +      centering_indicator_source = controls_state.getLaneCenteringSource();
 +      if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
 +          centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE) {
@@ -710,14 +746,14 @@ index 1fb0df8dee..12e498d0ad 100644
 +
 +  const int alpha = std::clamp(static_cast<int>(std::lround(alpha_float)), 0, 255);
 +  painter.save();
-+  painter.setBrush(QColor(255, 255, 255, alpha));
++  painter.setBrush(QColor(178, 102, 255, alpha));
 +  painter.drawPolygon(lane_line_vertices[highlight_idx]);
 +  painter.restore();
 +}
  
  void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
    ModelRenderer::update_model(model, lead);
-@@ -299,10 +508,8 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
+@@ -299,10 +513,8 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
        bg.setColorAt(position, final_color);
      }
  
