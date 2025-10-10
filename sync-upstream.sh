@@ -57,7 +57,12 @@ if ! git -c submodule.recurse=false merge --no-edit -X theirs "${TARGET_REF}"; t
   merge_resolved=0
 
   if git rev-parse --verify MERGE_HEAD >/dev/null 2>&1; then
-    mapfile -t merge_conflicts < <(git diff --name-only --diff-filter=U)
+    merge_conflicts=()
+    while IFS= read -r conflict_path; do
+      [[ -z "${conflict_path}" ]] && continue
+      merge_conflicts+=("${conflict_path}")
+    done < <(git diff --name-only --diff-filter=U)
+
     unresolved_conflicts=()
 
     for path in "${merge_conflicts[@]}"; do
