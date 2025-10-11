@@ -67,3 +67,22 @@ index 7309f600ef..09749ebdec 100644
 +  OptionControlSP* hkgEv9AlertsSpeed;
    OptionControlSP* hkgTuningOverridingCycles;
  };
+diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc
+index fb23e651dd..1f41ca4abf 100644
+--- b/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc
++++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc
+@@ -112,12 +112,12 @@ ModelsPanel::ModelsPanel(QWidget *parent) : QWidget(parent) {
+   list->addItem(lane_turn_desire_toggle);
+ 
+   // Lane Turn Value control
+-  int max_value_mph = 20;
++  int max_value_mph = 25;
+   bool is_metric_initial = params.getBool("IsMetric");
+   const float K = 1.609344f;
+   int per_value_change_scaled = is_metric_initial ? static_cast<int>(std::round((1.0f / K) * 100.0f)) : 100; // 100 -> 1 mph
+   lane_turn_value_control = new OptionControlSP("LaneTurnValue", tr("Adjust Lane Turn Speed"),
+-    tr("Set the maximum speed for lane turn desires. Default is 19 %1.").arg(is_metric_initial ? "km/h" : "mph"),
++    tr("Set the maximum speed for lane turn desires. Default is 25 %1.").arg(is_metric_initial ? "km/h" : "mph"),
+     "", {5 * 100, max_value_mph * 100}, per_value_change_scaled, false, nullptr, true, true);
+   lane_turn_value_control->showDescription();
+   list->addItem(lane_turn_value_control);
