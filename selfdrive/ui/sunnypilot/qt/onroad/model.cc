@@ -17,6 +17,7 @@
 #include "common/timing.h"
 
 constexpr float CENTERING_SIGNAL_STALE_S = 1.0f;
+constexpr float CENTERING_CENTER_BAND_M = 0.075f;
 
 void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   auto *s = uiState();
@@ -105,9 +106,14 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     centering_indicator_last_nonzero_source = centering_indicator_source;
   }
 
+  const bool within_center_band = panel_offset_available && std::abs(panel_offset_m) <= CENTERING_CENTER_BAND_M;
+
+  float steering_direction_sign = 0.0f;
   if (panel_offset_available) {
-    centering_indicator_edge_sign = (panel_offset_m > 0.0f) ? 1.0f : (panel_offset_m < 0.0f ? -1.0f : 0.0f);
-    centering_highlight_strength = std::clamp(std::abs(panel_offset_m) / 0.6f, 0.0f, 1.0f);
+    const float offset_sign = (panel_offset_m > 0.0f) ? 1.0f : (panel_offset_m < 0.0f ? -1.0f : 0.0f);
+    centering_indicator_edge_sign = within_center_band ? 0.0f : offset_sign;
+    steering_direction_sign = within_center_band ? 0.0f : -offset_sign;
+    centering_highlight_strength = within_center_band ? 0.0f : std::clamp(std::abs(panel_offset_m) / 0.6f, 0.0f, 1.0f);
   }
 
   const bool panel_visible = enabled && (
@@ -160,26 +166,30 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
       return value > 0.0f ? QStringLiteral("right") : QStringLiteral("left");
     };
 
+    const bool show_centered = within_center_band && !centering_edge_mode;
+
     QString primary_text;
     if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
       primary_text = QStringLiteral("Center Unknown");
+    } else if (show_centered) {
+      primary_text = QStringLiteral("Centered");
     } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
-      const float edge_sign = centering_indicator_edge_sign != 0.0f ? centering_indicator_edge_sign :
-          (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
-      if (edge_sign > 0.0f) {
-        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
-      } else if (edge_sign < 0.0f) {
+      const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
+          (display_offset_m > 0.0f ? -1.0f : (display_offset_m < 0.0f ? 1.0f : 0.0f));
+      if (correction_sign > 0.0f) {
         primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
+      } else if (correction_sign < 0.0f) {
+        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
       } else {
         primary_text = QStringLiteral("Centering (%1)").arg(feature_text);
       }
     } else if (centering_adjusting_display) {
-      const float sign = centering_indicator_edge_sign != 0.0f ? centering_indicator_edge_sign :
-          (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
-      if (sign > 0.0f) {
-        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
-      } else if (sign < 0.0f) {
+      const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
+          (display_offset_m > 0.0f ? -1.0f : (display_offset_m < 0.0f ? 1.0f : 0.0f));
+      if (correction_sign > 0.0f) {
         primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
+      } else if (correction_sign < 0.0f) {
+        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
       } else {
         primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered");
       }
@@ -191,7 +201,9 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 
     QString secondary_text;
     if (display_offset_valid) {
-      if (offset_small) {
+      if (within_center_band) {
+        secondary_text = QStringLiteral("≤ 7 cm from center");
+      } else if (offset_small) {
         secondary_text = QStringLiteral("< 1 cm from center");
       } else {
         secondary_text = QStringLiteral("%1 cm %2 of center")
