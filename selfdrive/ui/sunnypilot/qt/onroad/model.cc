@@ -553,4 +553,3 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     painter.drawPolygon(track_vertices);
   }
 }
-
