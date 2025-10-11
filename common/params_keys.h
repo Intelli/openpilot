@@ -149,10 +149,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"DevUIInfo", {PERSISTENT | BACKUP, INT, "0"}},
     {"EnableCopyparty", {PERSISTENT | BACKUP, BOOL}},
     {"EnableGithubRunner", {PERSISTENT | BACKUP, BOOL}},
-    {"GreenLightAlert", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"GreenLightAlert", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"GithubRunnerSufficientVoltage", {CLEAR_ON_MANAGER_START , BOOL}},
     {"HideVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"IntelligentCruiseButtonManagement", {PERSISTENT | BACKUP , BOOL}},
+    {"IntelligentCruiseButtonManagement", {PERSISTENT | BACKUP , BOOL, "1"}},
     {"InteractivityTimeout", {PERSISTENT | BACKUP, INT, "0"}},
     {"IsDevelopmentBranch", {CLEAR_ON_MANAGER_START, BOOL}},
     {"LastGPSPositionLLK", {PERSISTENT, STRING}},
@@ -240,15 +240,15 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"RoadNameToggle", {PERSISTENT, STRING, "1"}},
 
     // Speed Limit
-    {"SpeedLimitMode", {PERSISTENT | BACKUP, INT, "1"}},
-    {"SpeedLimitOffsetType", {PERSISTENT | BACKUP, INT, "0"}},
-    {"SpeedLimitPolicy", {PERSISTENT | BACKUP, INT, "3"}},
-    {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "0"}},
+    {"SpeedLimitMode", {PERSISTENT | BACKUP, INT, "3"}},
+    {"SpeedLimitOffsetType", {PERSISTENT | BACKUP, INT, "2"}},
+    {"SpeedLimitPolicy", {PERSISTENT | BACKUP, INT, "4"}},
+    {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "10"}},
 
     // Smart Cruise Control
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
     {"SmartCruiseControlMap", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"SmartCruiseControlVision", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"SmartCruiseControlVision", {PERSISTENT | BACKUP, BOOL, "1"}},
 
     // Torque lateral control custom params
     {"CustomTorqueParams", {PERSISTENT | BACKUP , BOOL}},
