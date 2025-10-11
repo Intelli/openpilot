@@ -1,5 +1,5 @@
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 07b03880a3..0fe5cda663 100644
+index 07b03880a3..3329d8121a 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -38,11 +38,13 @@ index 07b03880a3..0fe5cda663 100644
      {"BlinkerMinLateralControlSpeed", {PERSISTENT | BACKUP, INT, "20"}},  // MPH or km/h
      {"BlinkerPauseLateralControl", {PERSISTENT | BACKUP, INT, "0"}},
      {"Brightness", {PERSISTENT | BACKUP, INT, "0"}},
-@@ -156,7 +157,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -155,8 +156,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"InteractivityTimeout", {PERSISTENT | BACKUP, INT, "0"}},
      {"IsDevelopmentBranch", {CLEAR_ON_MANAGER_START, BOOL}},
      {"LastGPSPositionLLK", {PERSISTENT, STRING}},
-     {"LeadDepartAlert", {PERSISTENT | BACKUP, BOOL, "0"}},
+-    {"LeadDepartAlert", {PERSISTENT | BACKUP, BOOL, "0"}},
 -    {"MaxTimeOffroad", {PERSISTENT | BACKUP, INT, "1800"}},
++    {"LeadDepartAlert", {PERSISTENT | BACKUP, BOOL, "1"}},
 +    {"MaxTimeOffroad", {PERSISTENT | BACKUP, INT, "30"}},
      {"ModelRunnerTypeCache", {CLEAR_ON_ONROAD_TRANSITION, INT}},
      {"OffroadMode", {CLEAR_ON_MANAGER_START, BOOL}},
