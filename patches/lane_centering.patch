@@ -936,6 +936,7 @@ index 1fb0df8dee..65f1b4b03c 100644
 -    painter.restore();
    }
  }
++
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.h a/selfdrive/ui/sunnypilot/qt/onroad/model.h
 index 24404f32f0..8c835cb54f 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.h
