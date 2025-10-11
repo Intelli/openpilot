@@ -152,7 +152,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"GreenLightAlert", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"GithubRunnerSufficientVoltage", {CLEAR_ON_MANAGER_START , BOOL}},
     {"HideVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"IntelligentCruiseButtonManagement", {PERSISTENT | BACKUP , BOOL, "1"}},
+    {"IntelligentCruiseButtonManagement", {PERSISTENT | BACKUP , BOOL}},
     {"InteractivityTimeout", {PERSISTENT | BACKUP, INT, "0"}},
     {"IsDevelopmentBranch", {CLEAR_ON_MANAGER_START, BOOL}},
     {"LastGPSPositionLLK", {PERSISTENT, STRING}},
@@ -248,7 +248,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Smart Cruise Control
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
     {"SmartCruiseControlMap", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"SmartCruiseControlVision", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"SmartCruiseControlVision", {PERSISTENT | BACKUP, BOOL, "0"}},
 
     // Torque lateral control custom params
     {"CustomTorqueParams", {PERSISTENT | BACKUP , BOOL}},
