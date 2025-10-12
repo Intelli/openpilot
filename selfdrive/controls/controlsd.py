@@ -412,14 +412,14 @@ class Controls(ControlsExt, ModelStateBase):
 
     left_candidates, right_candidates, left_edge_dist, right_edge_dist = self._collect_boundary_candidates(model_v2)
 
-    left_boundary, left_source = self._select_closest_boundary(left_candidates, "left")
-    right_boundary, right_source = self._select_closest_boundary(right_candidates, "right")
-
     edge_offset, edge_active = self._edge_clearance_target(left_edge_dist, right_edge_dist)
 
-    if left_boundary is None or right_boundary is None:
+    best_pair = self._select_best_boundary_pair(left_candidates, right_candidates)
+    if best_pair is None:
       self._centering_tracking_ready = False
       return 0.0, False, None, edge_offset, edge_active
+
+    left_boundary, left_source, right_boundary, right_source = best_pair
 
     lane_width = left_boundary - right_boundary
     if lane_width < CENTERING_LANE_WIDTH_MIN_M or lane_width > CENTERING_LANE_WIDTH_MAX_M:
@@ -447,7 +447,13 @@ class Controls(ControlsExt, ModelStateBase):
         offset_sign = -1
 
       if lock_sign != 0 and offset_sign == lock_sign and abs(center_offset) > CENTERING_LOCK_RELEASE_M:
-        source = source or self._centering_last_source
+        source = None
+        if lock_sign > 0:
+          source = left_source or right_source
+        elif lock_sign < 0:
+          source = right_source or left_source
+        if source is None:
+          source = self._centering_last_source
         return center_offset, True, source, edge_offset, edge_active
       return center_offset, False, None, edge_offset, edge_active
 
@@ -545,6 +551,46 @@ class Controls(ControlsExt, ModelStateBase):
                 right_edge_distance = float(edge_val)
 
     return left_candidates, right_candidates, left_edge_distance, right_edge_distance
+
+  def _select_best_boundary_pair(self, left_candidates: list[tuple[str, float]], right_candidates: list[tuple[str, float]]) -> tuple[float, str | None, float, str | None] | None:
+    if not left_candidates or not right_candidates:
+      return None
+
+    best_pair: tuple[float, str | None, float, str | None] | None = None
+    best_score: tuple[float, float, float] | None = None
+    fallback_pair: tuple[float, str | None, float, str | None] | None = None
+    fallback_width = float('inf')
+
+    for left_source, left_value in left_candidates:
+      if left_value <= 0.0:
+        continue
+      for right_source, right_value in right_candidates:
+        if right_value >= 0.0:
+          continue
+
+        lane_width = left_value - right_value
+        if lane_width <= 0.0:
+          continue
+
+        candidate = (float(left_value), left_source, float(right_value), right_source)
+        if lane_width < fallback_width:
+          fallback_width = lane_width
+          fallback_pair = candidate
+
+        if not (CENTERING_LANE_WIDTH_MIN_M <= lane_width <= CENTERING_LANE_WIDTH_MAX_M):
+          continue
+
+        center_offset = 0.5 * (left_value + right_value)
+        distance_metric = max(abs(left_value), abs(right_value))
+        score = (abs(center_offset), distance_metric, lane_width)
+        if best_score is None or score < best_score:
+          best_score = score
+          best_pair = candidate
+
+    if best_pair is not None:
+      return best_pair
+
+    return fallback_pair
 
   def _lane_boundary(self, index: int, lane_line, probability: float) -> tuple[float | None, bool]:
     reliable = self._lane_reliability.get(index, False)
