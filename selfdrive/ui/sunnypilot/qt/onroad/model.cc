@@ -109,10 +109,12 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   const bool within_center_band = panel_offset_available && std::abs(panel_offset_m) <= CENTERING_CENTER_BAND_M;
 
   float steering_direction_sign = 0.0f;
+  float displacement_direction_sign = 0.0f;
   if (panel_offset_available) {
     const float offset_sign = (panel_offset_m > 0.0f) ? 1.0f : (panel_offset_m < 0.0f ? -1.0f : 0.0f);
     centering_indicator_edge_sign = within_center_band ? 0.0f : offset_sign;
     steering_direction_sign = within_center_band ? 0.0f : -offset_sign;
+    displacement_direction_sign = within_center_band ? 0.0f : -offset_sign;
     centering_highlight_strength = within_center_band ? 0.0f : std::clamp(std::abs(panel_offset_m) / 0.6f, 0.0f, 1.0f);
   }
 
@@ -208,7 +210,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
       } else {
         secondary_text = QStringLiteral("%1 cm %2 of center")
                             .arg(QString::number(display_offset_cm, 'f', decimal_precision))
-                            .arg(direction_from_sign(display_offset_m));
+                            .arg(direction_from_sign(-display_offset_m));
       }
     } else {
       secondary_text = QStringLiteral("Offset unknown");
