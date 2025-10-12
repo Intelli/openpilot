@@ -1,0 +1,163 @@
+diff --git b/sunnypilot/selfdrive/car/intelligent_cruise_button_management/controller.py a/sunnypilot/selfdrive/car/intelligent_cruise_button_management/controller.py
+index 1f491e0f58..920828b67c 100644
+--- b/sunnypilot/selfdrive/car/intelligent_cruise_button_management/controller.py
++++ a/sunnypilot/selfdrive/car/intelligent_cruise_button_management/controller.py
+@@ -37,6 +37,7 @@ class IntelligentCruiseButtonManagement:
+     self.cruise_button = SendButtonState.none
+     self.state = State.inactive
+     self.pre_active_timer = 0
++    self.decreasing_timer = 0
+ 
+     self.is_ready = False
+     self.is_ready_prev = False
+@@ -61,11 +62,13 @@ class IntelligentCruiseButtonManagement:
+ 
+   def update_state_machine(self) -> custom.IntelligentCruiseButtonManagement.SendButtonState:
+     self.pre_active_timer = max(0, self.pre_active_timer - 1)
++    self.decreasing_timer = max(0, self.decreasing_timer - 1) if self.decreasing_timer else 0
+ 
+     # HOLDING, ACCELERATING, DECELERATING, PRE_ACTIVE
+     if self.state != State.inactive:
+       if not self.is_ready:
+         self.state = State.inactive
++        self.decreasing_timer = 0
+ 
+       else:
+         # PRE_ACTIVE
+@@ -79,11 +82,14 @@ class IntelligentCruiseButtonManagement:
+ 
+             elif self.v_target < self.v_cruise_cluster and self.v_cruise_cluster > self.v_cruise_min:
+               self.state = State.decreasing
++              if not self.decreasing_timer:
++                self.decreasing_timer = int(INACTIVE_TIMER / DT_CTRL)
+ 
+         # HOLDING
+         elif self.state == State.holding:
+           if not self.v_cruise_equal:
+             self.state = State.preActive
++            self.decreasing_timer = 0
+ 
+         # ACCELERATING
+         elif self.state == State.increasing:
+@@ -94,12 +100,19 @@ class IntelligentCruiseButtonManagement:
+         elif self.state == State.decreasing:
+           if self.v_target >= self.v_cruise_cluster or self.v_cruise_cluster <= self.v_cruise_min:
+             self.state = State.holding
++            self.decreasing_timer = 0
++          elif self.decreasing_timer <= 0:
++            self.state = State.inactive
++            self.v_target = self.v_cruise_cluster
++            self.decreasing_timer = 0
+ 
+     # INACTIVE
+     elif self.state == State.inactive:
+       if self.is_ready and not self.is_ready_prev:
+         self.pre_active_timer = int(INACTIVE_TIMER / DT_CTRL)
+         self.state = State.preActive
++      else:
++        self.decreasing_timer = 0
+ 
+     send_button = SEND_BUTTONS.get(self.state, SendButtonState.none)
+ 
+@@ -122,6 +135,12 @@ class IntelligentCruiseButtonManagement:
+     self.update_calculations(CS, LP_SP)
+     self.update_readiness(CS, CC)
+ 
++    if not self.is_ready:
++      self.state = State.inactive
++      self.decreasing_timer = 0
++      self.cruise_button = SendButtonState.none
++      self.v_target = self.v_cruise_cluster
++
+     self.cruise_button = self.update_state_machine()
+ 
+     self.is_ready_prev = self.is_ready
+diff --git b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_assist.py a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_assist.py
+index 302d8cd14d..0238de4b0e 100644
+--- b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_assist.py
++++ a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_assist.py
+@@ -77,6 +77,7 @@ class SpeedLimitAssist:
+     self.speed_limit_prev = 0.
+     self.speed_limit_final_last_conv = 0
+     self.prev_speed_limit_final_last_conv = 0
++    self._last_announced_limit_conv = 0
+     self._distance = 0.
+     self.state = SpeedLimitAssistState.disabled
+     self._state_prev = SpeedLimitAssistState.disabled
+@@ -343,6 +344,7 @@ class SpeedLimitAssist:
+     return enabled, active
+ 
+   def update_events(self, events_sp: EventsSP) -> None:
++    limit_conv = self.speed_limit_final_last_conv if self._has_speed_limit else 0
+     if self.state == SpeedLimitAssistState.preActive:
+       events_sp.add(EventNameSP.speedLimitPreActive)
+ 
+@@ -350,16 +352,21 @@ class SpeedLimitAssist:
+       events_sp.add(EventNameSP.speedLimitPending)
+ 
+     if self.is_active:
++      triggered = False
+       if self._state_prev not in ACTIVE_STATES:
+-        events_sp.add(EventNameSP.speedLimitActive)
+-
+-      # only notify if we acquire a valid speed limit
+-      # do not check has_speed_limit here
+-      elif self._speed_limit != self.speed_limit_prev:
+-        if self.speed_limit_prev <= 0:
++        if limit_conv and limit_conv != self._last_announced_limit_conv:
++          events_sp.add(EventNameSP.speedLimitActive)
++          triggered = True
++      elif limit_conv and limit_conv != self._last_announced_limit_conv:
++        if self._last_announced_limit_conv <= 0:
+           events_sp.add(EventNameSP.speedLimitActive)
+-        elif self.speed_limit_prev > 0 and self._speed_limit > 0:
++        else:
+           events_sp.add(EventNameSP.speedLimitChanged)
++        triggered = True
++      if triggered:
++        self._last_announced_limit_conv = limit_conv
++    elif not self._has_speed_limit:
++      self._last_announced_limit_conv = 0
+ 
+   def update(self, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float, v_cruise_cluster: float, speed_limit: float,
+              speed_limit_final_last: float, has_speed_limit: bool, distance: float, events_sp: EventsSP) -> None:
+diff --git b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py
+index 51fb8f6d64..30850dd487 100644
+--- b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py
++++ a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py
+@@ -14,12 +14,13 @@ from openpilot.common.params import Params
+ from openpilot.common.realtime import DT_MDL
+ from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
+ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE, LIMIT_ADAPT_ACC
+-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy, OffsetType
+ 
+ SpeedLimitSource = custom.LongitudinalPlanSP.SpeedLimit.Source
+ 
+ ALL_SOURCES = tuple(SpeedLimitSource.schema.enumerants.values())
+ 
++SPEED_LIMIT_LAST_VALID_TIMEOUT = 5.0
++
+ 
+ class SpeedLimitResolver:
+   limit_solutions: dict[custom.LongitudinalPlanSP.SpeedLimit.Source, float]
+@@ -62,13 +63,20 @@ class SpeedLimitResolver:
+     self.speed_limit_final = 0.
+     self.speed_limit_final_last = 0.
+     self.speed_limit_offset = 0.
++    self._last_valid_limit_ts = 0.
+ 
+   def update_speed_limit_states(self) -> None:
++    now = time.monotonic()
+     self.speed_limit_final = self.speed_limit + self.speed_limit_offset
+ 
+     if self.speed_limit > 0.:
+       self.speed_limit_last = self.speed_limit
+       self.speed_limit_final_last = self.speed_limit_final
++      self._last_valid_limit_ts = now
++    elif self._last_valid_limit_ts and now - self._last_valid_limit_ts >= SPEED_LIMIT_LAST_VALID_TIMEOUT:
++      self.speed_limit_last = 0.
++      self.speed_limit_final_last = 0.
++      self._last_valid_limit_ts = 0.
+ 
+   @property
+   def speed_limit_valid(self) -> bool:
