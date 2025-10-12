@@ -17,7 +17,7 @@
 #include "common/timing.h"
 
 constexpr float CENTERING_SIGNAL_STALE_S = 1.0f;
-constexpr float CENTERING_CENTER_BAND_M = 0.075f;
+constexpr float CENTERING_CENTER_BAND_M = 0.08f;
 
 void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   auto *s = uiState();
@@ -204,7 +204,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     QString secondary_text;
     if (display_offset_valid) {
       if (within_center_band) {
-        secondary_text = QStringLiteral("≤ 7 cm from center");
+        secondary_text = QStringLiteral("≤ 8 cm from center");
       } else if (offset_small) {
         secondary_text = QStringLiteral("< 1 cm from center");
       } else {
