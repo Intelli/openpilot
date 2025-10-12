@@ -174,7 +174,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
       primary_text = QStringLiteral("Center Unknown");
     } else if (show_centered) {
-      primary_text = QStringLiteral("Centered");
+      primary_text = QStringLiteral("Centered (0)");
     } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
       const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
           (display_offset_m > 0.0f ? -1.0f : (display_offset_m < 0.0f ? 1.0f : 0.0f));
@@ -193,10 +193,10 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
       } else if (correction_sign < 0.0f) {
         primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
       } else {
-        primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered");
+        primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered (1)");
       }
     } else if (display_offset_valid) {
-      primary_text = QStringLiteral("Centered");
+      primary_text = QStringLiteral("Centered (2)");
     } else {
       primary_text = QStringLiteral("Lane centering standby");
     }
