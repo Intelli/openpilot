@@ -1,5 +1,5 @@
 diff --git b/system/updated/updated.py a/system/updated/updated.py
-index fa199e7c7c..452d11e644 100755
+index 7ab9e070dc..452d11e644 100755
 --- b/system/updated/updated.py
 +++ a/system/updated/updated.py
 @@ -7,6 +7,7 @@ import psutil
@@ -68,7 +68,7 @@ index fa199e7c7c..452d11e644 100755
  def parse_release_notes(basedir: str) -> bytes:
    try:
      with open(os.path.join(basedir, "RELEASES.md"), "rb") as f:
-@@ -94,102 +114,31 @@ def parse_release_notes(basedir: str) -> bytes:
+@@ -94,123 +114,62 @@ def parse_release_notes(basedir: str) -> bytes:
      cloudlog.exception("failed to parse release notes")
    return b""
  
@@ -141,17 +141,16 @@ index fa199e7c7c..452d11e644 100755
 -
 -  os.sync()
 -  overlay_opts = f"lowerdir={BASEDIR},upperdir={OVERLAY_UPPER},workdir={OVERLAY_METADATA}"
--
++def get_remote_url(path: str) -> str:
++  return run(["git", "config", "--get", "remote.origin.url"], path).strip()
+ 
 -  mount_cmd = ["mount", "-t", "overlay", "-o", overlay_opts, "none", OVERLAY_MERGED]
 -  run(["sudo"] + mount_cmd)
 -  run(["sudo", "chmod", "755", os.path.join(OVERLAY_METADATA, "work")])
-+def get_remote_url(path: str) -> str:
-+  return run(["git", "config", "--get", "remote.origin.url"], path).strip()
  
 -  git_diff = run(["git", "diff", "--submodule=diff"], OVERLAY_MERGED)
 -  params.put("GitDiff", git_diff)
 -  cloudlog.info(f"git diff output:\n{git_diff}")
- 
 +def compute_git_diff(branch: str) -> str:
 +  try:
 +    return run(["git", "diff", "--stat", "HEAD", f"origin/{branch}"], BASEDIR)
@@ -159,15 +158,15 @@ index fa199e7c7c..452d11e644 100755
 +    cloudlog.exception("failed to compute git diff")
 +  return ""
  
+ 
 -def finalize_update() -> None:
 -  """Take the current OverlayFS merged view and finalize a copy outside of
 -  OverlayFS, ready to be swapped-in at BASEDIR. Copy using shutil.copytree"""
- 
 +def finalize_update(checkout_path: str) -> None:
-   params = Params()
-   quickboot_enabled = params.get_bool("UsePrebuiltToggle")
-   if quickboot_enabled:
-     params.put_bool("QuickBootPendingRebuild", True)
++  params = Params()
++  quickboot_enabled = params.get_bool("UsePrebuiltToggle")
++  if quickboot_enabled:
++    params.put_bool("QuickBootPendingRebuild", True)
  
 -  # Remove the update ready flag and any old updates
 -  cloudlog.info("creating finalized version of the overlay")
@@ -184,12 +183,15 @@ index fa199e7c7c..452d11e644 100755
  
    run(["git", "reset", "--hard"], FINALIZED)
    run(["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"], FINALIZED)
-@@ -200,28 +149,27 @@ def finalize_update() -> None:
-     live_prebuilt = Path(BASEDIR) / "prebuilt"
-     live_prebuilt.unlink(missing_ok=True)
  
 -  set_consistent_flag(True)
 -  cloudlog.info("done finalizing overlay")
++  if quickboot_enabled:
++    prebuilt_path = Path(FINALIZED) / "prebuilt"
++    prebuilt_path.unlink(missing_ok=True)
++    live_prebuilt = Path(BASEDIR) / "prebuilt"
++    live_prebuilt.unlink(missing_ok=True)
++
 +  set_update_ready(True)
 +  cloudlog.info("download finalized")
  
@@ -219,7 +221,7 @@ index fa199e7c7c..452d11e644 100755
    target_slot_number = get_target_slot_number()
    flash_agnos_update(manifest_path, target_slot_number, cloudlog)
    set_offroad_alert("Offroad_NeosUpdate", False)
-@@ -248,27 +196,44 @@ class Updater:
+@@ -237,27 +196,44 @@ class Updater:
  
    @property
    def update_ready(self) -> bool:
@@ -277,7 +279,7 @@ index fa199e7c7c..452d11e644 100755
  
    def set_params(self, update_success: bool, failed_count: int, exception: str | None) -> None:
      self.params.put("UpdateFailedCount", failed_count)
-@@ -319,6 +284,7 @@ class Updater:
+@@ -308,6 +284,7 @@ class Updater:
      self.params.put("UpdaterNewDescription", get_description(FINALIZED))
      self.params.put("UpdaterNewReleaseNotes", parse_release_notes(FINALIZED))
      self.params.put_bool("UpdateAvailable", self.update_ready)
@@ -285,7 +287,7 @@ index fa199e7c7c..452d11e644 100755
  
      # Handle user prompt
      for alert in ("Offroad_UpdateFailed", "Offroad_ConnectivityNeeded", "Offroad_ConnectivityNeededPrompt"):
-@@ -346,13 +312,12 @@ class Updater:
+@@ -335,13 +312,12 @@ class Updater:
      excluded_branches = ('release2', 'release2-staging')
  
      try:
@@ -301,7 +303,7 @@ index fa199e7c7c..452d11e644 100755
  
      self.branches = defaultdict(lambda: None)
      for line in output.split('\n'):
-@@ -361,8 +326,8 @@ class Updater:
+@@ -350,8 +326,8 @@ class Updater:
        if x is not None and x.group('branch_name') not in excluded_branches:
          self.branches[x.group('branch_name')] = x.group('commit_sha')
  
@@ -312,7 +314,7 @@ index fa199e7c7c..452d11e644 100755
      new_branch = self.target_branch
      new_commit = self.branches[new_branch]
      if (cur_branch, cur_commit) != (new_branch, new_commit):
-@@ -371,40 +336,41 @@ class Updater:
+@@ -360,40 +336,41 @@ class Updater:
        cloudlog.info(f"up to date on {cur_branch} ({str(cur_commit)[:7]})")
  
    def fetch_update(self) -> None:
@@ -384,7 +386,7 @@ index fa199e7c7c..452d11e644 100755
  
  
  def main() -> None:
-@@ -434,27 +400,22 @@ def main() -> None:
+@@ -423,27 +400,22 @@ def main() -> None:
        params.put("InstallDate", t)
  
      updater = Updater()
@@ -417,7 +419,7 @@ index fa199e7c7c..452d11e644 100755
          updater.set_params(False, update_failed_count, exception)
  
          if not system_time_valid() or first_run:
-@@ -464,11 +425,9 @@ def main() -> None:
+@@ -453,11 +425,9 @@ def main() -> None:
  
          update_failed_count += 1
  
@@ -429,7 +431,7 @@ index fa199e7c7c..452d11e644 100755
          last_fetch = params.get("UpdaterLastFetchTime")
          timed_out = last_fetch is None or (datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - last_fetch > datetime.timedelta(days=3))
          user_requested_fetch = wait_helper.user_request == UserRequest.FETCH
-@@ -488,11 +447,11 @@ def main() -> None:
+@@ -477,11 +447,11 @@ def main() -> None:
            returncode=e.returncode
          )
          exception = f"command failed: {e.cmd}\n{e.output}"
@@ -443,7 +445,7 @@ index fa199e7c7c..452d11e644 100755
  
        try:
          params.put("UpdaterState", "idle")
-@@ -501,7 +460,6 @@ def main() -> None:
+@@ -490,7 +460,6 @@ def main() -> None:
        except Exception:
          cloudlog.exception("uncaught updated exception while setting params, shouldn't happen")
  
