@@ -82,10 +82,26 @@ index ae130f4b04..8fd409307c 100755
  if __name__ == "__main__":
    spinner = Spinner()
 diff --git b/system/updated/updated.py a/system/updated/updated.py
-index b5025524b9..7624a309a5 100755
+index 7ab9e070dc..fd08068c7e 100755
 --- b/system/updated/updated.py
 +++ a/system/updated/updated.py
-@@ -177,6 +177,11 @@ def finalize_update() -> None:
+@@ -173,10 +173,27 @@ def init_overlay() -> None:
+   cloudlog.info(f"git diff output:\n{git_diff}")
+ 
+ 
++def remove_prebuilt_artifact(path: Path) -> None:
++  try:
++    if path.is_dir():
++      shutil.rmtree(path)
++    else:
++      path.unlink(missing_ok=True)
++  except FileNotFoundError:
++    pass
++  except Exception:
++    cloudlog.exception(f"failed to remove prebuilt path: {path}")
++
++
+ def finalize_update() -> None:
    """Take the current OverlayFS merged view and finalize a copy outside of
    OverlayFS, ready to be swapped-in at BASEDIR. Copy using shutil.copytree"""
  
@@ -97,16 +113,24 @@ index b5025524b9..7624a309a5 100755
    # Remove the update ready flag and any old updates
    cloudlog.info("creating finalized version of the overlay")
    set_consistent_flag(False)
-@@ -189,6 +194,12 @@ def finalize_update() -> None:
+@@ -189,6 +206,10 @@ def finalize_update() -> None:
    run(["git", "reset", "--hard"], FINALIZED)
    run(["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"], FINALIZED)
  
 +  if quickboot_enabled:
-+    prebuilt_path = Path(FINALIZED) / "prebuilt"
-+    prebuilt_path.unlink(missing_ok=True)
-+    live_prebuilt = Path(BASEDIR) / "prebuilt"
-+    live_prebuilt.unlink(missing_ok=True)
++    remove_prebuilt_artifact(Path(FINALIZED) / "prebuilt")
++    remove_prebuilt_artifact(Path(BASEDIR) / "prebuilt")
 +
    set_consistent_flag(True)
    cloudlog.info("done finalizing overlay")
  
+@@ -386,6 +407,9 @@ class Updater:
+     r = [run(cmd, OVERLAY_MERGED) for cmd in cmds]
+     cloudlog.info("git reset success: %s", '\n'.join(r))
+ 
++    if self.params.get_bool("UsePrebuiltToggle"):
++      remove_prebuilt_artifact(Path(OVERLAY_MERGED) / "prebuilt")
++
+     # TODO: show agnos download progress
+     if AGNOS:
+       handle_agnos_update()
