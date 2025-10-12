@@ -31,7 +31,7 @@ index 8925bca8ae..6dace963f9 100644
    vEgoDEPRECATED @0 :Float32;
    vEgoRawDEPRECATED @32 :Float32;
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
-index 3601ae310e..4f4b28e8a6 100755
+index 3601ae310e..6b9219adcd 100755
 --- b/selfdrive/controls/controlsd.py
 +++ a/selfdrive/controls/controlsd.py
 @@ -1,17 +1,18 @@
@@ -81,7 +81,7 @@ index 3601ae310e..4f4b28e8a6 100755
 +CENTERING_EDGE_STD_SAMPLES = 10
 +CENTERING_DISTANCE_RATIO_MAX = 3.0
 +CENTERING_DEADBAND_ENTER_M = 0.08
-+CENTERING_DEADBAND_EXIT_M = 0.07
++CENTERING_DEADBAND_EXIT_M = 0.04
 +CENTERING_SIGN_FLIP_MIN_M = 0.12
 +CENTERING_TARGET_FILTER_TC = 0.6
 +CENTERING_EDGE_MARGIN_M = 0.14
@@ -93,8 +93,8 @@ index 3601ae310e..4f4b28e8a6 100755
 +CENTERING_CURVE_ATTENUATION_FULL = 0.0075
 +CENTERING_CURVE_MIN_SCALE = 0.35
 +CENTERING_STATUS_HOLD_S = 0.3
-+CENTERING_CENTER_BAND_M = 0.075
-+CENTERING_LOCK_RELEASE_M = 0.03
++CENTERING_CENTER_BAND_M = 0.08
++CENTERING_LOCK_RELEASE_M = 0.02
 +CENTERING_GAIN_RAMP_EXP = 2.0
 +EDGE_CLEARANCE_MIN_M = 0.381
 +
@@ -732,7 +732,7 @@ index 1a39800dde..08681bc197 100644
    QFrame *supercomboFrame;
    QProgressBar *navigationProgressBar;
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 1fb0df8dee..d5ad5aa1c3 100644
+index 1fb0df8dee..da63e0418f 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -14,6 +14,270 @@
@@ -742,7 +742,7 @@ index 1fb0df8dee..d5ad5aa1c3 100644
 +#include "common/timing.h"
 +
 +constexpr float CENTERING_SIGNAL_STALE_S = 1.0f;
-+constexpr float CENTERING_CENTER_BAND_M = 0.075f;
++constexpr float CENTERING_CENTER_BAND_M = 0.08f;
 +
 +void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 +  auto *s = uiState();
@@ -929,7 +929,7 @@ index 1fb0df8dee..d5ad5aa1c3 100644
 +    QString secondary_text;
 +    if (display_offset_valid) {
 +      if (within_center_band) {
-+        secondary_text = QStringLiteral("≤ 7 cm from center");
++        secondary_text = QStringLiteral("≤ 8 cm from center");
 +      } else if (offset_small) {
 +        secondary_text = QStringLiteral("< 1 cm from center");
 +      } else {
