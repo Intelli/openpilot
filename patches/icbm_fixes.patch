@@ -122,16 +122,10 @@ index 302d8cd14d..0238de4b0e 100644
    def update(self, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float, v_cruise_cluster: float, speed_limit: float,
               speed_limit_final_last: float, has_speed_limit: bool, distance: float, events_sp: EventsSP) -> None:
 diff --git b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py
-index 51fb8f6d64..30850dd487 100644
+index 51fb8f6d64..cc16d7bcd3 100644
 --- b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py
 +++ a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py
-@@ -14,12 +14,13 @@ from openpilot.common.params import Params
- from openpilot.common.realtime import DT_MDL
- from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
- from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE, LIMIT_ADAPT_ACC
--from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy, OffsetType
- 
- SpeedLimitSource = custom.LongitudinalPlanSP.SpeedLimit.Source
+@@ -20,6 +20,8 @@ SpeedLimitSource = custom.LongitudinalPlanSP.SpeedLimit.Source
  
  ALL_SOURCES = tuple(SpeedLimitSource.schema.enumerants.values())
  
@@ -140,7 +134,7 @@ index 51fb8f6d64..30850dd487 100644
  
  class SpeedLimitResolver:
    limit_solutions: dict[custom.LongitudinalPlanSP.SpeedLimit.Source, float]
-@@ -62,13 +63,20 @@ class SpeedLimitResolver:
+@@ -62,13 +64,20 @@ class SpeedLimitResolver:
      self.speed_limit_final = 0.
      self.speed_limit_final_last = 0.
      self.speed_limit_offset = 0.
