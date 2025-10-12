@@ -173,6 +173,18 @@ def init_overlay() -> None:
   cloudlog.info(f"git diff output:\n{git_diff}")
 
 
+def remove_prebuilt_artifact(path: Path) -> None:
+  try:
+    if path.is_dir():
+      shutil.rmtree(path)
+    else:
+      path.unlink(missing_ok=True)
+  except FileNotFoundError:
+    pass
+  except Exception:
+    cloudlog.exception(f"failed to remove prebuilt path: {path}")
+
+
 def finalize_update() -> None:
   """Take the current OverlayFS merged view and finalize a copy outside of
   OverlayFS, ready to be swapped-in at BASEDIR. Copy using shutil.copytree"""
@@ -195,10 +207,8 @@ def finalize_update() -> None:
   run(["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"], FINALIZED)
 
   if quickboot_enabled:
-    prebuilt_path = Path(FINALIZED) / "prebuilt"
-    prebuilt_path.unlink(missing_ok=True)
-    live_prebuilt = Path(BASEDIR) / "prebuilt"
-    live_prebuilt.unlink(missing_ok=True)
+    remove_prebuilt_artifact(Path(FINALIZED) / "prebuilt")
+    remove_prebuilt_artifact(Path(BASEDIR) / "prebuilt")
 
   set_consistent_flag(True)
   cloudlog.info("done finalizing overlay")
@@ -396,6 +406,9 @@ class Updater:
     ]
     r = [run(cmd, OVERLAY_MERGED) for cmd in cmds]
     cloudlog.info("git reset success: %s", '\n'.join(r))
+
+    if self.params.get_bool("UsePrebuiltToggle"):
+      remove_prebuilt_artifact(Path(OVERLAY_MERGED) / "prebuilt")
 
     # TODO: show agnos download progress
     if AGNOS:
