@@ -37,6 +37,7 @@ class IntelligentCruiseButtonManagement:
     self.cruise_button = SendButtonState.none
     self.state = State.inactive
     self.pre_active_timer = 0
+    self.decreasing_timer = 0
 
     self.is_ready = False
     self.is_ready_prev = False
@@ -61,11 +62,13 @@ class IntelligentCruiseButtonManagement:
 
   def update_state_machine(self) -> custom.IntelligentCruiseButtonManagement.SendButtonState:
     self.pre_active_timer = max(0, self.pre_active_timer - 1)
+    self.decreasing_timer = max(0, self.decreasing_timer - 1) if self.decreasing_timer else 0
 
     # HOLDING, ACCELERATING, DECELERATING, PRE_ACTIVE
     if self.state != State.inactive:
       if not self.is_ready:
         self.state = State.inactive
+        self.decreasing_timer = 0
 
       else:
         # PRE_ACTIVE
@@ -79,11 +82,14 @@ class IntelligentCruiseButtonManagement:
 
             elif self.v_target < self.v_cruise_cluster and self.v_cruise_cluster > self.v_cruise_min:
               self.state = State.decreasing
+              if not self.decreasing_timer:
+                self.decreasing_timer = int(INACTIVE_TIMER / DT_CTRL)
 
         # HOLDING
         elif self.state == State.holding:
           if not self.v_cruise_equal:
             self.state = State.preActive
+            self.decreasing_timer = 0
 
         # ACCELERATING
         elif self.state == State.increasing:
@@ -94,12 +100,19 @@ class IntelligentCruiseButtonManagement:
         elif self.state == State.decreasing:
           if self.v_target >= self.v_cruise_cluster or self.v_cruise_cluster <= self.v_cruise_min:
             self.state = State.holding
+            self.decreasing_timer = 0
+          elif self.decreasing_timer <= 0:
+            self.state = State.inactive
+            self.v_target = self.v_cruise_cluster
+            self.decreasing_timer = 0
 
     # INACTIVE
     elif self.state == State.inactive:
       if self.is_ready and not self.is_ready_prev:
         self.pre_active_timer = int(INACTIVE_TIMER / DT_CTRL)
         self.state = State.preActive
+      else:
+        self.decreasing_timer = 0
 
     send_button = SEND_BUTTONS.get(self.state, SendButtonState.none)
 
@@ -121,6 +134,12 @@ class IntelligentCruiseButtonManagement:
 
     self.update_calculations(CS, LP_SP)
     self.update_readiness(CS, CC)
+
+    if not self.is_ready:
+      self.state = State.inactive
+      self.decreasing_timer = 0
+      self.cruise_button = SendButtonState.none
+      self.v_target = self.v_cruise_cluster
 
     self.cruise_button = self.update_state_machine()
 

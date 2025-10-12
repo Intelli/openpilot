@@ -14,11 +14,12 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE, LIMIT_ADAPT_ACC
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy, OffsetType
 
 SpeedLimitSource = custom.LongitudinalPlanSP.SpeedLimit.Source
 
 ALL_SOURCES = tuple(SpeedLimitSource.schema.enumerants.values())
+
+SPEED_LIMIT_LAST_VALID_TIMEOUT = 5.0
 
 
 class SpeedLimitResolver:
@@ -62,13 +63,20 @@ class SpeedLimitResolver:
     self.speed_limit_final = 0.
     self.speed_limit_final_last = 0.
     self.speed_limit_offset = 0.
+    self._last_valid_limit_ts = 0.
 
   def update_speed_limit_states(self) -> None:
+    now = time.monotonic()
     self.speed_limit_final = self.speed_limit + self.speed_limit_offset
 
     if self.speed_limit > 0.:
       self.speed_limit_last = self.speed_limit
       self.speed_limit_final_last = self.speed_limit_final
+      self._last_valid_limit_ts = now
+    elif self._last_valid_limit_ts and now - self._last_valid_limit_ts >= SPEED_LIMIT_LAST_VALID_TIMEOUT:
+      self.speed_limit_last = 0.
+      self.speed_limit_final_last = 0.
+      self._last_valid_limit_ts = 0.
 
   @property
   def speed_limit_valid(self) -> bool:
