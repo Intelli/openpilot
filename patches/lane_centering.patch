@@ -1064,10 +1064,10 @@ index 1fb0df8dee..f21e9cb988 100644
    }
  }
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.h a/selfdrive/ui/sunnypilot/qt/onroad/model.h
-index 24404f32f0..f8adfe3272 100644
+index 24404f32f0..d594e38653 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.h
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.h
-@@ -7,16 +7,35 @@
+@@ -7,16 +7,39 @@
  
  #pragma once
  
@@ -1085,6 +1085,7 @@ index 24404f32f0..f8adfe3272 100644
    void update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) override;
    void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, const QRect &rect) override;
 +  void drawLaneLines(QPainter &painter);
++  void drawLaneHighlight(QPainter &painter);
  
    QPolygonF left_blindspot_vertices;
    QPolygonF right_blindspot_vertices;
@@ -1102,4 +1103,7 @@ index 24404f32f0..f8adfe3272 100644
 +  float centering_highlight_strength = 0.0f;
 +  float centering_highlight_phase = 0.0f;
 +  std::chrono::steady_clock::time_point centering_highlight_last_update = std::chrono::steady_clock::now();
++  bool centering_panel_visible_state = false;
++  bool centering_panel_request_active = false;
++  std::chrono::steady_clock::time_point centering_panel_request_start = std::chrono::steady_clock::now();
  };
