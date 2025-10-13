@@ -146,6 +146,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   update_model(model, lead_one);
   drawLaneLines(painter);
   drawPath(painter, model, surface_rect);
+  drawLaneHighlight(painter);
 
   if (longitudinal_control && sm.alive("radarState")) {
     update_leads(radar_state, model.getPosition());
@@ -261,7 +262,9 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 
 void ModelRendererSP::drawLaneLines(QPainter &painter) {
   ModelRenderer::drawLaneLines(painter);
+}
 
+void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
   if (centering_highlight_strength <= 0.0f || std::abs(centering_indicator_edge_sign) < 1e-4f) {
     return;
   }
