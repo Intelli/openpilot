@@ -60,7 +60,10 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   const bool enabled = selfdrive_state.getEnabled() || mads_enabled;
   const auto highlight_now = std::chrono::steady_clock::now();
 
-  if (enabled && sm.alive("controlsState")) {
+  const bool car_control_alive = sm.alive("carControl");
+  const bool controls_alive = sm.alive("controlsState");
+
+  if (enabled && controls_alive) {
     const auto &controls_state = sm["controlsState"].getControlsState();
     const int64_t controls_mono_time = sm.rcv_time("controlsState");
     const double age = std::abs(static_cast<double>(nanos_since_boot() - controls_mono_time)) / 1e9;
@@ -68,11 +71,6 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 
     if (!controls_state_stale) {
       centering_status_active = controls_state.getLaneCenteringActive();
-      const bool lat_active = controls_state.getLatActive();
-      if (lat_active && !prev_lat_active) {
-        advanced_lane_centering_enabled = params.getBool("AdvancedLaneCentering");
-      }
-      prev_lat_active = lat_active;
       centering_adjusting_display = controls_state.getLaneCenteringAdjusting();
       centering_edge_mode = controls_state.getEdgeClearanceActive();
       centering_display_valid = controls_state.getLaneCenteringValid();
@@ -95,6 +93,15 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     }
   } else {
     centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
+  }
+
+  if (car_control_alive) {
+    const auto &car_control = sm["carControl"].getCarControl();
+    const bool lat_active = car_control.getLatActive();
+    if (lat_active && !prev_lat_active) {
+      advanced_lane_centering_enabled = params.getBool("AdvancedLaneCentering");
+    }
+    prev_lat_active = lat_active;
   }
 
   if (!panel_offset_available && centering_display_valid) {
