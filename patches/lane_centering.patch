@@ -700,7 +700,7 @@ index e40f832c37..14b376093a 100644
 +
  };
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc
-index eafbf52176..ee2843abcc 100644
+index eafbf52176..abc4c5abef 100644
 --- b/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc
 +++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc
 @@ -127,6 +127,15 @@ ModelsPanel::ModelsPanel(QWidget *parent) : QWidget(parent) {
@@ -710,7 +710,7 @@ index eafbf52176..ee2843abcc 100644
 +  // Advanced Lane Centering toggle
 +  advanced_lane_centering_toggle = new ParamControlSP(
 +    "AdvancedLaneCentering",
-+    tr("Advanced Lane Centering (DO NOT ENABLE)"),
++    tr("Advanced Lane Centering (EXPERIMENTAL)"),
 +    tr("Enable enhanced lane centering logic with dynamic offset corrections and UI feedback."),
 +    "../assets/offroad/icon_shell.png");
 +  advanced_lane_centering_toggle->showDescription();
@@ -732,10 +732,10 @@ index 1a39800dde..08681bc197 100644
    QFrame *supercomboFrame;
    QProgressBar *navigationProgressBar;
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 1fb0df8dee..55913f8f2d 100644
+index 1fb0df8dee..a13a34aaac 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-@@ -14,6 +14,268 @@
+@@ -14,6 +14,275 @@
  #include <iterator>
  #include <QString>
  
@@ -793,6 +793,11 @@ index 1fb0df8dee..55913f8f2d 100644
 +
 +    if (!controls_state_stale) {
 +      centering_status_active = controls_state.getLaneCenteringActive();
++      const bool lat_active = controls_state.getLatActive();
++      if (lat_active && !prev_lat_active) {
++        advanced_lane_centering_enabled = params.getBool("AdvancedLaneCentering");
++      }
++      prev_lat_active = lat_active;
 +      centering_adjusting_display = controls_state.getLaneCenteringAdjusting();
 +      centering_edge_mode = controls_state.getEdgeClearanceActive();
 +      centering_display_valid = controls_state.getLaneCenteringValid();
@@ -837,7 +842,7 @@ index 1fb0df8dee..55913f8f2d 100644
 +  if (panel_offset_available) {
 +    const float offset_sign = (panel_offset_m > 0.0f) ? 1.0f : (panel_offset_m < 0.0f ? -1.0f : 0.0f);
 +    centering_indicator_edge_sign = within_center_band ? 0.0f : offset_sign;
-+    steering_direction_sign = within_center_band ? 0.0f : -offset_sign;
++    steering_direction_sign = within_center_band ? 0.0f : offset_sign;
 +    centering_highlight_strength = within_center_band ? 0.0f : std::clamp(std::abs(panel_offset_m) / 0.6f, 0.0f, 1.0f);
 +  }
 +
@@ -894,34 +899,36 @@ index 1fb0df8dee..55913f8f2d 100644
 +    const bool show_centered = within_center_band && !centering_edge_mode;
 +
 +    QString primary_text;
-+    if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
-+      primary_text = QStringLiteral("Center Unknown");
-+    } else if (show_centered) {
-+      primary_text = QStringLiteral("Centered (0)");
-+    } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
-+      const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
-+          (display_offset_m > 0.0f ? -1.0f : (display_offset_m < 0.0f ? 1.0f : 0.0f));
-+      if (correction_sign > 0.0f) {
-+        primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
-+      } else if (correction_sign < 0.0f) {
-+        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
++    if (advanced_lane_centering_enabled) {
++      if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
++        primary_text = QStringLiteral("Center Unknown");
++      } else if (show_centered) {
++        primary_text = QStringLiteral("Centered");
++      } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
++        const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
++            (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
++        if (correction_sign > 0.0f) {
++          primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
++        } else if (correction_sign < 0.0f) {
++          primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
++        } else {
++          primary_text = QStringLiteral("Centering (%1)").arg(feature_text);
++        }
++      } else if (centering_adjusting_display) {
++        const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
++            (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
++        if (correction_sign > 0.0f) {
++          primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
++        } else if (correction_sign < 0.0f) {
++          primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
++        } else {
++          primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered");
++        }
++      } else if (display_offset_valid) {
++        primary_text = QStringLiteral("Centered");
 +      } else {
-+        primary_text = QStringLiteral("Centering (%1)").arg(feature_text);
++        primary_text = QStringLiteral("Lane centering standby");
 +      }
-+    } else if (centering_adjusting_display) {
-+      const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
-+          (display_offset_m > 0.0f ? -1.0f : (display_offset_m < 0.0f ? 1.0f : 0.0f));
-+      if (correction_sign > 0.0f) {
-+        primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
-+      } else if (correction_sign < 0.0f) {
-+        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
-+      } else {
-+        primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered (1)");
-+      }
-+    } else if (display_offset_valid) {
-+      primary_text = QStringLiteral("Centered (2)");
-+    } else {
-+      primary_text = QStringLiteral("Lane centering standby");
 +    }
 +
 +    QString secondary_text;
@@ -1004,7 +1011,7 @@ index 1fb0df8dee..55913f8f2d 100644
  
  void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
    ModelRenderer::update_model(model, lead);
-@@ -299,10 +561,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
+@@ -299,10 +568,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
        bg.setColorAt(position, final_color);
      }
  
@@ -1016,15 +1023,16 @@ index 1fb0df8dee..55913f8f2d 100644
    }
  }
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.h a/selfdrive/ui/sunnypilot/qt/onroad/model.h
-index 24404f32f0..8c835cb54f 100644
+index 24404f32f0..f8adfe3272 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.h
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.h
-@@ -7,16 +7,31 @@
+@@ -7,16 +7,35 @@
  
  #pragma once
  
 +#include <chrono>
 +
++#include "common/params.h"
  #include "selfdrive/ui/qt/onroad/model.h"
  
  class ModelRendererSP : public ModelRenderer {
@@ -1039,6 +1047,9 @@ index 24404f32f0..8c835cb54f 100644
  
    QPolygonF left_blindspot_vertices;
    QPolygonF right_blindspot_vertices;
++  Params params;
++  bool advanced_lane_centering_enabled = false;
++  bool prev_lat_active = false;
 +  float centering_indicator_edge_sign = 0.0f;
 +  cereal::ControlsState::LaneCenteringSource centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
 +  cereal::ControlsState::LaneCenteringSource centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
