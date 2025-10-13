@@ -130,7 +130,7 @@ ModelsPanel::ModelsPanel(QWidget *parent) : QWidget(parent) {
   // Advanced Lane Centering toggle
   advanced_lane_centering_toggle = new ParamControlSP(
     "AdvancedLaneCentering",
-    tr("Advanced Lane Centering (DO NOT ENABLE)"),
+    tr("Advanced Lane Centering (EXPERIMENTAL)"),
     tr("Enable enhanced lane centering logic with dynamic offset corrections and UI feedback."),
     "../assets/offroad/icon_shell.png");
   advanced_lane_centering_toggle->showDescription();

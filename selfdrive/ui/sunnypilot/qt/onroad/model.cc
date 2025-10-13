@@ -68,6 +68,11 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
 
     if (!controls_state_stale) {
       centering_status_active = controls_state.getLaneCenteringActive();
+      const bool lat_active = controls_state.getLatActive();
+      if (lat_active && !prev_lat_active) {
+        advanced_lane_centering_enabled = params.getBool("AdvancedLaneCentering");
+      }
+      prev_lat_active = lat_active;
       centering_adjusting_display = controls_state.getLaneCenteringAdjusting();
       centering_edge_mode = controls_state.getEdgeClearanceActive();
       centering_display_valid = controls_state.getLaneCenteringValid();
@@ -112,7 +117,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   if (panel_offset_available) {
     const float offset_sign = (panel_offset_m > 0.0f) ? 1.0f : (panel_offset_m < 0.0f ? -1.0f : 0.0f);
     centering_indicator_edge_sign = within_center_band ? 0.0f : offset_sign;
-    steering_direction_sign = within_center_band ? 0.0f : -offset_sign;
+    steering_direction_sign = within_center_band ? 0.0f : offset_sign;
     centering_highlight_strength = within_center_band ? 0.0f : std::clamp(std::abs(panel_offset_m) / 0.6f, 0.0f, 1.0f);
   }
 
@@ -169,34 +174,36 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     const bool show_centered = within_center_band && !centering_edge_mode;
 
     QString primary_text;
-    if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
-      primary_text = QStringLiteral("Center Unknown");
-    } else if (show_centered) {
-      primary_text = QStringLiteral("Centered (0)");
-    } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
-      const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
-          (display_offset_m > 0.0f ? -1.0f : (display_offset_m < 0.0f ? 1.0f : 0.0f));
-      if (correction_sign > 0.0f) {
-        primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
-      } else if (correction_sign < 0.0f) {
-        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
+    if (advanced_lane_centering_enabled) {
+      if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
+        primary_text = QStringLiteral("Center Unknown");
+      } else if (show_centered) {
+        primary_text = QStringLiteral("Centered");
+      } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
+        const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
+            (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
+        if (correction_sign > 0.0f) {
+          primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
+        } else if (correction_sign < 0.0f) {
+          primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
+        } else {
+          primary_text = QStringLiteral("Centering (%1)").arg(feature_text);
+        }
+      } else if (centering_adjusting_display) {
+        const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
+            (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
+        if (correction_sign > 0.0f) {
+          primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
+        } else if (correction_sign < 0.0f) {
+          primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
+        } else {
+          primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered");
+        }
+      } else if (display_offset_valid) {
+        primary_text = QStringLiteral("Centered");
       } else {
-        primary_text = QStringLiteral("Centering (%1)").arg(feature_text);
+        primary_text = QStringLiteral("Lane centering standby");
       }
-    } else if (centering_adjusting_display) {
-      const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
-          (display_offset_m > 0.0f ? -1.0f : (display_offset_m < 0.0f ? 1.0f : 0.0f));
-      if (correction_sign > 0.0f) {
-        primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
-      } else if (correction_sign < 0.0f) {
-        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
-      } else {
-        primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered (1)");
-      }
-    } else if (display_offset_valid) {
-      primary_text = QStringLiteral("Centered (2)");
-    } else {
-      primary_text = QStringLiteral("Lane centering standby");
     }
 
     QString secondary_text;

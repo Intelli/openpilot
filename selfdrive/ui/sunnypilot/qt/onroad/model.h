@@ -9,6 +9,7 @@
 
 #include <chrono>
 
+#include "common/params.h"
 #include "selfdrive/ui/qt/onroad/model.h"
 
 class ModelRendererSP : public ModelRenderer {
@@ -23,6 +24,9 @@ private:
 
   QPolygonF left_blindspot_vertices;
   QPolygonF right_blindspot_vertices;
+  Params params;
+  bool advanced_lane_centering_enabled = false;
+  bool prev_lat_active = false;
   float centering_indicator_edge_sign = 0.0f;
   cereal::ControlsState::LaneCenteringSource centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
   cereal::ControlsState::LaneCenteringSource centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
