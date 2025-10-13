@@ -21,6 +21,7 @@ private:
   void update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) override;
   void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, const QRect &rect) override;
   void drawLaneLines(QPainter &painter);
+  void drawLaneHighlight(QPainter &painter);
 
   QPolygonF left_blindspot_vertices;
   QPolygonF right_blindspot_vertices;
@@ -38,4 +39,7 @@ private:
   float centering_highlight_strength = 0.0f;
   float centering_highlight_phase = 0.0f;
   std::chrono::steady_clock::time_point centering_highlight_last_update = std::chrono::steady_clock::now();
+  bool centering_panel_visible_state = false;
+  bool centering_panel_request_active = false;
+  std::chrono::steady_clock::time_point centering_panel_request_start = std::chrono::steady_clock::now();
 };
