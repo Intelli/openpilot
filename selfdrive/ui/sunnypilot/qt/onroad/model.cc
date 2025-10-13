@@ -212,6 +212,9 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
         primary_text = QStringLiteral("Lane centering standby");
       }
     }
+    else {
+      primary_text = QStringLiteral("Centering Disabled");
+    }
 
     QString secondary_text;
     if (display_offset_valid) {
