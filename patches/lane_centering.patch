@@ -31,7 +31,7 @@ index 8925bca8ae..6dace963f9 100644
    vEgoDEPRECATED @0 :Float32;
    vEgoRawDEPRECATED @32 :Float32;
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
-index 3601ae310e..6b9219adcd 100755
+index 3601ae310e..847d6fbe1f 100755
 --- b/selfdrive/controls/controlsd.py
 +++ a/selfdrive/controls/controlsd.py
 @@ -1,17 +1,18 @@
@@ -89,9 +89,9 @@ index 3601ae310e..6b9219adcd 100755
 +CENTERING_SOFT_GAIN_THRESHOLD_M = 0.2
 +CENTERING_POST_CROSS_SLACK_M = 0.025
 +CENTERING_SLACK_DECAY_RATE_M_PER_S = 0.02
-+CENTERING_CURVE_ATTENUATION_START = 0.0025
-+CENTERING_CURVE_ATTENUATION_FULL = 0.0075
-+CENTERING_CURVE_MIN_SCALE = 0.35
++CENTERING_CURVE_ATTENUATION_START = 0.0035
++CENTERING_CURVE_ATTENUATION_FULL = 0.009
++CENTERING_CURVE_MIN_SCALE = 0.66
 +CENTERING_STATUS_HOLD_S = 0.3
 +CENTERING_CENTER_BAND_M = 0.08
 +CENTERING_LOCK_RELEASE_M = 0.02
@@ -213,7 +213,7 @@ index 3601ae310e..6b9219adcd 100755
 +      if not centering_available and abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
 +        self.centering_offset_m = 0.0
 +
-+    steering_angle_limit_deg = 45.0
++    steering_angle_limit_deg = 180.0
 +    desired_angle_deg = getattr(self.LaC, 'steeringAngleDesiredDeg', None)
 +    allow_centering = True
 +    if desired_angle_deg is not None and abs(desired_angle_deg) >= steering_angle_limit_deg:
