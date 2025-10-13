@@ -18,6 +18,7 @@
 
 constexpr float CENTERING_SIGNAL_STALE_S = 1.0f;
 constexpr float CENTERING_CENTER_BAND_M = 0.08f;
+constexpr float CENTERING_PANEL_MIN_VISIBLE_S = 0.5f;
 
 void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   auto *s = uiState();
@@ -128,8 +129,29 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     centering_highlight_strength = within_center_band ? 0.0f : std::clamp(std::abs(panel_offset_m) / 0.6f, 0.0f, 1.0f);
   }
 
-  const bool panel_visible = enabled && (
-    centering_status_active || centering_display_valid || centering_adjusting_display || centering_edge_mode || panel_offset_available);
+  const bool panel_request_now = enabled && (
+    centering_status_active || centering_display_valid || panel_offset_available);
+
+  const bool force_panel_visible = centering_edge_mode ||
+      (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE &&
+       (centering_adjusting_display || panel_offset_available)) ||
+      centering_adjusting_display;
+
+  const bool panel_visible = force_panel_visible ||
+      ([&] {
+        if (panel_request_now) {
+          if (!centering_panel_request_active) {
+            centering_panel_request_active = true;
+            centering_panel_request_start = highlight_now;
+          }
+          const float request_duration = std::chrono::duration<float>(highlight_now - centering_panel_request_start).count();
+          centering_panel_visible_state = request_duration >= CENTERING_PANEL_MIN_VISIBLE_S;
+        } else {
+          centering_panel_request_active = false;
+          centering_panel_visible_state = false;
+        }
+        return centering_panel_visible_state;
+      })();
 
   const bool display_offset_valid = panel_offset_available;
 
