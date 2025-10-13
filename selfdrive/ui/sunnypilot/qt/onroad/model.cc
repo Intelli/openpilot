@@ -214,7 +214,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
       }
     }
     else {
-      primary_text = QStringLiteral("Centering Disabled");
+      primary_text.clear();
     }
 
     QString secondary_text;
@@ -233,7 +233,8 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     }
 
     const int indicator_width = 720;
-    const int indicator_height = 160;
+    const bool has_primary_text = !primary_text.isEmpty();
+    const int indicator_height = has_primary_text ? 160 : 112;
     QRect indicator_rect(QPoint(surface_rect.center().x() - indicator_width / 2,
                                 surface_rect.bottom() - indicator_height - 148),
                          QSize(indicator_width, indicator_height));
@@ -246,12 +247,17 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     QFont title_font = InterFont(56, QFont::DemiBold);
     QFont detail_font = InterFont(42, QFont::Medium);
 
-    painter.setFont(title_font);
-    QRect title_rect = indicator_rect.adjusted(32, 26, -32, -indicator_height / 2);
-    painter.drawText(title_rect, Qt::AlignCenter | Qt::TextWordWrap, primary_text);
+    if (has_primary_text) {
+      painter.setFont(title_font);
+      QRect title_rect = indicator_rect.adjusted(32, 26, -32, -indicator_height / 2);
+      painter.drawText(title_rect, Qt::AlignCenter | Qt::TextWordWrap, primary_text);
 
-    painter.setFont(detail_font);
-    painter.drawText(indicator_rect.adjusted(32, indicator_height / 2 - 2, -32, -26), Qt::AlignCenter, secondary_text);
+      painter.setFont(detail_font);
+      painter.drawText(indicator_rect.adjusted(32, indicator_height / 2 - 2, -32, -26), Qt::AlignCenter, secondary_text);
+    } else {
+      painter.setFont(detail_font);
+      painter.drawText(indicator_rect.adjusted(32, 26, -32, -26), Qt::AlignCenter | Qt::TextWordWrap, secondary_text);
+    }
 
     painter.restore();
   }
