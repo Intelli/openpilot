@@ -732,10 +732,10 @@ index 1a39800dde..08681bc197 100644
    QFrame *supercomboFrame;
    QProgressBar *navigationProgressBar;
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 1fb0df8dee..162300c06d 100644
+index 1fb0df8dee..ad53302988 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-@@ -14,6 +14,285 @@
+@@ -14,6 +14,288 @@
  #include <iterator>
  #include <QString>
  
@@ -871,6 +871,7 @@ index 1fb0df8dee..162300c06d 100644
 +  update_model(model, lead_one);
 +  drawLaneLines(painter);
 +  drawPath(painter, model, surface_rect);
++  drawLaneHighlight(painter);
 +
 +  if (longitudinal_control && sm.alive("radarState")) {
 +    update_leads(radar_state, model.getPosition());
@@ -986,7 +987,9 @@ index 1fb0df8dee..162300c06d 100644
 +
 +void ModelRendererSP::drawLaneLines(QPainter &painter) {
 +  ModelRenderer::drawLaneLines(painter);
++}
 +
++void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
 +  if (centering_highlight_strength <= 0.0f || std::abs(centering_indicator_edge_sign) < 1e-4f) {
 +    return;
 +  }
@@ -1021,7 +1024,7 @@ index 1fb0df8dee..162300c06d 100644
  
  void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
    ModelRenderer::update_model(model, lead);
-@@ -299,10 +578,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
+@@ -299,10 +581,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
        bg.setColorAt(position, final_color);
      }
  
