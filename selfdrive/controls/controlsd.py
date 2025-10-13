@@ -59,9 +59,9 @@ CENTERING_SOFT_GAIN_MIN = 0.12
 CENTERING_SOFT_GAIN_THRESHOLD_M = 0.2
 CENTERING_POST_CROSS_SLACK_M = 0.025
 CENTERING_SLACK_DECAY_RATE_M_PER_S = 0.02
-CENTERING_CURVE_ATTENUATION_START = 0.0025
-CENTERING_CURVE_ATTENUATION_FULL = 0.0075
-CENTERING_CURVE_MIN_SCALE = 0.35
+CENTERING_CURVE_ATTENUATION_START = 0.0035
+CENTERING_CURVE_ATTENUATION_FULL = 0.009
+CENTERING_CURVE_MIN_SCALE = 0.66
 CENTERING_STATUS_HOLD_S = 0.3
 CENTERING_CENTER_BAND_M = 0.08
 CENTERING_LOCK_RELEASE_M = 0.02
@@ -275,7 +275,7 @@ class Controls(ControlsExt, ModelStateBase):
       if not centering_available and abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
         self.centering_offset_m = 0.0
 
-    steering_angle_limit_deg = 45.0
+    steering_angle_limit_deg = 180.0
     desired_angle_deg = getattr(self.LaC, 'steeringAngleDesiredDeg', None)
     allow_centering = True
     if desired_angle_deg is not None and abs(desired_angle_deg) >= steering_angle_limit_deg:
