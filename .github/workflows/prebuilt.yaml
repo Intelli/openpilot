@@ -28,7 +28,7 @@ jobs:
         wait-interval: 30
         running-workflow-name: 'build prebuilt'
         repo-token: ${{ secrets.GITHUB_TOKEN }}
-        check-regexp: ^((?!.*(build ev9-ci).*).)*$
+        check-regexp: ^((?!.*(build ev9-dev-ci).*).)*$
     - uses: actions/checkout@v4
       with:
         submodules: true
