@@ -14,9 +14,13 @@ jobs:
       - name: Initialize repository
         run: |
           set -euo pipefail
-          git init .
+          git init --initial-branch=main .
           git config remote.origin.fetch ""
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          if git remote get-url origin >/dev/null 2>&1; then
+            git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          else
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          fi
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
