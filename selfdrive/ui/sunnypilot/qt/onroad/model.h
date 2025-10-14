@@ -19,7 +19,7 @@ public:
 
 private:
   void update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) override;
-  void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, const QRect &rect) override;
+  void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height) override;
   void drawLaneLines(QPainter &painter);
   void drawLaneHighlight(QPainter &painter);
 
