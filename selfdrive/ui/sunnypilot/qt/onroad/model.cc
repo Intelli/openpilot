@@ -297,7 +297,8 @@ void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
     return;
   }
 
-  const int highlight_idx = centering_indicator_edge_sign > 0.0f ? 2 : 1;
+  const bool highlight_right = centering_indicator_edge_sign < 0.0f;
+  const int highlight_idx = highlight_right ? 2 : 1;
   if (highlight_idx < 0 || highlight_idx >= static_cast<int>(std::size(lane_line_vertices))) {
     return;
   }
@@ -313,7 +314,7 @@ void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
   }
 
   const QRectF bounds = lane_line_vertices[highlight_idx].boundingRect();
-  QLinearGradient gradient = highlight_idx == 2 ?
+  QLinearGradient gradient = highlight_right ?
       QLinearGradient(bounds.right(), bounds.top(), bounds.left(), bounds.top()) :
       QLinearGradient(bounds.left(), bounds.top(), bounds.right(), bounds.top());
   gradient.setColorAt(0.0, QColor(178, 102, 255, alpha));
