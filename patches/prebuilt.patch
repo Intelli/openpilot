@@ -8,7 +8,7 @@ index 0000000000..592d763338
 +# block LFS uploads
 +exit 0
 diff --git b/.github/workflows/prebuilt.yaml a/.github/workflows/prebuilt.yaml
-index dde290d5c5..6e8850e2fd 100644
+index dde290d5c5..b2e1d4c744 100644
 --- b/.github/workflows/prebuilt.yaml
 +++ a/.github/workflows/prebuilt.yaml
 @@ -12,7 +12,7 @@ jobs:
@@ -25,12 +25,12 @@ index dde290d5c5..6e8850e2fd 100644
        uses: lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc
        with:
 -        ref: master
-+        ref: ev9
++        ref: ev9-dev
          wait-interval: 30
          running-workflow-name: 'build prebuilt'
          repo-token: ${{ secrets.GITHUB_TOKEN }}
 -        check-regexp: ^((?!.*(build master-ci).*).)*$
-+        check-regexp: ^((?!.*(build ev9-ci).*).)*$
++        check-regexp: ^((?!.*(build ev9-dev-ci).*).)*$
      - uses: actions/checkout@v4
        with:
          submodules: true
@@ -39,7 +39,7 @@ index dde290d5c5..6e8850e2fd 100644
      - name: Build and Push docker image
        run: |
 diff --git b/.github/workflows/sunnypilot-build-prebuilt.yaml a/.github/workflows/sunnypilot-build-prebuilt.yaml
-index 00ae1e28bf..285b5294ec 100644
+index 00ae1e28bf..11e079d828 100644
 --- b/.github/workflows/sunnypilot-build-prebuilt.yaml
 +++ a/.github/workflows/sunnypilot-build-prebuilt.yaml
 @@ -5,18 +5,17 @@ env:
@@ -53,7 +53,7 @@ index 00ae1e28bf..285b5294ec 100644
    # Branch configurations
 -  STAGING_SOURCE_BRANCH: 'master'
 -  
-+  STAGING_SOURCE_BRANCH: 'ev9'
++  STAGING_SOURCE_BRANCH: 'ev9-dev'
 +
    # Runtime configuration
    SOURCE_BRANCH: "${{ github.head_ref || github.ref_name }}"
@@ -62,7 +62,7 @@ index 00ae1e28bf..285b5294ec 100644
    push:
 -    branches: [ master, master-dev ]
 -    tags: [ 'release/*' ]
-+    branches: [ ev9 ]
++    branches: [ ev9-dev ]
    pull_request_target:
      types: [ labeled ]
    workflow_dispatch:
@@ -83,13 +83,13 @@ index 00ae1e28bf..285b5294ec 100644
 -            IS_FORK="${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}"
 -            FORK_SUFFIX=$( [[ "$IS_FORK" == "true" ]] && echo "-fork" || echo "" )
 -            NEW_BRANCH="${BRANCH}${FORK_SUFFIX}-prebuilt"
-+            echo "No exact strategy match found. Falling back to Intelli ev9 defaults."
-+            if [[ "$BRANCH" == "ev9" ]]; then
++            echo "No exact strategy match found. Falling back to Intelli ev9-dev defaults."
++            if [[ "$BRANCH" == "ev9-dev" ]]; then
 +              NEW_BRANCH="ev9-prebuilt"
 +              echo "cancel_publish_in_progress=false" >> $GITHUB_OUTPUT
-+              echo "publish_concurrency_group=publish-ev9" >> $GITHUB_OUTPUT
-+              echo "environment=ev9" >> $GITHUB_OUTPUT
-+              echo "extra_version_identifier=ev9" >> $GITHUB_OUTPUT
++              echo "publish_concurrency_group=publish-ev9-dev" >> $GITHUB_OUTPUT
++              echo "environment=ev9-dev" >> $GITHUB_OUTPUT
++              echo "extra_version_identifier=ev9-dev" >> $GITHUB_OUTPUT
 +            else
 +              IS_FORK="${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}"
 +              FORK_SUFFIX=$( [[ "$IS_FORK" == "true" ]] && echo "-fork" || echo "" )
