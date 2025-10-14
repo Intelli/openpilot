@@ -10,6 +10,7 @@ EXCLUDES=(
   'tools/ci/sync_ev9_branch.sh'
   'update.sh'
   'apply_patch.sh'
+  'apply_patch_conflicts.sh'
   'fix_patch.sh'
   'create_patch.sh'
   'create_patch_manual.sh'
