@@ -8,6 +8,7 @@ EXCLUDES=(
   'sync-upstream.sh'
   'update.sh'
   'apply_patch.sh'
+  'fix_patch.sh'
   'create_patch.sh'
   'create_patch_manual.sh'
   'update_patch.sh'
