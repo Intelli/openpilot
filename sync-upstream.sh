@@ -6,6 +6,8 @@ DEFAULT_REF="upstream/hkg-angle-steering-2025"
 EXCLUDES=(
   'AGENTS.md'
   'sync-upstream.sh'
+  'ev9-sync.yaml'
+  'sync_ev9_branc.sh'
   'update.sh'
   'apply_patch.sh'
   'fix_patch.sh'

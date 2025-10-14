@@ -1,0 +1,26 @@
+name: ev9 branch sync
+
+on:
+  push:
+    branches:
+      - ev9-dev
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: sync ev9-dev to ev9
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ev9-dev
+
+      - name: Run sync script
+        env:
+          SYNC_AUTHOR_NAME: GitHub Actions
+          SYNC_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+        run: |
+          bash tools/ci/sync_ev9_branch.sh
+
