@@ -1,9 +1,5 @@
 #include "selfdrive/ui/qt/onroad/model.h"
 
-#include <cmath>
-
-#include "selfdrive/ui/qt/util.h"
-
 void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
   auto *s = uiState();
   auto &sm = *(s->sm);
@@ -17,6 +13,7 @@ void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
   experimental_mode = sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
   longitudinal_control = sm["carParams"].getCarParams().getOpenpilotLongitudinalControl();
   path_offset_z = sm["liveCalibration"].getLiveCalibration().getHeight()[0];
+
   painter.save();
 
   const auto &model = sm["modelV2"].getModelV2();

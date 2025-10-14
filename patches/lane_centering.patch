@@ -667,41 +667,6 @@ index 3601ae310e..847d6fbe1f 100755
      cs.longControlState = self.LoC.long_control_state
      cs.upAccelCmd = float(self.LoC.pid.p)
      cs.uiAccelCmd = float(self.LoC.pid.i)
-diff --git b/selfdrive/ui/qt/onroad/model.cc a/selfdrive/ui/qt/onroad/model.cc
-index a4165be216..0ffa9a6db7 100644
---- b/selfdrive/ui/qt/onroad/model.cc
-+++ a/selfdrive/ui/qt/onroad/model.cc
-@@ -1,5 +1,9 @@
- #include "selfdrive/ui/qt/onroad/model.h"
- 
-+#include <cmath>
-+
-+#include "selfdrive/ui/qt/util.h"
-+
- void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
-   auto *s = uiState();
-   auto &sm = *(s->sm);
-@@ -13,7 +17,6 @@ void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
-   experimental_mode = sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
-   longitudinal_control = sm["carParams"].getCarParams().getOpenpilotLongitudinalControl();
-   path_offset_z = sm["liveCalibration"].getLiveCalibration().getHeight()[0];
--
-   painter.save();
- 
-   const auto &model = sm["modelV2"].getModelV2();
-diff --git b/selfdrive/ui/qt/onroad/model.h a/selfdrive/ui/qt/onroad/model.h
-index 3ef8ba5320..23ae343d0d 100644
---- b/selfdrive/ui/qt/onroad/model.h
-+++ a/selfdrive/ui/qt/onroad/model.h
-@@ -59,4 +59,8 @@ protected:
-   Eigen::Matrix3f car_space_transform = Eigen::Matrix3f::Zero();
-   QRectF clip_region;
- 
-+  float lead_status_alpha = 0.0f;
-+  QPointF lead_status_pos;
-+  QString lead_status_text;
-+  QColor lead_status_color;
- };
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc
 index eafbf52176..abc4c5abef 100644
 --- b/selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.cc
