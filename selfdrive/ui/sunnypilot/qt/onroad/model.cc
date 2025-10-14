@@ -68,7 +68,7 @@ void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
     return;
   }
 
-  if (std::sin(centering_highlight_phase) <= 0.0f) {
+  if (std::sin(centering_highlight_phase) <= -0.2f) {
     return;
   }
 
@@ -78,16 +78,25 @@ void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
     return;
   }
 
-  const QRectF bounds = lane_line_vertices[highlight_idx].boundingRect();
+  if (highlight_idx >= static_cast<int>(std::size(centering_highlight_vertices)) ||
+      centering_highlight_vertices[highlight_idx].isEmpty()) {
+    return;
+  }
+
+  const QRectF bounds = centering_highlight_vertices[highlight_idx].boundingRect();
   QLinearGradient gradient = highlight_right ?
       QLinearGradient(bounds.right(), bounds.top(), bounds.left(), bounds.top()) :
       QLinearGradient(bounds.left(), bounds.top(), bounds.right(), bounds.top());
-  gradient.setColorAt(0.0, QColor(178, 102, 255, alpha));
-  gradient.setColorAt(1.0, QColor(132, 70, 214, alpha));
+  gradient.setColorAt(0.0, QColor(210, 170, 255, alpha));
+  gradient.setColorAt(1.0, QColor(160, 90, 235, alpha));
 
   painter.save();
+  QPen outline(QColor(80, 30, 155, alpha));
+  outline.setWidthF(1.0f);
+  outline.setJoinStyle(Qt::RoundJoin);
+  painter.setPen(outline);
   painter.setBrush(gradient);
-  painter.drawPolygon(lane_line_vertices[highlight_idx]);
+  painter.drawPolygon(centering_highlight_vertices[highlight_idx]);
   painter.restore();
 }
 
@@ -346,6 +355,11 @@ void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, con
   int max_idx_barrier = std::min(max_idx, get_path_length_idx(lane_lines[0], max_distance_barrier));
   mapLineToPolygon(model.getLaneLines()[1], 0.2, -0.05, &left_blindspot_vertices, max_idx_barrier);
   mapLineToPolygon(model.getLaneLines()[2], 0.2, -0.05, &right_blindspot_vertices, max_idx_barrier);
+
+  centering_highlight_vertices[0].clear();
+  centering_highlight_vertices[3].clear();
+  mapLineToPolygon(model.getLaneLines()[1], 0.2, -0.05, &centering_highlight_vertices[1], max_idx_barrier);
+  mapLineToPolygon(model.getLaneLines()[2], 0.2, -0.05, &centering_highlight_vertices[2], max_idx_barrier);
 }
 
 void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height) {
