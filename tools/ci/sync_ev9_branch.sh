@@ -6,7 +6,21 @@ if [[ -n "${CI:-}" ]]; then
   git config --global --add safe.directory "$(pwd)"
 fi
 
-git fetch --prune origin ev9 ev9-dev
+read_remote_head() {
+  local ref_name="$1"
+  git ls-remote --heads origin "${ref_name}" | awk 'NR==1 {print $1}'
+}
+
+dev_sha_remote=$(read_remote_head "ev9-dev")
+prod_sha_remote=$(read_remote_head "ev9")
+
+if [[ -z "${dev_sha_remote}" || -z "${prod_sha_remote}" ]]; then
+  echo "Unable to determine remote commit shas for ev9-dev or ev9" >&2
+  exit 1
+fi
+
+git fetch --no-tags origin "+${prod_sha_remote}:refs/remotes/origin/ev9"
+git fetch --no-tags origin "+${dev_sha_remote}:refs/remotes/origin/ev9-dev"
 
 dev_sha=$(git rev-parse origin/ev9-dev)
 prod_sha=$(git rev-parse origin/ev9)

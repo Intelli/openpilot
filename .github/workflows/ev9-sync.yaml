@@ -11,7 +11,7 @@ jobs:
     name: sync ev9-dev to ev9
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout ev9-dev
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
