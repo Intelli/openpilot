@@ -73,7 +73,7 @@ void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
   }
 
   const float clamped_strength = std::clamp(centering_highlight_strength, 0.0f, 1.0f);
-  const int alpha = std::clamp(static_cast<int>(std::lround(200.0f * clamped_strength)), 0, 255);
+  const int alpha = std::clamp(static_cast<int>(std::lround(255.0f * clamped_strength)), 0, 255);
   if (alpha <= 0) {
     return;
   }
