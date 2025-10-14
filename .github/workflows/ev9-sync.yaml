@@ -11,13 +11,24 @@ jobs:
     name: sync ev9-dev to ev9
     runs-on: ubuntu-latest
     steps:
+      - name: Initialize repository
+        run: |
+          set -euo pipefail
+          git init .
+          git config remote.origin.fetch ""
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run sync script
         env:
           SYNC_AUTHOR_NAME: GitHub Actions
           SYNC_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git fetch --no-tags origin ev9-dev:refs/remotes/origin/ev9-dev
-          git fetch --no-tags origin ev9:refs/remotes/origin/ev9
+          set -euo pipefail
+          git fetch --no-tags origin "refs/heads/ev9-dev:refs/remotes/origin/ev9-dev" --refmap=""
+          git fetch --no-tags origin "refs/heads/ev9:refs/remotes/origin/ev9" --refmap=""
           bash tools/ci/sync_ev9_branch.sh
 
