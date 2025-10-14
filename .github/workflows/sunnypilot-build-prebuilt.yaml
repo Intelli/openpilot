@@ -8,14 +8,14 @@ env:
   PUBLIC_REPO_URL: "https://github.com/Intelli/openpilot"
 
   # Branch configurations
-  STAGING_SOURCE_BRANCH: 'ev9'
+  STAGING_SOURCE_BRANCH: 'ev9-dev'
 
   # Runtime configuration
   SOURCE_BRANCH: "${{ github.head_ref || github.ref_name }}"
 
 on:
   push:
-    branches: [ ev9 ]
+    branches: [ ev9-dev ]
   pull_request_target:
     types: [ labeled ]
   workflow_dispatch:
@@ -58,13 +58,13 @@ jobs:
 
           BUILD="$(date '+%Y.%m.%d')-${{ github.run_number }}"
           if [[ -z "$CONFIG" || "$CONFIG" == "null" ]]; then
-            echo "No exact strategy match found. Falling back to Intelli ev9 defaults."
-            if [[ "$BRANCH" == "ev9" ]]; then
+            echo "No exact strategy match found. Falling back to Intelli ev9-dev defaults."
+            if [[ "$BRANCH" == "ev9-dev" ]]; then
               NEW_BRANCH="ev9-prebuilt"
               echo "cancel_publish_in_progress=false" >> $GITHUB_OUTPUT
-              echo "publish_concurrency_group=publish-ev9" >> $GITHUB_OUTPUT
-              echo "environment=ev9" >> $GITHUB_OUTPUT
-              echo "extra_version_identifier=ev9" >> $GITHUB_OUTPUT
+              echo "publish_concurrency_group=publish-ev9-dev" >> $GITHUB_OUTPUT
+              echo "environment=ev9-dev" >> $GITHUB_OUTPUT
+              echo "extra_version_identifier=ev9-dev" >> $GITHUB_OUTPUT
             else
               IS_FORK="${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}"
               FORK_SUFFIX=$( [[ "$IS_FORK" == "true" ]] && echo "-fork" || echo "" )
