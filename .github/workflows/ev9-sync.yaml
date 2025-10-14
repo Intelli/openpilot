@@ -34,5 +34,6 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin "refs/heads/ev9-dev:refs/remotes/origin/ev9-dev" --refmap=""
           git fetch --no-tags origin "refs/heads/ev9:refs/remotes/origin/ev9" --refmap=""
+          git reset --hard origin/ev9-dev
           bash tools/ci/sync_ev9_branch.sh
 
