@@ -38,7 +38,7 @@ protected:
   void update_leads(const cereal::RadarState::Reader &radar_state, const cereal::XYZTData::Reader &line);
   virtual void update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead);
   void drawLaneLines(QPainter &painter);
-  void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height);
+  virtual void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height);
   void updatePathGradient(QLinearGradient &bg);
   QColor blendColors(const QColor &start, const QColor &end, float t);
 
