@@ -33,6 +33,7 @@ private:
 
   QPolygonF left_blindspot_vertices;
   QPolygonF right_blindspot_vertices;
+  QPolygonF centering_highlight_vertices[4];
 
   // Lead status animation
   float lead_status_alpha = 0.0f;
