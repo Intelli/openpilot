@@ -78,7 +78,18 @@ if [[ -f .lfsconfig ]]; then
   mv .lfsconfig "${lfs_config_backup}"
 fi
 
+lfs_was_installed=0
+if [[ "${LFS_SKIP_PUSH:-0}" == "1" ]]; then
+  if git lfs env >/dev/null 2>&1; then
+    lfs_was_installed=1
+    git lfs uninstall --local >/dev/null 2>&1 || true
+  fi
+fi
+
 restore_lfs() {
+  if [[ ${lfs_was_installed} -eq 1 ]]; then
+    git lfs install --local >/dev/null 2>&1 || true
+  fi
   if [[ -n "${lfs_url}" ]]; then
     git config lfs.url "${lfs_url}"
   fi
