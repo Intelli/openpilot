@@ -171,7 +171,7 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     const auto &car_state = sm["carState"].getCarState();
     drawBlindspot(painter, surface_rect, car_state.getLeftBlindspot(), car_state.getRightBlindspot());
   }
-  drawPath(painter, model, surface_rect);
+  drawPath(painter, model, surface_rect.height());
   drawLaneHighlight(painter);
 
   if (longitudinal_control && sm.alive("radarState")) {
@@ -330,7 +330,20 @@ void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
   painter.restore();
 }
 
-void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, const QRect &surface_rect) {
+void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
+  ModelRenderer::update_model(model, lead);
+  const auto &model_position = model.getPosition();
+  const auto &lane_lines = model.getLaneLines();
+  float max_distance = std::clamp(*(model_position.getX().end() - 1), MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE);
+  int max_idx = get_path_length_idx(lane_lines[0], max_distance);
+  // update blindspot vertices
+  float max_distance_barrier = 100;
+  int max_idx_barrier = std::min(max_idx, get_path_length_idx(lane_lines[0], max_distance_barrier));
+  mapLineToPolygon(model.getLaneLines()[1], 0.2, -0.05, &left_blindspot_vertices, max_idx_barrier);
+  mapLineToPolygon(model.getLaneLines()[2], 0.2, -0.05, &right_blindspot_vertices, max_idx_barrier);
+}
+
+void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height) {
   auto *s = uiState();
   auto &sm = *(s->sm);
 
@@ -350,7 +363,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   } else if (accel_state && a_ego <= accel_stop_threshold) {
     accel_state = false;
   }
-  //float v_ego = sm["carState"].getCarState().getVEgo();
+  // float v_ego = sm["carState"].getCarState().getVEgo();
 
   const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
   const QString alert_type = QString::fromUtf8(selfdrive_state.getAlertType().cStr());
@@ -420,9 +433,9 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   }
 
   if (hazard_mix > 0.0f) {
-    ModelRenderer::drawPath(painter, model, surface_rect.height());
+    ModelRenderer::drawPath(painter, model, height);
 
-    QLinearGradient hazard_bg(0, surface_rect.height(), 0, 0);
+    QLinearGradient hazard_bg(0, height, 0, 0);
     hazard_bg.setColorAt(0.0f, QColor::fromRgbF(0.45f, 0.0f, 0.0f, 0.82f * hazard_mix));
     hazard_bg.setColorAt(0.5f, QColor::fromRgbF(0.78f, 0.14f, 0.14f, 0.68f * hazard_mix));
     hazard_bg.setColorAt(1.0f, QColor::fromRgbF(0.92f, 0.45f, 0.45f, 0.55f * hazard_mix));
@@ -433,18 +446,18 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
 
   const bool show_rainbow = true;
   if (rainbow_presence <= 0.0f) {
-    ModelRenderer::drawPath(painter, model, surface_rect.height());
+    ModelRenderer::drawPath(painter, model, height);
     return;
   }
 
   if (rainbow_presence < 1.0f) {
     painter.save();
     painter.setOpacity(1.0f - rainbow_presence);
-    ModelRenderer::drawPath(painter, model, surface_rect.height());
+    ModelRenderer::drawPath(painter, model, height);
     painter.restore();
   }
 
-  if (show_rainbow) {
+  if (show_rainbow) {  // Kia EV9 "Ocean Blue" inspired gradient with subtle motion
     struct GradientStop {
       float position;
       float hue_deg;
@@ -533,7 +546,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
       rainbow_wave_phase = std::fmod(rainbow_wave_phase + 0.8f * frame_dt, kTau);
     }
 
-    QLinearGradient bg(0, surface_rect.height(), 0, 0);
+    QLinearGradient bg(0, height, 0, 0);
 
     for (float position : sample_positions) {
       const auto ocean = sample_stops(ocean_stops, position);
@@ -581,20 +594,7 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
     return;
   }
 
-  ModelRenderer::drawPath(painter, model, surface_rect.height());
-}
-
-void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
-  ModelRenderer::update_model(model, lead);
-  const auto &model_position = model.getPosition();
-  const auto &lane_lines = model.getLaneLines();
-  float max_distance = std::clamp(*(model_position.getX().end() - 1), MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE);
-  int max_idx = get_path_length_idx(lane_lines[0], max_distance);
-  // update blindspot vertices
-  float max_distance_barrier = 100;
-  int max_idx_barrier = std::min(max_idx, get_path_length_idx(lane_lines[0], max_distance_barrier));
-  mapLineToPolygon(model.getLaneLines()[1], 0.2, -0.05, &left_blindspot_vertices, max_idx_barrier);
-  mapLineToPolygon(model.getLaneLines()[2], 0.2, -0.05, &right_blindspot_vertices, max_idx_barrier);
+  ModelRenderer::drawPath(painter, model, height);
 }
 
 void ModelRendererSP::drawBlindspot(QPainter &painter, const QRect &surface_rect, bool left_blindspot, bool right_blindspot) {
