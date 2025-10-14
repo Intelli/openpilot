@@ -71,12 +71,22 @@ if [[ -n "${lfs_pushurl}" ]]; then
   git config --unset lfs.pushurl
 fi
 
+# Temporarily move .lfsconfig (contains SSH pushurl) if present
+lfs_config_backup=""
+if [[ -f .lfsconfig ]]; then
+  lfs_config_backup=".lfsconfig.ev9sync"
+  mv .lfsconfig "${lfs_config_backup}"
+fi
+
 restore_lfs() {
   if [[ -n "${lfs_url}" ]]; then
     git config lfs.url "${lfs_url}"
   fi
   if [[ -n "${lfs_pushurl}" ]]; then
     git config lfs.pushurl "${lfs_pushurl}"
+  fi
+  if [[ -n "${lfs_config_backup}" && -f "${lfs_config_backup}" ]]; then
+    mv "${lfs_config_backup}" .lfsconfig
   fi
 }
 trap restore_lfs EXIT

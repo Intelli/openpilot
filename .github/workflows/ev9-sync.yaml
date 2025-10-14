@@ -35,5 +35,11 @@ jobs:
           git fetch --filter=blob:none --no-tags origin "refs/heads/ev9-dev:refs/remotes/origin/ev9-dev" --refmap=""
           git fetch --filter=blob:none --no-tags origin "refs/heads/ev9:refs/remotes/origin/ev9" --refmap=""
           git reset --hard origin/ev9-dev
+          if [ -f .lfsconfig ]; then
+            mv .lfsconfig .lfsconfig.ev9sync
+          fi
           GIT_LFS_SKIP_SMUDGE=1 LFS_SKIP_PUSH=1 bash tools/ci/sync_ev9_branch.sh
+          if [ -f .lfsconfig.ev9sync ]; then
+            mv .lfsconfig.ev9sync .lfsconfig
+          fi
 
