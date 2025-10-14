@@ -11,7 +11,6 @@
 #include <array>
 #include <chrono>
 #include <cmath>
-#include <iterator>
 #include <QString>
 
 #include "common/timing.h"
@@ -21,6 +20,8 @@ constexpr float CENTERING_CENTER_BAND_M = 0.08f;
 constexpr float CENTERING_PANEL_MIN_VISIBLE_S = 0.5f;
 
 void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+  ModelRenderer::draw(painter, surface_rect);
+
   auto *s = uiState();
   auto &sm = *(s->sm);
 
@@ -28,273 +29,33 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
       sm.rcv_frame("modelV2") < s->scene.started_frame) {
     return;
   }
-  clip_region = surface_rect.adjusted(-CLIP_MARGIN, -CLIP_MARGIN, CLIP_MARGIN, CLIP_MARGIN);
-  experimental_mode = sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
-  longitudinal_control = sm["carParams"].getCarParams().getOpenpilotLongitudinalControl();
-  path_offset_z = sm["liveCalibration"].getLiveCalibration().getHeight()[0];
 
   painter.save();
 
   const auto &model = sm["modelV2"].getModelV2();
   const auto &radar_state = sm["radarState"].getRadarState();
   const auto &lead_one = radar_state.getLeadOne();
-  const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
+  const auto &car_state = sm["carState"].getCarState();
 
-  centering_status_active = false;
-  centering_display_valid = false;
-  centering_display_offset_m = 0.0f;
-  centering_adjusting_display = false;
-  centering_edge_mode = false;
-  centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
-  centering_indicator_edge_sign = 0.0f;
-  centering_highlight_strength = 0.0f;
-
-  bool panel_offset_available = false;
-  float panel_offset_m = 0.0f;
-
-  bool mads_enabled = false;
-  if (sm.alive("selfdriveStateSP")) {
-    const auto &selfdrive_state_sp = sm["selfdriveStateSP"].getSelfdriveStateSP();
-    mads_enabled = selfdrive_state_sp.getMads().getEnabled();
-  }
-
-  const bool enabled = selfdrive_state.getEnabled() || mads_enabled;
-  const auto highlight_now = std::chrono::steady_clock::now();
-
-  const bool car_control_alive = sm.alive("carControl");
-  const bool controls_alive = sm.alive("controlsState");
-
-  if (enabled && controls_alive) {
-    const auto &controls_state = sm["controlsState"].getControlsState();
-    const int64_t controls_mono_time = sm.rcv_time("controlsState");
-    const double age = std::abs(static_cast<double>(nanos_since_boot() - controls_mono_time)) / 1e9;
-    const bool controls_state_stale = age > CENTERING_SIGNAL_STALE_S;
-
-    if (!controls_state_stale) {
-      centering_status_active = controls_state.getLaneCenteringActive();
-      centering_adjusting_display = controls_state.getLaneCenteringAdjusting();
-      centering_edge_mode = controls_state.getEdgeClearanceActive();
-      centering_display_valid = controls_state.getLaneCenteringValid();
-
-      if (centering_adjusting_display) {
-        panel_offset_available = true;
-        panel_offset_m = controls_state.getLaneCenteringOffset();
-        centering_indicator_source = controls_state.getLaneCenteringSource();
-      } else if (centering_edge_mode) {
-        panel_offset_available = true;
-        panel_offset_m = controls_state.getEdgeClearanceOffset();
-        centering_indicator_source = cereal::ControlsState::LaneCenteringSource::EDGE;
-      } else if (centering_display_valid) {
-        panel_offset_available = true;
-        panel_offset_m = controls_state.getLaneCenteringDisplayOffset();
-        centering_indicator_source = controls_state.getLaneCenteringSource();
-      }
-    } else {
-      centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
-    }
-  } else {
-    centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
-  }
-
-  if (car_control_alive) {
-    const auto &car_control = sm["carControl"].getCarControl();
-    const bool lat_active = car_control.getLatActive();
-    if (lat_active && !prev_lat_active) {
-      advanced_lane_centering_enabled = params.getBool("AdvancedLaneCentering");
-    }
-    prev_lat_active = lat_active;
-  }
-
-  if (!panel_offset_available && centering_display_valid) {
-    panel_offset_available = true;
-    panel_offset_m = centering_display_offset_m;
-  }
-
-  if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
-      centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE) {
-    centering_indicator_source = centering_indicator_last_nonzero_source;
-  }
-
-  if (centering_indicator_source != cereal::ControlsState::LaneCenteringSource::NONE) {
-    centering_indicator_last_nonzero_source = centering_indicator_source;
-  }
-
-  const bool within_center_band = panel_offset_available && std::abs(panel_offset_m) <= CENTERING_CENTER_BAND_M;
-
-  float steering_direction_sign = 0.0f;
-  if (panel_offset_available) {
-    const float offset_sign = (panel_offset_m > 0.0f) ? 1.0f : (panel_offset_m < 0.0f ? -1.0f : 0.0f);
-    centering_indicator_edge_sign = within_center_band ? 0.0f : offset_sign;
-    steering_direction_sign = within_center_band ? 0.0f : offset_sign;
-    centering_highlight_strength = within_center_band ? 0.0f : std::clamp(std::abs(panel_offset_m) / 0.6f, 0.0f, 1.0f);
-  }
-
-  const bool panel_request_now = enabled && (
-    centering_status_active || centering_display_valid || panel_offset_available);
-
-  const bool force_panel_visible = centering_edge_mode ||
-      (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE &&
-       (centering_adjusting_display || panel_offset_available)) ||
-      centering_adjusting_display;
-
-  const bool panel_visible = force_panel_visible ||
-      ([&] {
-        if (panel_request_now) {
-          if (!centering_panel_request_active) {
-            centering_panel_request_active = true;
-            centering_panel_request_start = highlight_now;
-          }
-          const float request_duration = std::chrono::duration<float>(highlight_now - centering_panel_request_start).count();
-          centering_panel_visible_state = request_duration >= CENTERING_PANEL_MIN_VISIBLE_S;
-        } else {
-          centering_panel_request_active = false;
-          centering_panel_visible_state = false;
-        }
-        return centering_panel_visible_state;
-      })();
-
-  const bool display_offset_valid = panel_offset_available;
-
-  float highlight_dt = std::chrono::duration<float>(highlight_now - centering_highlight_last_update).count();
-  centering_highlight_last_update = highlight_now;
-  if (centering_highlight_strength <= 0.0f) {
-    centering_highlight_phase = 0.0f;
-  } else {
-    if (highlight_dt < 0.0f) highlight_dt = 0.0f;
-    constexpr float HIGHLIGHT_FREQ_HZ = 1.0f;
-    centering_highlight_phase = std::fmod(centering_highlight_phase + highlight_dt * HIGHLIGHT_FREQ_HZ * float(2.0 * M_PI), float(2.0 * M_PI));
-  }
-
+  updateLaneCenteringUi();
   update_model(model, lead_one);
-  drawLaneLines(painter);
+  ModelRenderer::drawLaneLines(painter);
+
   if (s->scene.blindspot_ui) {
-    const auto &car_state = sm["carState"].getCarState();
     drawBlindspot(painter, surface_rect, car_state.getLeftBlindspot(), car_state.getRightBlindspot());
   }
-  drawPath(painter, model, surface_rect.height());
+
+  if (s->scene.rainbow_mode) {
+    drawRainbowPath(painter, surface_rect);
+  }
+
   drawLaneHighlight(painter);
-
-  if (longitudinal_control && sm.alive("radarState")) {
-    update_leads(radar_state, model.getPosition());
-    const auto &lead_two = radar_state.getLeadTwo();
-    if (lead_one.getStatus()) {
-      drawLead(painter, lead_one, lead_vertices[0], surface_rect);
-    }
-    if (lead_two.getStatus() && (std::abs(lead_one.getDRel() - lead_two.getDRel()) > 3.0)) {
-      drawLead(painter, lead_two, lead_vertices[1], surface_rect);
-    }
-  }
   drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
-
-  if (panel_visible) {
-    painter.save();
-    painter.setOpacity(1.0f);
-
-    const bool use_edge_mode = centering_edge_mode || (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE && centering_adjusting_display);
-    const QString feature_text = use_edge_mode ? QStringLiteral("Edge") : QStringLiteral("Lane");
-
-    const float display_offset_m = display_offset_valid ? panel_offset_m : 0.0f;
-    const float display_offset_cm = std::abs(display_offset_m) * 100.0f;
-    const bool offset_small = display_offset_cm < 1.0f;
-    const int decimal_precision = display_offset_cm < 10.0f ? 1 : 0;
-
-    auto direction_from_sign = [](float value) {
-      if (std::abs(value) < 1e-4f) {
-        return QStringLiteral("center");
-      }
-      return value > 0.0f ? QStringLiteral("right") : QStringLiteral("left");
-    };
-
-    const bool show_centered = within_center_band && !centering_edge_mode;
-
-    QString primary_text;
-    if (advanced_lane_centering_enabled) {
-      if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
-        primary_text = QStringLiteral("Center Unknown");
-      } else if (show_centered) {
-        primary_text = QStringLiteral("Centered");
-      } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
-        const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
-            (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
-        if (correction_sign > 0.0f) {
-          primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
-        } else if (correction_sign < 0.0f) {
-          primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
-        } else {
-          primary_text = QStringLiteral("Centering (%1)").arg(feature_text);
-        }
-      } else if (centering_adjusting_display) {
-        const float correction_sign = (steering_direction_sign != 0.0f) ? steering_direction_sign :
-            (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
-        if (correction_sign > 0.0f) {
-          primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
-        } else if (correction_sign < 0.0f) {
-          primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
-        } else {
-          primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered");
-        }
-      } else if (display_offset_valid) {
-        primary_text = QStringLiteral("Centered");
-      } else {
-        primary_text = QStringLiteral("Lane centering standby");
-      }
-    }
-    else {
-      primary_text.clear();
-    }
-
-    QString secondary_text;
-    if (display_offset_valid) {
-      if (within_center_band) {
-        secondary_text = QStringLiteral("≤ 8 cm from center");
-      } else if (offset_small) {
-        secondary_text = QStringLiteral("< 1 cm from center");
-      } else {
-        secondary_text = QStringLiteral("%1 cm %2 of center")
-                            .arg(QString::number(display_offset_cm, 'f', decimal_precision))
-                            .arg(direction_from_sign(-display_offset_m));
-      }
-    } else {
-      secondary_text = QStringLiteral("Offset unknown");
-    }
-
-    const int indicator_width = 720;
-    const bool has_primary_text = !primary_text.isEmpty();
-    const int indicator_height = has_primary_text ? 160 : 112;
-    QRect indicator_rect(QPoint(surface_rect.center().x() - indicator_width / 2,
-                                surface_rect.bottom() - indicator_height - 148),
-                         QSize(indicator_width, indicator_height));
-
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(0, 0, 0, 190));
-    painter.drawRoundedRect(indicator_rect, 36, 36);
-
-    painter.setPen(QColor(255, 255, 255, 245));
-    QFont title_font = InterFont(56, QFont::DemiBold);
-    QFont detail_font = InterFont(42, QFont::Medium);
-
-    if (has_primary_text) {
-      painter.setFont(title_font);
-      QRect title_rect = indicator_rect.adjusted(32, 26, -32, -indicator_height / 2);
-      painter.drawText(title_rect, Qt::AlignCenter | Qt::TextWordWrap, primary_text);
-
-      painter.setFont(detail_font);
-      painter.drawText(indicator_rect.adjusted(32, indicator_height / 2 - 2, -32, -26), Qt::AlignCenter, secondary_text);
-    } else {
-      painter.setFont(detail_font);
-      painter.drawText(indicator_rect.adjusted(32, 26, -32, -26), Qt::AlignCenter | Qt::TextWordWrap, secondary_text);
-    }
-
-    painter.restore();
-  }
+  drawLaneCenteringPanel(painter, surface_rect);
 
   painter.restore();
 }
 
-
-void ModelRendererSP::drawLaneLines(QPainter &painter) {
-  ModelRenderer::drawLaneLines(painter);
-}
 
 void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
   if (centering_highlight_strength <= 0.0f || std::abs(centering_indicator_edge_sign) < 1e-4f) {
@@ -327,6 +88,250 @@ void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
   painter.save();
   painter.setBrush(gradient);
   painter.drawPolygon(lane_line_vertices[highlight_idx]);
+  painter.restore();
+}
+
+void ModelRendererSP::updateLaneCenteringUi() {
+  auto *s = uiState();
+  auto &sm = *(s->sm);
+
+  const auto highlight_now = std::chrono::steady_clock::now();
+  const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
+
+  const bool prev_display_valid = centering_display_valid;
+  const float prev_display_offset_m = centering_display_offset_m;
+
+  centering_status_active = false;
+  centering_display_valid = false;
+  centering_display_offset_m = 0.0f;
+  centering_adjusting_display = false;
+  centering_edge_mode = false;
+  centering_indicator_source = cereal::ControlsState::LaneCenteringSource::NONE;
+  centering_indicator_edge_sign = 0.0f;
+  centering_highlight_strength = 0.0f;
+  centering_panel_visible = false;
+  centering_within_center_band = false;
+  centering_steering_direction_sign = 0.0f;
+
+  bool panel_offset_available = false;
+  float panel_offset_m = 0.0f;
+
+  bool mads_enabled = false;
+  if (sm.alive("selfdriveStateSP")) {
+    const auto &selfdrive_state_sp = sm["selfdriveStateSP"].getSelfdriveStateSP();
+    mads_enabled = selfdrive_state_sp.getMads().getEnabled();
+  }
+  const bool enabled = selfdrive_state.getEnabled() || mads_enabled;
+
+  if (sm.alive("carControl")) {
+    const auto &car_control = sm["carControl"].getCarControl();
+    const bool lat_active = car_control.getLatActive();
+    if (lat_active && !prev_lat_active) {
+      advanced_lane_centering_enabled = params.getBool("AdvancedLaneCentering");
+    }
+    prev_lat_active = lat_active;
+  }
+
+  const bool controls_alive = sm.alive("controlsState");
+  if (enabled && controls_alive) {
+    const auto &controls_state = sm["controlsState"].getControlsState();
+    const int64_t controls_mono_time = sm.rcv_time("controlsState");
+    const double age = std::abs(static_cast<double>(nanos_since_boot() - controls_mono_time)) / 1e9;
+    const bool controls_state_stale = age > CENTERING_SIGNAL_STALE_S;
+
+    if (!controls_state_stale) {
+      centering_status_active = controls_state.getLaneCenteringActive();
+      centering_adjusting_display = controls_state.getLaneCenteringAdjusting();
+      centering_edge_mode = controls_state.getEdgeClearanceActive();
+      centering_display_valid = controls_state.getLaneCenteringValid();
+
+      if (centering_adjusting_display) {
+        panel_offset_available = true;
+        panel_offset_m = controls_state.getLaneCenteringOffset();
+        centering_indicator_source = controls_state.getLaneCenteringSource();
+      } else if (centering_edge_mode) {
+        panel_offset_available = true;
+        panel_offset_m = controls_state.getEdgeClearanceOffset();
+        centering_indicator_source = cereal::ControlsState::LaneCenteringSource::EDGE;
+      } else if (centering_display_valid) {
+        panel_offset_available = true;
+        panel_offset_m = controls_state.getLaneCenteringDisplayOffset();
+        centering_indicator_source = controls_state.getLaneCenteringSource();
+      }
+    } else {
+      centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
+    }
+  } else {
+    centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
+  }
+
+  if (!panel_offset_available && prev_display_valid) {
+    panel_offset_available = true;
+    panel_offset_m = prev_display_offset_m;
+  }
+
+  if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
+      centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE) {
+    centering_indicator_source = centering_indicator_last_nonzero_source;
+  }
+  if (centering_indicator_source != cereal::ControlsState::LaneCenteringSource::NONE) {
+    centering_indicator_last_nonzero_source = centering_indicator_source;
+  }
+
+  centering_display_valid = panel_offset_available;
+  centering_display_offset_m = panel_offset_available ? panel_offset_m : 0.0f;
+
+  const bool within_center_band = panel_offset_available && std::abs(panel_offset_m) <= CENTERING_CENTER_BAND_M;
+  centering_within_center_band = within_center_band;
+
+  if (panel_offset_available) {
+    const float offset_sign = (panel_offset_m > 0.0f) ? 1.0f : (panel_offset_m < 0.0f ? -1.0f : 0.0f);
+    centering_indicator_edge_sign = within_center_band ? 0.0f : offset_sign;
+    centering_steering_direction_sign = within_center_band ? 0.0f : offset_sign;
+    centering_highlight_strength = within_center_band ? 0.0f : std::clamp(std::abs(panel_offset_m) / 0.6f, 0.0f, 1.0f);
+  }
+
+  const bool panel_request_now = enabled && (centering_status_active || centering_display_valid || panel_offset_available);
+  const bool force_panel_visible = centering_edge_mode ||
+      (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE &&
+       (centering_adjusting_display || panel_offset_available)) ||
+      centering_adjusting_display;
+
+  if (force_panel_visible) {
+    centering_panel_visible_state = true;
+    centering_panel_request_active = false;
+    centering_panel_visible = true;
+  } else {
+    if (panel_request_now) {
+      if (!centering_panel_request_active) {
+        centering_panel_request_active = true;
+        centering_panel_request_start = highlight_now;
+      }
+      const float request_duration =
+          std::chrono::duration<float>(highlight_now - centering_panel_request_start).count();
+      centering_panel_visible_state = request_duration >= CENTERING_PANEL_MIN_VISIBLE_S;
+    } else {
+      centering_panel_request_active = false;
+      centering_panel_visible_state = false;
+    }
+    centering_panel_visible = centering_panel_visible_state;
+  }
+
+  float highlight_dt = std::chrono::duration<float>(highlight_now - centering_highlight_last_update).count();
+  centering_highlight_last_update = highlight_now;
+  if (centering_highlight_strength <= 0.0f) {
+    centering_highlight_phase = 0.0f;
+  } else {
+    if (highlight_dt < 0.0f) highlight_dt = 0.0f;
+    constexpr float HIGHLIGHT_FREQ_HZ = 1.0f;
+    centering_highlight_phase = std::fmod(
+        centering_highlight_phase + highlight_dt * HIGHLIGHT_FREQ_HZ * float(2.0 * M_PI), float(2.0 * M_PI));
+  }
+}
+
+void ModelRendererSP::drawLaneCenteringPanel(QPainter &painter, const QRect &surface_rect) {
+  if (!centering_panel_visible) {
+    return;
+  }
+
+  painter.save();
+  painter.setOpacity(1.0f);
+
+  const bool display_offset_valid = centering_display_valid;
+  const float display_offset_m = display_offset_valid ? centering_display_offset_m : 0.0f;
+  const float display_offset_cm = std::abs(display_offset_m) * 100.0f;
+  const bool offset_small = display_offset_cm < 1.0f;
+  const int decimal_precision = display_offset_cm < 10.0f ? 1 : 0;
+
+  const bool use_edge_mode = centering_edge_mode ||
+      (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::EDGE && centering_adjusting_display);
+  const QString feature_text = use_edge_mode ? QStringLiteral("Edge") : QStringLiteral("Lane");
+  const bool show_centered = centering_within_center_band && !centering_edge_mode;
+
+  auto direction_from_sign = [](float value) {
+    if (std::abs(value) < 1e-4f) {
+      return QStringLiteral("center");
+    }
+    return value > 0.0f ? QStringLiteral("right") : QStringLiteral("left");
+  };
+
+  QString primary_text;
+  if (advanced_lane_centering_enabled) {
+    if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
+      primary_text = QStringLiteral("Center Unknown");
+    } else if (show_centered) {
+      primary_text = QStringLiteral("Centered");
+    } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
+      const float correction_sign = (centering_steering_direction_sign != 0.0f)
+          ? centering_steering_direction_sign
+          : (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
+      if (correction_sign > 0.0f) {
+        primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
+      } else if (correction_sign < 0.0f) {
+        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
+      } else {
+        primary_text = QStringLiteral("Centering (%1)").arg(feature_text);
+      }
+    } else if (centering_adjusting_display) {
+      const float correction_sign = (centering_steering_direction_sign != 0.0f)
+          ? centering_steering_direction_sign
+          : (display_offset_m > 0.0f ? 1.0f : (display_offset_m < 0.0f ? -1.0f : 0.0f));
+      if (correction_sign > 0.0f) {
+        primary_text = QStringLiteral("Adjusting Right (%1)").arg(feature_text);
+      } else if (correction_sign < 0.0f) {
+        primary_text = QStringLiteral("Adjusting Left (%1)").arg(feature_text);
+      } else {
+        primary_text = use_edge_mode ? QStringLiteral("Centering (%1)").arg(feature_text) : QStringLiteral("Centered");
+      }
+    } else if (display_offset_valid) {
+      primary_text = QStringLiteral("Centered");
+    } else {
+      primary_text = QStringLiteral("Lane centering standby");
+    }
+  }
+
+  QString secondary_text;
+  if (display_offset_valid) {
+    if (centering_within_center_band) {
+      secondary_text = QStringLiteral("≤ 8 cm from center");
+    } else if (offset_small) {
+      secondary_text = QStringLiteral("< 1 cm from center");
+    } else {
+      secondary_text = QStringLiteral("%1 cm %2 of center")
+                           .arg(QString::number(display_offset_cm, 'f', decimal_precision))
+                           .arg(direction_from_sign(-display_offset_m));
+    }
+  } else {
+    secondary_text = QStringLiteral("Offset unknown");
+  }
+
+  const int indicator_width = 720;
+  const bool has_primary_text = !primary_text.isEmpty();
+  const int indicator_height = has_primary_text ? 160 : 112;
+  QRect indicator_rect(QPoint(surface_rect.center().x() - indicator_width / 2,
+                              surface_rect.bottom() - indicator_height - 148),
+                       QSize(indicator_width, indicator_height));
+
+  painter.setPen(Qt::NoPen);
+  painter.setBrush(QColor(0, 0, 0, 190));
+  painter.drawRoundedRect(indicator_rect, 36, 36);
+
+  painter.setPen(QColor(255, 255, 255, 245));
+  QFont title_font = InterFont(56, QFont::DemiBold);
+  QFont detail_font = InterFont(42, QFont::Medium);
+
+  if (has_primary_text) {
+    painter.setFont(title_font);
+    QRect title_rect = indicator_rect.adjusted(32, 26, -32, -indicator_height / 2);
+    painter.drawText(title_rect, Qt::AlignCenter | Qt::TextWordWrap, primary_text);
+
+    painter.setFont(detail_font);
+    painter.drawText(indicator_rect.adjusted(32, indicator_height / 2 - 2, -32, -26), Qt::AlignCenter, secondary_text);
+  } else {
+    painter.setFont(detail_font);
+    painter.drawText(indicator_rect.adjusted(32, 26, -32, -26), Qt::AlignCenter | Qt::TextWordWrap, secondary_text);
+  }
+
   painter.restore();
 }
 

@@ -20,8 +20,9 @@ public:
 private:
   void update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) override;
   void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height) override;
-  void drawLaneLines(QPainter &painter);
   void drawLaneHighlight(QPainter &painter);
+  void updateLaneCenteringUi();
+  void drawLaneCenteringPanel(QPainter &painter, const QRect &surface_rect);
 
   // Lead status display methods
   void drawLeadStatus(QPainter &painter, int height, int width);
@@ -53,4 +54,7 @@ private:
   bool centering_panel_visible_state = false;
   bool centering_panel_request_active = false;
   std::chrono::steady_clock::time_point centering_panel_request_start = std::chrono::steady_clock::now();
+  bool centering_panel_visible = false;
+  bool centering_within_center_band = false;
+  float centering_steering_direction_sign = 0.0f;
 };
