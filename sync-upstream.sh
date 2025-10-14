@@ -27,6 +27,7 @@ fi
 
 TARGET_REF="${1:-$DEFAULT_REF}"
 
+rm -rf opendbc_repo
 git fetch upstream hkg-angle-steering-2025 --prune
 
 if ! git rev-parse --verify "${TARGET_REF}^{commit}" >/dev/null 2>&1; then
