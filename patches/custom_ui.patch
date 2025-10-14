@@ -1,8 +1,8 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 14943b1d48..c9d27d2b76 100644
+index 14943b1d48..8050e9e4cc 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-@@ -7,6 +7,323 @@
+@@ -7,6 +7,324 @@
  
  #include "selfdrive/ui/sunnypilot/qt/onroad/model.h"
  
@@ -296,7 +296,8 @@ index 14943b1d48..c9d27d2b76 100644
 +    return;
 +  }
 +
-+  const int highlight_idx = centering_indicator_edge_sign > 0.0f ? 2 : 1;
++  const bool highlight_right = centering_indicator_edge_sign < 0.0f;
++  const int highlight_idx = highlight_right ? 2 : 1;
 +  if (highlight_idx < 0 || highlight_idx >= static_cast<int>(std::size(lane_line_vertices))) {
 +    return;
 +  }
@@ -312,7 +313,7 @@ index 14943b1d48..c9d27d2b76 100644
 +  }
 +
 +  const QRectF bounds = lane_line_vertices[highlight_idx].boundingRect();
-+  QLinearGradient gradient = highlight_idx == 2 ?
++  QLinearGradient gradient = highlight_right ?
 +      QLinearGradient(bounds.right(), bounds.top(), bounds.left(), bounds.top()) :
 +      QLinearGradient(bounds.left(), bounds.top(), bounds.right(), bounds.top());
 +  gradient.setColorAt(0.0, QColor(178, 102, 255, alpha));
@@ -326,7 +327,7 @@ index 14943b1d48..c9d27d2b76 100644
  
  void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
    ModelRenderer::update_model(model, lead);
-@@ -50,42 +367,250 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
+@@ -50,42 +368,250 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
    }
  
    bool rainbow = s->scene.rainbow_mode;
