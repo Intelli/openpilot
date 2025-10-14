@@ -6,10 +6,11 @@ DEFAULT_REF="upstream/hkg-angle-steering-2025"
 EXCLUDES=(
   'AGENTS.md'
   'sync-upstream.sh'
-  'ev9-sync.yaml'
-  'sync_ev9_branc.sh'
+  '.github/workflows/ev9-sync.yaml'
+  'tools/ci/sync_ev9_branch.sh'
   'update.sh'
   'apply_patch.sh'
+  'apply_patch_conflicts.sh'
   'fix_patch.sh'
   'create_patch.sh'
   'create_patch_manual.sh'
@@ -27,6 +28,7 @@ fi
 
 TARGET_REF="${1:-$DEFAULT_REF}"
 
+rm -rf opendbc_repo
 git fetch upstream hkg-angle-steering-2025 --prune
 
 if ! git rev-parse --verify "${TARGET_REF}^{commit}" >/dev/null 2>&1; then
