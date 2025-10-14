@@ -1,5 +1,5 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 086b703e10..afada33b15 100644
+index 086b703e10..4e72e03bae 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -7,22 +7,21 @@
@@ -36,7 +36,7 @@ index 086b703e10..afada33b15 100644
    auto *s = uiState();
    auto &sm = *(s->sm);
  
-@@ -38,30 +37,571 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+@@ -38,30 +37,585 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
    const auto &lead_one = radar_state.getLeadOne();
    const auto &car_state = sm["carState"].getCarState();
  
@@ -54,9 +54,7 @@ index 086b703e10..afada33b15 100644
 +  if (s->scene.rainbow_mode) {
 +    drawRainbowPath(painter, surface_rect);
 +  }
- 
--  bool left_blindspot = car_state.getLeftBlindspot();
--  bool right_blindspot = car_state.getRightBlindspot();
++
 +  drawLaneHighlight(painter);
 +  drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
 +  drawLaneCenteringPanel(painter, surface_rect);
@@ -64,9 +62,11 @@ index 086b703e10..afada33b15 100644
 +  painter.restore();
 +}
  
+-  bool left_blindspot = car_state.getLeftBlindspot();
+-  bool right_blindspot = car_state.getRightBlindspot();
+ 
 -  if (blindspot) {
 -    drawBlindspot(painter, surface_rect, left_blindspot, right_blindspot);
-+
 +void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
 +  if (centering_highlight_strength <= 0.0f || std::abs(centering_indicator_edge_sign) < 1e-4f) {
 +    return;
@@ -80,26 +80,35 @@ index 086b703e10..afada33b15 100644
 +    return;
 +  }
 +
-+  if (std::sin(centering_highlight_phase) <= 0.0f) {
++  if (std::sin(centering_highlight_phase) <= -0.2f) {
 +    return;
 +  }
 +
 +  const float clamped_strength = std::clamp(centering_highlight_strength, 0.0f, 1.0f);
-+  const int alpha = std::clamp(static_cast<int>(std::lround(200.0f * clamped_strength)), 0, 255);
++  const int alpha = std::clamp(static_cast<int>(std::lround(255.0f * clamped_strength)), 0, 255);
 +  if (alpha <= 0) {
 +    return;
 +  }
 +
-+  const QRectF bounds = lane_line_vertices[highlight_idx].boundingRect();
++  if (highlight_idx >= static_cast<int>(std::size(centering_highlight_vertices)) ||
++      centering_highlight_vertices[highlight_idx].isEmpty()) {
++    return;
++  }
++
++  const QRectF bounds = centering_highlight_vertices[highlight_idx].boundingRect();
 +  QLinearGradient gradient = highlight_right ?
 +      QLinearGradient(bounds.right(), bounds.top(), bounds.left(), bounds.top()) :
 +      QLinearGradient(bounds.left(), bounds.top(), bounds.right(), bounds.top());
-+  gradient.setColorAt(0.0, QColor(178, 102, 255, alpha));
-+  gradient.setColorAt(1.0, QColor(132, 70, 214, alpha));
++  gradient.setColorAt(0.0, QColor(210, 170, 255, alpha));
++  gradient.setColorAt(1.0, QColor(160, 90, 235, alpha));
 +
 +  painter.save();
++  QPen outline(QColor(80, 30, 155, alpha));
++  outline.setWidthF(1.0f);
++  outline.setJoinStyle(Qt::RoundJoin);
++  painter.setPen(outline);
 +  painter.setBrush(gradient);
-+  painter.drawPolygon(lane_line_vertices[highlight_idx]);
++  painter.drawPolygon(centering_highlight_vertices[highlight_idx]);
 +  painter.restore();
 +}
 +
@@ -360,6 +369,11 @@ index 086b703e10..afada33b15 100644
 +  int max_idx_barrier = std::min(max_idx, get_path_length_idx(lane_lines[0], max_distance_barrier));
 +  mapLineToPolygon(model.getLaneLines()[1], 0.2, -0.05, &left_blindspot_vertices, max_idx_barrier);
 +  mapLineToPolygon(model.getLaneLines()[2], 0.2, -0.05, &right_blindspot_vertices, max_idx_barrier);
++
++  centering_highlight_vertices[0].clear();
++  centering_highlight_vertices[3].clear();
++  mapLineToPolygon(model.getLaneLines()[1], 0.2, -0.05, &centering_highlight_vertices[1], max_idx_barrier);
++  mapLineToPolygon(model.getLaneLines()[2], 0.2, -0.05, &centering_highlight_vertices[2], max_idx_barrier);
 +}
 +
 +void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height) {
@@ -620,7 +634,7 @@ index 086b703e10..afada33b15 100644
    if (left_blindspot && !left_blindspot_vertices.isEmpty()) {
      QLinearGradient gradient(0, 0, surface_rect.width(), 0); // Horizontal gradient from left to right
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.h a/selfdrive/ui/sunnypilot/qt/onroad/model.h
-index 68068f2068..8613db9b76 100644
+index 68068f2068..bf743196da 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.h
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.h
 @@ -7,16 +7,24 @@
@@ -640,7 +654,7 @@ index 68068f2068..8613db9b76 100644
  
  private:
    void update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) override;
-+  void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height) override;
++  void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height);
 +  void drawLaneHighlight(QPainter &painter);
 +  void updateLaneCenteringUi();
 +  void drawLaneCenteringPanel(QPainter &painter, const QRect &surface_rect);
@@ -649,7 +663,11 @@ index 68068f2068..8613db9b76 100644
    void drawLeadStatus(QPainter &painter, int height, int width);
    void drawLeadStatusPosition(QPainter &painter, const cereal::RadarState::LeadData::Reader &lead_data,
                                const QPointF &chevron_pos, int height, int width);
-@@ -28,4 +36,25 @@ private:
+@@ -25,7 +33,29 @@ private:
+ 
+   QPolygonF left_blindspot_vertices;
+   QPolygonF right_blindspot_vertices;
++  QPolygonF centering_highlight_vertices[4];
  
    // Lead status animation
    float lead_status_alpha = 0.0f;
