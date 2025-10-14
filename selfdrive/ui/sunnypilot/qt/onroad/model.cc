@@ -367,6 +367,21 @@ void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Rea
   }
 
   bool rainbow = s->scene.rainbow_mode;
+  bool disable_accel_effect = !rainbow;
+  float a_ego = sm["carState"].getCarState().getAEgo();
+  constexpr float accel_start_threshold = 0.25f;
+  constexpr float accel_stop_threshold = 0.15f;
+  constexpr float accel_fade_in_seconds = 0.5f;
+  constexpr float accel_fade_out_seconds = 1.0f;
+  static float accel_presence = 0.0f;
+  static bool accel_state = false;
+  static auto last_accel_update = std::chrono::steady_clock::now();
+  static float rainbow_presence = 0.0f;
+  if (!accel_state && a_ego >= accel_start_threshold) {
+    accel_state = true;
+  } else if (accel_state && a_ego <= accel_stop_threshold) {
+    accel_state = false;
+  }
   //float v_ego = sm["carState"].getCarState().getVEgo();
 
   const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();

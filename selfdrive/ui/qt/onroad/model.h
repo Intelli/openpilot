@@ -59,4 +59,8 @@ protected:
   Eigen::Matrix3f car_space_transform = Eigen::Matrix3f::Zero();
   QRectF clip_region;
 
+  float lead_status_alpha = 0.0f;
+  QPointF lead_status_pos;
+  QString lead_status_text;
+  QColor lead_status_color;
 };
