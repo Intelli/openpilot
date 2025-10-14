@@ -7,7 +7,7 @@ EXCLUDES=(
   'AGENTS.md'
   'sync-upstream.sh'
   'ev9-sync.yaml'
-  'sync_ev9_branc.sh'
+  'sync_ev9_branch.sh'
   'update.sh'
   'apply_patch.sh'
   'fix_patch.sh'
