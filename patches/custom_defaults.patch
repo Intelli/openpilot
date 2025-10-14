@@ -1,5 +1,5 @@
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 07b03880a3..d41c6b68e6 100644
+index 373e7bc4df..66e74405ab 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -75,8 +75,8 @@ index 07b03880a3..d41c6b68e6 100644
      {"TrueVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},
  
      // MADS params
-@@ -207,14 +209,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
-     {"HyundaiLongitudinalTuning", {PERSISTENT | BACKUP, INT, "0"}},
+@@ -209,14 +211,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"SubaruStopAndGoManualParkingBrake", {PERSISTENT | BACKUP, BOOL, "0"}},
  
      {"DynamicExperimentalControl", {PERSISTENT | BACKUP, BOOL, "0"}},
 -    {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "0"}},
@@ -93,7 +93,7 @@ index 07b03880a3..d41c6b68e6 100644
  
      // mapd
      {"MapAdvisorySpeedLimit", {CLEAR_ON_ONROAD_TRANSITION, FLOAT}},
-@@ -235,13 +237,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -237,13 +239,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"OsmStateTitle", {PERSISTENT, STRING}},
      {"OsmWayTest", {PERSISTENT, STRING}},
      {"RoadName", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
@@ -112,7 +112,7 @@ index 07b03880a3..d41c6b68e6 100644
  
      // Smart Cruise Control
      {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
-@@ -259,8 +261,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -261,8 +263,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
  
      // Tuning keys
      {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
