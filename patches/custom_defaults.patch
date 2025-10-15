@@ -121,6 +121,6 @@ index 373e7bc4df..66e74405ab 100644
      {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
      {"HkgTuningAngleActiveTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
 +    {"HkgTuningAngleCustomLimitMaxSpeedKph", {PERSISTENT | BACKUP, INT, "40"}},
-+    {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT | BACKUP, INT, "40"}},
++    {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT | BACKUP, INT, "50"}},
      {"HkgTuningOverridingCycles", {PERSISTENT | BACKUP, INT, "17"}},
  };
