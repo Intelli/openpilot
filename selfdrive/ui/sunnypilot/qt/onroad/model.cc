@@ -20,8 +20,6 @@ constexpr float CENTERING_CENTER_BAND_M = 0.08f;
 constexpr float CENTERING_PANEL_MIN_VISIBLE_S = 0.5f;
 
 void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
-  ModelRenderer::draw(painter, surface_rect);
-
   auto *s = uiState();
   auto &sm = *(s->sm);
 
@@ -29,6 +27,11 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
       sm.rcv_frame("modelV2") < s->scene.started_frame) {
     return;
   }
+
+  clip_region = surface_rect.adjusted(-CLIP_MARGIN, -CLIP_MARGIN, CLIP_MARGIN, CLIP_MARGIN);
+  experimental_mode = sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
+  longitudinal_control = sm["carParams"].getCarParams().getOpenpilotLongitudinalControl();
+  path_offset_z = sm["liveCalibration"].getLiveCalibration().getHeight()[0];
 
   painter.save();
 
@@ -40,6 +43,18 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   updateLaneCenteringUi();
   update_model(model, lead_one);
   ModelRenderer::drawLaneLines(painter);
+  drawPath(painter, model, surface_rect.height());
+
+  if (longitudinal_control && sm.alive("radarState")) {
+    update_leads(radar_state, model.getPosition());
+    const auto &lead_two = radar_state.getLeadTwo();
+    if (lead_one.getStatus()) {
+      drawLead(painter, lead_one, lead_vertices[0], surface_rect);
+    }
+    if (lead_two.getStatus() && (std::abs(lead_one.getDRel() - lead_two.getDRel()) > 3.0)) {
+      drawLead(painter, lead_two, lead_vertices[1], surface_rect);
+    }
+  }
 
   if (s->scene.blindspot_ui) {
     drawBlindspot(painter, surface_rect, car_state.getLeftBlindspot(), car_state.getRightBlindspot());
