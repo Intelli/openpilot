@@ -352,6 +352,8 @@ std::optional<bool> process_panda_state(std::vector<Panda *> &pandas, PubMaster 
     connected_serials.push_back(p->hw_serial());
   }
 
+  bool ignition_local = false;
+
   {
     auto ignition_opt = send_panda_states(pm, pandas, is_onroad, spoofing_started, always_offroad);
     if (!ignition_opt) {
