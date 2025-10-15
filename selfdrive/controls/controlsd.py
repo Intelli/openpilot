@@ -50,10 +50,10 @@ CENTERING_EDGE_STD_MAX_ENTER = 1.0
 CENTERING_EDGE_STD_MAX_EXIT = 1.2
 CENTERING_EDGE_STD_SAMPLES = 10
 CENTERING_DISTANCE_RATIO_MAX = 3.0
-CENTERING_DEADBAND_ENTER_M = 0.08
-CENTERING_DEADBAND_EXIT_M = 0.04
+CENTERING_DEADBAND_ENTER_M = 0.06
+CENTERING_DEADBAND_EXIT_M = 0.03
 CENTERING_SIGN_FLIP_MIN_M = 0.12
-CENTERING_TARGET_FILTER_TC = 0.6
+CENTERING_TARGET_FILTER_TC = 0.3
 CENTERING_EDGE_MARGIN_M = 0.14
 CENTERING_SOFT_GAIN_MIN = 0.12
 CENTERING_SOFT_GAIN_THRESHOLD_M = 0.2
@@ -64,9 +64,10 @@ CENTERING_CURVE_ATTENUATION_FULL = 0.009
 CENTERING_CURVE_MIN_SCALE = 0.66
 CENTERING_STATUS_HOLD_S = 0.3
 CENTERING_CENTER_BAND_M = 0.08
-CENTERING_LOCK_RELEASE_M = 0.02
+CENTERING_LOCK_RELEASE_M = 0.01
 CENTERING_GAIN_RAMP_EXP = 2.0
 EDGE_CLEARANCE_MIN_M = 0.381
+CENTERING_REFERENCE_SPEED_KPH = 50.0
 
 LANE_CENTERING_SOURCE_MAP = {
   None: LaneCenteringSourceEnum.none,
@@ -284,7 +285,7 @@ class Controls(ControlsExt, ModelStateBase):
     min_offset_for_curvature = max(CENTERING_CURVATURE_MIN_OFFSET_M, CENTERING_LOCK_RELEASE_M)
     centering_delta = 0.0
     if allow_centering and centering_available:
-      centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature, base_desired_curvature)
+      centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature, base_desired_curvature, CS.vEgo)
 
     new_desired_curvature = base_desired_curvature + centering_delta
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
@@ -679,7 +680,7 @@ class Controls(ControlsExt, ModelStateBase):
       return None
     return total / count
 
-  def _offset_to_curvature(self, offset_m: float, min_offset: float, base_curvature: float) -> float:
+  def _offset_to_curvature(self, offset_m: float, min_offset: float, base_curvature: float, v_ego: float) -> float:
     offset_abs = abs(offset_m)
     if offset_abs <= min_offset:
       return 0.0
@@ -703,6 +704,14 @@ class Controls(ControlsExt, ModelStateBase):
       curve_scale = 1.0 - attenuation_ratio * (1.0 - CENTERING_CURVE_MIN_SCALE)
       curve_scale = max(CENTERING_CURVE_MIN_SCALE, curve_scale)
       curvature_delta *= curve_scale
+
+    speed_kph = max(v_ego, 0.0) * CV.MS_TO_KPH
+    if speed_kph <= CENTERING_REFERENCE_SPEED_KPH:
+      speed_scale = 1.0
+    else:
+      speed_scale = CENTERING_REFERENCE_SPEED_KPH / speed_kph
+
+    curvature_delta *= speed_scale
 
     if curvature_delta > CENTERING_MAX_CURVATURE_DELTA:
       curvature_delta = CENTERING_MAX_CURVATURE_DELTA
