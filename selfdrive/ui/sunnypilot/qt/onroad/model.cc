@@ -57,7 +57,9 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
   }
 
   if (s->scene.blindspot_ui) {
-    drawBlindspot(painter, surface_rect, car_state.getLeftBlindspot(), car_state.getRightBlindspot());
+    const bool left_blindspot = car_state.getLeftBlindspot();
+    const bool right_blindspot = car_state.getRightBlindspot();
+    drawBlindspot(painter, surface_rect, left_blindspot, right_blindspot);
   }
 
   drawLaneHighlight(painter);
