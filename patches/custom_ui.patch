@@ -1,8 +1,8 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 086b703e10..f4eff636d4 100644
+index 590ade24a1..9e9b3a4d0e 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-@@ -7,22 +7,19 @@
+@@ -7,19 +7,17 @@
  
  #include "selfdrive/ui/sunnypilot/qt/onroad/model.h"
  
@@ -31,51 +31,32 @@ index 086b703e10..f4eff636d4 100644
 +constexpr float CENTERING_PANEL_MIN_VISIBLE_S = 0.5f;
  
  void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
--  ModelRenderer::draw(painter, surface_rect);
    auto *s = uiState();
-   auto &sm = *(s->sm);
- 
-@@ -31,6 +28,11 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
-     return;
-   }
- 
-+  clip_region = surface_rect.adjusted(-CLIP_MARGIN, -CLIP_MARGIN, CLIP_MARGIN, CLIP_MARGIN);
-+  experimental_mode = sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
-+  longitudinal_control = sm["carParams"].getCarParams().getOpenpilotLongitudinalControl();
-+  path_offset_z = sm["liveCalibration"].getLiveCalibration().getHeight()[0];
-+
-   painter.save();
- 
-   const auto &model = sm["modelV2"].getModelV2();
-@@ -38,30 +40,586 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+@@ -42,14 +40,10 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
    const auto &lead_one = radar_state.getLeadOne();
    const auto &car_state = sm["carState"].getCarState();
  
 +  updateLaneCenteringUi();
    update_model(model, lead_one);
 -  drawLaneLines(painter);
+-
+-  if (s->scene.rainbow_mode) {
+-    drawRainbowPath(painter, surface_rect);
+-  } else {
+-    ModelRenderer::drawPath(painter, model, surface_rect.height());
+-  }
 +  ModelRenderer::drawLaneLines(painter);
 +  drawPath(painter, model, surface_rect.height());
-+
-+  if (longitudinal_control && sm.alive("radarState")) {
-+    update_leads(radar_state, model.getPosition());
-+    const auto &lead_two = radar_state.getLeadTwo();
-+    if (lead_one.getStatus()) {
-+      drawLead(painter, lead_one, lead_vertices[0], surface_rect);
-+    }
-+    if (lead_two.getStatus() && (std::abs(lead_one.getDRel() - lead_two.getDRel()) > 3.0)) {
-+      drawLead(painter, lead_two, lead_vertices[1], surface_rect);
-+    }
-+  }
  
--  bool blindspot = s->scene.blindspot_ui;
--  bool rainbow = s->scene.rainbow_mode;
-+  if (s->scene.blindspot_ui) {
-+    drawBlindspot(painter, surface_rect, car_state.getLeftBlindspot(), car_state.getRightBlindspot());
-+  }
+   if (longitudinal_control && sm.alive("radarState")) {
+     update_leads(radar_state, model.getPosition());
+@@ -67,11 +61,567 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+     const bool right_blindspot = car_state.getRightBlindspot();
+     drawBlindspot(painter, surface_rect, left_blindspot, right_blindspot);
+   }
 +
 +  drawLaneHighlight(painter);
-+  drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
+   drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
 +  drawLaneCenteringPanel(painter, surface_rect);
 +
 +  painter.restore();
@@ -107,9 +88,7 @@ index 086b703e10..f4eff636d4 100644
 +      centering_highlight_vertices[highlight_idx].isEmpty()) {
 +    return;
 +  }
- 
--  bool left_blindspot = car_state.getLeftBlindspot();
--  bool right_blindspot = car_state.getRightBlindspot();
++
 +  const QRectF bounds = centering_highlight_vertices[highlight_idx].boundingRect();
 +  QLinearGradient gradient = highlight_right ?
 +      QLinearGradient(bounds.right(), bounds.top(), bounds.left(), bounds.top()) :
@@ -130,9 +109,7 @@ index 086b703e10..f4eff636d4 100644
 +void ModelRendererSP::updateLaneCenteringUi() {
 +  auto *s = uiState();
 +  auto &sm = *(s->sm);
- 
--  if (blindspot) {
--    drawBlindspot(painter, surface_rect, left_blindspot, right_blindspot);
++
 +  const auto highlight_now = std::chrono::steady_clock::now();
 +  const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
 +
@@ -165,10 +142,8 @@ index 086b703e10..f4eff636d4 100644
 +      advanced_lane_centering_enabled = params.getBool("AdvancedLaneCentering");
 +    }
 +    prev_lat_active = lat_active;
-   }
- 
--  if (rainbow) {
--    drawRainbowPath(painter, surface_rect);
++  }
++
 +  const bool controls_alive = sm.alive("controlsState");
 +  if (enabled && controls_alive) {
 +    const auto &controls_state = sm["controlsState"].getControlsState();
@@ -198,12 +173,10 @@ index 086b703e10..f4eff636d4 100644
 +    } else {
 +      centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
 +    }
-   } else {
--    ModelRenderer::drawPath(painter, model, surface_rect.height());
++  } else {
 +    centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
-   }
- 
--  drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
++  }
++
 +  if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
 +      centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE) {
 +    centering_indicator_source = centering_indicator_last_nonzero_source;
