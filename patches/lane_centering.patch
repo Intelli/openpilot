@@ -31,7 +31,7 @@ index 8925bca8ae..6dace963f9 100644
    vEgoDEPRECATED @0 :Float32;
    vEgoRawDEPRECATED @32 :Float32;
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
-index 3601ae310e..847d6fbe1f 100755
+index 3601ae310e..1c5f3052cb 100755
 --- b/selfdrive/controls/controlsd.py
 +++ a/selfdrive/controls/controlsd.py
 @@ -1,17 +1,18 @@
@@ -55,7 +55,7 @@ index 3601ae310e..847d6fbe1f 100755
  from opendbc.car.vehicle_model import VehicleModel
  from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
  from openpilot.selfdrive.controls.lib.latcontrol import LatControl
-@@ -28,9 +29,51 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+@@ -28,9 +29,52 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
  State = log.SelfdriveState.OpenpilotState
  LaneChangeState = log.LaneChangeState
  LaneChangeDirection = log.LaneChangeDirection
@@ -80,10 +80,10 @@ index 3601ae310e..847d6fbe1f 100755
 +CENTERING_EDGE_STD_MAX_EXIT = 1.2
 +CENTERING_EDGE_STD_SAMPLES = 10
 +CENTERING_DISTANCE_RATIO_MAX = 3.0
-+CENTERING_DEADBAND_ENTER_M = 0.08
-+CENTERING_DEADBAND_EXIT_M = 0.04
++CENTERING_DEADBAND_ENTER_M = 0.06
++CENTERING_DEADBAND_EXIT_M = 0.03
 +CENTERING_SIGN_FLIP_MIN_M = 0.12
-+CENTERING_TARGET_FILTER_TC = 0.6
++CENTERING_TARGET_FILTER_TC = 0.3
 +CENTERING_EDGE_MARGIN_M = 0.14
 +CENTERING_SOFT_GAIN_MIN = 0.12
 +CENTERING_SOFT_GAIN_THRESHOLD_M = 0.2
@@ -94,9 +94,10 @@ index 3601ae310e..847d6fbe1f 100755
 +CENTERING_CURVE_MIN_SCALE = 0.66
 +CENTERING_STATUS_HOLD_S = 0.3
 +CENTERING_CENTER_BAND_M = 0.08
-+CENTERING_LOCK_RELEASE_M = 0.02
++CENTERING_LOCK_RELEASE_M = 0.01
 +CENTERING_GAIN_RAMP_EXP = 2.0
 +EDGE_CLEARANCE_MIN_M = 0.381
++CENTERING_REFERENCE_SPEED_KPH = 50.0
 +
 +LANE_CENTERING_SOURCE_MAP = {
 +  None: LaneCenteringSourceEnum.none,
@@ -107,7 +108,7 @@ index 3601ae310e..847d6fbe1f 100755
  
  class Controls(ControlsExt, ModelStateBase):
    def __init__(self) -> None:
-@@ -54,6 +97,26 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -54,6 +98,26 @@ class Controls(ControlsExt, ModelStateBase):
      self.steer_limited_by_safety = False
      self.curvature = 0.0
      self.desired_curvature = 0.0
@@ -134,7 +135,7 @@ index 3601ae310e..847d6fbe1f 100755
  
      self.pose_calibrator = PoseCalibrator()
      self.calibrated_pose: Pose | None = None
-@@ -138,9 +201,165 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -138,9 +202,165 @@ class Controls(ControlsExt, ModelStateBase):
  
      # Steering PID loop and lateral MPC
      # Reset desired curvature to current to avoid violating the limits on engage
@@ -222,7 +223,7 @@ index 3601ae310e..847d6fbe1f 100755
 +    min_offset_for_curvature = max(CENTERING_CURVATURE_MIN_OFFSET_M, CENTERING_LOCK_RELEASE_M)
 +    centering_delta = 0.0
 +    if allow_centering and centering_available:
-+      centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature, base_desired_curvature)
++      centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature, base_desired_curvature, CS.vEgo)
 +
 +    new_desired_curvature = base_desired_curvature + centering_delta
      self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
@@ -301,7 +302,7 @@ index 3601ae310e..847d6fbe1f 100755
      actuators.curvature = self.desired_curvature
      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                         self.steer_limited_by_safety, self.desired_curvature,
-@@ -157,11 +376,350 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -157,11 +377,358 @@ class Controls(ControlsExt, ModelStateBase):
          cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
          setattr(actuators, p, 0.0)
  
@@ -608,7 +609,7 @@ index 3601ae310e..847d6fbe1f 100755
 +      return None
 +    return total / count
 +
-+  def _offset_to_curvature(self, offset_m: float, min_offset: float, base_curvature: float) -> float:
++  def _offset_to_curvature(self, offset_m: float, min_offset: float, base_curvature: float, v_ego: float) -> float:
 +    offset_abs = abs(offset_m)
 +    if offset_abs <= min_offset:
 +      return 0.0
@@ -633,6 +634,14 @@ index 3601ae310e..847d6fbe1f 100755
 +      curve_scale = max(CENTERING_CURVE_MIN_SCALE, curve_scale)
 +      curvature_delta *= curve_scale
 +
++    speed_kph = max(v_ego, 0.0) * CV.MS_TO_KPH
++    if speed_kph <= CENTERING_REFERENCE_SPEED_KPH:
++      speed_scale = 1.0
++    else:
++      speed_scale = CENTERING_REFERENCE_SPEED_KPH / speed_kph
++
++    curvature_delta *= speed_scale
++
 +    if curvature_delta > CENTERING_MAX_CURVATURE_DELTA:
 +      curvature_delta = CENTERING_MAX_CURVATURE_DELTA
 +    elif curvature_delta < -CENTERING_MAX_CURVATURE_DELTA:
@@ -652,7 +661,7 @@ index 3601ae310e..847d6fbe1f 100755
      # Orientation and angle rates can be useful for carcontroller
      # Only calibrated (car) frame is relevant for the carcontroller
      CC.currentCurvature = self.curvature
-@@ -207,6 +765,14 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -207,6 +774,14 @@ class Controls(ControlsExt, ModelStateBase):
      cs.longitudinalPlanMonoTime = self.sm.logMonoTime['longitudinalPlan']
      cs.lateralPlanMonoTime = self.sm.logMonoTime['modelV2']
      cs.desiredCurvature = self.desired_curvature
