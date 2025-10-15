@@ -1,8 +1,8 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 086b703e10..4e72e03bae 100644
+index 086b703e10..987f630439 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-@@ -7,22 +7,21 @@
+@@ -7,22 +7,19 @@
  
  #include "selfdrive/ui/sunnypilot/qt/onroad/model.h"
  
@@ -31,12 +31,23 @@ index 086b703e10..4e72e03bae 100644
 +constexpr float CENTERING_PANEL_MIN_VISIBLE_S = 0.5f;
  
  void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
-   ModelRenderer::draw(painter, surface_rect);
-+
+-  ModelRenderer::draw(painter, surface_rect);
    auto *s = uiState();
    auto &sm = *(s->sm);
  
-@@ -38,30 +37,585 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+@@ -31,6 +28,11 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+     return;
+   }
+ 
++  clip_region = surface_rect.adjusted(-CLIP_MARGIN, -CLIP_MARGIN, CLIP_MARGIN, CLIP_MARGIN);
++  experimental_mode = sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
++  longitudinal_control = sm["carParams"].getCarParams().getOpenpilotLongitudinalControl();
++  path_offset_z = sm["liveCalibration"].getLiveCalibration().getHeight()[0];
++
+   painter.save();
+ 
+   const auto &model = sm["modelV2"].getModelV2();
+@@ -38,30 +40,597 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
    const auto &lead_one = radar_state.getLeadOne();
    const auto &car_state = sm["carState"].getCarState();
  
@@ -44,6 +55,18 @@ index 086b703e10..4e72e03bae 100644
    update_model(model, lead_one);
 -  drawLaneLines(painter);
 +  ModelRenderer::drawLaneLines(painter);
++  drawPath(painter, model, surface_rect.height());
++
++  if (longitudinal_control && sm.alive("radarState")) {
++    update_leads(radar_state, model.getPosition());
++    const auto &lead_two = radar_state.getLeadTwo();
++    if (lead_one.getStatus()) {
++      drawLead(painter, lead_one, lead_vertices[0], surface_rect);
++    }
++    if (lead_two.getStatus() && (std::abs(lead_one.getDRel() - lead_two.getDRel()) > 3.0)) {
++      drawLead(painter, lead_two, lead_vertices[1], surface_rect);
++    }
++  }
  
 -  bool blindspot = s->scene.blindspot_ui;
 -  bool rainbow = s->scene.rainbow_mode;
