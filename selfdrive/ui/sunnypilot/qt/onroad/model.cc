@@ -366,7 +366,7 @@ void ModelRendererSP::update_model(const cereal::ModelDataV2::Reader &model, con
   mapLineToPolygon(model.getLaneLines()[2], 0.2, -0.05, &centering_highlight_vertices[2], max_idx_barrier);
 }
 
-void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+void ModelRendererSP::drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height) {
   auto *s = uiState();
   auto &sm = *(s->sm);
 
@@ -467,44 +467,27 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     return;
   }
 
-  clip_region = surface_rect.adjusted(-CLIP_MARGIN, -CLIP_MARGIN, CLIP_MARGIN, CLIP_MARGIN);
-  experimental_mode = sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
-  longitudinal_control = sm["carParams"].getCarParams().getOpenpilotLongitudinalControl();
-  path_offset_z = sm["liveCalibration"].getLiveCalibration().getHeight()[0];
-
-  painter.save();
-
-  const auto &model = sm["modelV2"].getModelV2();
-  const auto &radar_state = sm["radarState"].getRadarState();
-  const auto &lead_one = radar_state.getLeadOne();
-  const auto &car_state = sm["carState"].getCarState();
-
-  update_model(model, lead_one);
-  drawLaneLines(painter);
-
-  if (s->scene.rainbow_mode) {
-    drawRainbowPath(painter, surface_rect);
-  } else {
-    ModelRenderer::drawPath(painter, model, surface_rect.height());
+  const bool show_rainbow = true;
+  if (rainbow_presence <= 0.0f) {
+    ModelRenderer::drawPath(painter, model, height);
+    return;
   }
 
-  if (longitudinal_control && sm.alive("radarState")) {
-    update_leads(radar_state, model.getPosition());
-    const auto &lead_two = radar_state.getLeadTwo();
-    if (lead_one.getStatus()) {
-      drawLead(painter, lead_one, lead_vertices[0], surface_rect);
-    }
-    if (lead_two.getStatus() && (std::abs(lead_one.getDRel() - lead_two.getDRel()) > 3.0)) {
-      drawLead(painter, lead_two, lead_vertices[1], surface_rect);
-    }
+  if (rainbow_presence < 1.0f) {
+    painter.save();
+    painter.setOpacity(1.0f - rainbow_presence);
+    ModelRenderer::drawPath(painter, model, height);
+    painter.restore();
   }
 
-  if (s->scene.blindspot_ui) {
-    const bool left_blindspot = car_state.getLeftBlindspot();
-    const bool right_blindspot = car_state.getRightBlindspot();
-    drawBlindspot(painter, surface_rect, left_blindspot, right_blindspot);
-  }
-  drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
+  if (show_rainbow) {  // Kia EV9 "Ocean Blue" inspired gradient with subtle motion
+    struct GradientStop {
+      float position;
+      float hue_deg;
+      float saturation;
+      float lightness;
+      float alpha;
+    };
 
     static constexpr std::array<GradientStop, 4> ocean_stops = {{
         {0.00f, 206.0f, 0.70f, 0.32f, 0.85f},

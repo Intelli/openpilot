@@ -1,5 +1,5 @@
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 561f86c0a7..b4441b99bc 100644
+index 373e7bc4df..5ca9b00870 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -68,7 +68,7 @@ index 561f86c0a7..b4441b99bc 100644
      {"Offroad_TiciSupport", {CLEAR_ON_MANAGER_START, JSON}},
 @@ -164,12 +167,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"OnroadScreenOffControl", {PERSISTENT | BACKUP, BOOL}},
-     {"OnroadScreenOffTimer", {PERSISTENT | BACKUP, INT, "15"}},
+     {"OnroadScreenOffTimer", {PERSISTENT | BACKUP, INT, "0"}},
      {"OnroadUploads", {PERSISTENT | BACKUP, BOOL, "1"}},
 -    {"QuickBootToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
 +    {"UsePrebuiltToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
@@ -130,6 +130,6 @@ index 561f86c0a7..b4441b99bc 100644
      {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
      {"HkgTuningAngleActiveTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
 +    {"HkgTuningAngleCustomLimitMaxSpeedKph", {PERSISTENT | BACKUP, INT, "40"}},
-+    {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT | BACKUP, INT, "50"}},
++    {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT | BACKUP, INT, "40"}},
      {"HkgTuningOverridingCycles", {PERSISTENT | BACKUP, INT, "17"}},
  };

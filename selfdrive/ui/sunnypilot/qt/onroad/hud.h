@@ -97,14 +97,16 @@ private:
   int speedLimitAssistFrame;
   QPixmap plus_arrow_up_img;
   QPixmap minus_arrow_down_img;
-  int e2e_alert_size = 300;
-  QPixmap green_light_alert_img;
+  int e2e_alert_small = 250;
+  int e2e_alert_large = 300;
+  QPixmap green_light_alert_small_img;
+  QPixmap green_light_alert_large_img;
   bool greenLightAlert;
   int e2eAlertFrame;
   int e2eAlertDisplayTimer = 0;
-  bool allow_e2e_alerts;
   bool leadDepartAlert;
-  QPixmap lead_depart_alert_img;
+  QPixmap lead_depart_alert_small_img;
+  QPixmap lead_depart_alert_large_img;
   QString alert_text;
   QPixmap alert_img;
   bool hideVEgoUI;
@@ -119,5 +121,5 @@ private:
   bool carControlEnabled;
   float speedCluster = 0;
   int icbm_active_counter = 0;
-  bool pcmCruiseSpeed = true;
+  bool pcmCruiseSpeed;
 };
