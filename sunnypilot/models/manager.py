@@ -12,7 +12,6 @@ import time
 import aiohttp
 from openpilot.common.params import Params
 from openpilot.common.realtime import Ratekeeper
-from openpilot.common.timing import sec_since_boot
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.hardware.hw import Paths
 
