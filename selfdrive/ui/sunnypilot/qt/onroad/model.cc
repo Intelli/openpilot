@@ -60,10 +60,6 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
     drawBlindspot(painter, surface_rect, car_state.getLeftBlindspot(), car_state.getRightBlindspot());
   }
 
-  if (s->scene.rainbow_mode) {
-    drawRainbowPath(painter, surface_rect);
-  }
-
   drawLaneHighlight(painter);
   drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
   drawLaneCenteringPanel(painter, surface_rect);
@@ -121,9 +117,6 @@ void ModelRendererSP::updateLaneCenteringUi() {
 
   const auto highlight_now = std::chrono::steady_clock::now();
   const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
-
-  const bool prev_display_valid = centering_display_valid;
-  const float prev_display_offset_m = centering_display_offset_m;
 
   centering_status_active = false;
   centering_display_valid = false;
@@ -187,11 +180,6 @@ void ModelRendererSP::updateLaneCenteringUi() {
     }
   } else {
     centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
-  }
-
-  if (!panel_offset_available && prev_display_valid) {
-    panel_offset_available = true;
-    panel_offset_m = prev_display_offset_m;
   }
 
   if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
