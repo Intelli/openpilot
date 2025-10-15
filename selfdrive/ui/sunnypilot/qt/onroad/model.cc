@@ -190,8 +190,9 @@ void ModelRendererSP::updateLaneCenteringUi() {
     centering_indicator_last_nonzero_source = centering_indicator_source;
   }
 
-  centering_display_valid = panel_offset_available;
-  centering_display_offset_m = panel_offset_available ? panel_offset_m : 0.0f;
+  const bool display_offset_valid = panel_offset_available;
+  centering_display_valid = display_offset_valid;
+  centering_display_offset_m = display_offset_valid ? panel_offset_m : 0.0f;
 
   const bool within_center_band = panel_offset_available && std::abs(panel_offset_m) <= CENTERING_CENTER_BAND_M;
   centering_within_center_band = within_center_band;
