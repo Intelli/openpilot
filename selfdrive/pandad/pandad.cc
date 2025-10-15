@@ -359,7 +359,7 @@ std::optional<bool> process_panda_state(std::vector<Panda *> &pandas, PubMaster 
       return std::nullopt;
     }
 
-    bool ignition_local = ignition_opt.value();
+    ignition_local = ignition_opt.value();
 
     // check if we should have pandad reconnect
     if (!ignition_local) {
@@ -389,7 +389,7 @@ std::optional<bool> process_panda_state(std::vector<Panda *> &pandas, PubMaster 
     }
   }
 
-  return ignition_opt.value();
+  return ignition_local;
 }
 
 void process_peripheral_state(Panda *panda, PubMaster *pm, bool no_fan_control) {
