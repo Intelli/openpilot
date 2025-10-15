@@ -54,6 +54,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"GsmRoaming", {PERSISTENT | BACKUP, BOOL}},
     {"HardwareSerial", {PERSISTENT, STRING}},
     {"HasAcceptedTerms", {PERSISTENT, STRING, "2"}},
+    {"IgnitionOn", {CLEAR_ON_MANAGER_START, BOOL, "0"}},
     {"InstallDate", {PERSISTENT, TIME}},
     {"IsDriverViewEnabled", {CLEAR_ON_MANAGER_START, BOOL}},
     {"IsEngaged", {PERSISTENT, BOOL}},
@@ -107,6 +108,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"RecordAudioFeedback", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"RecordFront", {PERSISTENT | BACKUP, BOOL}},
     {"RecordFrontLock", {PERSISTENT, BOOL}},  // for the internal fleet
+    {"ScreenOff", {CLEAR_ON_MANAGER_START, BOOL, "0"}},
     {"SecOCKey", {PERSISTENT | DONT_LOG | BACKUP, STRING}},
     {"RouteCount", {PERSISTENT, INT, "0"}},
     {"SnoozeUpdate", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
