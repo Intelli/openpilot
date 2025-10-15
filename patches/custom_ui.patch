@@ -1,5 +1,5 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 086b703e10..987f630439 100644
+index 086b703e10..f4eff636d4 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -7,22 +7,19 @@
@@ -47,7 +47,7 @@ index 086b703e10..987f630439 100644
    painter.save();
  
    const auto &model = sm["modelV2"].getModelV2();
-@@ -38,30 +40,597 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+@@ -38,30 +40,586 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
    const auto &lead_one = radar_state.getLeadOne();
    const auto &car_state = sm["carState"].getCarState();
  
@@ -74,29 +74,19 @@ index 086b703e10..987f630439 100644
 +    drawBlindspot(painter, surface_rect, car_state.getLeftBlindspot(), car_state.getRightBlindspot());
 +  }
 +
-+  if (s->scene.rainbow_mode) {
-+    drawRainbowPath(painter, surface_rect);
-+  }
-+
 +  drawLaneHighlight(painter);
 +  drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
 +  drawLaneCenteringPanel(painter, surface_rect);
 +
 +  painter.restore();
 +}
- 
--  bool left_blindspot = car_state.getLeftBlindspot();
--  bool right_blindspot = car_state.getRightBlindspot();
- 
--  if (blindspot) {
--    drawBlindspot(painter, surface_rect, left_blindspot, right_blindspot);
++
++
 +void ModelRendererSP::drawLaneHighlight(QPainter &painter) {
 +  if (centering_highlight_strength <= 0.0f || std::abs(centering_indicator_edge_sign) < 1e-4f) {
 +    return;
-   }
- 
--  if (rainbow) {
--    drawRainbowPath(painter, surface_rect);
++  }
++
 +  const bool highlight_right = centering_indicator_edge_sign < 0.0f;
 +  const int highlight_idx = highlight_right ? 2 : 1;
 +  if (highlight_idx < 0 || highlight_idx >= static_cast<int>(std::size(lane_line_vertices))) {
@@ -117,7 +107,9 @@ index 086b703e10..987f630439 100644
 +      centering_highlight_vertices[highlight_idx].isEmpty()) {
 +    return;
 +  }
-+
+ 
+-  bool left_blindspot = car_state.getLeftBlindspot();
+-  bool right_blindspot = car_state.getRightBlindspot();
 +  const QRectF bounds = centering_highlight_vertices[highlight_idx].boundingRect();
 +  QLinearGradient gradient = highlight_right ?
 +      QLinearGradient(bounds.right(), bounds.top(), bounds.left(), bounds.top()) :
@@ -138,12 +130,11 @@ index 086b703e10..987f630439 100644
 +void ModelRendererSP::updateLaneCenteringUi() {
 +  auto *s = uiState();
 +  auto &sm = *(s->sm);
-+
+ 
+-  if (blindspot) {
+-    drawBlindspot(painter, surface_rect, left_blindspot, right_blindspot);
 +  const auto highlight_now = std::chrono::steady_clock::now();
 +  const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
-+
-+  const bool prev_display_valid = centering_display_valid;
-+  const float prev_display_offset_m = centering_display_offset_m;
 +
 +  centering_status_active = false;
 +  centering_display_valid = false;
@@ -174,8 +165,10 @@ index 086b703e10..987f630439 100644
 +      advanced_lane_centering_enabled = params.getBool("AdvancedLaneCentering");
 +    }
 +    prev_lat_active = lat_active;
-+  }
-+
+   }
+ 
+-  if (rainbow) {
+-    drawRainbowPath(painter, surface_rect);
 +  const bool controls_alive = sm.alive("controlsState");
 +  if (enabled && controls_alive) {
 +    const auto &controls_state = sm["controlsState"].getControlsState();
@@ -211,11 +204,6 @@ index 086b703e10..987f630439 100644
    }
  
 -  drawLeadStatus(painter, surface_rect.height(), surface_rect.width());
-+  if (!panel_offset_available && prev_display_valid) {
-+    panel_offset_available = true;
-+    panel_offset_m = prev_display_offset_m;
-+  }
-+
 +  if (centering_indicator_source == cereal::ControlsState::LaneCenteringSource::NONE &&
 +      centering_indicator_last_nonzero_source != cereal::ControlsState::LaneCenteringSource::NONE) {
 +    centering_indicator_source = centering_indicator_last_nonzero_source;
@@ -224,8 +212,9 @@ index 086b703e10..987f630439 100644
 +    centering_indicator_last_nonzero_source = centering_indicator_source;
 +  }
 +
-+  centering_display_valid = panel_offset_available;
-+  centering_display_offset_m = panel_offset_available ? panel_offset_m : 0.0f;
++  const bool display_offset_valid = panel_offset_available;
++  centering_display_valid = display_offset_valid;
++  centering_display_offset_m = display_offset_valid ? panel_offset_m : 0.0f;
 +
 +  const bool within_center_band = panel_offset_available && std::abs(panel_offset_m) <= CENTERING_CENTER_BAND_M;
 +  centering_within_center_band = within_center_band;
