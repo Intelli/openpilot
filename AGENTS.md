@@ -20,7 +20,7 @@
 - Place tests alongside modules in paths from `pyproject.toml:testpaths` and include a verification route when relevant.
 
 ## Architecture Overview (HKG Angle Steering)
-- Branch `ev9` adds angle steering for newer Hyundai/Kia/Genesis CAN-FD cars (e.g., `KIA_EV9`, `KIA_EV6_2025`, `GENESIS_GV80_2025`).
+- Branch `ev9` adds angle steering for newer Hyundai/Kia/Genesis CAN-FD cars (e.g., `KIA_EV9`).
 - This branch is currently locked to EV9 deployments; `selfdrived` injects `startupNoControl` when the fingerprint is not `CAR.KIA_EV9`, leaving non-EV9 vehicles in dashcam-only mode.
 - Flag-driven path: `HyundaiFlags.CANFD_ANGLE_STEERING` toggles torque vs angle control.
 - Flow:
