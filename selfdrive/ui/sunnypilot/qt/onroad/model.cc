@@ -279,7 +279,7 @@ void ModelRendererSP::drawLaneCenteringPanel(QPainter &painter, const QRect &sur
     if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
       primary_text = QStringLiteral("Center Unknown");
     } else if (show_centered) {
-      primary_text = QStringLiteral("Centered");
+      primary_text = centering_status_active ? QStringLiteral("Maintaining Center") : QStringLiteral("Centered");
     } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
       const float correction_sign = (centering_steering_direction_sign != 0.0f)
           ? centering_steering_direction_sign
