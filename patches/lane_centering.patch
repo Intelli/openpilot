@@ -31,7 +31,7 @@ index 8925bca8ae..6dace963f9 100644
    vEgoDEPRECATED @0 :Float32;
    vEgoRawDEPRECATED @32 :Float32;
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
-index 3601ae310e..3385e7b1fc 100755
+index 3601ae310e..df46de1f37 100755
 --- b/selfdrive/controls/controlsd.py
 +++ a/selfdrive/controls/controlsd.py
 @@ -1,17 +1,18 @@
@@ -135,7 +135,7 @@ index 3601ae310e..3385e7b1fc 100755
  
      self.pose_calibrator = PoseCalibrator()
      self.calibrated_pose: Pose | None = None
-@@ -138,9 +202,165 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -138,9 +202,167 @@ class Controls(ControlsExt, ModelStateBase):
  
      # Steering PID loop and lateral MPC
      # Reset desired curvature to current to avoid violating the limits on engage
@@ -234,7 +234,9 @@ index 3601ae310e..3385e7b1fc 100755
 +      self.centering_correction = self.desired_curvature - base_desired_curvature
 +      offset_mag = abs(self.centering_offset_m)
 +      correction_mag = abs(self.centering_correction)
-+      self.centering_adjusting = allow_centering and (correction_mag > CENTERING_MIN_DISPLAY_DELTA or offset_mag > CENTERING_CENTER_BAND_M)
++      lock_held = self._centering_lock_sign != 0
++      lane_engaged = target_mode == "lane" and (centering_available or lock_held)
++      self.centering_adjusting = allow_centering and (lane_engaged or correction_mag > CENTERING_MIN_DISPLAY_DELTA or offset_mag > CENTERING_CENTER_BAND_M)
 +
 +      if advanced_centering_enabled and self._lane_centering_enabled() and target_mode == "lane":
 +        if tracking_ready:
@@ -302,7 +304,7 @@ index 3601ae310e..3385e7b1fc 100755
      actuators.curvature = self.desired_curvature
      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                         self.steer_limited_by_safety, self.desired_curvature,
-@@ -157,11 +377,361 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -157,11 +379,361 @@ class Controls(ControlsExt, ModelStateBase):
          cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
          setattr(actuators, p, 0.0)
  
@@ -376,7 +378,7 @@ index 3601ae310e..3385e7b1fc 100755
 +      elif center_offset < 0.0:
 +        offset_sign = -1
 +
-+      if lock_sign != 0 and offset_sign == lock_sign and abs(center_offset) > CENTERING_LOCK_RELEASE_M:
++      if lock_sign != 0 and (offset_sign == lock_sign or offset_sign == 0):
 +        source = None
 +        if lock_sign > 0:
 +          source = left_source or right_source
@@ -664,7 +666,7 @@ index 3601ae310e..3385e7b1fc 100755
      # Orientation and angle rates can be useful for carcontroller
      # Only calibrated (car) frame is relevant for the carcontroller
      CC.currentCurvature = self.curvature
-@@ -207,6 +777,14 @@ class Controls(ControlsExt, ModelStateBase):
+@@ -207,6 +779,14 @@ class Controls(ControlsExt, ModelStateBase):
      cs.longitudinalPlanMonoTime = self.sm.logMonoTime['longitudinalPlan']
      cs.lateralPlanMonoTime = self.sm.logMonoTime['modelV2']
      cs.desiredCurvature = self.desired_curvature
