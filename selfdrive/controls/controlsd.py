@@ -296,7 +296,9 @@ class Controls(ControlsExt, ModelStateBase):
       self.centering_correction = self.desired_curvature - base_desired_curvature
       offset_mag = abs(self.centering_offset_m)
       correction_mag = abs(self.centering_correction)
-      self.centering_adjusting = allow_centering and (correction_mag > CENTERING_MIN_DISPLAY_DELTA or offset_mag > CENTERING_CENTER_BAND_M)
+      lock_held = self._centering_lock_sign != 0
+      lane_engaged = target_mode == "lane" and (centering_available or lock_held)
+      self.centering_adjusting = allow_centering and (lane_engaged or correction_mag > CENTERING_MIN_DISPLAY_DELTA or offset_mag > CENTERING_CENTER_BAND_M)
 
       if advanced_centering_enabled and self._lane_centering_enabled() and target_mode == "lane":
         if tracking_ready:
@@ -447,7 +449,7 @@ class Controls(ControlsExt, ModelStateBase):
       elif center_offset < 0.0:
         offset_sign = -1
 
-      if lock_sign != 0 and offset_sign == lock_sign and abs(center_offset) > CENTERING_LOCK_RELEASE_M:
+      if lock_sign != 0 and (offset_sign == lock_sign or offset_sign == 0):
         source = None
         if lock_sign > 0:
           source = left_source or right_source

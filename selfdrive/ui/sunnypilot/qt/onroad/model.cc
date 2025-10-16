@@ -176,6 +176,10 @@ void ModelRendererSP::updateLaneCenteringUi() {
         panel_offset_available = true;
         panel_offset_m = controls_state.getLaneCenteringDisplayOffset();
         centering_indicator_source = controls_state.getLaneCenteringSource();
+      } else if (centering_status_active) {
+        panel_offset_available = true;
+        panel_offset_m = controls_state.getLaneCenteringOffset();
+        centering_indicator_source = controls_state.getLaneCenteringSource();
       }
     } else {
       centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
@@ -252,8 +256,9 @@ void ModelRendererSP::drawLaneCenteringPanel(QPainter &painter, const QRect &sur
   painter.save();
   painter.setOpacity(1.0f);
 
-  const bool display_offset_valid = centering_display_valid;
-  const float display_offset_m = display_offset_valid ? centering_display_offset_m : 0.0f;
+  const bool display_offset_valid = centering_display_valid || centering_status_active;
+  const float display_offset_m = centering_display_valid ? centering_display_offset_m
+                                                        : (centering_status_active ? centering_display_offset_m : 0.0f);
   const float display_offset_cm = std::abs(display_offset_m) * 100.0f;
   const int decimal_precision = display_offset_cm < 10.0f ? 1 : 0;
 
