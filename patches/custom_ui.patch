@@ -1,5 +1,5 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 590ade24a1..ef740a8dbb 100644
+index 590ade24a1..afd77cd612 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -7,19 +7,17 @@
@@ -50,7 +50,7 @@ index 590ade24a1..ef740a8dbb 100644
  
    if (longitudinal_control && sm.alive("radarState")) {
      update_leads(radar_state, model.getPosition());
-@@ -67,11 +61,565 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+@@ -67,11 +61,569 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
      const bool right_blindspot = car_state.getRightBlindspot();
      drawBlindspot(painter, surface_rect, left_blindspot, right_blindspot);
    }
@@ -169,6 +169,10 @@ index 590ade24a1..ef740a8dbb 100644
 +        panel_offset_available = true;
 +        panel_offset_m = controls_state.getLaneCenteringDisplayOffset();
 +        centering_indicator_source = controls_state.getLaneCenteringSource();
++      } else if (centering_status_active) {
++        panel_offset_available = true;
++        panel_offset_m = controls_state.getLaneCenteringOffset();
++        centering_indicator_source = controls_state.getLaneCenteringSource();
 +      }
 +    } else {
 +      centering_indicator_last_nonzero_source = cereal::ControlsState::LaneCenteringSource::NONE;
@@ -245,10 +249,10 @@ index 590ade24a1..ef740a8dbb 100644
 +  painter.save();
 +  painter.setOpacity(1.0f);
 +
-+  const bool display_offset_valid = centering_display_valid;
-+  const float display_offset_m = display_offset_valid ? centering_display_offset_m : 0.0f;
++  const bool display_offset_valid = centering_display_valid || centering_status_active;
++  const float display_offset_m = centering_display_valid ? centering_display_offset_m
++                                                        : (centering_status_active ? centering_display_offset_m : 0.0f);
 +  const float display_offset_cm = std::abs(display_offset_m) * 100.0f;
-+  const bool offset_small = display_offset_cm < 1.0f;
 +  const int decimal_precision = display_offset_cm < 10.0f ? 1 : 0;
 +
 +  const bool use_edge_mode = centering_edge_mode ||
