@@ -1,23 +1,21 @@
 name: ev9 branch sync
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - sunnypilot prebuilt action
     branches:
       - ev9-dev
+    types:
+      - completed
+  workflow_dispatch:
 
 jobs:
   sync:
     name: sync ev9-dev to ev9
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for prebuilt workflow
-        if: ${{ github.event_name == 'push' }}
-        uses: ./.github/workflows/wait-for-action
-        with:
-          workflow: sunnypilot-build-prebuilt.yaml
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          should-wait-for-start: 'true'
-
       - name: Initialize repository
         run: |
           set -euo pipefail
