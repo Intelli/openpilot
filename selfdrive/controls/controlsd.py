@@ -481,28 +481,31 @@ class Controls(ControlsExt, ModelStateBase):
     if self._centering_cross_slack > 0.0:
       decay = CENTERING_SLACK_DECAY_RATE_M_PER_S * DT_CTRL
       self._centering_cross_slack = max(0.0, self._centering_cross_slack - decay)
-    if magnitude <= CENTERING_DEADBAND_EXIT_M:
-      if magnitude <= CENTERING_LOCK_RELEASE_M:
-        if self._centering_lock_sign != 0:
-          self._centering_lock_sign = 0
-        self._centering_cross_slack = 0.0
-        return 0.0, False, False
 
-    desired_sign = 1 if target_offset_m > 0.0 else -1
+    desired_sign = 0
+    if target_offset_m > 0.0:
+      desired_sign = 1
+    elif target_offset_m < 0.0:
+      desired_sign = -1
 
     if self._centering_lock_sign == 0:
       threshold = CENTERING_DEADBAND_ENTER_M + self._centering_cross_slack
-      if magnitude < threshold:
+      if magnitude < threshold or desired_sign == 0:
         return 0.0, False, False
       self._centering_lock_sign = desired_sign
       self._centering_cross_slack = 0.0
     else:
-      if desired_sign != self._centering_lock_sign:
-        self._centering_lock_sign = 0
-        self._centering_cross_slack = CENTERING_POST_CROSS_SLACK_M
-        return 0.0, False, True
+      if desired_sign != 0 and desired_sign != self._centering_lock_sign:
+        if magnitude >= CENTERING_DEADBAND_EXIT_M:
+          self._centering_lock_sign = 0
+          self._centering_cross_slack = CENTERING_POST_CROSS_SLACK_M
+          return 0.0, False, True
+        desired_sign = self._centering_lock_sign
+      elif desired_sign == 0:
+        desired_sign = self._centering_lock_sign
 
-    locked_offset = self._centering_lock_sign * magnitude
+    locked_sign = self._centering_lock_sign if self._centering_lock_sign != 0 else desired_sign
+    locked_offset = locked_sign * magnitude
     return locked_offset, True, False
 
   def _filter_centering_target(self, target_offset_m: float) -> float:
