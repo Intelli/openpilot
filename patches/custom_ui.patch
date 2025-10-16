@@ -1,5 +1,5 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 590ade24a1..afd77cd612 100644
+index 590ade24a1..4ea63d38a1 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -7,19 +7,17 @@
@@ -272,7 +272,7 @@ index 590ade24a1..afd77cd612 100644
 +    if (!display_offset_valid && !centering_adjusting_display && !centering_edge_mode) {
 +      primary_text = QStringLiteral("Center Unknown");
 +    } else if (show_centered) {
-+      primary_text = QStringLiteral("Centered");
++      primary_text = centering_status_active ? QStringLiteral("Maintaining Center") : QStringLiteral("Centered");
 +    } else if (use_edge_mode && (centering_adjusting_display || centering_edge_mode)) {
 +      const float correction_sign = (centering_steering_direction_sign != 0.0f)
 +          ? centering_steering_direction_sign
