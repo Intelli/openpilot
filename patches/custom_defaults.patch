@@ -1,5 +1,5 @@
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 561f86c0a7..71c6bfd416 100644
+index 561f86c0a7..67f3769b47 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -112,11 +112,10 @@ index 561f86c0a7..71c6bfd416 100644
      // Speed Limit
 -    {"SpeedLimitMode", {PERSISTENT | BACKUP, INT, "1"}},
 -    {"SpeedLimitOffsetType", {PERSISTENT | BACKUP, INT, "0"}},
--    {"SpeedLimitPolicy", {PERSISTENT | BACKUP, INT, "3"}},
--    {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "0"}},
 +    {"SpeedLimitMode", {PERSISTENT | BACKUP, INT, "3"}},
 +    {"SpeedLimitOffsetType", {PERSISTENT | BACKUP, INT, "2"}},
-+    {"SpeedLimitPolicy", {PERSISTENT | BACKUP, INT, "4"}},
+     {"SpeedLimitPolicy", {PERSISTENT | BACKUP, INT, "3"}},
+-    {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "0"}},
 +    {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "10"}},
  
      // Smart Cruise Control
