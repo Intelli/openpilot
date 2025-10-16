@@ -1,5 +1,5 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/onroad/model.cc a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
-index 590ade24a1..9e9b3a4d0e 100644
+index 590ade24a1..ef740a8dbb 100644
 --- b/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 +++ a/selfdrive/ui/sunnypilot/qt/onroad/model.cc
 @@ -7,19 +7,17 @@
@@ -50,7 +50,7 @@ index 590ade24a1..9e9b3a4d0e 100644
  
    if (longitudinal_control && sm.alive("radarState")) {
      update_leads(radar_state, model.getPosition());
-@@ -67,11 +61,567 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
+@@ -67,11 +61,565 @@ void ModelRendererSP::draw(QPainter &painter, const QRect &surface_rect) {
      const bool right_blindspot = car_state.getRightBlindspot();
      drawBlindspot(painter, surface_rect, left_blindspot, right_blindspot);
    }
@@ -300,14 +300,12 @@ index 590ade24a1..9e9b3a4d0e 100644
 +
 +  QString secondary_text;
 +  if (display_offset_valid) {
-+    if (centering_within_center_band) {
-+      secondary_text = QStringLiteral("≤ 8 cm from center");
-+    } else if (offset_small) {
-+      secondary_text = QStringLiteral("< 1 cm from center");
++    const QString offset_value = QString::number(display_offset_cm, 'f', decimal_precision);
++    const QString offset_direction = direction_from_sign(-display_offset_m);
++    if (offset_direction == QStringLiteral("center")) {
++      secondary_text = QStringLiteral("%1 cm from center").arg(offset_value);
 +    } else {
-+      secondary_text = QStringLiteral("%1 cm %2 of center")
-+                           .arg(QString::number(display_offset_cm, 'f', decimal_precision))
-+                           .arg(direction_from_sign(-display_offset_m));
++      secondary_text = QStringLiteral("%1 cm %2 of center").arg(offset_value).arg(offset_direction);
 +    }
 +  } else {
 +    secondary_text = QStringLiteral("Offset unknown");
