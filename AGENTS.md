@@ -1,4 +1,4 @@
-# Repository Guidelines
+# Repository Guidelines (2025-10-16)
 
 ## Project Structure & Modules
 - Core: `selfdrive/`, `system/`, `common/`, `cereal/`, `panda/`, `sunnypilot/`, `tools/`, `docs/`.
