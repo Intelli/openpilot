@@ -255,7 +255,6 @@ void ModelRendererSP::drawLaneCenteringPanel(QPainter &painter, const QRect &sur
   const bool display_offset_valid = centering_display_valid;
   const float display_offset_m = display_offset_valid ? centering_display_offset_m : 0.0f;
   const float display_offset_cm = std::abs(display_offset_m) * 100.0f;
-  const bool offset_small = display_offset_cm < 1.0f;
   const int decimal_precision = display_offset_cm < 10.0f ? 1 : 0;
 
   const bool use_edge_mode = centering_edge_mode ||
