@@ -307,14 +307,12 @@ void ModelRendererSP::drawLaneCenteringPanel(QPainter &painter, const QRect &sur
 
   QString secondary_text;
   if (display_offset_valid) {
-    if (centering_within_center_band) {
-      secondary_text = QStringLiteral("≤ 8 cm from center");
-    } else if (offset_small) {
-      secondary_text = QStringLiteral("< 1 cm from center");
+    const QString offset_value = QString::number(display_offset_cm, 'f', decimal_precision);
+    const QString offset_direction = direction_from_sign(-display_offset_m);
+    if (offset_direction == QStringLiteral("center")) {
+      secondary_text = QStringLiteral("%1 cm from center").arg(offset_value);
     } else {
-      secondary_text = QStringLiteral("%1 cm %2 of center")
-                           .arg(QString::number(display_offset_cm, 'f', decimal_precision))
-                           .arg(direction_from_sign(-display_offset_m));
+      secondary_text = QStringLiteral("%1 cm %2 of center").arg(offset_value).arg(offset_direction);
     }
   } else {
     secondary_text = QStringLiteral("Offset unknown");
