@@ -89,8 +89,7 @@ class AutoLockMonitor:
     self.door_open = door_open
 
   def _handle_panda_state(self, now: float) -> None:
-    ps = self.sm["pandaStates"]
-    panda_states = ps.pandaStates
+    panda_states = self.sm["pandaStates"]
     ignition_on = False
     for panda_state in panda_states:
       if panda_state.ignitionLine or panda_state.ignitionCan:
