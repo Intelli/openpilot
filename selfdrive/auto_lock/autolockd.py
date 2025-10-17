@@ -22,13 +22,10 @@ def _now() -> float:
   return time.monotonic()
 
 
-def _get_region(value: Optional[str]) -> Optional[Region]:
+def _normalize_region(value: Optional[str]) -> Optional[str]:
   if not value:
     return None
-  try:
-    return Region(value.strip().upper())
-  except ValueError:
-    return None
+  return value.strip().upper() or None
 
 
 @dataclass(frozen=True)
@@ -36,7 +33,7 @@ class _Creds:
   username: str
   password: str
   pin: str
-  region: Region
+  region: str
   vin: Optional[str]
   vehicle_id: Optional[str]
   language: Optional[str]
@@ -45,7 +42,7 @@ class _Creds:
 class AutoLockMonitor:
   def __init__(self) -> None:
     self.params = Params()
-    self.sm = messaging.SubMaster(["carState", "pandaState"])
+    self.sm = messaging.SubMaster(["carState", "pandaState", "deviceState"])
 
     self.door_open: bool = False
     self.last_door_open_time: Optional[float] = None
@@ -59,6 +56,8 @@ class AutoLockMonitor:
     self._kia_lock_module = None
 
     self._missing_creds_logged_at: Optional[float] = None
+    self._network_type = None
+
 
   def run(self) -> None:
     while True:
@@ -69,6 +68,8 @@ class AutoLockMonitor:
         self._handle_car_state(now)
       if self.sm.updated["pandaState"]:
         self._handle_panda_state(now)
+      if self.sm.updated["deviceState"]:
+        self._handle_device_state()
 
       self._evaluate(now)
 
@@ -136,6 +137,10 @@ class AutoLockMonitor:
     if client is None:
       return
 
+    if not self._connectivity_available():
+      logger.info("Skipping auto-lock: no network connectivity")
+      return
+
     logger.info("Triggering auto-lock")
     self.lock_attempted_at = now
     try:
@@ -153,7 +158,7 @@ class AutoLockMonitor:
     username = username.strip()
     password = password.strip()
     pin = pin.strip()
-    region = _get_region(region_raw)
+    region = _normalize_region(region_raw)
 
     if not username or not password or not pin or region is None:
       if self._missing_creds_logged_at is None or (now - self._missing_creds_logged_at) >= 300.0:
@@ -176,17 +181,19 @@ class AutoLockMonitor:
 
       KiaCredentials = getattr(module, "KiaCredentials", None)
       KiaAutoLockClient = getattr(module, "KiaAutoLockClient", None)
-      if KiaCredentials is None or KiaAutoLockClient is None:
+      Region = getattr(module, "Region", None)
+      if KiaCredentials is None or KiaAutoLockClient is None or Region is None:
         logger.error("Kia lock module missing required classes")
         return None
 
       logger.debug("Refreshing KiaAutoLockClient session")
       try:
+        region_enum = Region[creds.region]
         kia_creds = KiaCredentials(
           username=creds.username,
           password=creds.password,
           pin=creds.pin,
-          region=creds.region,
+          region=region_enum,
           vin=creds.vin,
           vehicle_id=creds.vehicle_id,
           language=creds.language,
@@ -219,6 +226,23 @@ class AutoLockMonitor:
         return None
       self._kia_lock_module = module
     return self._kia_lock_module
+
+  def _handle_device_state(self) -> None:
+    ds = self.sm["deviceState"]
+    self._network_type = ds.networkType
+
+  def _connectivity_available(self) -> bool:
+    network_type = getattr(self, "_network_type", None)
+    if network_type is None:
+      return False
+    from cereal import log
+    return network_type in (
+      log.DeviceState.NetworkType.wifi,
+      log.DeviceState.NetworkType.cell2G,
+      log.DeviceState.NetworkType.cell3G,
+      log.DeviceState.NetworkType.cell4G,
+      log.DeviceState.NetworkType.cell5G,
+    )
 
 
 def main() -> None:
