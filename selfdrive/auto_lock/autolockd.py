@@ -45,7 +45,7 @@ class _Creds:
 class AutoLockMonitor:
   def __init__(self) -> None:
     self.params = Params()
-    self.sm = messaging.SubMaster(["carState", "pandaState"])
+    self.sm = messaging.SubMaster(["carState", "pandaState", "deviceState"])
 
     self.door_open: bool = False
     self.last_door_open_time: Optional[float] = None
@@ -69,6 +69,8 @@ class AutoLockMonitor:
         self._handle_car_state(now)
       if self.sm.updated["pandaState"]:
         self._handle_panda_state(now)
+      if self.sm.updated["deviceState"]:
+        self._handle_device_state()
 
       self._evaluate(now)
 
@@ -134,6 +136,10 @@ class AutoLockMonitor:
 
     client = self._ensure_client(creds)
     if client is None:
+      return
+
+    if not self._connectivity_available():
+      logger.info("Skipping auto-lock: no network connectivity")
       return
 
     logger.info("Triggering auto-lock")
@@ -219,6 +225,24 @@ class AutoLockMonitor:
         return None
       self._kia_lock_module = module
     return self._kia_lock_module
+
+  def _handle_device_state(self) -> None:
+    ds = self.sm["deviceState"]
+    self._network_type = ds.networkType
+    self._network_metered = ds.networkMetered
+
+  def _connectivity_available(self) -> bool:
+    network_type = getattr(self, "_network_type", None)
+    if network_type is None:
+      return False
+    from cereal import log
+    return network_type in (
+      log.DeviceState.NetworkType.wifi,
+      log.DeviceState.NetworkType.cell2G,
+      log.DeviceState.NetworkType.cell3G,
+      log.DeviceState.NetworkType.cell4G,
+      log.DeviceState.NetworkType.cell5G,
+    )
 
 
 def main() -> None:
