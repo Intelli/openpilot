@@ -82,7 +82,7 @@ SettingsWindowSP::SettingsWindowSP(QWidget *parent) : SettingsWindow(parent) {
   QList<PanelInfo> panels = {
     PanelInfo("   " + tr("Device"), device, "../../sunnypilot/selfdrive/assets/offroad/icon_home.svg"),
     PanelInfo("   " + tr("Network"), networking, "../assets/icons/network.png"),
-    PanelInfo("   " + tr("Auto Lock"), new AutoLockPanel(this), "../../../../../../auto-lock/lock-closed-white.svg"),
+    PanelInfo("   " + tr("Auto Lock"), new AutoLockPanel(this), "/data/openpilot/auto-lock/lock-closed-white.svg"),
     PanelInfo("   " + tr("sunnylink"), new SunnylinkPanel(this), "../assets/icons/wifi_strength_full.svg"),
     PanelInfo("   " + tr("Toggles"), toggles, "../../sunnypilot/selfdrive/assets/offroad/icon_toggle.png"),
     PanelInfo("   " + tr("Software"), new SoftwarePanelSP(this), "../../sunnypilot/selfdrive/assets/offroad/icon_software.png"),
