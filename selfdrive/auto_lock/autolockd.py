@@ -15,10 +15,9 @@ logger = logging.getLogger(__name__)
 
 USE_CUSTOM_LOGFILE = True
 
-DOOR_RECENT_WINDOW_S = 300.0
 OFF_STABLE_TIME_S = 1.0
 LOCK_RETRY_COOLDOWN_S = 120.0
-POLL_INTERVAL_S = 0.1
+POLL_INTERVAL_S = 0.5
 
 
 def _now() -> float:
@@ -60,6 +59,9 @@ class AutoLockMonitor:
 
     self._missing_creds_logged_at: Optional[float] = None
     self._network_type = None
+    self._awaiting_ignition_cycle = False
+    self.door_open_after_off_time: Optional[float] = None
+    self.door_close_after_off_time: Optional[float] = None
 
 
   def run(self) -> None:
@@ -84,10 +86,14 @@ class AutoLockMonitor:
       self.last_door_open_time = now
       if not self.door_open:
         logger.debug("Door transitioned open")
+        if self.off_since is not None:
+          self.door_open_after_off_time = now
       self.lock_attempted_at = None
     elif self.door_open and not door_open:
       self.last_door_close_time = now
       logger.debug("Door transitioned closed")
+      if self.off_since is not None:
+        self.door_close_after_off_time = now
 
     self.door_open = door_open
 
@@ -104,10 +110,13 @@ class AutoLockMonitor:
         logger.debug("Ignition became active")
       self.off_since = None
       self.car_active = True
+      self._awaiting_ignition_cycle = False
     else:
       if self.car_active:
         logger.debug("Ignition became inactive")
         self.off_since = now
+        self.door_open_after_off_time = now if self.door_open else None
+        self.door_close_after_off_time = None
       elif self.off_since is None:
         self.off_since = now
       self.car_active = False
@@ -116,15 +125,24 @@ class AutoLockMonitor:
     if self.car_active:
       return
 
-    if self.off_since is None or (now - self.off_since) < OFF_STABLE_TIME_S:
+    if self._awaiting_ignition_cycle:
       return
 
-    doors_recent = self.last_door_open_time is not None and (now - self.last_door_open_time) <= DOOR_RECENT_WINDOW_S
-    doors_closed = not self.door_open and self.last_door_close_time is not None
+    if self.off_since is None:
+      return
+
+    if (now - self.off_since) < OFF_STABLE_TIME_S:
+      return
+
+    doors_recent = self.door_open_after_off_time is not None
+    doors_closed = (
+      not self.door_open
+      and self.door_close_after_off_time is not None
+    )
     door_cycle_complete = (
-      self.last_door_open_time is not None
-      and self.last_door_close_time is not None
-      and self.last_door_close_time >= self.last_door_open_time
+      doors_recent
+      and self.door_open_after_off_time >= self.off_since
+      and (not doors_closed or self.door_close_after_off_time >= self.off_since)
     )
     cooldown_ok = self.lock_attempted_at is None or (now - self.lock_attempted_at) >= LOCK_RETRY_COOLDOWN_S
 
@@ -150,6 +168,8 @@ class AutoLockMonitor:
       logger.info("Auto-lock command sent")
     except Exception as err:  # pylint: disable=broad-except
       logger.error("Auto-lock command failed: %s", err)
+    finally:
+      self._reset_cycle_state()
 
   def _load_credentials(self, now: float) -> Optional[_Creds]:
     username = self.params.get("AutoLockUsername", encoding="utf-8", block=False) or ""
@@ -246,6 +266,14 @@ class AutoLockMonitor:
       log.DeviceState.NetworkType.ethernet,
     }
     return network_type in allowed_networks or network_type == log.DeviceState.NetworkType.none
+
+  def _reset_cycle_state(self) -> None:
+    self.last_door_open_time = None
+    self.last_door_close_time = None
+    self.door_open_after_off_time = None
+    self.door_close_after_off_time = None
+    self.off_since = None
+    self._awaiting_ignition_cycle = True
 
 
 def main() -> None:
