@@ -42,7 +42,7 @@ class _Creds:
 class AutoLockMonitor:
   def __init__(self) -> None:
     self.params = Params()
-    self.sm = messaging.SubMaster(["carState", "pandaState", "deviceState"])
+    self.sm = messaging.SubMaster(["carState", "pandaStates", "deviceState"])
 
     self.door_open: bool = False
     self.last_door_open_time: Optional[float] = None
@@ -66,7 +66,7 @@ class AutoLockMonitor:
 
       if self.sm.updated["carState"]:
         self._handle_car_state(now)
-      if self.sm.updated["pandaState"]:
+      if self.sm.updated["pandaStates"]:
         self._handle_panda_state(now)
       if self.sm.updated["deviceState"]:
         self._handle_device_state()
@@ -89,7 +89,7 @@ class AutoLockMonitor:
     self.door_open = door_open
 
   def _handle_panda_state(self, now: float) -> None:
-    ps = self.sm["pandaState"]
+    ps = self.sm["pandaStates"]
     panda_states = ps.pandaStates
     ignition_on = False
     for panda_state in panda_states:
