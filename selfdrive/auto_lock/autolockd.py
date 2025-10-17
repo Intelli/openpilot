@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from importlib import util
+from pathlib import Path
 from typing import Optional
 
 import cereal.messaging as messaging
-from openpilot.auto_lock.kia_lock import KiaAutoLockClient, KiaCredentials, Region
 from openpilot.common.params import Params
 
 logger = logging.getLogger(__name__)
@@ -53,8 +54,9 @@ class AutoLockMonitor:
     self.off_since: Optional[float] = None
 
     self.lock_attempted_at: Optional[float] = None
-    self._client: Optional[KiaAutoLockClient] = None
+    self._client = None
     self._client_creds: Optional[_Creds] = None
+    self._kia_lock_module = None
 
     self._missing_creds_logged_at: Optional[float] = None
 
@@ -166,8 +168,18 @@ class AutoLockMonitor:
     self._missing_creds_logged_at = None
     return creds
 
-  def _ensure_client(self, creds: _Creds) -> Optional[KiaAutoLockClient]:
+  def _ensure_client(self, creds: _Creds):
     if self._client_creds != creds:
+      module = self._get_kia_lock_module()
+      if module is None:
+        return None
+
+      KiaCredentials = getattr(module, "KiaCredentials", None)
+      KiaAutoLockClient = getattr(module, "KiaAutoLockClient", None)
+      if KiaCredentials is None or KiaAutoLockClient is None:
+        logger.error("Kia lock module missing required classes")
+        return None
+
       logger.debug("Refreshing KiaAutoLockClient session")
       try:
         kia_creds = KiaCredentials(
@@ -183,10 +195,30 @@ class AutoLockMonitor:
         logger.error("Failed to build Kia credentials: %s", err)
         return None
 
-      self._client = KiaAutoLockClient(kia_creds)
+      try:
+        self._client = KiaAutoLockClient(kia_creds)
+      except Exception as err:  # pylint: disable=broad-except
+        logger.error("Failed to initialise KiaAutoLockClient: %s", err)
+        return None
       self._client_creds = creds
 
     return self._client
+
+  def _get_kia_lock_module(self):
+    if self._kia_lock_module is None:
+      module_path = Path(__file__).resolve().parents[2] / "auto-lock" / "kia_lock.py"
+      spec = util.spec_from_file_location("auto_lock_kia_lock", module_path)
+      if spec is None or spec.loader is None:
+        logger.error("Unable to locate kia_lock.py at %s", module_path)
+        return None
+      module = util.module_from_spec(spec)
+      try:
+        spec.loader.exec_module(module)
+      except Exception as err:  # pylint: disable=broad-except
+        logger.error("Failed to load kia_lock.py: %s", err)
+        return None
+      self._kia_lock_module = module
+    return self._kia_lock_module
 
 
 def main() -> None:
