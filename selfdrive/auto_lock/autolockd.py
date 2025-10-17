@@ -8,9 +8,12 @@ from pathlib import Path
 from typing import Optional
 
 import cereal.messaging as messaging
+from cereal import log
 from openpilot.common.params import Params
 
 logger = logging.getLogger(__name__)
+
+USE_CUSTOM_LOGFILE = True
 
 DOOR_RECENT_WINDOW_S = 300.0
 OFF_STABLE_TIME_S = 1.0
@@ -234,18 +237,27 @@ class AutoLockMonitor:
     network_type = getattr(self, "_network_type", None)
     if network_type is None:
       return False
-    from cereal import log
-    return network_type in (
+    allowed_networks = {
       log.DeviceState.NetworkType.wifi,
       log.DeviceState.NetworkType.cell2G,
       log.DeviceState.NetworkType.cell3G,
       log.DeviceState.NetworkType.cell4G,
       log.DeviceState.NetworkType.cell5G,
-    )
+      log.DeviceState.NetworkType.ethernet,
+    }
+    return network_type in allowed_networks or network_type == log.DeviceState.NetworkType.none
 
 
 def main() -> None:
   logging.basicConfig(level=logging.INFO)
+  if USE_CUSTOM_LOGFILE:
+    log_dir = Path("/data/openpilot/auto-lock")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logfile = log_dir / "autolock.log"
+    file_handler = logging.FileHandler(logfile, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logger.addHandler(file_handler)
+    logger.setLevel(logging.DEBUG)
   monitor = AutoLockMonitor()
   monitor.run()
 
