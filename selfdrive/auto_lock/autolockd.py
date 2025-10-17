@@ -62,6 +62,7 @@ class AutoLockMonitor:
     self._awaiting_ignition_cycle = False
     self.door_open_after_off_time: Optional[float] = None
     self.door_close_after_off_time: Optional[float] = None
+    self._last_door_bitfield: dict | None = None
 
 
   def run(self) -> None:
@@ -82,18 +83,34 @@ class AutoLockMonitor:
     cs = self.sm["carState"]
     door_open = bool(cs.doorOpen)
 
+    door_bits_struct = getattr(cs, "doorBitfield", None)
+    door_bits = None
+    if door_bits_struct is not None:
+      door_bits = {
+        "driver": door_bits_struct.driver,
+        "passenger": door_bits_struct.passenger,
+        "rearLeft": door_bits_struct.rearLeft,
+        "rearRight": door_bits_struct.rearRight,
+      }
+    if door_bits is not None and door_bits != self._last_door_bitfield:
+      logger.debug("Door bits updated: %s", door_bits)
+      self._last_door_bitfield = dict(door_bits)
+
     if door_open:
-      self.last_door_open_time = now
       if not self.door_open:
         logger.debug("Door transitioned open")
-        if self.off_since is not None:
-          self.door_open_after_off_time = now
+      self.last_door_open_time = now
+      if self.off_since is not None:
+        self.door_open_after_off_time = self.door_open_after_off_time or now
+        if self.door_open_after_off_time == now:
+          logger.debug("Door open recorded after ignition off at %.2f", now - self.off_since)
       self.lock_attempted_at = None
     elif self.door_open and not door_open:
       self.last_door_close_time = now
       logger.debug("Door transitioned closed")
       if self.off_since is not None:
         self.door_close_after_off_time = now
+        logger.debug("Door close recorded after ignition off at %.2f", now - self.off_since)
 
     self.door_open = door_open
 
@@ -142,7 +159,10 @@ class AutoLockMonitor:
     door_cycle_complete = (
       doors_recent
       and self.door_open_after_off_time >= self.off_since
-      and (not doors_closed or self.door_close_after_off_time >= self.off_since)
+      and (
+        self.door_close_after_off_time is None
+        or self.door_close_after_off_time >= self.off_since
+      )
     )
     cooldown_ok = self.lock_attempted_at is None or (now - self.lock_attempted_at) >= LOCK_RETRY_COOLDOWN_S
 
