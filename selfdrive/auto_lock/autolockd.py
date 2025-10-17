@@ -81,7 +81,7 @@ class AutoLockMonitor:
 
   def _handle_car_state(self, now: float) -> None:
     cs = self.sm["carState"]
-    door_open = bool(cs.doorOpen)
+    door_open = bool(cs.doorBitfield.driver if getattr(cs, "doorBitfield", None) is not None else cs.doorOpen)
 
     door_bits_struct = getattr(cs, "doorBitfield", None)
     door_bits = None
