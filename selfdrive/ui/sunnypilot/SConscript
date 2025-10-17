@@ -31,6 +31,7 @@ qt_src = [
   "sunnypilot/qt/offroad/settings/brightness.cc",
   "sunnypilot/qt/offroad/settings/models_panel.cc",
   "sunnypilot/qt/offroad/settings/osm_panel.cc",
+  "sunnypilot/qt/offroad/settings/auto_lock_panel.cc",
   "sunnypilot/qt/offroad/settings/settings.cc",
   "sunnypilot/qt/offroad/settings/software_panel.cc",
   "sunnypilot/qt/offroad/settings/sunnylink_panel.cc",
