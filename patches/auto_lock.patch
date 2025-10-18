@@ -1,0 +1,2292 @@
+diff --git b/auto-lock/README.md a/auto-lock/README.md
+new file mode 100644
+index 0000000000..7565e82aef
+--- /dev/null
++++ a/auto-lock/README.md
+@@ -0,0 +1,123 @@
++# Kia Auto-Lock Python Helper
++
++This folder contains the Python implementation for issuing remote lock commands and polling vehicle status across supported Kia/Hyundai regions. The primary entry points are `kia_lock.py` (locking) and `kia_status.py` (status polling), both powered by the shared helpers in `kia_shared.py`.
++
++## Components
++
++- **`kia_shared.py`**: Core shared implementation (HTTP session, region metadata, token handling). Both lock and status clients import from here.
++- **`kia_lock.py`**: Implements `KiaAutoLockClient` using the shared helpers. Replaces the old bespoke implementation (previously `kia_lock_old.py`).
++- **`kia_status.py`**: Defines `KiaStatusClient` for real-time vehicle status queries with normalized outputs.
++- **`lock_cli.py`**: CLI harness for manual locking tests (requires Python 3.8+).
++- **`status_cli.py`**: CLI harness for manual status polling with pretty-printed JSON output.
++
++## Dependencies
++
++- **Optional**: `requests` (`pip install requests`). The module automatically falls back to built-in `urllib` if `requests` is unavailable (e.g., on C3X hardware).
++
++## Programmatic Usage
++
++To poll live vehicle data instead of issuing commands:
++
++```python
++from openpilot.auto_lock.kia_status import KiaStatusClient, KiaCredentials, Region
++
++creds = KiaCredentials(
++  username="user@example.com",
++  password="your-account-password",
++  pin="1234",
++  region=Region.CA,
++  vin="KNXXX...",
++)
++
++client = KiaStatusClient(creds)
++status = client.status()
++```
++
++The returned dictionary contains normalized keys (door locks, climate state, battery information, timestamps) regardless of region.
++
++```python
++from openpilot.auto_lock.kia_lock import KiaAutoLockClient, KiaCredentials, Region
++
++creds = KiaCredentials(
++  username="user@example.com",
++  password="your-account-password",
++  pin="1234",
++  region=Region.CA,
++  vin="KNXXX...",  # Optional if only one vehicle
++  vehicle_id=None,
++  language="en",   # Optional, primarily for EU region
++)
++
++client = KiaAutoLockClient(creds)
++client.lock()
++```
++
++### Integration Tips
++
++- **Credential Sourcing**: Avoid hardcoding secrets. Prefer reading from secure storage, environment variables, or OpenPilot parameter servers.
++- **Error Handling**: Wrap `client.lock()` in try/except and surface `RuntimeError` messages to the UI or logs. The client surfaces server error codes for troubleshooting.
++- **Session Reuse**: Reuse a single `KiaAutoLockClient` instance if multiple commands are needed; tokens are cached internally.
++- **VIN/Vehicle Selection**: Either supply `vin` or `vehicle_id` when multiple vehicles exist on the account. For single-vehicle accounts, both may be left `None`.
++- **Threading**: The client is not explicitly thread-safe. Serialize access when integrating with background services.
++
++## CLI Testing
++
++Use the CLI script during development or on-device testing:
++
++```bash
++python3 openpilot/auto-lock/lock_cli.py "username" "password" "pin" CA \
++  "<vin-or-empty>" "<vehicle-id-or-empty>" --language en --verbose
++```
++
++- **Region Choices**: `US`, `CA`, `EU`, `CN`, `AU`.
++- **VIN/Vehicle ID**: Omit these parameters when the account has one vehicle. Provide at least one when multiple vehicles exist (Canada `vehicle_id` is required for command authorization).
++- **Language**: Optional, primarily for EU (e.g., `--language fr`).
++- **Verbose Mode**: Adds debug logging to help diagnose authentication issues.
++
++### Status CLI
++
++```bash
++python3 openpilot/auto-lock/status_cli.py "username" "password" "pin" CA \
++  "<vin-or-empty>" "<vehicle-id-or-empty>" --language en --verbose
++```
++
++- **Output**: Prints normalized status JSON for quick inspection.
++- **Verbose Mode**: Includes the same detailed login logs as the lock CLI when troubleshooting authentication flows.
++
++## Adding New Regions or Updates
++
++- **Check Bluelinky Reference**: When behavior deviates (headers, payload keys, stamps), consult the `bluelinky` Node.js repository for region specifics.
++- **Maintain Fallback Compatibility**: Ensure new HTTP flows still function without `requests` by staying within the `Session` abstraction in `kia_shared.py`.
++- **Testing**: Run `lock_cli.py` and `status_cli.py` per region to confirm successful login and locking/status retrieval before integrating changes into higher-level workflows.
++
++## Calling from OpenPilot Services
++
++- **Import Path**: Reference modules as `openpilot.auto_lock.kia_lock` to leverage the repository’s import root.
++- **Service Hooks**: For example, within a background manager:
++
++```python
++from openpilot.auto_lock.kia_lock import KiaAutoLockClient, KiaCredentials, Region
++
++def lock_vehicle(creds_dict):
++  creds = KiaCredentials(**creds_dict)
++  client = KiaAutoLockClient(creds)
++  try:
++    client.lock()
++  except RuntimeError as err:
++    handle_error(str(err))
++```
++
++- **Scheduling**: Integrate with existing timers or event triggers (e.g., lock on ignition off). Ensure you respect rate limits and user consent.
++
++## Troubleshooting Cheatsheet
++
++- **CA 7901 Error**: Ensure `from`, `language`, and `offset` are included in the payload (already handled). Double-check remote services are active.
++- **401/Invalid PIN**: Confirm the remote services PIN (not radio PIN) and handle the raised exception gracefully.
++- **Multiple Vehicles**: Provide `vehicle_id` if the account manages more than one vehicle; the client selects the first by default otherwise.
++- **Missing `requests`**: The fallback HTTP client is automatic; no extra configuration needed on C3X.
++
++## Contributing
++
++- **Keep Files Lean**: `kia_lock.py` is large; prefer adding helpers over inlining large code blocks to avoid lint issues.
++- **Log Carefully**: Debug logs may leak sensitive server payloads. Mask or remove before enabling in production.
++
+diff --git b/auto-lock/kia_lock.py a/auto-lock/kia_lock.py
+new file mode 100644
+index 0000000000..82ecdfc0e1
+--- /dev/null
++++ a/auto-lock/kia_lock.py
+@@ -0,0 +1,149 @@
++from __future__ import annotations
++
++import logging
++from typing import Any, Dict
++
++try:
++  from .kia_shared import (  # type: ignore[attr-defined]
++    Region,
++    KiaCredentials,
++    KiaSession,
++    RegionConfig,
++    REGION_CONFIG,
++    StampGenerator,
++    KiaBaseClient,
++    requests,
++    Response,
++    Session,
++    HTTPError,
++    _raise_for_status,
++    _extract_error_message,
++  )
++except ImportError:  # pragma: no cover - script execution fallback
++  from kia_shared import (  # type: ignore[no-redef]
++    Region,
++    KiaCredentials,
++    KiaSession,
++    RegionConfig,
++    REGION_CONFIG,
++    StampGenerator,
++    KiaBaseClient,
++    requests,
++    Response,
++    Session,
++    HTTPError,
++    _raise_for_status,
++    _extract_error_message,
++  )
++
++
++logger = logging.getLogger(__name__)
++
++
++class KiaAutoLockClient(KiaBaseClient):
++  """Lock controller using shared infrastructure."""
++
++  def lock(self) -> None:
++    vehicle = self._ensure_vehicle()
++    if self.creds.region == Region.US:
++      self._lock_us(vehicle)
++    elif self.creds.region == Region.CA:
++      self._lock_ca(vehicle)
++    elif self.creds.region == Region.EU:
++      self._lock_eu(vehicle)
++    elif self.creds.region == Region.AU:
++      self._lock_au(vehicle)
++    elif self.creds.region == Region.CN:
++      self._lock_cn(vehicle)
++    else:
++      raise ValueError("Unsupported region")
++
++  def _lock_us(self, vehicle: Dict[str, Any]) -> None:
++    url = f"{self._env.base_url}/ac/v2/rcs/rdo/off"
++    headers = {
++      "access_token": self.session.access_token,
++      "client_id": self._env.client_id,
++      "User-Agent": "okhttp/3.12.0",
++      "Content-Type": "application/x-www-form-urlencoded",
++      "bluelinkservicepin": self.creds.pin,
++      "gen": vehicle.get("generation", ""),
++      "registrationId": vehicle.get("reg_id", ""),
++      "APPCLOUD-VIN": vehicle.get("vin", ""),
++      "offset": self._offset(),
++    }
++    data = {
++      "userName": self.creds.username,
++      "vin": vehicle.get("vin"),
++    }
++    resp = self.http.post(url, data=data, headers=headers)
++    _raise_for_status(resp, "US lock")
++    logger.info("Vehicle locked (US)")
++
++  def _lock_ca(self, vehicle: Dict[str, Any]) -> None:
++    p_auth = self._ca_get_preauth(vehicle)
++    url = f"{self._env.base_url}/tods/api/drlck"
++    headers = self._ca_headers()
++    headers.update({
++      "pAuth": p_auth,
++      "vehicleId": vehicle.get("vehicle_id"),
++    })
++    body = {"pin": self.creds.pin}
++    resp = self.http.post(url, json=body, headers=headers)
++    _raise_for_status(resp, "CA lock")
++    logger.info("Vehicle locked (CA)")
++
++  def _lock_eu(self, vehicle: Dict[str, Any]) -> None:
++    self._ensure_control_token_eu()
++    url = f"{self._env.base_url}/api/v2/spa/vehicles/{vehicle['vehicle_id']}/control/door"
++    headers = self._eu_vehicle_headers()
++    headers["Stamp"] = self._next_stamp()
++    payload = {
++      "action": "close",
++      "deviceId": self.session.device_id,
++    }
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "EU lock")
++    logger.info("Vehicle locked (EU)")
++
++  def _lock_au(self, vehicle: Dict[str, Any]) -> None:
++    self._ensure_control_token_au()
++    url = f"{self._env.base_url}/api/v2/spa/vehicles/{vehicle['vehicle_id']}/control/door"
++    headers = self._au_vehicle_headers()
++    headers["Stamp"] = self._next_stamp()
++    payload = {
++      "action": "close",
++      "deviceId": self.session.device_id,
++    }
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "AU lock")
++    logger.info("Vehicle locked (AU)")
++
++  def _lock_cn(self, vehicle: Dict[str, Any]) -> None:
++    self._ensure_control_token_cn()
++    url = f"{self._env.base_url}/api/v2/spa/vehicles/{vehicle['vehicle_id']}/control/door"
++    headers = self._cn_vehicle_headers()
++    payload = {
++      "action": "close",
++      "deviceId": self.session.device_id,
++    }
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "CN lock")
++    logger.info("Vehicle locked (CN)")
++
++
++__all__ = [
++  "Region",
++  "KiaCredentials",
++  "KiaSession",
++  "RegionConfig",
++  "REGION_CONFIG",
++  "StampGenerator",
++  "KiaAutoLockClient",
++  "KiaBaseClient",
++  "requests",
++  "Response",
++  "Session",
++  "HTTPError",
++  "_raise_for_status",
++  "_extract_error_message",
++]
+diff --git b/auto-lock/kia_shared.py a/auto-lock/kia_shared.py
+new file mode 100644
+index 0000000000..1724b4a586
+--- /dev/null
++++ a/auto-lock/kia_shared.py
+@@ -0,0 +1,946 @@
++from __future__ import annotations
++
++import base64
++import json
++import logging
++import time
++import uuid
++from dataclasses import dataclass, field
++from enum import Enum
++from typing import Any, Dict, Optional
++from urllib.parse import parse_qs, urlparse
++import re
++
++try:
++  import requests
++  from requests import Response, Session
++except ImportError:  # pragma: no cover - fallback for embedded environments
++  requests = None  # type: ignore[assignment]
++  Response = Any  # type: ignore[misc,assignment]
++  Session = Any  # type: ignore[misc,assignment]
++  HTTPError = Exception  # Placeholder, overwritten below
++else:
++  HTTPError = requests.HTTPError
++
++
++if requests is None:  # pragma: no cover
++  import http.cookiejar
++  import urllib.error
++  import urllib.parse
++  import urllib.request
++
++  HTTPError = urllib.error.HTTPError
++
++  class _SimpleResponse:
++    def __init__(self, url: str, status: int, headers: Dict[str, str], content: bytes, reason: Optional[str] = None) -> None:
++      self.url = url
++      self.status_code = status
++      self.headers = headers
++      self._content = content
++      self.reason = reason or ""
++
++    @property
++    def text(self) -> str:
++      return self._content.decode("utf-8", errors="replace")
++
++    def json(self) -> Any:
++      return json.loads(self.text)
++
++    def raise_for_status(self) -> None:
++      if 400 <= self.status_code:
++        raise HTTPError(self.url, self.status_code, self.reason, None, None)
++
++    @property
++    def content(self) -> bytes:
++      return self._content
++
++  class _NoRedirect(urllib.request.HTTPErrorProcessor):
++    def http_response(self, request, response):  # type: ignore[override]
++      return response
++
++    https_response = http_response  # type: ignore[assignment]
++
++  class _CookieFacade:
++    def __init__(self, jar: http.cookiejar.CookieJar) -> None:
++      self._jar = jar
++
++    def clear(self) -> None:
++      try:
++        self._jar.clear()
++      except ValueError:
++        for domain in list(self._jar._cookies.keys()):  # type: ignore[attr-defined]
++          self._jar.clear(domain)  # type: ignore[arg-type]
++
++  class _UrllibSession:
++    def __init__(self) -> None:
++      self.headers: Dict[str, str] = {}
++      self._cookie_jar = http.cookiejar.CookieJar()
++      self.cookies = _CookieFacade(self._cookie_jar)
++      self._default_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self._cookie_jar))
++
++    def _build_opener(self, allow_redirects: bool):
++      if allow_redirects:
++        return self._default_opener
++      return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self._cookie_jar), _NoRedirect())
++
++    def request(self, method: str, url: str, *, headers: Optional[Dict[str, str]] = None, data: Any = None, json: Any = None,
++                allow_redirects: bool = True) -> _SimpleResponse:
++      req_headers = dict(self.headers)
++      if headers:
++        req_headers.update(headers)
++
++      body: Optional[bytes] = None
++      if json is not None:
++        body = json_dumps(json)
++        req_headers.setdefault("Content-Type", "application/json")
++      elif data is not None:
++        if isinstance(data, dict):
++          body = urllib.parse.urlencode({k: v for k, v in data.items() if v is not None}).encode()
++          req_headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
++        elif isinstance(data, str):
++          body = data.encode()
++        elif isinstance(data, bytes):
++          body = data
++        else:
++          raise TypeError("Unsupported data type for request body")
++
++      clean_headers = {k: str(v) for k, v in req_headers.items() if v is not None}
++      req = urllib.request.Request(url, data=body, headers=clean_headers, method=method.upper())
++      opener = self._build_opener(allow_redirects)
++      try:
++        resp = opener.open(req)
++        content = resp.read()
++        status = resp.getcode()
++        final_url = resp.geturl()
++        headers_dict = dict(resp.headers.items())
++        return _SimpleResponse(final_url, status, headers_dict, content, resp.reason)
++      except urllib.error.HTTPError as err:
++        content = err.read()
++        headers_dict = dict(err.headers.items()) if err.headers else {}
++        return _SimpleResponse(err.geturl(), err.code, headers_dict, content, err.reason)
++
++    def get(self, url: str, **kwargs: Any) -> _SimpleResponse:
++      kwargs.setdefault("allow_redirects", True)
++      return self.request("GET", url, **kwargs)
++
++    def post(self, url: str, **kwargs: Any) -> _SimpleResponse:
++      kwargs.setdefault("allow_redirects", True)
++      return self.request("POST", url, **kwargs)
++
++    def put(self, url: str, **kwargs: Any) -> _SimpleResponse:
++      kwargs.setdefault("allow_redirects", True)
++      return self.request("PUT", url, **kwargs)
++
++    def close(self) -> None:
++      pass
++
++  Session = _UrllibSession  # type: ignore[assignment]
++  Response = _SimpleResponse  # type: ignore[assignment]
++
++  def json_dumps(payload: Any) -> bytes:
++    return json.dumps(payload).encode()
++
++else:
++  def json_dumps(payload: Any) -> bytes:
++    return json.dumps(payload).encode()
++
++
++logger = logging.getLogger(__name__)
++
++
++class Region(Enum):
++  US = "US"
++  CA = "CA"
++  EU = "EU"
++  CN = "CN"
++  AU = "AU"
++
++
++@dataclass
++class KiaCredentials:
++  username: str
++  password: str
++  pin: str
++  region: Region
++  vin: Optional[str] = None
++  vehicle_id: Optional[str] = None
++  language: Optional[str] = None
++
++
++@dataclass
++class KiaSession:
++  access_token: Optional[str] = None
++  refresh_token: Optional[str] = None
++  control_token: Optional[str] = None
++  access_token_expires_at: float = 0.0
++  control_token_expires_at: float = 0.0
++  device_id: str = field(default_factory=lambda: uuid.uuid4().hex)
++
++  def has_valid_access_token(self) -> bool:
++    return bool(self.access_token) and time.time() < self.access_token_expires_at - 10
++
++  def has_valid_control_token(self) -> bool:
++    return bool(self.control_token) and time.time() < self.control_token_expires_at - 10
++
++
++@dataclass
++class RegionConfig:
++  base_url: str
++  client_id: str
++  client_secret: Optional[str] = None
++  app_id: Optional[str] = None
++  basic_token: Optional[str] = None
++  auth_host: Optional[str] = None
++  token_exchange_url: Optional[str] = None
++  stamp_cfb: Optional[str] = None
++  origin: Optional[str] = None
++  provider_device_id: Optional[str] = None
++  push_reg_id: Optional[str] = None
++
++
++REGION_CONFIG: Dict[Region, RegionConfig] = {
++  Region.US: RegionConfig(
++    base_url="https://api.owners.kia.com/apigw/v1",
++    client_id="MWAMOBILE",
++    client_secret="98er-w34rf-ibf3-3f6h",
++  ),
++  Region.CA: RegionConfig(
++    base_url="https://kiaconnect.ca",
++    client_id="",
++    origin="SPA",
++  ),
++  Region.EU: RegionConfig(
++    base_url="https://prd.eu-ccapi.kia.com:8080",
++    client_id="fdc85c00-0a2f-4c64-bcb4-2cfb1500730a",
++    app_id="a2b8469b-30a3-4361-8e13-6fceea8fbe74",
++    basic_token="Basic ZmRjODVjMDAtMGEyZi00YzY0LWJjYjQtMmNmYjE1MDA3MzBhOnNlY3JldA==",
++    auth_host="idpconnect-eu.kia.com",
++    token_exchange_url="https://idpconnect-eu.kia.com/auth/api/v2/user/oauth2/token",
++    stamp_cfb="wLTVxwidmH8CfJYBWSnHD6E0huk0ozdiuygB4hLkM5XCgzAL1Dk5sE36d/bx5PFMQeU=",
++  ),
++  Region.AU: RegionConfig(
++    base_url="https://au-apigw.ccs.kia.com.au:8082",
++    client_id="8acb778a-b918-4a8d-8624-73a0beb64289",
++    app_id="4ad4dcde-be23-48a8-bc1c-91b94f5c06f8",
++    basic_token="Basic OGFjYjc3OGEtYjkxOC00YThkLTg2MjQtNzNhMGJlYjY0Mjg5OjdTY01NbTZmRVlYZGlFUEN4YVBhUW1nZVlkbFVyZndvaDRBZlhHT3pZSVMyQ3U5VA==",
++    stamp_cfb="IDbMgWBXgic4MAyMgf5PFFRAdGX5O3IyC3uvN3scCs0gDpTFDuyvBorlAH9JMM2/hys=",
++  ),
++  Region.CN: RegionConfig(
++    base_url="https://prd.cn-ccapi.kia.com",
++    client_id="9d5df92a-06ae-435f-b459-8304f2efcc67",
++    app_id="eea8762c-adfc-4ee4-8d7a-6e2452ddf342",
++    basic_token="Basic OWQ1ZGY5MmEtMDZhZS00MzVmLWI0NTktODMwNGYyZWZjYzY3OnRzWGRrVWcwOEF2MlpaelhPZ1d6Snl4VVQ2eWVTbk5OUWtYWFBSZEtXRUFOd2wxcA==",
++    provider_device_id="32dedba78045415b92db816e805ed47b",
++    push_reg_id="ogc+GB5gom7zDEQjPhb3lP+bjjM=DG2rQ9Zuq0otwOU7n9y08LKjYpo=",
++  ),
++}
++
++
++class StampGenerator:
++  def __init__(self, cfb_b64: str, app_id: str) -> None:
++    self._cfb = base64.b64decode(cfb_b64)
++    self._app_id = app_id
++
++  def __call__(self) -> str:
++    payload = f"{self._app_id}:{int(time.time() * 1000)}".encode()
++    if len(payload) < len(self._cfb):
++      payload = payload.ljust(len(self._cfb), b"0")
++    elif len(payload) > len(self._cfb):
++      payload = payload[:len(self._cfb)]
++    stamp = bytes(x ^ y for x, y in zip(self._cfb, payload))
++    return base64.b64encode(stamp).decode()
++
++
++class KiaBaseClient:
++  _STD_HEADERS = {
++    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5 like Mac OS X)"
++  }
++
++  def __init__(self, creds: KiaCredentials, http: Optional[Session] = None) -> None:
++    self.creds = creds
++    if http is not None:
++      self.http = http
++    elif requests is not None:
++      self.http = requests.Session()
++    else:
++      self.http = Session()
++    self.http.headers.update(self._STD_HEADERS)
++    if creds.region == Region.CA:
++      self.http.headers.setdefault("from", REGION_CONFIG[Region.CA].origin or "SPA")
++      self.http.headers.setdefault("language", "1")
++      self.http.headers.setdefault("offset", self._offset())
++    self.session = KiaSession()
++    self._env = REGION_CONFIG[creds.region]
++    self._stamp = StampGenerator(self._env.stamp_cfb, self._env.app_id) if self._env.stamp_cfb and self._env.app_id else None
++    self._vehicle: Optional[Dict[str, Any]] = None
++    self._vehicles: Optional[Any] = None
++    self._vehicles_fetched_at: float = 0.0
++
++  def _ensure_vehicle(self) -> Dict[str, Any]:
++    if not self.session.has_valid_access_token():
++      self._login()
++    elif self.creds.region in {Region.US, Region.EU, Region.AU, Region.CN} and time.time() > self.session.access_token_expires_at - 120:
++      self._refresh_access_token()
++    if self._vehicle and time.time() - self._vehicles_fetched_at < 300:
++      return self._vehicle
++    fetchers = {
++      Region.US: self._fetch_vehicles_us,
++      Region.CA: self._fetch_vehicles_ca,
++      Region.EU: self._fetch_vehicles_eu,
++      Region.AU: self._fetch_vehicles_au,
++      Region.CN: self._fetch_vehicles_cn,
++    }
++    vehicles = fetchers[self.creds.region]()
++    self._vehicles = vehicles
++    self._vehicles_fetched_at = time.time()
++    self._vehicle = self._select_vehicle(vehicles)
++    if not self._vehicle:
++      raise RuntimeError("No vehicles available for selected account")
++    return self._vehicle
++
++  def _select_vehicle(self, vehicles: Any) -> Dict[str, Any]:
++    vin = (self.creds.vin or "").lower()
++    vehicle_id = self.creds.vehicle_id
++    for vehicle in vehicles:
++      if vin and vehicle.get("vin", "").lower() == vin:
++        return vehicle
++      if vehicle_id and str(vehicle.get("vehicle_id")) == str(vehicle_id):
++        return vehicle
++    return vehicles[0] if vehicles else {}
++
++  def _login(self) -> None:
++    handlers = {
++      Region.US: self._login_us,
++      Region.CA: self._login_ca,
++      Region.EU: self._login_eu,
++      Region.AU: self._login_au,
++      Region.CN: self._login_cn,
++    }
++    handlers[self.creds.region]()
++
++  def _refresh_access_token(self) -> None:
++    handlers = {
++      Region.US: self._refresh_us,
++      Region.CA: self._login_ca,
++      Region.EU: self._refresh_eu,
++      Region.AU: self._refresh_au,
++      Region.CN: self._refresh_cn,
++    }
++    handlers[self.creds.region]()
++
++  def _login_us(self) -> None:
++    url = f"{self._env.base_url}/v2/ac/oauth/token"
++    payload = {
++      "username": self.creds.username,
++      "password": self.creds.password,
++    }
++    headers = {
++      "client_id": self._env.client_id,
++      "client_secret": self._env.client_secret,
++      "Content-Type": "application/json",
++    }
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "US login")
++    data = resp.json()
++    if resp.status_code != 200:
++      raise RuntimeError(f"US login failed: {data}")
++    self.session.access_token = data.get("access_token")
++    self.session.refresh_token = data.get("refresh_token")
++    expires_in = int(data.get("expires_in", 1800))
++    self.session.access_token_expires_at = time.time() + expires_in
++    logger.debug("US login successful; expires in %s", expires_in)
++
++  def _refresh_us(self) -> None:
++    if not self.session.refresh_token:
++      self._login_us()
++      return
++    url = f"{self._env.base_url}/v2/ac/oauth/token/refresh"
++    payload = {"refresh_token": self.session.refresh_token}
++    headers = {
++      "client_id": self._env.client_id,
++      "client_secret": self._env.client_secret,
++      "Content-Type": "application/json",
++    }
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "US refresh")
++    data = resp.json()
++    if resp.status_code != 200:
++      raise RuntimeError(f"US token refresh failed: {data}")
++    self.session.access_token = data.get("access_token")
++    self.session.refresh_token = data.get("refresh_token", self.session.refresh_token)
++    expires_in = int(data.get("expires_in", 1800))
++    self.session.access_token_expires_at = time.time() + expires_in
++    logger.debug("US token refresh successful; expires in %s", expires_in)
++
++  def _login_ca(self) -> None:
++    url = f"{self._env.base_url}/tods/api/lgn"
++    payload = {
++      "loginId": self.creds.username,
++      "password": self.creds.password,
++    }
++    headers = self._ca_headers()
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "CA login")
++    body = resp.json()
++    if not isinstance(body, dict):
++      raise RuntimeError(f"CA login failed: unexpected response {body}")
++    header = body.get("responseHeader", {})
++    code = header.get("responseCode")
++    desc = header.get("responseDesc")
++    if code not in (0, "0"):
++      raise RuntimeError(f"CA login failed (code {code}): {desc}")
++    data = body.get("result", {})
++    access_token = data.get("accessToken")
++    refresh_token = data.get("refreshToken")
++    if not access_token:
++      raise RuntimeError("CA login failed: missing access token in response")
++    self.session.access_token = access_token
++    self.session.refresh_token = refresh_token
++    expires_in = int(data.get("expireIn", 900))
++    self.session.access_token_expires_at = time.time() + expires_in
++    logger.debug("CA login successful; expires in %s", expires_in)
++
++  def _fetch_vehicles_us(self) -> Any:
++    url = f"{self._env.base_url}/ac/v2/enrollment/details/{self.creds.username}"
++    headers = {
++      "access_token": self.session.access_token,
++      "client_id": self._env.client_id,
++      "User-Agent": "okhttp/3.12.0",
++      "payloadGenerated": time.strftime("%Y%m%d%H%M%S"),
++      "includeNonConnectedVehicles": "Y",
++    }
++    resp = self.http.get(url, headers=headers)
++    _raise_for_status(resp, "US vehicle list")
++    vehicles = []
++    for entry in resp.json().get("enrolledVehicleDetails", []):
++      details = entry.get("vehicleDetails", {})
++      vehicles.append({
++        "vin": details.get("vin"),
++        "vehicle_id": details.get("vehicleId") or details.get("vehicleId", details.get("vehicleId")),
++        "reg_id": details.get("regid"),
++        "generation": details.get("vehicleGeneration"),
++      })
++    if not vehicles:
++      raise RuntimeError("No US vehicles found")
++    return vehicles
++
++  def _fetch_vehicles_ca(self) -> Any:
++    url = f"{self._env.base_url}/tods/api/vhcllst"
++    headers = self._ca_headers()
++    resp = self.http.post(url, json={}, headers=headers)
++    _raise_for_status(resp, "CA vehicle list")
++    data = resp.json().get("result", {}).get("vehicles", [])
++    vehicles = []
++    for item in data:
++      vehicles.append({
++        "vin": item.get("vin"),
++        "vehicle_id": item.get("vehicleId"),
++        "reg_id": item.get("regid"),
++      })
++    if not vehicles:
++      raise RuntimeError("No CA vehicles found")
++    return vehicles
++
++  def _fetch_vehicles_eu(self) -> Any:
++    url = f"{self._env.base_url}/api/v1/spa/vehicles"
++    headers = self._eu_default_headers()
++    headers["Stamp"] = self._next_stamp()
++    resp = self.http.get(url, headers=headers)
++    _raise_for_status(resp, "EU vehicle list")
++    vehicles = []
++    for item in resp.json().get("resMsg", {}).get("vehicles", []):
++      vehicle_id = item.get("vehicleId")
++      profile = self._fetch_vehicle_profile(vehicle_id)
++      vin = profile.get("vinInfo", [{}])[0].get("basic", {}).get("vin")
++      vehicles.append({
++        "vin": vin,
++        "vehicle_id": vehicle_id,
++      })
++    if not vehicles:
++      raise RuntimeError("No EU vehicles found")
++    return vehicles
++
++  def _fetch_vehicles_au(self) -> Any:
++    url = f"{self._env.base_url}/api/v1/spa/vehicles"
++    headers = self._au_default_headers()
++    headers["Stamp"] = self._next_stamp()
++    resp = self.http.get(url, headers=headers)
++    _raise_for_status(resp, "AU vehicle list")
++    vehicles = []
++    for item in resp.json().get("resMsg", {}).get("vehicles", []):
++      vehicle_id = item.get("vehicleId")
++      profile = self._fetch_vehicle_profile(vehicle_id)
++      vin = profile.get("vinInfo", [{}])[0].get("basic", {}).get("vin")
++      vehicles.append({
++        "vin": vin,
++        "vehicle_id": vehicle_id,
++      })
++    if not vehicles:
++      raise RuntimeError("No AU vehicles found")
++    return vehicles
++
++  def _fetch_vehicles_cn(self) -> Any:
++    url = f"{self._env.base_url}/api/v1/spa/vehicles"
++    headers = self._cn_default_headers()
++    resp = self.http.get(url, headers=headers)
++    _raise_for_status(resp, "CN vehicle list")
++    vehicles = []
++    for item in resp.json().get("resMsg", {}).get("vehicles", []):
++      vehicle_id = item.get("vehicleId")
++      profile = self._fetch_vehicle_profile(vehicle_id, region=Region.CN)
++      vin = profile.get("vinInfo", [{}])[0].get("basic", {}).get("vin")
++      vehicles.append({
++        "vin": vin,
++        "vehicle_id": vehicle_id,
++      })
++    if not vehicles:
++      raise RuntimeError("No CN vehicles found")
++    return vehicles
++
++  def _fetch_vehicle_profile(self, vehicle_id: str, region: Optional[Region] = None) -> Dict[str, Any]:
++    region = region or self.creds.region
++    url = f"{self._env.base_url}/api/v1/spa/vehicles/{vehicle_id}/profile"
++    if region == Region.EU:
++      headers = self._eu_default_headers()
++      headers["Stamp"] = self._next_stamp()
++    elif region == Region.AU:
++      headers = self._au_default_headers()
++      headers["Stamp"] = self._next_stamp()
++    else:
++      headers = self._cn_default_headers()
++    resp = self.http.get(url, headers=headers)
++    _raise_for_status(resp, "Vehicle profile")
++    return resp.json().get("resMsg", {})
++
++  def _login_eu(self) -> None:
++    self.http.cookies.clear()
++    language = self.creds.language or "en"
++    auth_url = (
++      f"https://{self._env.auth_host}/auth/api/v2/user/oauth2/authorize"
++      f"?response_type=code&client_id={self._env.client_id}"
++      f"&redirect_uri={self._env.base_url}/api/v1/user/oauth2/redirect&lang={language}&state=ccsp"
++    )
++    auth_resp = self.http.get(auth_url, allow_redirects=True)
++    _raise_for_status(auth_resp, "EU auth redirect")
++    connector = self._extract_connector_session_key(auth_resp.url)
++    signin_url = f"https://{self._env.auth_host}/auth/account/signin"
++    form = {
++      "client_id": self._env.client_id,
++      "encryptedPassword": "false",
++      "orgHmgSid": "",
++      "password": self.creds.password,
++      "redirect_uri": f"{self._env.base_url}/api/v1/user/oauth2/redirect",
++      "state": "ccsp",
++      "username": self.creds.username,
++      "remember_me": "false",
++      "connector_session_key": connector,
++      "_csrf": "",
++    }
++    signin_headers = {
++      "content-type": "application/x-www-form-urlencoded",
++      "origin": f"https://{self._env.auth_host}",
++    }
++    resp = self.http.post(signin_url, data=form, headers=signin_headers, allow_redirects=False)
++    if resp.status_code != 302:
++      raise RuntimeError(f"EU signin failed: {resp.text}")
++    location = resp.headers.get("Location")
++    if not location:
++      raise RuntimeError("EU signin missing redirect location")
++    code = self._extract_code(location)
++    self._register_device_eu()
++    self._exchange_code_for_token_eu(code)
++
++  def _register_device_eu(self) -> None:
++    url = f"{self._env.base_url}/api/v1/spa/notifications/register"
++    headers = self._eu_default_headers()
++    headers.update({
++      "ccsp-service-id": self._env.client_id,
++      "ccsp-application-id": self._env.app_id,
++      "Stamp": self._next_stamp(),
++    })
++    payload = {
++      "pushRegId": uuid.uuid4().hex,
++      "pushType": "APNS",
++      "uuid": self.session.device_id,
++    }
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "EU notification register")
++    res = resp.json().get("resMsg", {})
++    self.session.device_id = res.get("deviceId", self.session.device_id)
++
++  def _exchange_code_for_token_eu(self, code: str) -> None:
++    data = {
++      "grant_type": "authorization_code",
++      "code": code,
++      "redirect_uri": f"{self._env.base_url}/api/v1/user/oauth2/redirect",
++      "client_id": self._env.client_id,
++      "client_secret": "secret",
++    }
++    headers = {"Content-Type": "application/x-www-form-urlencoded"}
++    resp = self.http.post(self._env.token_exchange_url, data=data, headers=headers)
++    _raise_for_status(resp, "EU token exchange")
++    payload = resp.json()
++    if resp.status_code != 200:
++      raise RuntimeError(f"EU token exchange failed: {payload}")
++    self.session.access_token = f"Bearer {payload.get('access_token')}"
++    self.session.refresh_token = payload.get("refresh_token")
++    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    logger.debug("EU token exchange successful; expires in %s", payload.get("expires_in", 1800))
++
++  def _refresh_eu(self) -> None:
++    if not self.session.refresh_token:
++      self._login_eu()
++      return
++    url = self._env.base_url + "/api/v1/user/oauth2/token"
++    form = {
++      "grant_type": "refresh_token",
++      "refresh_token": self.session.refresh_token,
++      "redirect_uri": "https://www.getpostman.com/oauth2/callback",
++    }
++    headers = {
++      "Authorization": self._env.basic_token,
++      "Content-Type": "application/x-www-form-urlencoded",
++      "Stamp": self._next_stamp(),
++      "Host": self._env.base_url.replace("https://", ""),
++      "User-Agent": "okhttp/3.10.0",
++    }
++    resp = self.http.post(url, data=form, headers=headers)
++    _raise_for_status(resp, "EU refresh")
++    payload = resp.json()
++    if resp.status_code != 200:
++      raise RuntimeError(f"EU refresh failed: {payload}")
++    self.session.access_token = f"Bearer {payload.get('access_token')}"
++    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    logger.debug("EU token refresh successful; expires in %s", payload.get("expires_in", 1800))
++
++  def _ensure_control_token_eu(self) -> None:
++    if self.session.has_valid_control_token():
++      return
++    url = f"{self._env.base_url}/api/v1/user/pin"
++    headers = self._eu_default_headers()
++    headers["Stamp"] = self._next_stamp()
++    payload = {"deviceId": self.session.device_id, "pin": self.creds.pin}
++    resp = self.http.put(url, json=payload, headers=headers)
++    _raise_for_status(resp, "EU enter pin")
++    body = resp.json()
++    control_token = body.get("controlToken") or body.get("resMsg", {}).get("controlToken")
++    if not control_token:
++      raise RuntimeError(f"EU control token missing: {body}")
++    self.session.control_token = f"Bearer {control_token}"
++    expires = body.get("expiresTime") or body.get("resMsg", {}).get("expiresTime", 600)
++    self.session.control_token_expires_at = time.time() + float(expires)
++    logger.debug("EU control token acquired; expires in %s", expires)
++
++  def _login_au(self) -> None:
++    self.http.cookies.clear()
++    session_url = f"{self._env.base_url}/api/v1/user/oauth2/authorize?response_type=code&client_id={self._env.client_id}&redirect_uri={self._env.base_url}/api/v1/user/oauth2/redirect&lang=en"
++    self.http.get(session_url)
++    auth_url = f"{self._env.base_url}/api/v1/user/signin"
++    payload = {"email": self.creds.username, "password": self.creds.password, "mobileNum": ""}
++    resp = self.http.post(auth_url, json=payload)
++    _raise_for_status(resp, "AU signin")
++    redirect = resp.json().get("redirectUrl")
++    if not redirect:
++      raise RuntimeError("AU signin missing redirectUrl")
++    code = self._extract_code(redirect)
++    self._register_device_au()
++    self._exchange_code_for_token_au(code)
++
++  def _register_device_au(self) -> None:
++    url = f"{self._env.base_url}/api/v1/spa/notifications/register"
++    headers = self._au_default_headers()
++    headers.update({
++      "ccsp-service-id": self._env.client_id,
++      "ccsp-application-id": self._env.app_id,
++      "Stamp": self._next_stamp(),
++    })
++    payload = {
++      "pushRegId": uuid.uuid4().hex,
++      "pushType": "GCM",
++      "uuid": self.session.device_id,
++    }
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "AU notification register")
++    res = resp.json().get("resMsg", {})
++    self.session.device_id = res.get("deviceId", self.session.device_id)
++
++  def _exchange_code_for_token_au(self, code: str) -> None:
++    url = f"{self._env.base_url}/api/v1/user/oauth2/token"
++    data = {
++      "grant_type": "authorization_code",
++      "redirect_uri": f"{self._env.base_url}/api/v1/user/oauth2/redirect",
++      "code": code,
++    }
++    headers = {
++      "Authorization": self._env.basic_token,
++      "Content-Type": "application/x-www-form-urlencoded",
++      "Stamp": self._next_stamp(),
++    }
++    resp = self.http.post(url, data=data, headers=headers)
++    _raise_for_status(resp, "AU token exchange")
++    payload = resp.json()
++    if resp.status_code != 200:
++      raise RuntimeError(f"AU token exchange failed: {payload}")
++    self.session.access_token = f"Bearer {payload.get('access_token')}"
++    self.session.refresh_token = payload.get("refresh_token")
++    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    logger.debug("AU token exchange successful; expires in %s", payload.get("expires_in", 1800))
++
++  def _refresh_au(self) -> None:
++    if not self.session.refresh_token:
++      self._login_au()
++      return
++    url = f"{self._env.base_url}/api/v1/user/oauth2/token"
++    data = {
++      "grant_type": "refresh_token",
++      "refresh_token": self.session.refresh_token,
++      "redirect_uri": "https://www.getpostman.com/oauth2/callback",
++    }
++    headers = {
++      "Authorization": self._env.basic_token,
++      "Content-Type": "application/x-www-form-urlencoded",
++      "Stamp": self._next_stamp(),
++    }
++    resp = self.http.post(url, data=data, headers=headers)
++    _raise_for_status(resp, "AU refresh")
++    payload = resp.json()
++    if resp.status_code != 200:
++      raise RuntimeError(f"AU refresh failed: {payload}")
++    self.session.access_token = f"Bearer {payload.get('access_token')}"
++    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    logger.debug("AU token refresh successful; expires in %s", payload.get("expires_in", 1800))
++
++  def _ensure_control_token_au(self) -> None:
++    if self.session.has_valid_control_token():
++      return
++    url = f"{self._env.base_url}/api/v1/user/pin"
++    headers = self._au_default_headers()
++    headers["Stamp"] = self._next_stamp()
++    payload = {"deviceId": self.session.device_id, "pin": self.creds.pin}
++    resp = self.http.put(url, json=payload, headers=headers)
++    _raise_for_status(resp, "AU enter pin")
++    body = resp.json()
++    control_token = body.get("controlToken") or body.get("resMsg", {}).get("controlToken")
++    if not control_token:
++      raise RuntimeError(f"AU control token missing: {body}")
++    self.session.control_token = f"Bearer {control_token}"
++    expires = body.get("expiresTime") or body.get("resMsg", {}).get("expiresTime", 600)
++    self.session.control_token_expires_at = time.time() + float(expires)
++
++  def _login_cn(self) -> None:
++    self.http.cookies.clear()
++    self._init_cn_session()
++    auth_url = f"{self._env.base_url}/api/v1/user/signin"
++    payload = {"email": self.creds.username, "password": self.creds.password}
++    resp = self.http.post(auth_url, json=payload)
++    _raise_for_status(resp, "CN signin")
++    redirect = resp.json().get("redirectUrl")
++    if not redirect:
++      raise RuntimeError("CN signin missing redirectUrl")
++    code = self._extract_code(redirect)
++    self._register_device_cn()
++    self._exchange_code_for_token_cn(code)
++
++  def _init_cn_session(self) -> None:
++    self.http.get(f"{self._env.base_url}/api/v1/user/oauth2/authorize?response_type=code&client_id={self._env.client_id}&redirect_uri={self._env.base_url}:443/api/v1/user/oauth2/redirect&state=test")
++    headers = {"Content-Type": "application/json"}
++    self.http.post(f"{self._env.base_url}/api/v1/user/language", data='{"lang":"zh"}', headers=headers)
++
++  def _register_device_cn(self) -> None:
++    url = f"{self._env.base_url}/api/v1/spa/notifications/register"
++    headers = self._cn_default_headers()
++    payload = {
++      "pushRegId": self._env.push_reg_id,
++      "providerDeviceId": self._env.provider_device_id,
++      "pushType": "GCM",
++      "uuid": self.session.device_id,
++    }
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "CN notification register")
++    res = resp.json().get("resMsg", {})
++    self.session.device_id = res.get("deviceId", self.session.device_id)
++
++  def _exchange_code_for_token_cn(self, code: str) -> None:
++    url = f"{self._env.base_url}/api/v1/user/oauth2/token"
++    data = {
++      "grant_type": "authorization_code",
++      "redirect_uri": f"{self._env.base_url}:443/api/v1/user/oauth2/redirect",
++      "code": code,
++    }
++    headers = {
++      "Authorization": self._env.basic_token,
++      "Content-Type": "application/x-www-form-urlencoded",
++    }
++    resp = self.http.post(url, data=data, headers=headers)
++    _raise_for_status(resp, "CN token exchange")
++    payload = resp.json()
++    if resp.status_code != 200:
++      raise RuntimeError(f"CN token exchange failed: {payload}")
++    self.session.access_token = f"Bearer {payload.get('access_token')}"
++    self.session.refresh_token = payload.get("refresh_token")
++    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++
++  def _refresh_cn(self) -> None:
++    if not self.session.refresh_token:
++      self._login_cn()
++      return
++    url = f"{self._env.base_url}/api/v1/user/oauth2/token"
++    data = {
++      "grant_type": "refresh_token",
++      "refresh_token": self.session.refresh_token,
++      "redirect_uri": "https://www.getpostman.com/oauth2/callback",
++    }
++    headers = {
++      "Authorization": self._env.basic_token,
++      "Content-Type": "application/x-www-form-urlencoded",
++    }
++    resp = self.http.post(url, data=data, headers=headers)
++    _raise_for_status(resp, "CN refresh")
++    payload = resp.json()
++    if resp.status_code != 200:
++      raise RuntimeError(f"CN refresh failed: {payload}")
++    self.session.access_token = f"Bearer {payload.get('access_token')}"
++    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    logger.debug("CN token refresh successful; expires in %s", payload.get("expires_in", 1800))
++
++  def _ensure_control_token_cn(self) -> None:
++    if self.session.has_valid_control_token():
++      return
++    url = f"{self._env.base_url}/api/v1/user/pin?token="
++    headers = self._cn_default_headers()
++    payload = {"deviceId": self.session.device_id, "pin": self.creds.pin}
++    resp = self.http.put(url, json=payload, headers=headers)
++    _raise_for_status(resp, "CN enter pin")
++    body = resp.json()
++    control_token = body.get("controlToken") or body.get("resMsg", {}).get("controlToken")
++    if not control_token:
++      raise RuntimeError(f"CN control token missing: {body}")
++    self.session.control_token = f"Bearer {control_token}"
++    expires = body.get("expiresTime") or body.get("resMsg", {}).get("expiresTime", 600)
++    self.session.control_token_expires_at = time.time() + float(expires)
++
++  def _ca_get_preauth(self, vehicle: Dict[str, Any]) -> str:
++    url = f"{self._env.base_url}/tods/api/vrfypin"
++    headers = self._ca_headers()
++    headers["vehicleId"] = vehicle.get("vehicle_id")
++    payload = {"pin": self.creds.pin}
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "CA verify pin")
++    result = resp.json().get("result", {})
++    return result.get("pAuth")
++
++  def _extract_connector_session_key(self, url: str) -> str:
++    patterns = [r"connector_session_key%3D([0-9a-fA-F-]{36})", r"connector_session_key=([0-9a-fA-F-]{36})"]
++    for pattern in patterns:
++      match = re.search(pattern, url)
++      if match:
++        return match.group(1)
++    raise RuntimeError(f"connector_session_key not found in {url}")
++
++  def _extract_code(self, location: str) -> str:
++    parsed = urlparse(location)
++    query = parse_qs(parsed.query)
++    code = query.get("code", [None])[0]
++    if not code:
++      raise RuntimeError(f"Authorization code missing in {location}")
++    return code
++
++  def _next_stamp(self) -> str:
++    if not self._stamp:
++      raise RuntimeError("Stamp generator not configured for region")
++    return self._stamp()
++
++  def _offset(self) -> str:
++    return f"{-(time.localtime().tm_gmtoff) / 3600:.0f}"
++
++  def _ca_headers(self) -> Dict[str, str]:
++    origin_value = self._env.origin or "SPA"
++    headers = {
++      "from": origin_value,
++      "language": "1",
++      "offset": self._offset(),
++      "Content-Type": "application/json",
++      "Origin": self._env.base_url,
++      "Referer": f"{self._env.base_url}/login",
++    }
++    if self.session.access_token:
++      headers["accessToken"] = self.session.access_token
++    return headers
++
++  def _eu_default_headers(self) -> Dict[str, str]:
++    return {
++      "Authorization": self.session.access_token,
++      "ccsp-device-id": self.session.device_id,
++      "ccsp-application-id": self._env.app_id,
++      "Content-Type": "application/json",
++      "offset": self._offset(),
++    }
++
++  def _eu_vehicle_headers(self) -> Dict[str, str]:
++    headers = self._eu_default_headers()
++    headers["Authorization"] = self.session.control_token
++    return headers
++
++  def _au_default_headers(self) -> Dict[str, str]:
++    return {
++      "Authorization": self.session.access_token,
++      "ccsp-device-id": self.session.device_id,
++      "ccsp-application-id": self._env.app_id,
++      "Content-Type": "application/json",
++      "offset": self._offset(),
++    }
++
++  def _au_vehicle_headers(self) -> Dict[str, str]:
++    headers = self._au_default_headers()
++    headers["Authorization"] = self.session.control_token
++    return headers
++
++  def _cn_default_headers(self) -> Dict[str, str]:
++    return {
++      "Authorization": self.session.access_token,
++      "Content-Type": "application/json",
++      "ccsp-device-id": "2e062595-28e0-4bcb-a75a-1b395cde337c",
++      "ccsp-application-id": self._env.app_id,
++      "User-Agent": "okhttp/4.4.0",
++      "offset": self._offset(),
++    }
++
++  def _cn_vehicle_headers(self) -> Dict[str, str]:
++    headers = self._cn_default_headers()
++    headers["Authorization"] = self.session.control_token
++    headers["AuthorizationCCSP"] = self.session.control_token
++    return headers
++
++
++def _raise_for_status(resp: Response, context: str) -> None:
++  try:
++    resp.raise_for_status()
++  except HTTPError as err:
++    message = _extract_error_message(resp)
++    raise RuntimeError(f"{context} failed: {message}") from err
++
++
++def _extract_error_message(resp: Response) -> str:
++  try:
++    body = resp.json()
++  except ValueError:
++    body = resp.text
++  return json.dumps(body, ensure_ascii=False) if isinstance(body, (dict, list)) else str(body)
++
++
++__all__ = [
++  "Region",
++  "KiaCredentials",
++  "KiaSession",
++  "RegionConfig",
++  "REGION_CONFIG",
++  "StampGenerator",
++  "KiaBaseClient",
++  "Session",
++  "Response",
++  "requests",
++  "HTTPError",
++  "_raise_for_status",
++  "_extract_error_message",
++  "json_dumps",
++]
+diff --git b/auto-lock/kia_status.py a/auto-lock/kia_status.py
+new file mode 100644
+index 0000000000..e916f36ba2
+--- /dev/null
++++ a/auto-lock/kia_status.py
+@@ -0,0 +1,179 @@
++from __future__ import annotations
++
++import logging
++import time
++from typing import Any, Dict, Optional
++
++try:
++  from .kia_shared import (  # type: ignore[attr-defined]
++    KiaBaseClient,
++    Region,
++    _raise_for_status,
++  )
++except ImportError:  # pragma: no cover - script execution fallback
++  from kia_shared import (  # type: ignore[no-redef]
++    KiaBaseClient,
++    Region,
++    _raise_for_status,
++  )
++
++logger = logging.getLogger(__name__)
++
++
++class KiaStatusClient(KiaBaseClient):
++  def status(self) -> Dict[str, Any]:
++    vehicle = self._ensure_vehicle()
++
++    if self.creds.region == Region.US:
++      return self._status_us(vehicle)
++    if self.creds.region == Region.CA:
++      return self._status_ca(vehicle)
++    if self.creds.region == Region.EU:
++      return self._status_eu(vehicle)
++    if self.creds.region == Region.AU:
++      return self._status_au(vehicle)
++    if self.creds.region == Region.CN:
++      return self._status_cn(vehicle)
++    raise ValueError("Unsupported region for status polling")
++
++  def _status_ca(self, vehicle: Dict[str, Any]) -> Dict[str, Any]:
++    pre_auth = self._ca_get_preauth(vehicle)
++    url = f"{self._env.base_url}/tods/api/rltmvhclsts"
++    headers = self._ca_headers()
++    headers.update({
++      "pAuth": pre_auth,
++      "vehicleId": vehicle.get("vehicle_id"),
++    })
++    payload: Dict[str, Any] = {"pin": self.creds.pin}
++    resp = self.http.post(url, json=payload, headers=headers)
++    _raise_for_status(resp, "CA status")
++    data = resp.json()
++    result = data.get("result", {})
++    status = result.get("status", {})
++    timestamp = result.get("timeStamp") or status.get("lastStatusDate") or status.get("dateTime")
++    return self._normalize_status(status, timestamp)
++
++  def _status_us(self, vehicle: Dict[str, Any]) -> Dict[str, Any]:
++    url = f"{self._env.base_url}/ac/v2/rcs/rvs/vehicleStatus"
++    headers = {
++      "access_token": self.session.access_token,
++      "client_id": self._env.client_id,
++      "User-Agent": "okhttp/3.12.0",
++      "payloadGenerated": time.strftime("%Y%m%d%H%M%S"),
++      "vin": vehicle.get("vin"),
++      "registrationId": vehicle.get("reg_id", ""),
++      "gen": vehicle.get("generation", ""),
++      "offset": self._offset(),
++      "REFRESH": "true",
++    }
++    resp = self.http.get(url, headers=headers)
++    _raise_for_status(resp, "US status")
++    data = resp.json()
++    status = data.get("vehicleStatus", {})
++    timestamp = data.get("timeStamp") or status.get("dateTime") or status.get("lastStatusDate")
++    return self._normalize_status(status, timestamp)
++
++  def _status_eu(self, vehicle: Dict[str, Any]) -> Dict[str, Any]:
++    self._ensure_control_token_eu()
++    headers = self._eu_vehicle_headers()
++    headers["Stamp"] = self._next_stamp()
++    url = f"{self._env.base_url}/api/v2/spa/vehicles/{vehicle['vehicle_id']}/status"
++    resp = self.http.get(url, headers=headers)
++    _raise_for_status(resp, "EU status")
++    body = resp.json()
++    status = body.get("resMsg", {})
++    timestamp = status.get("lastStatusDate") or status.get("timeStamp")
++    return self._normalize_status(status, timestamp)
++
++  def _status_au(self, vehicle: Dict[str, Any]) -> Dict[str, Any]:
++    self._ensure_control_token_au()
++    headers = self._au_vehicle_headers()
++    headers["Stamp"] = self._next_stamp()
++    url = f"{self._env.base_url}/api/v2/spa/vehicles/{vehicle['vehicle_id']}/status"
++    resp = self.http.get(url, headers=headers)
++    _raise_for_status(resp, "AU status")
++    body = resp.json()
++    status = body.get("resMsg", {})
++    timestamp = status.get("lastStatusDate") or status.get("timeStamp")
++    return self._normalize_status(status, timestamp)
++
++  def _status_cn(self, vehicle: Dict[str, Any]) -> Dict[str, Any]:
++    self._ensure_control_token_cn()
++    headers = self._cn_vehicle_headers()
++    url = f"{self._env.base_url}/api/v2/spa/vehicles/{vehicle['vehicle_id']}/status"
++    resp = self.http.get(url, headers=headers)
++    _raise_for_status(resp, "CN status")
++    body = resp.json()
++    status = body.get("resMsg", {})
++    timestamp = status.get("lastStatusDate") or status.get("timeStamp")
++    return self._normalize_status(status, timestamp)
++
++  def _normalize_status(self, status: Dict[str, Any], timestamp: Optional[Any]) -> Dict[str, Any]:
++    door_open = status.get("doorOpen") or {}
++    tire_pressure = status.get("tirePressureLamp") or {}
++    air_temp = status.get("airTemp") or {}
++    ev_status = status.get("evStatus") or {}
++    battery = status.get("battery") or {}
++
++    range_km: Optional[Any] = None
++    dte = status.get("dte")
++    if isinstance(dte, dict):
++      range_km = dte.get("value") or dte.get("total")
++    if range_km is None:
++      drv_distance = ev_status.get("drvDistance") if isinstance(ev_status, dict) else None
++      if isinstance(drv_distance, list) and drv_distance:
++        range_by_fuel = drv_distance[0].get("rangeByFuel", {})
++        total_range = range_by_fuel.get("totalAvailableRange", {})
++        if isinstance(total_range, dict):
++          range_km = total_range.get("value")
++
++    normalized = {
++      "locked": status.get("doorLock"),
++      "openDoors": {
++        "frontRight": bool(door_open.get("frontRight")),
++        "frontLeft": bool(door_open.get("frontLeft")),
++        "backLeft": bool(door_open.get("backLeft")),
++        "backRight": bool(door_open.get("backRight")),
++      },
++      "hoodOpen": status.get("hoodOpen"),
++      "trunkOpen": status.get("trunkOpen"),
++      "tirePressure": {
++        "frontLeft": bool(tire_pressure.get("tirePressureWarningLampFrontLeft")),
++        "frontRight": bool(tire_pressure.get("tirePressureWarningLampFrontRight")),
++        "rearLeft": bool(tire_pressure.get("tirePressureWarningLampRearLeft")),
++        "rearRight": bool(tire_pressure.get("tirePressureWarningLampRearRight")),
++        "all": bool(tire_pressure.get("tirePressureWarningLampAll")),
++      },
++      "climate": {
++        "active": status.get("airCtrlOn"),
++        "defrost": status.get("defrost"),
++        "temperatureSetpoint": air_temp.get("value"),
++        "temperatureUnit": air_temp.get("unit"),
++        "steeringWheelHeat": bool(status.get("steerWheelHeat")),
++        "rearWindowHeat": bool(status.get("sideBackWindowHeat")),
++      },
++      "engine": {
++        "ignition": status.get("engine"),
++        "accessory": status.get("acc"),
++        "rangeKm": range_km,
++        "charging": ev_status.get("batteryCharge") if isinstance(ev_status, dict) else None,
++        "battery12vSoc": battery.get("batSoc") if isinstance(battery, dict) else None,
++        "batteryHvStatus": ev_status.get("batteryStatus") if isinstance(ev_status, dict) else None,
++      },
++      "timestamp": self._coerce_timestamp(timestamp, status),
++    }
++    return normalized
++
++  @staticmethod
++  def _coerce_timestamp(timestamp: Optional[Any], status: Dict[str, Any]) -> Optional[str]:
++    if isinstance(timestamp, dict):
++      for key in ("value", "utc", "iso"):
++        if key in timestamp:
++          return str(timestamp[key])
++    if timestamp:
++      return str(timestamp)
++    for key in ("dateTime", "lastStatusDate", "timeStamp"):
++      value = status.get(key)
++      if value:
++        return str(value)
++    return None
+diff --git b/auto-lock/lock-closed-white.svg a/auto-lock/lock-closed-white.svg
+new file mode 100644
+index 0000000000..1c897ae990
+--- /dev/null
++++ a/auto-lock/lock-closed-white.svg
+@@ -0,0 +1,3 @@
++<svg xmlns="http://www.w3.org/2000/svg" width="40" height="49" viewBox="211 182 40 49">
++  <path fill="#ffffff" d="m246.225 201.73-.603-.011-.006-6.628c-.006-7.221-6.65-13.096-14.817-13.091s-14.811 5.88-14.805 13.101l.012 6.629h-.536c-2.808.005-4.476 2.019-4.47 4.501v20.273c0 2.483 1.675 4.496 4.482 4.496l31.657-.015c2.807 0 3.867-2.015 3.861-4.497v-20.279c0-2.94-1.632-4.49-4.775-4.479m-24.762 0-.013-6.629c0-4.56 4.19-8.271 9.349-8.276 5.158 0 9.354 3.71 9.354 8.266l.012 6.628z"/>
++</svg>
+\ No newline at end of file
+diff --git b/auto-lock/lock_cli.py a/auto-lock/lock_cli.py
+new file mode 100644
+index 0000000000..4f0042f978
+--- /dev/null
++++ a/auto-lock/lock_cli.py
+@@ -0,0 +1,53 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import logging
++import sys
++
++from kia_lock import KiaAutoLockClient, KiaCredentials, Region
++
++
++def parse_args() -> argparse.Namespace:
++  parser = argparse.ArgumentParser(description="Lock a Kia vehicle via KiaAutoLockClient (new shared implementation)")
++  parser.add_argument("username", help="Account username")
++  parser.add_argument("password", help="Account password")
++  parser.add_argument("pin", help="Remote services PIN")
++  parser.add_argument("region", choices=[r.value for r in Region], help="Region code (US/CA/EU/CN/AU)")
++  parser.add_argument("vin", nargs="?", help="Vehicle VIN (optional if account has single vehicle)")
++  parser.add_argument("vehicle_id", nargs="?", help="Vehicle identifier if VIN not provided")
++  parser.add_argument("--language", default=None, help="Optional language code for EU region")
++  parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
++  return parser.parse_args()
++
++
++def main() -> int:
++  args = parse_args()
++
++  logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
++
++  region = Region(args.region.upper())
++  creds = KiaCredentials(
++    username=args.username,
++    password=args.password,
++    pin=args.pin,
++    region=region,
++    vin=args.vin,
++    vehicle_id=args.vehicle_id,
++    language=args.language,
++  )
++
++  client = KiaAutoLockClient(creds)
++
++  try:
++    client.lock()
++  except Exception as err:  # pylint: disable=broad-except
++    logging.exception("Lock command failed: %s", err)
++    return 1
++
++  logging.info("Lock command succeeded")
++  return 0
++
++
++if __name__ == "__main__":
++  sys.exit(main())
+diff --git b/auto-lock/status_cli.py a/auto-lock/status_cli.py
+new file mode 100644
+index 0000000000..48514273ac
+--- /dev/null
++++ a/auto-lock/status_cli.py
+@@ -0,0 +1,55 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import json
++import logging
++import sys
++
++from kia_status import KiaStatusClient
++from kia_shared import KiaCredentials, Region
++
++
++def parse_args() -> argparse.Namespace:
++  parser = argparse.ArgumentParser(description="Query real-time Kia vehicle status via KiaStatusClient")
++  parser.add_argument("username", help="Account username")
++  parser.add_argument("password", help="Account password")
++  parser.add_argument("pin", help="Remote services PIN")
++  parser.add_argument("region", choices=[r.value for r in Region], help="Region code (US/CA/EU/CN/AU)")
++  parser.add_argument("vin", nargs="?", help="Vehicle VIN (optional if account has single vehicle)")
++  parser.add_argument("vehicle_id", nargs="?", help="Vehicle identifier if VIN not provided")
++  parser.add_argument("--language", default=None, help="Optional language code for EU region")
++  parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
++  return parser.parse_args()
++
++
++def main() -> int:
++  args = parse_args()
++
++  logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
++
++  region = Region(args.region.upper())
++  creds = KiaCredentials(
++    username=args.username,
++    password=args.password,
++    pin=args.pin,
++    region=region,
++    vin=args.vin,
++    vehicle_id=args.vehicle_id,
++    language=args.language,
++  )
++
++  client = KiaStatusClient(creds)
++
++  try:
++    status = client.status()
++  except Exception as err:  # pylint: disable=broad-except
++    logging.exception("Status command failed: %s", err)
++    return 1
++
++  print(json.dumps(status, indent=2, ensure_ascii=False))
++  return 0
++
++
++if __name__ == "__main__":
++  sys.exit(main())
+diff --git b/selfdrive/auto_lock/__init__.py a/selfdrive/auto_lock/__init__.py
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git b/selfdrive/auto_lock/autolockd.py a/selfdrive/auto_lock/autolockd.py
+new file mode 100644
+index 0000000000..6a9260316e
+--- /dev/null
++++ a/selfdrive/auto_lock/autolockd.py
+@@ -0,0 +1,543 @@
++from __future__ import annotations
++
++import copy
++import logging
++import sys
++import time
++from dataclasses import dataclass
++from importlib import util
++from pathlib import Path
++from typing import Any, Dict, Optional
++
++import cereal.messaging as messaging
++from cereal import log
++from openpilot.common.params import Params
++
++logger = logging.getLogger(__name__)
++
++USE_CUSTOM_LOGFILE = True
++
++OFF_STABLE_TIME_S = 1.0
++LOCK_RETRY_COOLDOWN_S = 120.0
++POLL_INTERVAL_S = 1.0
++STATUS_MONITOR_TIMEOUT_S = 300.0
++STATUS_POLL_SCHEDULE = (
++  (15.0, 1.5),
++  (60.0, 3.0),
++  (150.0, 6.0),
++  (STATUS_MONITOR_TIMEOUT_S, 10.0),
++)
++
++
++def _now() -> float:
++  return time.monotonic()
++
++
++def _normalize_region(value: Optional[str]) -> Optional[str]:
++  if not value:
++    return None
++  return value.strip().upper() or None
++
++
++@dataclass(frozen=True)
++class _Creds:
++  username: str
++  password: str
++  pin: str
++  region: str
++  vin: Optional[str]
++  vehicle_id: Optional[str]
++  language: Optional[str]
++
++
++class AutoLockMonitor:
++  def __init__(self) -> None:
++    self.params = Params()
++    self.sm = messaging.SubMaster(["carState", "pandaStates", "deviceState"])
++
++    self.car_active: bool = False
++    self.off_since: Optional[float] = None
++
++    self.lock_attempted_at: Optional[float] = None
++    self._lock_client = None
++    self._lock_client_creds: Optional[_Creds] = None
++    self._status_client = None
++    self._status_client_creds: Optional[_Creds] = None
++    self._kia_lock_module = None
++    self._kia_status_module = None
++    self._kia_shared_module = None
++    self._status_monitor_active = False
++    self._status_monitor_started_at: Optional[float] = None
++    self._next_status_poll_at: Optional[float] = None
++    self._door_seen_open_remotely = False
++
++    self._missing_creds_logged_at: Optional[float] = None
++    self._network_type = None
++    self._awaiting_ignition_cycle = False
++    self.seatbelt_unlatched: bool = False
++    self._last_seatbelt_state: Optional[bool] = None
++    self._last_status_snapshot: Optional[Dict[str, Any]] = None
++    self._status_poll_logged: bool = False
++
++  def run(self) -> None:
++    while True:
++      self.sm.update(int(POLL_INTERVAL_S * 1000))
++      now = _now()
++
++      if self.sm.updated["carState"]:
++        self._handle_car_state(now)
++      if self.sm.updated["pandaStates"]:
++        self._handle_panda_state(now)
++      if self.sm.updated["deviceState"]:
++        self._handle_device_state()
++
++      self._evaluate(now)
++
++  def _handle_car_state(self, _: float) -> None:
++    cs = self.sm["carState"]
++    seatbelt_unlatched = bool(getattr(cs, "seatbeltUnlatched", False))
++
++    if self._last_seatbelt_state is None or seatbelt_unlatched != self._last_seatbelt_state:
++      logger.debug("Driver seatbelt unlatched: %s", seatbelt_unlatched)
++      self._last_seatbelt_state = seatbelt_unlatched
++    self.seatbelt_unlatched = seatbelt_unlatched
++
++  def _handle_panda_state(self, now: float) -> None:
++    panda_states = self.sm["pandaStates"]
++    ignition_on = False
++    for panda_state in panda_states:
++      if panda_state.ignitionLine or panda_state.ignitionCan:
++        ignition_on = True
++        break
++
++    if ignition_on:
++      if not self.car_active:
++        logger.debug("Ignition became active")
++      self.off_since = None
++      self.car_active = True
++      self._awaiting_ignition_cycle = False
++      self._stop_status_monitor(reset_wait=False)
++    else:
++      if self.car_active:
++        logger.debug("Ignition became inactive")
++        self.off_since = now
++        self.lock_attempted_at = None
++        self._stop_status_monitor(reset_wait=False)
++      elif self.off_since is None:
++        self.off_since = now
++      self.car_active = False
++
++  def _evaluate(self, now: float) -> None:
++    if self.car_active:
++      return
++
++    if self._awaiting_ignition_cycle:
++      return
++
++    if self.off_since is None:
++      return
++
++    if (now - self.off_since) < OFF_STABLE_TIME_S:
++      return
++
++    if not self._status_monitor_active:
++      self._start_status_monitor(now)
++
++    self._process_status_monitor(now)
++
++  def _load_credentials(self, now: float) -> Optional[_Creds]:
++    username = self.params.get("AutoLockUsername", block=False) or ""
++    password = self.params.get("AutoLockPassword", block=False) or ""
++    pin = self.params.get("AutoLockPin", block=False) or ""
++    region_raw = self.params.get("AutoLockRegion", block=False) or ""
++
++    username = username.strip()
++    password = password.strip()
++    pin = pin.strip()
++    region = _normalize_region(region_raw)
++
++    if not username or not password or not pin or region is None:
++      if self._missing_creds_logged_at is None or (now - self._missing_creds_logged_at) >= 300.0:
++        logger.debug("Auto-lock credentials incomplete; skipping")
++        self._missing_creds_logged_at = now
++      return None
++
++    language = "en"
++    vin = None
++    vehicle_id = None
++    creds = _Creds(username, password, pin, region, vin, vehicle_id, language)
++    self._missing_creds_logged_at = None
++    return creds
++
++  def _ensure_lock_client(self, creds: _Creds):
++    if self._lock_client_creds != creds:
++      module = self._get_kia_lock_module()
++      if module is None:
++        return None
++
++      KiaCredentials = getattr(module, "KiaCredentials", None)
++      KiaAutoLockClient = getattr(module, "KiaAutoLockClient", None)
++      Region = getattr(module, "Region", None)
++      if KiaCredentials is None or KiaAutoLockClient is None or Region is None:
++        logger.error("Kia lock module missing required classes")
++        return None
++
++      logger.debug("Refreshing KiaAutoLockClient session")
++      try:
++        region_enum = Region[creds.region]
++        kia_creds = KiaCredentials(
++          username=creds.username,
++          password=creds.password,
++          pin=creds.pin,
++          region=region_enum,
++          vin=creds.vin,
++          vehicle_id=creds.vehicle_id,
++          language=creds.language,
++        )
++      except Exception as err:  # pylint: disable=broad-except
++        logger.error("Failed to build Kia credentials: %s", err)
++        return None
++
++      try:
++        self._lock_client = KiaAutoLockClient(kia_creds)
++      except Exception as err:  # pylint: disable=broad-except
++        logger.error("Failed to initialise KiaAutoLockClient: %s", err)
++        return None
++      self._lock_client_creds = creds
++
++    return self._lock_client
++
++  def _stop_status_monitor(self, *, reset_wait: bool) -> None:
++    if self._status_monitor_active:
++      logger.debug("Auto-lock status monitor stopped (reset=%s)", reset_wait)
++    if self._status_poll_logged:
++      logger.debug("Auto-lock remote status polling stopped")
++    self._status_monitor_active = False
++    self._status_monitor_started_at = None
++    self._next_status_poll_at = None
++    self._door_seen_open_remotely = False
++    self._last_status_snapshot = None
++    self._status_poll_logged = False
++    if reset_wait:
++      self._awaiting_ignition_cycle = True
++
++  def _start_status_monitor(self, now: float) -> None:
++    self._status_monitor_active = True
++    self._status_monitor_started_at = now
++    self._next_status_poll_at = now
++    self._door_seen_open_remotely = False
++    self._status_poll_logged = False
++    logger.debug("Auto-lock status monitor started")
++
++  def _process_status_monitor(self, now: float) -> None:
++    if not self._status_monitor_active or self._status_monitor_started_at is None:
++      return
++
++    elapsed = now - self._status_monitor_started_at
++
++    if elapsed >= STATUS_MONITOR_TIMEOUT_S:
++      logger.info("Auto-lock polling timed out after %.0f seconds; forcing lock command", STATUS_MONITOR_TIMEOUT_S)
++      self._force_lock(now)
++      return
++
++    if self._next_status_poll_at is None:
++      self._next_status_poll_at = now
++
++    if now < self._next_status_poll_at:
++      return
++
++    self._poll_status(now)
++
++    if self._status_monitor_active:
++      interval = self._status_poll_interval(elapsed)
++      self._next_status_poll_at = now + interval
++
++  def _status_poll_interval(self, elapsed: float) -> float:
++    for cutoff, interval in STATUS_POLL_SCHEDULE:
++      if elapsed < cutoff:
++        return interval
++    return STATUS_POLL_SCHEDULE[-1][1]
++
++  def _force_lock(self, now: float) -> None:
++    logger.info("Auto-lock timeout reached; forcing lock command")
++    creds = self._load_credentials(now)
++    if creds is None:
++      logger.error("Forced auto-lock aborted: credentials unavailable")
++      self._reset_cycle_state()
++      return
++    self._try_lock(now, creds, force=True)
++
++  def _try_lock(self, now: float, creds: _Creds, *, force: bool) -> None:
++    if not force and self.lock_attempted_at is not None and (now - self.lock_attempted_at) < LOCK_RETRY_COOLDOWN_S:
++      return
++
++    lock_client = self._ensure_lock_client(creds)
++    if lock_client is None:
++      if force:
++        logger.error("Forced auto-lock aborted: unable to initialise lock client")
++        self._reset_cycle_state()
++      return
++
++    action_desc = "Triggering auto-lock"
++    if force:
++      action_desc += " (forced timeout)"
++    network_type = getattr(self, "_network_type", None)
++    network_label = getattr(network_type, "name", str(network_type)) if network_type is not None else "unknown"
++    logger.info("%s | networkType=%s", action_desc, network_label)
++
++    self.lock_attempted_at = now
++    try:
++      lock_client.lock()
++      success_desc = "Auto-lock command sent"
++      if force:
++        success_desc += " (forced)"
++      logger.info(success_desc)
++    except Exception as err:  # pylint: disable=broad-except
++      failure_desc = "Auto-lock command failed"
++      if force:
++        failure_desc += " (forced)"
++      logger.error("%s: %s", failure_desc, err)
++    finally:
++      self._reset_cycle_state()
++
++  def _poll_status(self, now: float) -> None:
++    creds = self._load_credentials(now)
++    if creds is None:
++      return
++
++    status_client = self._ensure_status_client(creds)
++    if status_client is None:
++      return
++
++    try:
++      if not self._status_poll_logged:
++        logger.debug("Auto-lock remote status polling started")
++        self._status_poll_logged = True
++      logger.debug("Polling remote status via KiaStatusClient (region=%s)", creds.region)
++      status: Dict[str, Any] = status_client.status()
++    except Exception as err:  # pylint: disable=broad-except
++      logger.error("Auto-lock status polling failed: %s", err)
++      return
++
++    self._log_status_update(status)
++
++    locked_value = status.get("locked")
++    if locked_value is True:
++      logger.info("Remote status indicates vehicle already locked; stopping auto-lock monitor")
++      self._stop_status_monitor(reset_wait=True)
++      return
++
++    engine = status.get("engine") or {}
++    ignition_on = bool(engine.get("ignition"))
++    accessory_on = bool(engine.get("accessory"))
++
++    open_doors = status.get("openDoors") or {}
++    door_open = any(bool(open_doors.get(name)) for name in ("frontRight", "frontLeft", "backLeft", "backRight"))
++    hood_open = bool(status.get("hoodOpen"))
++    trunk_open = bool(status.get("trunkOpen"))
++
++    if door_open and not self._door_seen_open_remotely:
++      logger.debug("Remote door open detected")
++    if door_open:
++      self._door_seen_open_remotely = True
++      self.lock_attempted_at = None
++      return
++
++    if hood_open or trunk_open:
++      return
++
++    if locked_value is not False:
++      return
++
++    if not self._door_seen_open_remotely:
++      return
++
++    if ignition_on or accessory_on:
++      return
++
++    self._try_lock(now, creds, force=False)
++
++  def _log_status_update(self, status: Dict[str, Any]) -> None:
++    if self._last_status_snapshot is None:
++      logger.debug("Initial remote status payload: %s", status)
++    else:
++      changes = self._diff_status(self._last_status_snapshot, status)
++      if changes:
++        formatted = ", ".join(f"{path}: {change['old']} -> {change['new']}" for path, change in sorted(changes.items()))
++        logger.debug("Remote status changes: %s", formatted)
++    self._last_status_snapshot = copy.deepcopy(status)
++
++  @staticmethod
++  def _diff_status(previous: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
++    changes: Dict[str, Dict[str, Any]] = {}
++
++    def recurse(prev: Any, curr: Any, path: tuple[str, ...]) -> None:
++      if isinstance(prev, dict) and isinstance(curr, dict):
++        keys = set(prev.keys()) | set(curr.keys())
++        for key in sorted(keys):
++          recurse(prev.get(key), curr.get(key), path + (str(key),))
++        return
++
++      if prev != curr:
++        key = ".".join(path) if path else "(root)"
++        changes[key] = {"old": prev, "new": curr}
++
++    recurse(previous, current, tuple())
++    return changes
++
++  def _ensure_status_client(self, creds: _Creds):
++    if self._status_client_creds != creds:
++      module = self._get_kia_status_module()
++      if module is None:
++        return None
++
++      KiaStatusClient = getattr(module, "KiaStatusClient", None)
++      Region = getattr(module, "Region", None)
++      KiaCredentials = getattr(module, "KiaCredentials", None)
++
++      if KiaCredentials is None or Region is None:
++        shared_module = self._get_kia_shared_module()
++        if shared_module is not None:
++          if KiaCredentials is None:
++            KiaCredentials = getattr(shared_module, "KiaCredentials", None)
++          if Region is None:
++            Region = getattr(shared_module, "Region", None)
++
++      if KiaCredentials is None or Region is None:
++        lock_module = self._get_kia_lock_module()
++        if lock_module is not None:
++          if KiaCredentials is None:
++            KiaCredentials = getattr(lock_module, "KiaCredentials", None)
++          if Region is None:
++            Region = getattr(lock_module, "Region", None)
++
++      if KiaCredentials is None or KiaStatusClient is None or Region is None:
++        logger.error("Kia status module missing required classes")
++        return None
++
++      try:
++        region_enum = Region[creds.region]
++        kia_creds = KiaCredentials(
++          username=creds.username,
++          password=creds.password,
++          pin=creds.pin,
++          region=region_enum,
++          vin=creds.vin,
++          vehicle_id=creds.vehicle_id,
++          language=creds.language,
++        )
++      except Exception as err:  # pylint: disable=broad-except
++        logger.error("Failed to build Kia status credentials: %s", err)
++        return None
++
++      try:
++        self._status_client = KiaStatusClient(kia_creds)
++      except Exception as err:  # pylint: disable=broad-except
++        logger.error("Failed to initialise KiaStatusClient: %s", err)
++        return None
++      self._status_client_creds = creds
++
++    return self._status_client
++
++  def _get_kia_lock_module(self):
++    if self._kia_lock_module is None:
++      module_path = Path(__file__).resolve().parents[2] / "auto-lock" / "kia_lock.py"
++      module_dir = module_path.parent
++      if str(module_dir) not in sys.path:
++        sys.path.insert(0, str(module_dir))
++      spec = util.spec_from_file_location("auto_lock_kia_lock", module_path)
++      if spec is None or spec.loader is None:
++        logger.error("Unable to locate kia_lock.py at %s", module_path)
++        return None
++      module = util.module_from_spec(spec)
++      try:
++        spec.loader.exec_module(module)
++      except Exception as err:  # pylint: disable=broad-except
++        logger.error("Failed to load kia_lock.py: %s", err)
++        return None
++      self._kia_lock_module = module
++    return self._kia_lock_module
++
++  def _get_kia_status_module(self):
++    if self._kia_status_module is None:
++      module_path = Path(__file__).resolve().parents[2] / "auto-lock" / "kia_status.py"
++      module_dir = module_path.parent
++      if str(module_dir) not in sys.path:
++        sys.path.insert(0, str(module_dir))
++      spec = util.spec_from_file_location("auto_lock_kia_status", module_path)
++      if spec is None or spec.loader is None:
++        logger.error("Unable to locate kia_status.py at %s", module_path)
++        return None
++      module = util.module_from_spec(spec)
++      try:
++        spec.loader.exec_module(module)
++      except Exception as err:  # pylint: disable=broad-except
++        logger.error("Failed to load kia_status.py: %s", err)
++        return None
++      self._kia_status_module = module
++    return self._kia_status_module
++
++  def _get_kia_shared_module(self):
++    if self._kia_shared_module is None:
++      module_path = Path(__file__).resolve().parents[2] / "auto-lock" / "kia_shared.py"
++      module_dir = module_path.parent
++      if str(module_dir) not in sys.path:
++        sys.path.insert(0, str(module_dir))
++      spec = util.spec_from_file_location("auto_lock_kia_shared", module_path)
++      if spec is None or spec.loader is None:
++        logger.error("Unable to locate kia_shared.py at %s", module_path)
++        return None
++      module = util.module_from_spec(spec)
++      try:
++        spec.loader.exec_module(module)
++      except Exception as err:  # pylint: disable=broad-except
++        logger.error("Failed to load kia_shared.py: %s", err)
++        return None
++      self._kia_shared_module = module
++    return self._kia_shared_module
++
++  def _handle_device_state(self) -> None:
++    self._network_type = self.sm["deviceState"].networkType
++
++  def _reset_cycle_state(self) -> None:
++    self.last_door_open_time = None
++    self.last_door_close_time = None
++    self.door_open_after_off_time = None
++    self.door_close_after_off_time = None
++    self.off_since = None
++    self._stop_status_monitor(reset_wait=True)
++
++
++def main() -> None:
++  logging.basicConfig(level=logging.INFO)
++  if USE_CUSTOM_LOGFILE:
++    log_dir = Path("/data/openpilot/auto-lock")
++    log_dir.mkdir(parents=True, exist_ok=True)
++    logfile = log_dir / "autolock.log"
++    try:
++      logfile.unlink()
++    except FileNotFoundError:
++      pass
++    except OSError as err:
++      logger.warning("Unable to remove existing log file %s: %s", logfile, err)
++    file_handler = logging.FileHandler(logfile, mode="w", encoding="utf-8")
++    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
++    file_handler.setLevel(logging.DEBUG)
++    logger.addHandler(file_handler)
++    logger.setLevel(logging.DEBUG)
++
++    kia_status_logger = logging.getLogger("auto_lock_kia_status")
++    if not any(isinstance(handler, logging.FileHandler) and handler.baseFilename == str(logfile) for handler in kia_status_logger.handlers):
++      kia_status_logger.addHandler(file_handler)
++    kia_status_logger.setLevel(logging.DEBUG)
++
++    kia_shared_logger = logging.getLogger("auto_lock_kia_shared")
++    if not any(isinstance(handler, logging.FileHandler) and handler.baseFilename == str(logfile) for handler in kia_shared_logger.handlers):
++      kia_shared_logger.addHandler(file_handler)
++    kia_shared_logger.setLevel(logging.DEBUG)
++  monitor = AutoLockMonitor()
++  monitor.run()
++
++
++if __name__ == "__main__":
++  main()
+diff --git b/selfdrive/ui/sunnypilot/SConscript a/selfdrive/ui/sunnypilot/SConscript
+index ca4a03b880..7ab94c1d32 100644
+--- b/selfdrive/ui/sunnypilot/SConscript
++++ a/selfdrive/ui/sunnypilot/SConscript
+@@ -31,6 +31,7 @@ qt_src = [
+   "sunnypilot/qt/offroad/settings/brightness.cc",
+   "sunnypilot/qt/offroad/settings/models_panel.cc",
+   "sunnypilot/qt/offroad/settings/osm_panel.cc",
++  "sunnypilot/qt/offroad/settings/auto_lock_panel.cc",
+   "sunnypilot/qt/offroad/settings/settings.cc",
+   "sunnypilot/qt/offroad/settings/software_panel.cc",
+   "sunnypilot/qt/offroad/settings/sunnylink_panel.cc",
+diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.cc
+new file mode 100644
+index 0000000000..f9bfe93cbc
+--- /dev/null
++++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.cc
+@@ -0,0 +1,103 @@
++#include "selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h"
++
++#include <QVBoxLayout>
++
++namespace {
++const QStringList kAutoLockRegions = {"US", "CA", "EU", "CN", "AU"};
++
++const QString kAutoLockUsernameParam = "AutoLockUsername";
++const QString kAutoLockPasswordParam = "AutoLockPassword";
++const QString kAutoLockPinParam = "AutoLockPin";
++const QString kAutoLockRegionParam = "AutoLockRegion";
++
++QString maskedValue(const QString &value) {
++  return value.isEmpty() ? QObject::tr("Not Set") : QString(value.size(), QChar(0x2022));
++}
++
++QString plainValue(const QString &value) {
++  return value.isEmpty() ? QObject::tr("Not Set") : value;
++}
++}  // namespace
++
++AutoLockPanel::AutoLockPanel(QWidget *parent) : QWidget(parent) {
++  QVBoxLayout *main_layout = new QVBoxLayout(this);
++  main_layout->setContentsMargins(50, 20, 50, 20);
++
++  list_widget = new ListWidgetSP(this, false);
++  list_widget->setSpacing(25);
++
++  addCredentialRow(tr("Username"), kAutoLockUsernameParam, false);
++  addCredentialRow(tr("Password"), kAutoLockPasswordParam, true);
++  addCredentialRow(tr("PIN"), kAutoLockPinParam, true);
++  addRegionRow();
++
++  ScrollViewSP *scroller = new ScrollViewSP(list_widget, this);
++  main_layout->addWidget(scroller);
++
++  refreshValues();
++}
++
++void AutoLockPanel::addCredentialRow(const QString &title, const QString &param, bool secret) {
++  const QString desc = tr("Tap to update. Stored locally in device Params.");
++  auto control = new ButtonControlSP(title, tr("EDIT"), desc, this);
++  control->showDescription();
++  credential_controls.insert(param, control);
++  secret_params.insert(param, secret);
++  list_widget->addItem(control);
++
++  QObject::connect(control, &ButtonControlSP::clicked, this, [=]() {
++    const QString current_value = QString::fromStdString(params.get(param.toStdString()));
++    const QString prompt = tr("Enter %1").arg(title.toLower());
++    const QString subtitle = tr("Leave blank to clear");
++    QString value = InputDialog::getText(prompt, this, subtitle, secret, -1, current_value);
++    if (!value.isNull()) {
++      const std::string key = param.toStdString();
++      if (value.isEmpty()) {
++        params.remove(key);
++      } else {
++        params.put(key, value.toStdString());
++      }
++      refreshValues();
++    }
++  });
++}
++
++void AutoLockPanel::addRegionRow() {
++  const QString desc = tr("Select the Kia/Hyundai account region for remote commands.");
++  region_button = new ButtonControlSP(tr("Region"), tr("SELECT"), desc, this);
++  region_button->showDescription();
++  list_widget->addItem(region_button);
++
++  QObject::connect(region_button, &ButtonControlSP::clicked, this, [=]() {
++    const QString current = QString::fromStdString(params.get(kAutoLockRegionParam.toStdString()));
++    QString selection = MultiOptionDialog::getSelection(tr("Select Region"), kAutoLockRegions, current, this);
++    if (!selection.isEmpty()) {
++      params.put(kAutoLockRegionParam.toStdString(), selection.toStdString());
++      refreshValues();
++    }
++  });
++}
++
++void AutoLockPanel::refreshValues() {
++  for (auto it = credential_controls.constBegin(); it != credential_controls.constEnd(); ++it) {
++    const QString param = it.key();
++    ButtonControlSP *control = it.value();
++    const QString stored = QString::fromStdString(params.get(param.toStdString()));
++    const bool secret = secret_params.value(param, false);
++    control->setValue(secret ? maskedValue(stored) : plainValue(stored));
++  }
++
++  if (region_button) {
++    QString region = QString::fromStdString(params.get(kAutoLockRegionParam.toStdString()));
++    if (region.isEmpty()) {
++      region = tr("Not Set");
++    }
++    region_button->setValue(region);
++  }
++}
++
++void AutoLockPanel::showEvent(QShowEvent *event) {
++  QWidget::showEvent(event);
++  refreshValues();
++}
++
+diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h
+new file mode 100644
+index 0000000000..c464dba6f1
+--- /dev/null
++++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h
+@@ -0,0 +1,30 @@
++#pragma once
++
++#include <QMap>
++#include <QStringList>
++#include <QShowEvent>
++
++#include "selfdrive/ui/sunnypilot/qt/offroad/settings/settings.h"
++#include "selfdrive/ui/sunnypilot/qt/widgets/controls.h"
++#include "selfdrive/ui/sunnypilot/qt/widgets/scrollview.h"
++#include "selfdrive/ui/qt/widgets/input.h"
++
++class AutoLockPanel : public QWidget {
++  Q_OBJECT
++
++public:
++  explicit AutoLockPanel(QWidget *parent = nullptr);
++
++private:
++  void addCredentialRow(const QString &title, const QString &param, bool secret = false);
++  void addRegionRow();
++  void refreshValues();
++  void showEvent(QShowEvent *event) override;
++
++  Params params;
++  ListWidgetSP *list_widget = nullptr;
++  QMap<QString, ButtonControlSP*> credential_controls;
++  ButtonControlSP *region_button = nullptr;
++  QMap<QString, bool> secret_params;
++};
++
+diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc
+index c712442df3..0b068efa6f 100644
+--- b/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc
++++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc
+@@ -15,6 +15,7 @@
+ #include "selfdrive/ui/sunnypilot/qt/offroad/settings/device_panel.h"
+ #include "selfdrive/ui/sunnypilot/qt/offroad/settings/display_panel.h"
+ #include "selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.h"
++#include "selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h"
+ #include "selfdrive/ui/sunnypilot/qt/offroad/settings/software_panel.h"
+ #include "selfdrive/ui/sunnypilot/qt/offroad/settings/sunnylink_panel.h"
+ #include "selfdrive/ui/sunnypilot/qt/offroad/settings/lateral_panel.h"
+@@ -81,6 +82,7 @@ SettingsWindowSP::SettingsWindowSP(QWidget *parent) : SettingsWindow(parent) {
+   QList<PanelInfo> panels = {
+     PanelInfo("   " + tr("Device"), device, "../../sunnypilot/selfdrive/assets/offroad/icon_home.svg"),
+     PanelInfo("   " + tr("Network"), networking, "../assets/icons/network.png"),
++    PanelInfo("   " + tr("Auto Lock"), new AutoLockPanel(this), "/data/openpilot/auto-lock/lock-closed-white.svg"),
+     PanelInfo("   " + tr("sunnylink"), new SunnylinkPanel(this), "../assets/icons/wifi_strength_full.svg"),
+     PanelInfo("   " + tr("Toggles"), toggles, "../../sunnypilot/selfdrive/assets/offroad/icon_toggle.png"),
+     PanelInfo("   " + tr("Software"), new SoftwarePanelSP(this), "../../sunnypilot/selfdrive/assets/offroad/icon_software.png"),
+diff --git b/system/manager/process_config.py a/system/manager/process_config.py
+index c5f20e511b..608f4e647d 100644
+--- b/system/manager/process_config.py
++++ a/system/manager/process_config.py
+@@ -145,6 +145,7 @@ procs = [
+   PythonProcess("lagd", "selfdrive.locationd.lagd", only_onroad),
+   PythonProcess("ubloxd", "system.ubloxd.ubloxd", ublox, enabled=TICI),
+   PythonProcess("pigeond", "system.ubloxd.pigeond", ublox, enabled=TICI),
++  PythonProcess("autolockd", "selfdrive.auto_lock.autolockd", always_run),
+   PythonProcess("plannerd", "selfdrive.controls.plannerd", not_long_maneuver),
+   PythonProcess("maneuversd", "tools.longitudinal_maneuvers.maneuversd", long_maneuver),
+   PythonProcess("radard", "selfdrive.controls.radard", only_onroad),
