@@ -64,8 +64,6 @@ class AutoLockMonitor:
     self.door_close_after_off_time: Optional[float] = None
     self.seatbelt_unlatched: bool = False
     self._last_seatbelt_state: Optional[bool] = None
-    self._last_driver_face_detected: Optional[bool] = None
-    self._last_driver_aware: Optional[bool] = None
     self.car_voltage: Optional[float] = None
     self._last_logged_voltage: Optional[float] = None
     self.panda_power_save: Optional[bool] = None
@@ -127,7 +125,7 @@ class AutoLockMonitor:
       voltage_raw = float(panda_states[0].voltage)
       voltage_v = voltage_raw / 1000.0 if voltage_raw > 1000.0 else voltage_raw
       if self._last_logged_voltage is None or abs(voltage_v - self._last_logged_voltage) >= 0.05:
-        # logger.debug("Vehicle bus voltage: %.2f V", voltage_v)
+        logger.debug("Vehicle bus voltage: %.2f V", voltage_v)
         self._last_logged_voltage = voltage_v
       self.car_voltage = voltage_v
 
@@ -293,18 +291,9 @@ class AutoLockMonitor:
 
   def _handle_driver_monitoring(self) -> None:
     dms = self.sm["driverMonitoringState"]
-    face_detected = bool(getattr(dms, "faceDetected", False))
-    aware = not bool(getattr(dms, "isDistracted", False))
-
-    if (
-      self._last_driver_face_detected is None
-      or self._last_driver_aware is None
-      or face_detected != self._last_driver_face_detected
-      or aware != self._last_driver_aware
-    ):
-      logger.debug("Driver monitoring: face_detected=%s aware=%s", face_detected, aware)
-      self._last_driver_face_detected = face_detected
-      self._last_driver_aware = aware
+    face_detected = getattr(dms, "faceDetected", False)
+    awake = not getattr(dms, "isDistracted", False)
+    logger.debug("Driver monitoring: face_detected=%s aware=%s", face_detected, awake)
 
   def _connectivity_available(self) -> bool:
     network_type = getattr(self, "_network_type", None)
