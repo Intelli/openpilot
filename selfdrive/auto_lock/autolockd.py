@@ -163,7 +163,7 @@ class AutoLockMonitor:
       return
 
     if not self.seatbelt_unlatched:
-      logger.debug("Skipping auto-lock: seatbelts still latched")
+      # logger.debug("Skipping auto-lock: seatbelts still latched")
       return
 
     if (now - self.off_since) < OFF_STABLE_TIME_S:
