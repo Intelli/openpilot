@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from dataclasses import dataclass
@@ -53,9 +54,6 @@ class AutoLockMonitor:
     self.params = Params()
     self.sm = messaging.SubMaster(["carState", "pandaStates", "deviceState"])
 
-    self.door_open: bool = False
-    self.last_door_open_time: Optional[float] = None
-    self.last_door_close_time: Optional[float] = None
     self.car_active: bool = False
     self.off_since: Optional[float] = None
 
@@ -74,10 +72,9 @@ class AutoLockMonitor:
     self._missing_creds_logged_at: Optional[float] = None
     self._network_type = None
     self._awaiting_ignition_cycle = False
-    self.door_open_after_off_time: Optional[float] = None
-    self.door_close_after_off_time: Optional[float] = None
     self.seatbelt_unlatched: bool = False
     self._last_seatbelt_state: Optional[bool] = None
+    self._last_status_snapshot: Optional[Dict[str, Any]] = None
 
   def run(self) -> None:
     while True:
@@ -93,33 +90,14 @@ class AutoLockMonitor:
 
       self._evaluate(now)
 
-  def _handle_car_state(self, now: float) -> None:
+  def _handle_car_state(self, _: float) -> None:
     cs = self.sm["carState"]
-    door_open = bool(getattr(cs, "doorOpen", False))
     seatbelt_unlatched = bool(getattr(cs, "seatbeltUnlatched", False))
 
     if self._last_seatbelt_state is None or seatbelt_unlatched != self._last_seatbelt_state:
       logger.debug("Driver seatbelt unlatched: %s", seatbelt_unlatched)
       self._last_seatbelt_state = seatbelt_unlatched
     self.seatbelt_unlatched = seatbelt_unlatched
-
-    if door_open:
-      if not self.door_open:
-        logger.debug("Door transitioned open")
-      self.last_door_open_time = now
-      if self.off_since is not None:
-        self.door_open_after_off_time = self.door_open_after_off_time or now
-        if self.door_open_after_off_time == now:
-          logger.debug("Door open recorded after ignition off at %.2f", now - self.off_since)
-      self.lock_attempted_at = None
-    elif self.door_open and not door_open:
-      self.last_door_close_time = now
-      logger.debug("Door transitioned closed")
-      if self.off_since is not None:
-        self.door_close_after_off_time = now
-        logger.debug("Door close recorded after ignition off at %.2f", now - self.off_since)
-
-    self.door_open = door_open
 
   def _handle_panda_state(self, now: float) -> None:
     panda_states = self.sm["pandaStates"]
@@ -140,8 +118,6 @@ class AutoLockMonitor:
       if self.car_active:
         logger.debug("Ignition became inactive")
         self.off_since = now
-        self.door_open_after_off_time = self.door_open_after_off_time or now
-        self.door_close_after_off_time = None
         self.lock_attempted_at = None
         self._stop_status_monitor(reset_wait=False)
       elif self.off_since is None:
@@ -235,6 +211,7 @@ class AutoLockMonitor:
     self._status_monitor_started_at = None
     self._next_status_poll_at = None
     self._door_seen_open_remotely = False
+    self._last_status_snapshot = None
     if reset_wait:
       self._awaiting_ignition_cycle = True
 
@@ -332,6 +309,8 @@ class AutoLockMonitor:
       logger.error("Auto-lock status polling failed: %s", err)
       return
 
+    self._log_status_update(status)
+
     locked_value = status.get("locked")
     if locked_value is True:
       logger.info("Remote status indicates vehicle already locked; stopping auto-lock monitor")
@@ -351,8 +330,10 @@ class AutoLockMonitor:
       logger.debug("Remote door open detected")
     if door_open:
       self._door_seen_open_remotely = True
+      self.lock_attempted_at = None
+      return
 
-    if hood_open or trunk_open or door_open:
+    if hood_open or trunk_open:
       return
 
     if locked_value is not False:
@@ -365,6 +346,34 @@ class AutoLockMonitor:
       return
 
     self._try_lock(now, creds, force=False)
+
+  def _log_status_update(self, status: Dict[str, Any]) -> None:
+    if self._last_status_snapshot is None:
+      logger.debug("Initial remote status payload: %s", status)
+    else:
+      changes = self._diff_status(self._last_status_snapshot, status)
+      if changes:
+        formatted = ", ".join(f"{path}: {change['old']} -> {change['new']}" for path, change in sorted(changes.items()))
+        logger.debug("Remote status changes: %s", formatted)
+    self._last_status_snapshot = copy.deepcopy(status)
+
+  @staticmethod
+  def _diff_status(previous: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    changes: Dict[str, Dict[str, Any]] = {}
+
+    def recurse(prev: Any, curr: Any, path: tuple[str, ...]) -> None:
+      if isinstance(prev, dict) and isinstance(curr, dict):
+        keys = set(prev.keys()) | set(curr.keys())
+        for key in sorted(keys):
+          recurse(prev.get(key), curr.get(key), path + (str(key),))
+        return
+
+      if prev != curr:
+        key = ".".join(path) if path else "(root)"
+        changes[key] = {"old": prev, "new": curr}
+
+    recurse(previous, current, tuple())
+    return changes
 
   def _ensure_status_client(self, creds: _Creds):
     if self._status_client_creds != creds:
