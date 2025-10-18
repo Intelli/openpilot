@@ -75,6 +75,7 @@ class AutoLockMonitor:
     self.seatbelt_unlatched: bool = False
     self._last_seatbelt_state: Optional[bool] = None
     self._last_status_snapshot: Optional[Dict[str, Any]] = None
+    self._status_poll_logged: bool = False
 
   def run(self) -> None:
     while True:
@@ -143,10 +144,10 @@ class AutoLockMonitor:
     self._process_status_monitor(now)
 
   def _load_credentials(self, now: float) -> Optional[_Creds]:
-    username = self.params.get("AutoLockUsername", encoding="utf-8", block=False) or ""
-    password = self.params.get("AutoLockPassword", encoding="utf-8", block=False) or ""
-    pin = self.params.get("AutoLockPin", encoding="utf-8", block=False) or ""
-    region_raw = self.params.get("AutoLockRegion", encoding="utf-8", block=False) or ""
+    username = self.params.get("AutoLockUsername", block=False) or ""
+    password = self.params.get("AutoLockPassword", block=False) or ""
+    pin = self.params.get("AutoLockPin", block=False) or ""
+    region_raw = self.params.get("AutoLockRegion", block=False) or ""
 
     username = username.strip()
     password = password.strip()
@@ -207,11 +208,14 @@ class AutoLockMonitor:
   def _stop_status_monitor(self, *, reset_wait: bool) -> None:
     if self._status_monitor_active:
       logger.debug("Auto-lock status monitor stopped (reset=%s)", reset_wait)
+    if self._status_poll_logged:
+      logger.debug("Auto-lock remote status polling stopped")
     self._status_monitor_active = False
     self._status_monitor_started_at = None
     self._next_status_poll_at = None
     self._door_seen_open_remotely = False
     self._last_status_snapshot = None
+    self._status_poll_logged = False
     if reset_wait:
       self._awaiting_ignition_cycle = True
 
@@ -220,6 +224,7 @@ class AutoLockMonitor:
     self._status_monitor_started_at = now
     self._next_status_poll_at = now
     self._door_seen_open_remotely = False
+    self._status_poll_logged = False
     logger.debug("Auto-lock status monitor started")
 
   def _process_status_monitor(self, now: float) -> None:
@@ -304,6 +309,9 @@ class AutoLockMonitor:
       return
 
     try:
+      if not self._status_poll_logged:
+        logger.debug("Auto-lock remote status polling started")
+        self._status_poll_logged = True
       status: Dict[str, Any] = status_client.status()
     except Exception as err:  # pylint: disable=broad-except
       logger.error("Auto-lock status polling failed: %s", err)
