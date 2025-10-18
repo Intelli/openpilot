@@ -159,38 +159,23 @@ def manager_thread() -> None:
     started_prev = started
     ignition_prev = ignition
 
-  ignition_or_keepalive = ignition or (dm_keepalive_until is not None and time.monotonic() < dm_keepalive_until if dm_keepalive_until is not None else False)
-  keepalive_process_names = ['dmonitoringd', 'dmonitoringmodeld', 'camerad', 'card']
-  keepalive_processes = {name: managed_processes.get(name) for name in keepalive_process_names}
-  dm_should_run = started or ignition_or_keepalive
+    dm_process = managed_processes.get('dmonitoringd')
+    ignition_or_keepalive = ignition or (dm_keepalive_until is not None and time.monotonic() < dm_keepalive_until if dm_keepalive_until is not None else False)
+    dm_should_run = started or ignition_or_keepalive
 
-  ensure_not_run = list(ignore)
-  for name, proc in keepalive_processes.items():
-    if proc is None or not proc.enabled:
-      continue
-    if not started and not ignition_or_keepalive:
-      ensure_not_run.append(name)
+    ensure_not_run = list(ignore)
+    if dm_process is not None and dm_process.enabled:
+      ensure_not_run.append('dmonitoringd')
 
-  if ignition:
-    dm_keepalive_until = None
+    ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ensure_not_run)
 
-  ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ensure_not_run)
-
-  for name, proc in keepalive_processes.items():
-    if proc is None or not proc.enabled:
-      continue
-
-    if name == 'dmonitoringd':
-      should_run = dm_should_run
-    else:
-      should_run = started or ignition_or_keepalive
-
-    if should_run:
-      if proc.proc is None or not proc.proc.is_alive():
-        proc.start()
-    else:
-      if proc.proc is not None and proc.proc.is_alive():
-        proc.stop()
+    if dm_process is not None and dm_process.enabled:
+      if dm_should_run:
+        if dm_process.proc is None or not dm_process.proc.is_alive():
+          dm_process.start()
+      else:
+        if dm_process.proc is not None and dm_process.proc.is_alive():
+          dm_process.stop()
 
     running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name)
                        for p in managed_processes.values() if p.proc)
