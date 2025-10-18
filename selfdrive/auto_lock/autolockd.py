@@ -281,7 +281,9 @@ class AutoLockMonitor:
     action_desc = "Triggering auto-lock"
     if force:
       action_desc += " (forced timeout)"
-    logger.info(action_desc)
+    network_type = getattr(self, "_network_type", None)
+    network_label = getattr(network_type, "name", str(network_type)) if network_type is not None else "unknown"
+    logger.info("%s | networkType=%s", action_desc, network_label)
 
     self.lock_attempted_at = now
     try:
@@ -299,9 +301,6 @@ class AutoLockMonitor:
       self._reset_cycle_state()
 
   def _poll_status(self, now: float) -> None:
-    if not self._connectivity_available():
-      return
-
     creds = self._load_credentials(now)
     if creds is None:
       return
@@ -314,6 +313,7 @@ class AutoLockMonitor:
       if not self._status_poll_logged:
         logger.debug("Auto-lock remote status polling started")
         self._status_poll_logged = True
+      logger.debug("Polling remote status via KiaStatusClient (region=%s)", creds.region)
       status: Dict[str, Any] = status_client.status()
     except Exception as err:  # pylint: disable=broad-except
       logger.error("Auto-lock status polling failed: %s", err)
@@ -497,22 +497,7 @@ class AutoLockMonitor:
     return self._kia_shared_module
 
   def _handle_device_state(self) -> None:
-    ds = self.sm["deviceState"]
-    self._network_type = ds.networkType
-
-  def _connectivity_available(self) -> bool:
-    network_type = getattr(self, "_network_type", None)
-    if network_type is None:
-      return False
-    allowed_networks = {
-      log.DeviceState.NetworkType.wifi,
-      log.DeviceState.NetworkType.cell2G,
-      log.DeviceState.NetworkType.cell3G,
-      log.DeviceState.NetworkType.cell4G,
-      log.DeviceState.NetworkType.cell5G,
-      log.DeviceState.NetworkType.ethernet,
-    }
-    return network_type in allowed_networks or network_type == log.DeviceState.NetworkType.none
+    self._network_type = self.sm["deviceState"].networkType
 
   def _reset_cycle_state(self) -> None:
     self.last_door_open_time = None
