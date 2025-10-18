@@ -20,8 +20,6 @@ from openpilot.common.swaglog import cloudlog, add_file_handler
 from openpilot.system.version import get_build_metadata, terms_version, training_version
 from openpilot.system.hardware.hw import Paths
 
-DM_KEEPALIVE_DURATION_S = 60.0
-
 
 def manager_init() -> None:
   save_bootlog()
@@ -134,7 +132,6 @@ def manager_thread() -> None:
 
   started_prev = False
   ignition_prev = False
-  dm_keepalive_until = None
 
   while True:
     sm.update(1000)
@@ -149,8 +146,6 @@ def manager_thread() -> None:
     ignition = any(ps.ignitionLine or ps.ignitionCan for ps in sm['pandaStates'] if ps.pandaType != log.PandaState.PandaType.unknown)
     if ignition and not ignition_prev:
       params.clear_all(ParamKeyFlag.CLEAR_ON_IGNITION_ON)
-    elif not ignition and ignition_prev:
-      dm_keepalive_until = time.monotonic() + DM_KEEPALIVE_DURATION_S
 
     # update onroad params, which drives pandad's safety setter thread
     if started != started_prev:
@@ -159,26 +154,7 @@ def manager_thread() -> None:
     started_prev = started
     ignition_prev = ignition
 
-    ignition_or_keepalive = ignition or (dm_keepalive_until is not None and time.monotonic() < dm_keepalive_until if dm_keepalive_until is not None else False)
-    keepalive_process = managed_processes.get('dmonitoringd')
-    keepalive_active = (not started) and ignition_or_keepalive
-
-    ensure_not_run = list(ignore)
-    if keepalive_process is not None and keepalive_process.enabled and not started and not keepalive_active:
-      ensure_not_run.append('dmonitoringd')
-
-    if ignition:
-      dm_keepalive_until = None
-
-    ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ensure_not_run)
-
-    if not started and keepalive_process is not None and keepalive_process.enabled:
-      if keepalive_active:
-        if keepalive_process.proc is None or not keepalive_process.proc.is_alive():
-          keepalive_process.start()
-      else:
-        if keepalive_process.proc is not None and keepalive_process.proc.is_alive():
-          keepalive_process.stop()
+    ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ignore)
 
     running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name)
                        for p in managed_processes.values() if p.proc)
