@@ -62,7 +62,8 @@ class AutoLockMonitor:
     self._awaiting_ignition_cycle = False
     self.door_open_after_off_time: Optional[float] = None
     self.door_close_after_off_time: Optional[float] = None
-    self._last_door_bitfield: dict | None = None
+    self.seatbelt_unlatched: bool = False
+    self._last_seatbelt_state: Optional[bool] = None
 
 
   def run(self) -> None:
@@ -81,20 +82,13 @@ class AutoLockMonitor:
 
   def _handle_car_state(self, now: float) -> None:
     cs = self.sm["carState"]
-    door_open = bool(cs.doorBitfield.driver if getattr(cs, "doorBitfield", None) is not None else cs.doorOpen)
+    door_open = bool(getattr(cs, "doorOpen", False))
+    seatbelt_unlatched = bool(getattr(cs, "seatbeltUnlatched", False))
 
-    door_bits_struct = getattr(cs, "doorBitfield", None)
-    door_bits = None
-    if door_bits_struct is not None:
-      door_bits = {
-        "driver": door_bits_struct.driver,
-        "passenger": door_bits_struct.passenger,
-        "rearLeft": door_bits_struct.rearLeft,
-        "rearRight": door_bits_struct.rearRight,
-      }
-    if door_bits is not None and door_bits != self._last_door_bitfield:
-      logger.debug("Door bits updated: %s", door_bits)
-      self._last_door_bitfield = dict(door_bits)
+    if self._last_seatbelt_state is None or seatbelt_unlatched != self._last_seatbelt_state:
+      logger.debug("Driver seatbelt unlatched: %s", seatbelt_unlatched)
+      self._last_seatbelt_state = seatbelt_unlatched
+    self.seatbelt_unlatched = seatbelt_unlatched
 
     if door_open:
       if not self.door_open:
@@ -302,7 +296,13 @@ def main() -> None:
     log_dir = Path("/data/openpilot/auto-lock")
     log_dir.mkdir(parents=True, exist_ok=True)
     logfile = log_dir / "autolock.log"
-    file_handler = logging.FileHandler(logfile, encoding="utf-8")
+    try:
+      logfile.unlink()
+    except FileNotFoundError:
+      pass
+    except OSError as err:
+      logger.warning("Unable to remove existing log file %s: %s", logfile, err)
+    file_handler = logging.FileHandler(logfile, mode="w", encoding="utf-8")
     file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logger.addHandler(file_handler)
     logger.setLevel(logging.DEBUG)
