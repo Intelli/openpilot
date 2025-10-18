@@ -132,6 +132,7 @@ def manager_thread() -> None:
 
   started_prev = False
   ignition_prev = False
+  dm_keepalive_until = None
 
   while True:
     sm.update(1000)
@@ -154,7 +155,23 @@ def manager_thread() -> None:
     started_prev = started
     ignition_prev = ignition
 
-    ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ignore)
+    dm_process = managed_processes.get('dmonitoringd')
+    ignition_or_keepalive = ignition or (dm_keepalive_until is not None and time.monotonic() < dm_keepalive_until if dm_keepalive_until is not None else False)
+    dm_should_run = started or ignition_or_keepalive
+
+    ensure_not_run = list(ignore)
+    if dm_process is not None and dm_process.enabled:
+      ensure_not_run.append('dmonitoringd')
+
+    ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ensure_not_run)
+
+    if dm_process is not None and dm_process.enabled:
+      if dm_should_run:
+        if dm_process.proc is None or not dm_process.proc.is_alive():
+          dm_process.start()
+      else:
+        if dm_process.proc is not None and dm_process.proc.is_alive():
+          dm_process.stop()
 
     running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name)
                        for p in managed_processes.values() if p.proc)
