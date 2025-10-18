@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from importlib import util
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import cereal.messaging as messaging
 from cereal import log
@@ -17,7 +17,14 @@ USE_CUSTOM_LOGFILE = True
 
 OFF_STABLE_TIME_S = 1.0
 LOCK_RETRY_COOLDOWN_S = 120.0
-POLL_INTERVAL_S = 0.5
+POLL_INTERVAL_S = 1.0
+STATUS_MONITOR_TIMEOUT_S = 300.0
+STATUS_POLL_SCHEDULE = (
+  (15.0, 1.5),
+  (60.0, 3.0),
+  (150.0, 6.0),
+  (STATUS_MONITOR_TIMEOUT_S, 10.0),
+)
 
 
 def _now() -> float:
@@ -53,9 +60,16 @@ class AutoLockMonitor:
     self.off_since: Optional[float] = None
 
     self.lock_attempted_at: Optional[float] = None
-    self._client = None
-    self._client_creds: Optional[_Creds] = None
+    self._lock_client = None
+    self._lock_client_creds: Optional[_Creds] = None
+    self._status_client = None
+    self._status_client_creds: Optional[_Creds] = None
     self._kia_lock_module = None
+    self._kia_status_module = None
+    self._status_monitor_active = False
+    self._status_monitor_started_at: Optional[float] = None
+    self._next_status_poll_at: Optional[float] = None
+    self._door_seen_open_remotely = False
 
     self._missing_creds_logged_at: Optional[float] = None
     self._network_type = None
@@ -64,7 +78,6 @@ class AutoLockMonitor:
     self.door_close_after_off_time: Optional[float] = None
     self.seatbelt_unlatched: bool = False
     self._last_seatbelt_state: Optional[bool] = None
-
 
   def run(self) -> None:
     while True:
@@ -122,12 +135,15 @@ class AutoLockMonitor:
       self.off_since = None
       self.car_active = True
       self._awaiting_ignition_cycle = False
+      self._stop_status_monitor(reset_wait=False)
     else:
       if self.car_active:
         logger.debug("Ignition became inactive")
         self.off_since = now
-        self.door_open_after_off_time = now if self.door_open else None
+        self.door_open_after_off_time = self.door_open_after_off_time or now
         self.door_close_after_off_time = None
+        self.lock_attempted_at = None
+        self._stop_status_monitor(reset_wait=False)
       elif self.off_since is None:
         self.off_since = now
       self.car_active = False
@@ -145,45 +161,10 @@ class AutoLockMonitor:
     if (now - self.off_since) < OFF_STABLE_TIME_S:
       return
 
-    doors_recent = self.door_open_after_off_time is not None
-    doors_closed = (
-      not self.door_open
-      and self.door_close_after_off_time is not None
-    )
-    door_cycle_complete = (
-      doors_recent
-      and self.door_open_after_off_time >= self.off_since
-      and (
-        self.door_close_after_off_time is None
-        or self.door_close_after_off_time >= self.off_since
-      )
-    )
-    cooldown_ok = self.lock_attempted_at is None or (now - self.lock_attempted_at) >= LOCK_RETRY_COOLDOWN_S
+    if not self._status_monitor_active:
+      self._start_status_monitor(now)
 
-    if not all([doors_recent, doors_closed, door_cycle_complete, cooldown_ok]):
-      return
-
-    creds = self._load_credentials(now)
-    if creds is None:
-      return
-
-    client = self._ensure_client(creds)
-    if client is None:
-      return
-
-    if not self._connectivity_available():
-      logger.info("Skipping auto-lock: no network connectivity")
-      return
-
-    logger.info("Triggering auto-lock")
-    self.lock_attempted_at = now
-    try:
-      client.lock()
-      logger.info("Auto-lock command sent")
-    except Exception as err:  # pylint: disable=broad-except
-      logger.error("Auto-lock command failed: %s", err)
-    finally:
-      self._reset_cycle_state()
+    self._process_status_monitor(now)
 
   def _load_credentials(self, now: float) -> Optional[_Creds]:
     username = self.params.get("AutoLockUsername", encoding="utf-8", block=False) or ""
@@ -209,8 +190,8 @@ class AutoLockMonitor:
     self._missing_creds_logged_at = None
     return creds
 
-  def _ensure_client(self, creds: _Creds):
-    if self._client_creds != creds:
+  def _ensure_lock_client(self, creds: _Creds):
+    if self._lock_client_creds != creds:
       module = self._get_kia_lock_module()
       if module is None:
         return None
@@ -239,13 +220,188 @@ class AutoLockMonitor:
         return None
 
       try:
-        self._client = KiaAutoLockClient(kia_creds)
+        self._lock_client = KiaAutoLockClient(kia_creds)
       except Exception as err:  # pylint: disable=broad-except
         logger.error("Failed to initialise KiaAutoLockClient: %s", err)
         return None
-      self._client_creds = creds
+      self._lock_client_creds = creds
 
-    return self._client
+    return self._lock_client
+
+  def _stop_status_monitor(self, *, reset_wait: bool) -> None:
+    if self._status_monitor_active:
+      logger.debug("Auto-lock status monitor stopped (reset=%s)", reset_wait)
+    self._status_monitor_active = False
+    self._status_monitor_started_at = None
+    self._next_status_poll_at = None
+    self._door_seen_open_remotely = False
+    if reset_wait:
+      self._awaiting_ignition_cycle = True
+
+  def _start_status_monitor(self, now: float) -> None:
+    self._status_monitor_active = True
+    self._status_monitor_started_at = now
+    self._next_status_poll_at = now
+    self._door_seen_open_remotely = False
+    logger.debug("Auto-lock status monitor started")
+
+  def _process_status_monitor(self, now: float) -> None:
+    if not self._status_monitor_active or self._status_monitor_started_at is None:
+      return
+
+    elapsed = now - self._status_monitor_started_at
+
+    if elapsed >= STATUS_MONITOR_TIMEOUT_S:
+      logger.info("Auto-lock polling timed out after %.0f seconds; forcing lock command", STATUS_MONITOR_TIMEOUT_S)
+      self._force_lock(now)
+      return
+
+    if self._next_status_poll_at is None:
+      self._next_status_poll_at = now
+
+    if now < self._next_status_poll_at:
+      return
+
+    self._poll_status(now)
+
+    if self._status_monitor_active:
+      interval = self._status_poll_interval(elapsed)
+      self._next_status_poll_at = now + interval
+
+  def _status_poll_interval(self, elapsed: float) -> float:
+    for cutoff, interval in STATUS_POLL_SCHEDULE:
+      if elapsed < cutoff:
+        return interval
+    return STATUS_POLL_SCHEDULE[-1][1]
+
+  def _force_lock(self, now: float) -> None:
+    logger.info("Auto-lock timeout reached; forcing lock command")
+    creds = self._load_credentials(now)
+    if creds is None:
+      logger.error("Forced auto-lock aborted: credentials unavailable")
+      self._reset_cycle_state()
+      return
+    self._try_lock(now, creds, force=True)
+
+  def _try_lock(self, now: float, creds: _Creds, *, force: bool) -> None:
+    if not force and self.lock_attempted_at is not None and (now - self.lock_attempted_at) < LOCK_RETRY_COOLDOWN_S:
+      return
+
+    lock_client = self._ensure_lock_client(creds)
+    if lock_client is None:
+      if force:
+        logger.error("Forced auto-lock aborted: unable to initialise lock client")
+        self._reset_cycle_state()
+      return
+
+    action_desc = "Triggering auto-lock"
+    if force:
+      action_desc += " (forced timeout)"
+    logger.info(action_desc)
+
+    self.lock_attempted_at = now
+    try:
+      lock_client.lock()
+      success_desc = "Auto-lock command sent"
+      if force:
+        success_desc += " (forced)"
+      logger.info(success_desc)
+    except Exception as err:  # pylint: disable=broad-except
+      failure_desc = "Auto-lock command failed"
+      if force:
+        failure_desc += " (forced)"
+      logger.error("%s: %s", failure_desc, err)
+    finally:
+      self._reset_cycle_state()
+
+  def _poll_status(self, now: float) -> None:
+    if not self._connectivity_available():
+      return
+
+    creds = self._load_credentials(now)
+    if creds is None:
+      return
+
+    status_client = self._ensure_status_client(creds)
+    if status_client is None:
+      return
+
+    try:
+      status: Dict[str, Any] = status_client.status()
+    except Exception as err:  # pylint: disable=broad-except
+      logger.error("Auto-lock status polling failed: %s", err)
+      return
+
+    locked_value = status.get("locked")
+    if locked_value is True:
+      logger.info("Remote status indicates vehicle already locked; stopping auto-lock monitor")
+      self._stop_status_monitor(reset_wait=True)
+      return
+
+    engine = status.get("engine") or {}
+    ignition_on = bool(engine.get("ignition"))
+    accessory_on = bool(engine.get("accessory"))
+
+    open_doors = status.get("openDoors") or {}
+    door_open = any(bool(open_doors.get(name)) for name in ("frontRight", "frontLeft", "backLeft", "backRight"))
+    hood_open = bool(status.get("hoodOpen"))
+    trunk_open = bool(status.get("trunkOpen"))
+
+    if door_open and not self._door_seen_open_remotely:
+      logger.debug("Remote door open detected")
+    if door_open:
+      self._door_seen_open_remotely = True
+
+    if hood_open or trunk_open or door_open:
+      return
+
+    if locked_value is not False:
+      return
+
+    if not self._door_seen_open_remotely:
+      return
+
+    if ignition_on or accessory_on:
+      return
+
+    self._try_lock(now, creds, force=False)
+
+  def _ensure_status_client(self, creds: _Creds):
+    if self._status_client_creds != creds:
+      module = self._get_kia_status_module()
+      if module is None:
+        return None
+
+      KiaCredentials = getattr(module, "KiaCredentials", None)
+      KiaStatusClient = getattr(module, "KiaStatusClient", None)
+      Region = getattr(module, "Region", None)
+      if KiaCredentials is None or KiaStatusClient is None or Region is None:
+        logger.error("Kia status module missing required classes")
+        return None
+
+      try:
+        region_enum = Region[creds.region]
+        kia_creds = KiaCredentials(
+          username=creds.username,
+          password=creds.password,
+          pin=creds.pin,
+          region=region_enum,
+          vin=creds.vin,
+          vehicle_id=creds.vehicle_id,
+          language=creds.language,
+        )
+      except Exception as err:  # pylint: disable=broad-except
+        logger.error("Failed to build Kia status credentials: %s", err)
+        return None
+
+      try:
+        self._status_client = KiaStatusClient(kia_creds)
+      except Exception as err:  # pylint: disable=broad-except
+        logger.error("Failed to initialise KiaStatusClient: %s", err)
+        return None
+      self._status_client_creds = creds
+
+    return self._status_client
 
   def _get_kia_lock_module(self):
     if self._kia_lock_module is None:
@@ -262,6 +418,22 @@ class AutoLockMonitor:
         return None
       self._kia_lock_module = module
     return self._kia_lock_module
+
+  def _get_kia_status_module(self):
+    if self._kia_status_module is None:
+      module_path = Path(__file__).resolve().parents[2] / "auto-lock" / "kia_status.py"
+      spec = util.spec_from_file_location("auto_lock_kia_status", module_path)
+      if spec is None or spec.loader is None:
+        logger.error("Unable to locate kia_status.py at %s", module_path)
+        return None
+      module = util.module_from_spec(spec)
+      try:
+        spec.loader.exec_module(module)
+      except Exception as err:  # pylint: disable=broad-except
+        logger.error("Failed to load kia_status.py: %s", err)
+        return None
+      self._kia_status_module = module
+    return self._kia_status_module
 
   def _handle_device_state(self) -> None:
     ds = self.sm["deviceState"]
@@ -287,7 +459,7 @@ class AutoLockMonitor:
     self.door_open_after_off_time = None
     self.door_close_after_off_time = None
     self.off_since = None
-    self._awaiting_ignition_cycle = True
+    self._stop_status_monitor(reset_wait=True)
 
 
 def main() -> None:
