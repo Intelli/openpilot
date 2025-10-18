@@ -64,8 +64,8 @@ class AutoLockMonitor:
     self.door_close_after_off_time: Optional[float] = None
     self.seatbelt_unlatched: bool = False
     self._last_seatbelt_state: Optional[bool] = None
-    self._last_driver_face_detected: Optional[bool] = None
-    self._last_driver_aware: Optional[bool] = None
+    self._last_driver_monitor_state: Optional[tuple] = None
+    self.driver_present: bool = False
     self.car_voltage: Optional[float] = None
     self._last_logged_voltage: Optional[float] = None
     self.panda_power_save: Optional[bool] = None
@@ -295,16 +295,40 @@ class AutoLockMonitor:
     dms = self.sm["driverMonitoringState"]
     face_detected = bool(getattr(dms, "faceDetected", False))
     aware = not bool(getattr(dms, "isDistracted", False))
+    awareness_status = float(getattr(dms, "awarenessStatus", 0.0) or 0.0)
+    awareness_active = float(getattr(dms, "awarenessActive", 0.0) or 0.0)
+    awareness_passive = float(getattr(dms, "awarenessPassive", 0.0) or 0.0)
+    distractions = int(getattr(dms, "distractedType", 0) or 0)
+    hi_std_count = int(getattr(dms, "hiStdCount", 0) or 0)
 
-    if (
-      self._last_driver_face_detected is None
-      or self._last_driver_aware is None
-      or face_detected != self._last_driver_face_detected
-      or aware != self._last_driver_aware
-    ):
-      logger.debug("Driver monitoring: face_detected=%s aware=%s", face_detected, aware)
-      self._last_driver_face_detected = face_detected
-      self._last_driver_aware = aware
+    driver_present = face_detected or awareness_status > 0.0
+
+    new_state = (
+      face_detected,
+      aware,
+      driver_present,
+      round(awareness_status, 3),
+      round(awareness_active, 3),
+      round(awareness_passive, 3),
+      distractions,
+      hi_std_count,
+    )
+
+    if self._last_driver_monitor_state != new_state:
+      logger.debug(
+        "Driver monitoring: present=%s face=%s aware=%s aware_status=%.3f (act=%.3f pas=%.3f) distracted_type=0x%X hi_std=%d",
+        driver_present,
+        face_detected,
+        aware,
+        awareness_status,
+        awareness_active,
+        awareness_passive,
+        distractions,
+        hi_std_count,
+      )
+      self._last_driver_monitor_state = new_state
+
+    self.driver_present = driver_present
 
   def _connectivity_available(self) -> bool:
     network_type = getattr(self, "_network_type", None)
@@ -335,7 +359,13 @@ def main() -> None:
     log_dir = Path("/data/openpilot/auto-lock")
     log_dir.mkdir(parents=True, exist_ok=True)
     logfile = log_dir / "autolock.log"
-    file_handler = logging.FileHandler(logfile, encoding="utf-8")
+    try:
+      logfile.unlink()
+    except FileNotFoundError:
+      pass
+    except OSError as err:
+      logger.warning("Unable to remove existing log file %s: %s", logfile, err)
+    file_handler = logging.FileHandler(logfile, mode="w", encoding="utf-8")
     file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logger.addHandler(file_handler)
     logger.setLevel(logging.DEBUG)

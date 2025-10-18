@@ -20,6 +20,8 @@ from openpilot.common.swaglog import cloudlog, add_file_handler
 from openpilot.system.version import get_build_metadata, terms_version, training_version
 from openpilot.system.hardware.hw import Paths
 
+DM_KEEPALIVE_DURATION_S = 60.0
+
 
 def manager_init() -> None:
   save_bootlog()
@@ -147,6 +149,8 @@ def manager_thread() -> None:
     ignition = any(ps.ignitionLine or ps.ignitionCan for ps in sm['pandaStates'] if ps.pandaType != log.PandaState.PandaType.unknown)
     if ignition and not ignition_prev:
       params.clear_all(ParamKeyFlag.CLEAR_ON_IGNITION_ON)
+    elif not ignition and ignition_prev:
+      dm_keepalive_until = time.monotonic() + DM_KEEPALIVE_DURATION_S
 
     # update onroad params, which drives pandad's safety setter thread
     if started != started_prev:
