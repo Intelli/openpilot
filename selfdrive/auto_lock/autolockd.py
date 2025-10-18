@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import sys
 import time
 from dataclasses import dataclass
 from importlib import util
@@ -423,6 +424,9 @@ class AutoLockMonitor:
   def _get_kia_lock_module(self):
     if self._kia_lock_module is None:
       module_path = Path(__file__).resolve().parents[2] / "auto-lock" / "kia_lock.py"
+      module_dir = module_path.parent
+      if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
       spec = util.spec_from_file_location("auto_lock_kia_lock", module_path)
       if spec is None or spec.loader is None:
         logger.error("Unable to locate kia_lock.py at %s", module_path)
@@ -439,6 +443,9 @@ class AutoLockMonitor:
   def _get_kia_status_module(self):
     if self._kia_status_module is None:
       module_path = Path(__file__).resolve().parents[2] / "auto-lock" / "kia_status.py"
+      module_dir = module_path.parent
+      if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
       spec = util.spec_from_file_location("auto_lock_kia_status", module_path)
       if spec is None or spec.loader is None:
         logger.error("Unable to locate kia_status.py at %s", module_path)
