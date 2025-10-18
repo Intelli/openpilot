@@ -1,11 +1,14 @@
 # Kia Auto-Lock Python Helper
 
-This folder contains the Python implementation for issuing remote lock commands across supported Kia/Hyundai regions. The primary entry point is `kia_lock.py`, which exposes `KiaAutoLockClient` for programmatic use and `lock_cli.py` for command line testing.
+This folder contains the Python implementation for issuing remote lock commands and polling vehicle status across supported Kia/Hyundai regions. The primary entry points are `kia_lock.py` (locking) and `kia_status.py` (status polling), both powered by the shared helpers in `kia_shared.py`.
 
 ## Components
 
-- **`kia_lock.py`**: Implements `KiaAutoLockClient`, region configuration, and HTTP fallbacks.
-- **`lock_cli.py`**: Simple CLI harness for manual locking tests (requires Python 3.8+).
+- **`kia_shared.py`**: Core shared implementation (HTTP session, region metadata, token handling). Both lock and status clients import from here.
+- **`kia_lock.py`**: Implements `KiaAutoLockClient` using the shared helpers. Replaces the old bespoke implementation (previously `kia_lock_old.py`).
+- **`kia_status.py`**: Defines `KiaStatusClient` for real-time vehicle status queries with normalized outputs.
+- **`lock_cli.py`**: CLI harness for manual locking tests (requires Python 3.8+).
+- **`status_cli.py`**: CLI harness for manual status polling with pretty-printed JSON output.
 
 ## Dependencies
 
@@ -13,7 +16,24 @@ This folder contains the Python implementation for issuing remote lock commands 
 
 ## Programmatic Usage
 
-Import the client from anywhere in the OpenPilot codebase using the `openpilot` module root:
+To poll live vehicle data instead of issuing commands:
+
+```python
+from openpilot.auto_lock.kia_status import KiaStatusClient, KiaCredentials, Region
+
+creds = KiaCredentials(
+  username="user@example.com",
+  password="your-account-password",
+  pin="1234",
+  region=Region.CA,
+  vin="KNXXX...",
+)
+
+client = KiaStatusClient(creds)
+status = client.status()
+```
+
+The returned dictionary contains normalized keys (door locks, climate state, battery information, timestamps) regardless of region.
 
 ```python
 from openpilot.auto_lock.kia_lock import KiaAutoLockClient, KiaCredentials, Region
@@ -54,11 +74,21 @@ python3 openpilot/auto-lock/lock_cli.py "username" "password" "pin" CA \
 - **Language**: Optional, primarily for EU (e.g., `--language fr`).
 - **Verbose Mode**: Adds debug logging to help diagnose authentication issues.
 
+### Status CLI
+
+```bash
+python3 openpilot/auto-lock/status_cli.py "username" "password" "pin" CA \
+  "<vin-or-empty>" "<vehicle-id-or-empty>" --language en --verbose
+```
+
+- **Output**: Prints normalized status JSON for quick inspection.
+- **Verbose Mode**: Includes the same detailed login logs as the lock CLI when troubleshooting authentication flows.
+
 ## Adding New Regions or Updates
 
 - **Check Bluelinky Reference**: When behavior deviates (headers, payload keys, stamps), consult the `bluelinky` Node.js repository for region specifics.
-- **Maintain Fallback Compatibility**: Ensure new HTTP flows still function without `requests` by staying within the `Session` abstraction in `kia_lock.py`.
-- **Testing**: Run `lock_cli.py` per region to confirm successful login and locking before integrating changes into higher-level workflows.
+- **Maintain Fallback Compatibility**: Ensure new HTTP flows still function without `requests` by staying within the `Session` abstraction in `kia_shared.py`.
+- **Testing**: Run `lock_cli.py` and `status_cli.py` per region to confirm successful login and locking/status retrieval before integrating changes into higher-level workflows.
 
 ## Calling from OpenPilot Services
 
