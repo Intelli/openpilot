@@ -9,7 +9,7 @@ from kia_lock import KiaAutoLockClient, KiaCredentials, Region
 
 
 def parse_args() -> argparse.Namespace:
-  parser = argparse.ArgumentParser(description="Lock a Kia vehicle via KiaAutoLockClient")
+  parser = argparse.ArgumentParser(description="Lock a Kia vehicle via KiaAutoLockClient (new shared implementation)")
   parser.add_argument("username", help="Account username")
   parser.add_argument("password", help="Account password")
   parser.add_argument("pin", help="Remote services PIN")
