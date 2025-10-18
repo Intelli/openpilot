@@ -44,7 +44,7 @@ class _Creds:
 class AutoLockMonitor:
   def __init__(self) -> None:
     self.params = Params()
-    self.sm = messaging.SubMaster(["carState", "pandaStates", "deviceState"])
+    self.sm = messaging.SubMaster(["carState", "pandaStates", "deviceState", "driverMonitoringState"])
 
     self.door_open: bool = False
     self.last_door_open_time: Optional[float] = None
@@ -62,7 +62,11 @@ class AutoLockMonitor:
     self._awaiting_ignition_cycle = False
     self.door_open_after_off_time: Optional[float] = None
     self.door_close_after_off_time: Optional[float] = None
-    self._last_door_bitfield: dict | None = None
+    self.seatbelt_unlatched: bool = False
+    self._last_seatbelt_state: Optional[bool] = None
+    self.car_voltage: Optional[float] = None
+    self._last_logged_voltage: Optional[float] = None
+    self.panda_power_save: Optional[bool] = None
 
 
   def run(self) -> None:
@@ -76,25 +80,20 @@ class AutoLockMonitor:
         self._handle_panda_state(now)
       if self.sm.updated["deviceState"]:
         self._handle_device_state()
+      if self.sm.updated["driverMonitoringState"]:
+        self._handle_driver_monitoring()
 
       self._evaluate(now)
 
   def _handle_car_state(self, now: float) -> None:
     cs = self.sm["carState"]
-    door_open = bool(cs.doorBitfield.driver if getattr(cs, "doorBitfield", None) is not None else cs.doorOpen)
+    door_open = bool(cs.doorOpen)
+    seatbelt_unlatched = bool(getattr(cs, "seatbeltsAllUnlatched", getattr(cs, "seatbeltUnlatched", False)))
 
-    door_bits_struct = getattr(cs, "doorBitfield", None)
-    door_bits = None
-    if door_bits_struct is not None:
-      door_bits = {
-        "driver": door_bits_struct.driver,
-        "passenger": door_bits_struct.passenger,
-        "rearLeft": door_bits_struct.rearLeft,
-        "rearRight": door_bits_struct.rearRight,
-      }
-    if door_bits is not None and door_bits != self._last_door_bitfield:
-      logger.debug("Door bits updated: %s", door_bits)
-      self._last_door_bitfield = dict(door_bits)
+    if self._last_seatbelt_state is None or seatbelt_unlatched != self._last_seatbelt_state:
+      logger.debug("Seatbelts all unlatched: %s", seatbelt_unlatched)
+      self._last_seatbelt_state = seatbelt_unlatched
+    self.seatbelt_unlatched = seatbelt_unlatched
 
     if door_open:
       if not self.door_open:
@@ -122,6 +121,19 @@ class AutoLockMonitor:
         ignition_on = True
         break
 
+    if panda_states:
+      voltage_raw = float(panda_states[0].voltage)
+      voltage_v = voltage_raw / 1000.0 if voltage_raw > 1000.0 else voltage_raw
+      if self._last_logged_voltage is None or abs(voltage_v - self._last_logged_voltage) >= 0.05:
+        logger.debug("Vehicle bus voltage: %.2f V", voltage_v)
+        self._last_logged_voltage = voltage_v
+      self.car_voltage = voltage_v
+
+      power_save = bool(panda_states[0].powerSaveEnabled)
+      if self.panda_power_save is None or power_save != self.panda_power_save:
+        logger.debug("Panda power-save mode: %s", power_save)
+      self.panda_power_save = power_save
+
     if ignition_on:
       if not self.car_active:
         logger.debug("Ignition became active")
@@ -146,6 +158,10 @@ class AutoLockMonitor:
       return
 
     if self.off_since is None:
+      return
+
+    if not self.seatbelt_unlatched:
+      logger.debug("Skipping auto-lock: seatbelts still latched")
       return
 
     if (now - self.off_since) < OFF_STABLE_TIME_S:
@@ -272,6 +288,12 @@ class AutoLockMonitor:
   def _handle_device_state(self) -> None:
     ds = self.sm["deviceState"]
     self._network_type = ds.networkType
+
+  def _handle_driver_monitoring(self) -> None:
+    dms = self.sm["driverMonitoringState"]
+    face_detected = getattr(dms, "faceDetected", False)
+    awake = not getattr(dms, "isDistracted", False)
+    logger.debug("Driver monitoring: face_detected=%s aware=%s", face_detected, awake)
 
   def _connectivity_available(self) -> bool:
     network_type = getattr(self, "_network_type", None)
