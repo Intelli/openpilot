@@ -64,6 +64,7 @@ class KiaStatusClient(KiaBaseClient):
       "registrationId": vehicle.get("reg_id", ""),
       "gen": vehicle.get("generation", ""),
       "offset": self._offset(),
+      "REFRESH": "true",
     }
     resp = self.http.get(url, headers=headers)
     _raise_for_status(resp, "US status")
@@ -176,4 +177,3 @@ class KiaStatusClient(KiaBaseClient):
       if value:
         return str(value)
     return None
-
