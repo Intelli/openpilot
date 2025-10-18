@@ -65,6 +65,7 @@ class AutoLockMonitor:
     self._status_client_creds: Optional[_Creds] = None
     self._kia_lock_module = None
     self._kia_status_module = None
+    self._kia_shared_module = None
     self._status_monitor_active = False
     self._status_monitor_started_at: Optional[float] = None
     self._next_status_poll_at: Optional[float] = None
@@ -390,9 +391,26 @@ class AutoLockMonitor:
       if module is None:
         return None
 
-      KiaCredentials = getattr(module, "KiaCredentials", None)
       KiaStatusClient = getattr(module, "KiaStatusClient", None)
       Region = getattr(module, "Region", None)
+      KiaCredentials = getattr(module, "KiaCredentials", None)
+
+      if KiaCredentials is None or Region is None:
+        shared_module = self._get_kia_shared_module()
+        if shared_module is not None:
+          if KiaCredentials is None:
+            KiaCredentials = getattr(shared_module, "KiaCredentials", None)
+          if Region is None:
+            Region = getattr(shared_module, "Region", None)
+
+      if KiaCredentials is None or Region is None:
+        lock_module = self._get_kia_lock_module()
+        if lock_module is not None:
+          if KiaCredentials is None:
+            KiaCredentials = getattr(lock_module, "KiaCredentials", None)
+          if Region is None:
+            Region = getattr(lock_module, "Region", None)
+
       if KiaCredentials is None or KiaStatusClient is None or Region is None:
         logger.error("Kia status module missing required classes")
         return None
@@ -459,6 +477,25 @@ class AutoLockMonitor:
       self._kia_status_module = module
     return self._kia_status_module
 
+  def _get_kia_shared_module(self):
+    if self._kia_shared_module is None:
+      module_path = Path(__file__).resolve().parents[2] / "auto-lock" / "kia_shared.py"
+      module_dir = module_path.parent
+      if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
+      spec = util.spec_from_file_location("auto_lock_kia_shared", module_path)
+      if spec is None or spec.loader is None:
+        logger.error("Unable to locate kia_shared.py at %s", module_path)
+        return None
+      module = util.module_from_spec(spec)
+      try:
+        spec.loader.exec_module(module)
+      except Exception as err:  # pylint: disable=broad-except
+        logger.error("Failed to load kia_shared.py: %s", err)
+        return None
+      self._kia_shared_module = module
+    return self._kia_shared_module
+
   def _handle_device_state(self) -> None:
     ds = self.sm["deviceState"]
     self._network_type = ds.networkType
@@ -500,8 +537,19 @@ def main() -> None:
       logger.warning("Unable to remove existing log file %s: %s", logfile, err)
     file_handler = logging.FileHandler(logfile, mode="w", encoding="utf-8")
     file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    file_handler.setLevel(logging.DEBUG)
     logger.addHandler(file_handler)
     logger.setLevel(logging.DEBUG)
+
+    kia_status_logger = logging.getLogger("auto_lock_kia_status")
+    if not any(isinstance(handler, logging.FileHandler) and handler.baseFilename == str(logfile) for handler in kia_status_logger.handlers):
+      kia_status_logger.addHandler(file_handler)
+    kia_status_logger.setLevel(logging.DEBUG)
+
+    kia_shared_logger = logging.getLogger("auto_lock_kia_shared")
+    if not any(isinstance(handler, logging.FileHandler) and handler.baseFilename == str(logfile) for handler in kia_shared_logger.handlers):
+      kia_shared_logger.addHandler(file_handler)
+    kia_shared_logger.setLevel(logging.DEBUG)
   monitor = AutoLockMonitor()
   monitor.run()
 
