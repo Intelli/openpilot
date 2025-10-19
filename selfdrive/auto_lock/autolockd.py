@@ -69,7 +69,13 @@ class AutoLockMonitor:
     self._status_monitor_active = False
     self._status_monitor_started_at: Optional[float] = None
     self._next_status_poll_at: Optional[float] = None
+    self._door_seen_open_locally = False
     self._door_seen_open_remotely = False
+    self.door_open = False
+    self.last_door_open_time: Optional[float] = None
+    self.last_door_close_time: Optional[float] = None
+    self.door_open_after_off_time: Optional[float] = None
+    self.door_close_after_off_time: Optional[float] = None
 
     self._missing_creds_logged_at: Optional[float] = None
     self._network_type = None
@@ -78,14 +84,18 @@ class AutoLockMonitor:
     self._last_seatbelt_state: Optional[bool] = None
     self._last_status_snapshot: Optional[Dict[str, Any]] = None
     self._status_poll_logged: bool = False
-    self._cached_creds: Optional[_Creds] = None
-    self._creds_loaded_at: Optional[float] = None
-    self._creds_load_attempted: bool = False
+    self._monitor_creds: Optional[_Creds] = None
 
   def run(self) -> None:
     while True:
       self.sm.update(int(POLL_INTERVAL_S * 1000))
       now = _now()
+
+      if self.off_since is None and not self.car_active:
+        if self._panda_ignition_active():
+          self.car_active = True
+        else:
+          self._handle_panda_state(now)
 
       if self.sm.updated["carState"]:
         self._handle_car_state(now)
@@ -96,7 +106,7 @@ class AutoLockMonitor:
 
       self._evaluate(now)
 
-  def _handle_car_state(self, _: float) -> None:
+  def _handle_car_state(self, now: float) -> None:
     cs = self.sm["carState"]
     seatbelt_unlatched = bool(getattr(cs, "seatbeltUnlatched", False))
 
@@ -105,13 +115,36 @@ class AutoLockMonitor:
       self._last_seatbelt_state = seatbelt_unlatched
     self.seatbelt_unlatched = seatbelt_unlatched
 
-  def _handle_panda_state(self, now: float) -> None:
+    door_open = bool(getattr(cs, "doorOpen", False))
+    if self.door_open != door_open:
+      logger.debug("Door open: %s", door_open)
+    if door_open:
+      if not self._door_seen_open_locally:
+        logger.debug("Local door open detected")
+      self.last_door_open_time = now
+      if not self.car_active and self.off_since is not None:
+        if self.door_open_after_off_time is None:
+          logger.debug("Door opened after ignition off (local)")
+        self.door_open_after_off_time = now
+      self._door_seen_open_locally = True
+    else:
+      self.last_door_close_time = now
+      if not self.car_active and self.off_since is not None:
+        if self._door_seen_open_locally:
+          if self.door_close_after_off_time is None:
+            logger.debug("Door closed after ignition off (local)")
+          self.door_close_after_off_time = now
+    self.door_open = door_open
+
+  def _panda_ignition_active(self) -> bool:
     panda_states = self.sm["pandaStates"]
-    ignition_on = False
     for panda_state in panda_states:
       if panda_state.ignitionLine or panda_state.ignitionCan:
-        ignition_on = True
-        break
+        return True
+    return False
+
+  def _handle_panda_state(self, now: float) -> None:
+    ignition_on = self._panda_ignition_active()
 
     if ignition_on:
       if not self.car_active:
@@ -120,17 +153,18 @@ class AutoLockMonitor:
       self.car_active = True
       self._awaiting_ignition_cycle = False
       self._stop_status_monitor(reset_wait=False)
-      self._invalidate_cached_credentials()
+      self._door_seen_open_locally = False
+      self._door_seen_open_remotely = False
+      self.door_open_after_off_time = None
+      self.door_close_after_off_time = None
     else:
       if self.car_active:
         logger.debug("Ignition became inactive")
         self.off_since = now
         self.lock_attempted_at = None
         self._stop_status_monitor(reset_wait=False)
-        self._prepare_off_cycle_credentials(now)
       elif self.off_since is None:
         self.off_since = now
-        self._prepare_off_cycle_credentials(now)
       self.car_active = False
 
   def _evaluate(self, now: float) -> None:
@@ -146,16 +180,17 @@ class AutoLockMonitor:
     if (now - self.off_since) < OFF_STABLE_TIME_S:
       return
 
-    if self._cached_creds is None:
-      if not self._creds_load_attempted:
-        self._prepare_off_cycle_credentials(now)
-      if self._cached_creds is None:
+    creds = self._monitor_creds
+    if creds is None:
+      creds = self._load_credentials(now)
+      if creds is None:
         return
+      self._monitor_creds = creds
 
     if not self._status_monitor_active:
       self._start_status_monitor(now)
 
-    self._process_status_monitor(now)
+    self._process_status_monitor(now, creds)
 
   def _load_credentials(self, now: float) -> Optional[_Creds]:
     username = self.params.get("AutoLockUsername", block=False) or ""
@@ -230,6 +265,7 @@ class AutoLockMonitor:
     self._door_seen_open_remotely = False
     self._last_status_snapshot = None
     self._status_poll_logged = False
+    self._monitor_creds = None
     if reset_wait:
       self._awaiting_ignition_cycle = True
 
@@ -241,7 +277,7 @@ class AutoLockMonitor:
     self._status_poll_logged = False
     logger.debug("Auto-lock status monitor started")
 
-  def _process_status_monitor(self, now: float) -> None:
+  def _process_status_monitor(self, now: float, creds: _Creds) -> None:
     if not self._status_monitor_active or self._status_monitor_started_at is None:
       return
 
@@ -249,7 +285,7 @@ class AutoLockMonitor:
 
     if elapsed >= STATUS_MONITOR_TIMEOUT_S:
       logger.info("Auto-lock polling timed out after %.0f seconds; forcing lock command", STATUS_MONITOR_TIMEOUT_S)
-      self._force_lock(now)
+      self._force_lock(now, creds)
       return
 
     if self._next_status_poll_at is None:
@@ -258,7 +294,7 @@ class AutoLockMonitor:
     if now < self._next_status_poll_at:
       return
 
-    self._poll_status(now)
+    self._poll_status(now, creds)
 
     if self._status_monitor_active:
       interval = self._status_poll_interval(elapsed)
@@ -270,13 +306,8 @@ class AutoLockMonitor:
         return interval
     return STATUS_POLL_SCHEDULE[-1][1]
 
-  def _force_lock(self, now: float) -> None:
+  def _force_lock(self, now: float, creds: _Creds) -> None:
     logger.info("Auto-lock timeout reached; forcing lock command")
-    creds = self._cached_creds
-    if creds is None:
-      logger.error("Forced auto-lock aborted: credentials unavailable")
-      self._reset_cycle_state()
-      return
     self._try_lock(now, creds, force=True)
 
   def _try_lock(self, now: float, creds: _Creds, *, force: bool) -> None:
@@ -312,11 +343,7 @@ class AutoLockMonitor:
     finally:
       self._reset_cycle_state()
 
-  def _poll_status(self, now: float) -> None:
-    creds = self._cached_creds
-    if creds is None:
-      return
-
+  def _poll_status(self, now: float, creds: _Creds) -> None:
     status_client = self._ensure_status_client(creds)
     if status_client is None:
       return
@@ -348,10 +375,13 @@ class AutoLockMonitor:
     hood_open = bool(status.get("hoodOpen"))
     trunk_open = bool(status.get("trunkOpen"))
 
-    if door_open and not self._door_seen_open_remotely:
+    door_seen_open = self._door_seen_open_locally or self._door_seen_open_remotely
+    if door_open and not door_seen_open:
       logger.debug("Remote door open detected")
     if door_open:
       self._door_seen_open_remotely = True
+      if self.door_open_after_off_time is None:
+        self.door_open_after_off_time = now
       self.lock_attempted_at = None
       return
 
@@ -361,10 +391,17 @@ class AutoLockMonitor:
     if locked_value is not False:
       return
 
-    if not self._door_seen_open_remotely:
+    if door_seen_open and self.door_close_after_off_time is None and not self.door_open:
+      logger.debug("Doors closed after ignition off (joint detection)")
+      self.door_close_after_off_time = now
+
+    if not door_seen_open:
       return
 
     if ignition_on or accessory_on:
+      return
+
+    if self.door_close_after_off_time is None:
       return
 
     self._try_lock(now, creds, force=False)
@@ -516,21 +553,11 @@ class AutoLockMonitor:
     self.last_door_close_time = None
     self.door_open_after_off_time = None
     self.door_close_after_off_time = None
+    self.door_open = False
+    self._door_seen_open_locally = False
+    self._door_seen_open_remotely = False
     self.off_since = None
     self._stop_status_monitor(reset_wait=True)
-
-  def _invalidate_cached_credentials(self) -> None:
-    self._cached_creds = None
-    self._creds_loaded_at = None
-    self._creds_load_attempted = False
-
-  def _prepare_off_cycle_credentials(self, now: float) -> None:
-    if self._creds_load_attempted:
-      return
-    creds = self._load_credentials(now)
-    self._cached_creds = creds
-    self._creds_loaded_at = now if creds is not None else None
-    self._creds_load_attempted = True
 
 
 def main() -> None:
