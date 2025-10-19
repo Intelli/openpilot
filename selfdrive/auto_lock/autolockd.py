@@ -78,6 +78,9 @@ class AutoLockMonitor:
     self._last_seatbelt_state: Optional[bool] = None
     self._last_status_snapshot: Optional[Dict[str, Any]] = None
     self._status_poll_logged: bool = False
+    self._cached_creds: Optional[_Creds] = None
+    self._creds_loaded_at: Optional[float] = None
+    self._creds_load_attempted: bool = False
 
   def run(self) -> None:
     while True:
@@ -117,14 +120,17 @@ class AutoLockMonitor:
       self.car_active = True
       self._awaiting_ignition_cycle = False
       self._stop_status_monitor(reset_wait=False)
+      self._invalidate_cached_credentials()
     else:
       if self.car_active:
         logger.debug("Ignition became inactive")
         self.off_since = now
         self.lock_attempted_at = None
         self._stop_status_monitor(reset_wait=False)
+        self._prepare_off_cycle_credentials(now)
       elif self.off_since is None:
         self.off_since = now
+        self._prepare_off_cycle_credentials(now)
       self.car_active = False
 
   def _evaluate(self, now: float) -> None:
@@ -139,6 +145,12 @@ class AutoLockMonitor:
 
     if (now - self.off_since) < OFF_STABLE_TIME_S:
       return
+
+    if self._cached_creds is None:
+      if not self._creds_load_attempted:
+        self._prepare_off_cycle_credentials(now)
+      if self._cached_creds is None:
+        return
 
     if not self._status_monitor_active:
       self._start_status_monitor(now)
@@ -260,7 +272,7 @@ class AutoLockMonitor:
 
   def _force_lock(self, now: float) -> None:
     logger.info("Auto-lock timeout reached; forcing lock command")
-    creds = self._load_credentials(now)
+    creds = self._cached_creds
     if creds is None:
       logger.error("Forced auto-lock aborted: credentials unavailable")
       self._reset_cycle_state()
@@ -301,7 +313,7 @@ class AutoLockMonitor:
       self._reset_cycle_state()
 
   def _poll_status(self, now: float) -> None:
-    creds = self._load_credentials(now)
+    creds = self._cached_creds
     if creds is None:
       return
 
@@ -506,6 +518,19 @@ class AutoLockMonitor:
     self.door_close_after_off_time = None
     self.off_since = None
     self._stop_status_monitor(reset_wait=True)
+
+  def _invalidate_cached_credentials(self) -> None:
+    self._cached_creds = None
+    self._creds_loaded_at = None
+    self._creds_load_attempted = False
+
+  def _prepare_off_cycle_credentials(self, now: float) -> None:
+    if self._creds_load_attempted:
+      return
+    creds = self._load_credentials(now)
+    self._cached_creds = creds
+    self._creds_loaded_at = now if creds is not None else None
+    self._creds_load_attempted = True
 
 
 def main() -> None:
