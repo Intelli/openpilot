@@ -156,7 +156,7 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git rev-parse --is-inside-work-tree
-          git lfs pull --exclude="auto-lock/lock-closed-white.svg" --include=""
+          git lfs pull --exclude="auto-lock/lock-closed-white.*" --include=""
 
       - name: Cache SCons
         uses: actions/cache@v4
