@@ -1,30 +1,3 @@
-diff --git b/.gitattributes a/.gitattributes
-index cc1605a132..8a0b2a6889 100644
---- b/.gitattributes
-+++ a/.gitattributes
-@@ -9,6 +9,9 @@
- *.ttf filter=lfs diff=lfs merge=lfs -text
- *.wav filter=lfs diff=lfs merge=lfs -text
- 
-+# exclude auto-lock assets from LFS
-+auto-lock/lock-closed-white.* -filter -diff -merge -text
-+
- selfdrive/car/tests/test_models_segs.txt filter=lfs diff=lfs merge=lfs -text
- system/hardware/tici/updater filter=lfs diff=lfs merge=lfs -text
- third_party/**/*.a filter=lfs diff=lfs merge=lfs -text
-diff --git b/.github/workflows/sunnypilot-build-prebuilt.yaml a/.github/workflows/sunnypilot-build-prebuilt.yaml
-index 11e079d828..d84f973f67 100644
---- b/.github/workflows/sunnypilot-build-prebuilt.yaml
-+++ a/.github/workflows/sunnypilot-build-prebuilt.yaml
-@@ -156,7 +156,7 @@ jobs:
-           cd "$GITHUB_WORKSPACE"
-           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-           git rev-parse --is-inside-work-tree
--          git lfs pull --exclude="" --include=""
-+          git lfs pull --exclude="auto-lock/lock-closed-white.*" --include=""
- 
-       - name: Cache SCons
-         uses: actions/cache@v4
 diff --git b/auto-lock/README.md a/auto-lock/README.md
 new file mode 100644
 index 0000000000..60b24aed89
