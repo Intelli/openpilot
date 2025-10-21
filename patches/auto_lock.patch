@@ -1,9 +1,36 @@
+diff --git b/.gitattributes a/.gitattributes
+index cc1605a132..8a0b2a6889 100644
+--- b/.gitattributes
++++ a/.gitattributes
+@@ -9,6 +9,9 @@
+ *.ttf filter=lfs diff=lfs merge=lfs -text
+ *.wav filter=lfs diff=lfs merge=lfs -text
+ 
++# exclude auto-lock assets from LFS
++auto-lock/lock-closed-white.* -filter -diff -merge -text
++
+ selfdrive/car/tests/test_models_segs.txt filter=lfs diff=lfs merge=lfs -text
+ system/hardware/tici/updater filter=lfs diff=lfs merge=lfs -text
+ third_party/**/*.a filter=lfs diff=lfs merge=lfs -text
+diff --git b/.github/workflows/sunnypilot-build-prebuilt.yaml a/.github/workflows/sunnypilot-build-prebuilt.yaml
+index 11e079d828..d84f973f67 100644
+--- b/.github/workflows/sunnypilot-build-prebuilt.yaml
++++ a/.github/workflows/sunnypilot-build-prebuilt.yaml
+@@ -156,7 +156,7 @@ jobs:
+           cd "$GITHUB_WORKSPACE"
+           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+           git rev-parse --is-inside-work-tree
+-          git lfs pull --exclude="" --include=""
++          git lfs pull --exclude="auto-lock/lock-closed-white.*" --include=""
+ 
+       - name: Cache SCons
+         uses: actions/cache@v4
 diff --git b/auto-lock/README.md a/auto-lock/README.md
 new file mode 100644
-index 0000000000..7565e82aef
+index 0000000000..60b24aed89
 --- /dev/null
 +++ a/auto-lock/README.md
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,122 @@
 +# Kia Auto-Lock Python Helper
 +
 +This folder contains the Python implementation for issuing remote lock commands and polling vehicle status across supported Kia/Hyundai regions. The primary entry points are `kia_lock.py` (locking) and `kia_status.py` (status polling), both powered by the shared helpers in `kia_shared.py`.
@@ -126,10 +153,10 @@ index 0000000000..7565e82aef
 +
 +- **Keep Files Lean**: `kia_lock.py` is large; prefer adding helpers over inlining large code blocks to avoid lint issues.
 +- **Log Carefully**: Debug logs may leak sensitive server payloads. Mask or remove before enabling in production.
-+
+\ No newline at end of file
 diff --git b/auto-lock/kia_lock.py a/auto-lock/kia_lock.py
 new file mode 100644
-index 0000000000..82ecdfc0e1
+index 0000000000..0a3bc34298
 --- /dev/null
 +++ a/auto-lock/kia_lock.py
 @@ -0,0 +1,149 @@
@@ -282,9 +309,10 @@ index 0000000000..82ecdfc0e1
 +  "_raise_for_status",
 +  "_extract_error_message",
 +]
+\ No newline at end of file
 diff --git b/auto-lock/kia_shared.py a/auto-lock/kia_shared.py
 new file mode 100644
-index 0000000000..1724b4a586
+index 0000000000..83a6a1fe77
 --- /dev/null
 +++ a/auto-lock/kia_shared.py
 @@ -0,0 +1,946 @@
@@ -1234,9 +1262,10 @@ index 0000000000..1724b4a586
 +  "_extract_error_message",
 +  "json_dumps",
 +]
+\ No newline at end of file
 diff --git b/auto-lock/kia_status.py a/auto-lock/kia_status.py
 new file mode 100644
-index 0000000000..e916f36ba2
+index 0000000000..715b3f5fd8
 --- /dev/null
 +++ a/auto-lock/kia_status.py
 @@ -0,0 +1,179 @@
@@ -1419,19 +1448,10 @@ index 0000000000..e916f36ba2
 +      if value:
 +        return str(value)
 +    return None
-diff --git b/auto-lock/lock-closed-white.svg a/auto-lock/lock-closed-white.svg
-new file mode 100644
-index 0000000000..1c897ae990
---- /dev/null
-+++ a/auto-lock/lock-closed-white.svg
-@@ -0,0 +1,3 @@
-+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="49" viewBox="211 182 40 49">
-+  <path fill="#ffffff" d="m246.225 201.73-.603-.011-.006-6.628c-.006-7.221-6.65-13.096-14.817-13.091s-14.811 5.88-14.805 13.101l.012 6.629h-.536c-2.808.005-4.476 2.019-4.47 4.501v20.273c0 2.483 1.675 4.496 4.482 4.496l31.657-.015c2.807 0 3.867-2.015 3.861-4.497v-20.279c0-2.94-1.632-4.49-4.775-4.479m-24.762 0-.013-6.629c0-4.56 4.19-8.271 9.349-8.276 5.158 0 9.354 3.71 9.354 8.266l.012 6.628z"/>
-+</svg>
 \ No newline at end of file
 diff --git b/auto-lock/lock_cli.py a/auto-lock/lock_cli.py
 new file mode 100644
-index 0000000000..4f0042f978
+index 0000000000..537e477a82
 --- /dev/null
 +++ a/auto-lock/lock_cli.py
 @@ -0,0 +1,53 @@
@@ -1488,9 +1508,10 @@ index 0000000000..4f0042f978
 +
 +if __name__ == "__main__":
 +  sys.exit(main())
+\ No newline at end of file
 diff --git b/auto-lock/status_cli.py a/auto-lock/status_cli.py
 new file mode 100644
-index 0000000000..48514273ac
+index 0000000000..ae8c43d19a
 --- /dev/null
 +++ a/auto-lock/status_cli.py
 @@ -0,0 +1,55 @@
@@ -1549,15 +1570,13 @@ index 0000000000..48514273ac
 +
 +if __name__ == "__main__":
 +  sys.exit(main())
-diff --git b/selfdrive/auto_lock/__init__.py a/selfdrive/auto_lock/__init__.py
-new file mode 100644
-index 0000000000..e69de29bb2
+\ No newline at end of file
 diff --git b/selfdrive/auto_lock/autolockd.py a/selfdrive/auto_lock/autolockd.py
 new file mode 100644
-index 0000000000..6a9260316e
+index 0000000000..7eb0ac2adf
 --- /dev/null
 +++ a/selfdrive/auto_lock/autolockd.py
-@@ -0,0 +1,543 @@
+@@ -0,0 +1,595 @@
 +from __future__ import annotations
 +
 +import copy
@@ -1629,7 +1648,13 @@ index 0000000000..6a9260316e
 +    self._status_monitor_active = False
 +    self._status_monitor_started_at: Optional[float] = None
 +    self._next_status_poll_at: Optional[float] = None
++    self._door_seen_open_locally = False
 +    self._door_seen_open_remotely = False
++    self.door_open = False
++    self.last_door_open_time: Optional[float] = None
++    self.last_door_close_time: Optional[float] = None
++    self.door_open_after_off_time: Optional[float] = None
++    self.door_close_after_off_time: Optional[float] = None
 +
 +    self._missing_creds_logged_at: Optional[float] = None
 +    self._network_type = None
@@ -1638,11 +1663,18 @@ index 0000000000..6a9260316e
 +    self._last_seatbelt_state: Optional[bool] = None
 +    self._last_status_snapshot: Optional[Dict[str, Any]] = None
 +    self._status_poll_logged: bool = False
++    self._monitor_creds: Optional[_Creds] = None
 +
 +  def run(self) -> None:
 +    while True:
 +      self.sm.update(int(POLL_INTERVAL_S * 1000))
 +      now = _now()
++
++      if self.off_since is None and not self.car_active:
++        if self._panda_ignition_active():
++          self.car_active = True
++        else:
++          self._handle_panda_state(now)
 +
 +      if self.sm.updated["carState"]:
 +        self._handle_car_state(now)
@@ -1653,7 +1685,7 @@ index 0000000000..6a9260316e
 +
 +      self._evaluate(now)
 +
-+  def _handle_car_state(self, _: float) -> None:
++  def _handle_car_state(self, now: float) -> None:
 +    cs = self.sm["carState"]
 +    seatbelt_unlatched = bool(getattr(cs, "seatbeltUnlatched", False))
 +
@@ -1662,13 +1694,36 @@ index 0000000000..6a9260316e
 +      self._last_seatbelt_state = seatbelt_unlatched
 +    self.seatbelt_unlatched = seatbelt_unlatched
 +
-+  def _handle_panda_state(self, now: float) -> None:
++    door_open = bool(getattr(cs, "doorOpen", False))
++    if self.door_open != door_open:
++      logger.debug("Door open: %s", door_open)
++    if door_open:
++      if not self._door_seen_open_locally:
++        logger.debug("Local door open detected")
++      self.last_door_open_time = now
++      if not self.car_active and self.off_since is not None:
++        if self.door_open_after_off_time is None:
++          logger.debug("Door opened after ignition off (local)")
++        self.door_open_after_off_time = now
++      self._door_seen_open_locally = True
++    else:
++      self.last_door_close_time = now
++      if not self.car_active and self.off_since is not None:
++        if self._door_seen_open_locally:
++          if self.door_close_after_off_time is None:
++            logger.debug("Door closed after ignition off (local)")
++          self.door_close_after_off_time = now
++    self.door_open = door_open
++
++  def _panda_ignition_active(self) -> bool:
 +    panda_states = self.sm["pandaStates"]
-+    ignition_on = False
 +    for panda_state in panda_states:
 +      if panda_state.ignitionLine or panda_state.ignitionCan:
-+        ignition_on = True
-+        break
++        return True
++    return False
++
++  def _handle_panda_state(self, now: float) -> None:
++    ignition_on = self._panda_ignition_active()
 +
 +    if ignition_on:
 +      if not self.car_active:
@@ -1677,6 +1732,10 @@ index 0000000000..6a9260316e
 +      self.car_active = True
 +      self._awaiting_ignition_cycle = False
 +      self._stop_status_monitor(reset_wait=False)
++      self._door_seen_open_locally = False
++      self._door_seen_open_remotely = False
++      self.door_open_after_off_time = None
++      self.door_close_after_off_time = None
 +    else:
 +      if self.car_active:
 +        logger.debug("Ignition became inactive")
@@ -1700,10 +1759,17 @@ index 0000000000..6a9260316e
 +    if (now - self.off_since) < OFF_STABLE_TIME_S:
 +      return
 +
++    creds = self._monitor_creds
++    if creds is None:
++      creds = self._load_credentials(now)
++      if creds is None:
++        return
++      self._monitor_creds = creds
++
 +    if not self._status_monitor_active:
 +      self._start_status_monitor(now)
 +
-+    self._process_status_monitor(now)
++    self._process_status_monitor(now, creds)
 +
 +  def _load_credentials(self, now: float) -> Optional[_Creds]:
 +    username = self.params.get("AutoLockUsername", block=False) or ""
@@ -1778,6 +1844,7 @@ index 0000000000..6a9260316e
 +    self._door_seen_open_remotely = False
 +    self._last_status_snapshot = None
 +    self._status_poll_logged = False
++    self._monitor_creds = None
 +    if reset_wait:
 +      self._awaiting_ignition_cycle = True
 +
@@ -1789,7 +1856,7 @@ index 0000000000..6a9260316e
 +    self._status_poll_logged = False
 +    logger.debug("Auto-lock status monitor started")
 +
-+  def _process_status_monitor(self, now: float) -> None:
++  def _process_status_monitor(self, now: float, creds: _Creds) -> None:
 +    if not self._status_monitor_active or self._status_monitor_started_at is None:
 +      return
 +
@@ -1797,7 +1864,7 @@ index 0000000000..6a9260316e
 +
 +    if elapsed >= STATUS_MONITOR_TIMEOUT_S:
 +      logger.info("Auto-lock polling timed out after %.0f seconds; forcing lock command", STATUS_MONITOR_TIMEOUT_S)
-+      self._force_lock(now)
++      self._force_lock(now, creds)
 +      return
 +
 +    if self._next_status_poll_at is None:
@@ -1806,7 +1873,7 @@ index 0000000000..6a9260316e
 +    if now < self._next_status_poll_at:
 +      return
 +
-+    self._poll_status(now)
++    self._poll_status(now, creds)
 +
 +    if self._status_monitor_active:
 +      interval = self._status_poll_interval(elapsed)
@@ -1818,13 +1885,8 @@ index 0000000000..6a9260316e
 +        return interval
 +    return STATUS_POLL_SCHEDULE[-1][1]
 +
-+  def _force_lock(self, now: float) -> None:
++  def _force_lock(self, now: float, creds: _Creds) -> None:
 +    logger.info("Auto-lock timeout reached; forcing lock command")
-+    creds = self._load_credentials(now)
-+    if creds is None:
-+      logger.error("Forced auto-lock aborted: credentials unavailable")
-+      self._reset_cycle_state()
-+      return
 +    self._try_lock(now, creds, force=True)
 +
 +  def _try_lock(self, now: float, creds: _Creds, *, force: bool) -> None:
@@ -1860,11 +1922,7 @@ index 0000000000..6a9260316e
 +    finally:
 +      self._reset_cycle_state()
 +
-+  def _poll_status(self, now: float) -> None:
-+    creds = self._load_credentials(now)
-+    if creds is None:
-+      return
-+
++  def _poll_status(self, now: float, creds: _Creds) -> None:
 +    status_client = self._ensure_status_client(creds)
 +    if status_client is None:
 +      return
@@ -1896,10 +1954,13 @@ index 0000000000..6a9260316e
 +    hood_open = bool(status.get("hoodOpen"))
 +    trunk_open = bool(status.get("trunkOpen"))
 +
-+    if door_open and not self._door_seen_open_remotely:
++    door_seen_open = self._door_seen_open_locally or self._door_seen_open_remotely
++    if door_open and not door_seen_open:
 +      logger.debug("Remote door open detected")
 +    if door_open:
 +      self._door_seen_open_remotely = True
++      if self.door_open_after_off_time is None:
++        self.door_open_after_off_time = now
 +      self.lock_attempted_at = None
 +      return
 +
@@ -1909,10 +1970,17 @@ index 0000000000..6a9260316e
 +    if locked_value is not False:
 +      return
 +
-+    if not self._door_seen_open_remotely:
++    if door_seen_open and self.door_close_after_off_time is None and not self.door_open:
++      logger.debug("Doors closed after ignition off (joint detection)")
++      self.door_close_after_off_time = now
++
++    if not door_seen_open:
 +      return
 +
 +    if ignition_on or accessory_on:
++      return
++
++    if self.door_close_after_off_time is None:
 +      return
 +
 +    self._try_lock(now, creds, force=False)
@@ -2064,6 +2132,9 @@ index 0000000000..6a9260316e
 +    self.last_door_close_time = None
 +    self.door_open_after_off_time = None
 +    self.door_close_after_off_time = None
++    self.door_open = False
++    self._door_seen_open_locally = False
++    self._door_seen_open_remotely = False
 +    self.off_since = None
 +    self._stop_status_monitor(reset_wait=True)
 +
@@ -2115,10 +2186,10 @@ index ca4a03b880..7ab94c1d32 100644
    "sunnypilot/qt/offroad/settings/sunnylink_panel.cc",
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.cc
 new file mode 100644
-index 0000000000..f9bfe93cbc
+index 0000000000..e7aa4b282e
 --- /dev/null
 +++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.cc
-@@ -0,0 +1,103 @@
+@@ -0,0 +1,102 @@
 +#include "selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h"
 +
 +#include <QVBoxLayout>
@@ -2221,13 +2292,13 @@ index 0000000000..f9bfe93cbc
 +  QWidget::showEvent(event);
 +  refreshValues();
 +}
-+
+\ No newline at end of file
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h
 new file mode 100644
-index 0000000000..c464dba6f1
+index 0000000000..efd04cf17d
 --- /dev/null
 +++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,29 @@
 +#pragma once
 +
 +#include <QMap>
@@ -2257,9 +2328,9 @@ index 0000000000..c464dba6f1
 +  ButtonControlSP *region_button = nullptr;
 +  QMap<QString, bool> secret_params;
 +};
-+
+\ No newline at end of file
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc
-index c712442df3..0b068efa6f 100644
+index c712442df3..95508e0b77 100644
 --- b/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc
 +++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc
 @@ -15,6 +15,7 @@
@@ -2274,19 +2345,19 @@ index c712442df3..0b068efa6f 100644
    QList<PanelInfo> panels = {
      PanelInfo("   " + tr("Device"), device, "../../sunnypilot/selfdrive/assets/offroad/icon_home.svg"),
      PanelInfo("   " + tr("Network"), networking, "../assets/icons/network.png"),
-+    PanelInfo("   " + tr("Auto Lock"), new AutoLockPanel(this), "/data/openpilot/auto-lock/lock-closed-white.svg"),
++    PanelInfo("   " + tr("Auto Lock"), new AutoLockPanel(this), "/data/openpilot/auto-lock/lock-closed-white.png"),
      PanelInfo("   " + tr("sunnylink"), new SunnylinkPanel(this), "../assets/icons/wifi_strength_full.svg"),
      PanelInfo("   " + tr("Toggles"), toggles, "../../sunnypilot/selfdrive/assets/offroad/icon_toggle.png"),
      PanelInfo("   " + tr("Software"), new SoftwarePanelSP(this), "../../sunnypilot/selfdrive/assets/offroad/icon_software.png"),
 diff --git b/system/manager/process_config.py a/system/manager/process_config.py
-index c5f20e511b..608f4e647d 100644
+index c5f20e511b..9cf72f304d 100644
 --- b/system/manager/process_config.py
 +++ a/system/manager/process_config.py
-@@ -145,6 +145,7 @@ procs = [
+@@ -141,6 +141,7 @@ procs = [
+   PythonProcess("dmonitoringd", "selfdrive.monitoring.dmonitoringd", driverview, enabled=(WEBCAM or not PC)),
+   PythonProcess("qcomgpsd", "system.qcomgpsd.qcomgpsd", qcomgps, enabled=TICI),
+   PythonProcess("pandad", "selfdrive.pandad.pandad", always_run),
++  PythonProcess("autolockd", "selfdrive.auto_lock.autolockd", only_offroad),
+   PythonProcess("paramsd", "selfdrive.locationd.paramsd", only_onroad),
    PythonProcess("lagd", "selfdrive.locationd.lagd", only_onroad),
    PythonProcess("ubloxd", "system.ubloxd.ubloxd", ublox, enabled=TICI),
-   PythonProcess("pigeond", "system.ubloxd.pigeond", ublox, enabled=TICI),
-+  PythonProcess("autolockd", "selfdrive.auto_lock.autolockd", always_run),
-   PythonProcess("plannerd", "selfdrive.controls.plannerd", not_long_maneuver),
-   PythonProcess("maneuversd", "tools.longitudinal_maneuvers.maneuversd", long_maneuver),
-   PythonProcess("radard", "selfdrive.controls.radard", only_onroad),
