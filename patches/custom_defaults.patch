@@ -1,5 +1,5 @@
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 561f86c0a7..67f3769b47 100644
+index 561f86c0a7..5b6003d5f3 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -35,19 +35,23 @@ index 561f86c0a7..67f3769b47 100644
      {"SecOCKey", {PERSISTENT | DONT_LOG | BACKUP, STRING}},
      {"RouteCount", {PERSISTENT, INT, "0"}},
      {"SnoozeUpdate", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
-@@ -131,8 +133,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -131,8 +133,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
  
      // --- sunnypilot params --- //
      {"ApiCache_DriveStats", {PERSISTENT, JSON}},
 -    {"AutoLaneChangeBsmDelay", {PERSISTENT | BACKUP, BOOL, "0"}},
 -    {"AutoLaneChangeTimer", {PERSISTENT | BACKUP, INT, "0"}},
++    {"AutoLockUsername", {PERSISTENT | BACKUP | DONT_LOG, STRING}},
++    {"AutoLockPassword", {PERSISTENT | BACKUP | DONT_LOG, STRING}},
++    {"AutoLockPin", {PERSISTENT | BACKUP | DONT_LOG, STRING}},
++    {"AutoLockRegion", {PERSISTENT | BACKUP, STRING}},
 +    {"AutoLaneChangeBsmDelay", {PERSISTENT | BACKUP, BOOL, "1"}},
 +    {"AutoLaneChangeTimer", {PERSISTENT | BACKUP, INT, "1"}},
 +    {"AdvancedLaneCentering", {PERSISTENT | BACKUP, BOOL, "0"}},
      {"BlinkerMinLateralControlSpeed", {PERSISTENT | BACKUP, INT, "20"}},  // MPH or km/h
      {"BlinkerPauseLateralControl", {PERSISTENT | BACKUP, INT, "0"}},
      {"Brightness", {PERSISTENT | BACKUP, INT, "0"}},
-@@ -148,15 +151,15 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -148,15 +155,15 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"DevUIInfo", {PERSISTENT | BACKUP, INT, "0"}},
      {"EnableCopyparty", {PERSISTENT | BACKUP, BOOL}},
      {"EnableGithubRunner", {PERSISTENT | BACKUP, BOOL}},
@@ -66,7 +70,7 @@ index 561f86c0a7..67f3769b47 100644
      {"ModelRunnerTypeCache", {CLEAR_ON_ONROAD_TRANSITION, INT}},
      {"OffroadMode", {CLEAR_ON_MANAGER_START, BOOL}},
      {"Offroad_TiciSupport", {CLEAR_ON_MANAGER_START, JSON}},
-@@ -164,12 +167,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -164,12 +171,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"OnroadScreenOffControl", {PERSISTENT | BACKUP, BOOL}},
      {"OnroadScreenOffTimer", {PERSISTENT | BACKUP, INT, "15"}},
      {"OnroadUploads", {PERSISTENT | BACKUP, BOOL, "1"}},
@@ -84,7 +88,7 @@ index 561f86c0a7..67f3769b47 100644
      {"TrueVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},
  
      // MADS params
-@@ -209,14 +213,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -209,14 +217,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"SubaruStopAndGoManualParkingBrake", {PERSISTENT | BACKUP, BOOL, "0"}},
  
      {"DynamicExperimentalControl", {PERSISTENT | BACKUP, BOOL, "0"}},
@@ -102,7 +106,7 @@ index 561f86c0a7..67f3769b47 100644
  
      // mapd
      {"MapAdvisorySpeedLimit", {CLEAR_ON_ONROAD_TRANSITION, FLOAT}},
-@@ -237,13 +241,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -237,13 +245,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"OsmStateTitle", {PERSISTENT, STRING}},
      {"OsmWayTest", {PERSISTENT, STRING}},
      {"RoadName", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
@@ -120,7 +124,7 @@ index 561f86c0a7..67f3769b47 100644
  
      // Smart Cruise Control
      {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
-@@ -261,8 +265,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -261,8 +269,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
  
      // Tuning keys
      {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
