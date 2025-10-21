@@ -73,10 +73,10 @@ index 1f491e0f58..920828b67c 100644
  
      self.is_ready_prev = self.is_ready
 diff --git b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_assist.py a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_assist.py
-index 302d8cd14d..0238de4b0e 100644
+index b948452059..74a5aa3f26 100644
 --- b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_assist.py
 +++ a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_assist.py
-@@ -77,6 +77,7 @@ class SpeedLimitAssist:
+@@ -81,6 +81,7 @@ class SpeedLimitAssist:
      self.speed_limit_prev = 0.
      self.speed_limit_final_last_conv = 0
      self.prev_speed_limit_final_last_conv = 0
@@ -84,7 +84,7 @@ index 302d8cd14d..0238de4b0e 100644
      self._distance = 0.
      self.state = SpeedLimitAssistState.disabled
      self._state_prev = SpeedLimitAssistState.disabled
-@@ -343,6 +344,7 @@ class SpeedLimitAssist:
+@@ -357,6 +358,7 @@ class SpeedLimitAssist:
      return enabled, active
  
    def update_events(self, events_sp: EventsSP) -> None:
@@ -92,27 +92,27 @@ index 302d8cd14d..0238de4b0e 100644
      if self.state == SpeedLimitAssistState.preActive:
        events_sp.add(EventNameSP.speedLimitPreActive)
  
-@@ -350,16 +352,21 @@ class SpeedLimitAssist:
+@@ -364,16 +366,21 @@ class SpeedLimitAssist:
        events_sp.add(EventNameSP.speedLimitPending)
  
      if self.is_active:
 +      triggered = False
        if self._state_prev not in ACTIVE_STATES:
--        events_sp.add(EventNameSP.speedLimitActive)
+-        self.update_active_event(events_sp)
 -
 -      # only notify if we acquire a valid speed limit
 -      # do not check has_speed_limit here
 -      elif self._speed_limit != self.speed_limit_prev:
 -        if self.speed_limit_prev <= 0:
 +        if limit_conv and limit_conv != self._last_announced_limit_conv:
-+          events_sp.add(EventNameSP.speedLimitActive)
+           self.update_active_event(events_sp)
+-        elif self.speed_limit_prev > 0 and self._speed_limit > 0:
 +          triggered = True
 +      elif limit_conv and limit_conv != self._last_announced_limit_conv:
 +        if self._last_announced_limit_conv <= 0:
-           events_sp.add(EventNameSP.speedLimitActive)
--        elif self.speed_limit_prev > 0 and self._speed_limit > 0:
+           self.update_active_event(events_sp)
 +        else:
-           events_sp.add(EventNameSP.speedLimitChanged)
++          events_sp.add(EventNameSP.speedLimitChanged)
 +        triggered = True
 +      if triggered:
 +        self._last_announced_limit_conv = limit_conv
@@ -122,7 +122,7 @@ index 302d8cd14d..0238de4b0e 100644
    def update(self, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float, v_cruise_cluster: float, speed_limit: float,
               speed_limit_final_last: float, has_speed_limit: bool, distance: float, events_sp: EventsSP) -> None:
 diff --git b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py
-index 51fb8f6d64..cc16d7bcd3 100644
+index 35965c0e18..d504051813 100644
 --- b/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py
 +++ a/sunnypilot/selfdrive/controls/lib/speed_limit/speed_limit_resolver.py
 @@ -20,6 +20,8 @@ SpeedLimitSource = custom.LongitudinalPlanSP.SpeedLimit.Source
@@ -134,7 +134,7 @@ index 51fb8f6d64..cc16d7bcd3 100644
  
  class SpeedLimitResolver:
    limit_solutions: dict[custom.LongitudinalPlanSP.SpeedLimit.Source, float]
-@@ -62,13 +64,20 @@ class SpeedLimitResolver:
+@@ -73,13 +75,20 @@ class SpeedLimitResolver:
      self.speed_limit_final = 0.
      self.speed_limit_final_last = 0.
      self.speed_limit_offset = 0.
