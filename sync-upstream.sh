@@ -17,6 +17,8 @@ EXCLUDES=(
   '.gitmodules'
   'patches'
   'opendbc_repo'
+  'auto-lock/lock-closed-white.png'
+  'auto-lock/lock-closed-white.svg'
 )
 
 usage() {
