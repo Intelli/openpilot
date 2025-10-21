@@ -100,4 +100,3 @@ void AutoLockPanel::showEvent(QShowEvent *event) {
   QWidget::showEvent(event);
   refreshValues();
 }
-

@@ -27,4 +27,3 @@ private:
   ButtonControlSP *region_button = nullptr;
   QMap<QString, bool> secret_params;
 };
-
