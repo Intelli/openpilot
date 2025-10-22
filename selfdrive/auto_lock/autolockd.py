@@ -499,6 +499,7 @@ class AutoLockMonitor:
         logger.error("Unable to locate kia_lock.py at %s", module_path)
         return None
       module = util.module_from_spec(spec)
+      sys.modules[spec.name] = module
       try:
         spec.loader.exec_module(module)
       except Exception as err:  # pylint: disable=broad-except
@@ -518,6 +519,7 @@ class AutoLockMonitor:
         logger.error("Unable to locate kia_status.py at %s", module_path)
         return None
       module = util.module_from_spec(spec)
+      sys.modules[spec.name] = module
       try:
         spec.loader.exec_module(module)
       except Exception as err:  # pylint: disable=broad-except
@@ -537,6 +539,7 @@ class AutoLockMonitor:
         logger.error("Unable to locate kia_shared.py at %s", module_path)
         return None
       module = util.module_from_spec(spec)
+      sys.modules[spec.name] = module
       try:
         spec.loader.exec_module(module)
       except Exception as err:  # pylint: disable=broad-except
