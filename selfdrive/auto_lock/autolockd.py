@@ -14,7 +14,6 @@ from cereal import log
 from openpilot.common.params import Params
 
 logger = logging.getLogger(__name__)
-debug_logger = logging.getLogger(f"{__name__}.debug")
 
 USE_CUSTOM_LOGFILE = True
 
@@ -54,7 +53,7 @@ class _Creds:
 class AutoLockMonitor:
   def __init__(self) -> None:
     self.params = Params()
-    self.sm = messaging.SubMaster(["carState", "pandaStates", "deviceState", "can"])
+    self.sm = messaging.SubMaster(["carState", "pandaStates", "deviceState"])
 
     self.car_active: bool = False
     self.off_since: Optional[float] = None
@@ -104,8 +103,6 @@ class AutoLockMonitor:
         self._handle_panda_state(now)
       if self.sm.updated["deviceState"]:
         self._handle_device_state()
-      if self.sm.updated["can"]:
-        self._handle_can_messages(now)
 
       self._evaluate(now)
 
@@ -139,44 +136,19 @@ class AutoLockMonitor:
           self.door_close_after_off_time = now
     self.door_open = door_open
 
-  def _handle_can_messages(self, now: float) -> None:
-    if self.car_active or self.off_since is None:
-      return
-
-    can_event = self.sm["can"]
-    can_msgs = getattr(can_event, "can", [])
-    if not can_msgs:
-      return
-
-    for can_msg in can_msgs:
-      data_bytes = bytes(can_msg.dat)
-      debug_logger.debug(
-        "CAN frame t_off=%.3f bus=%d addr=0x%03X len=%d data=%s",
-        now - self.off_since,
-        can_msg.src,
-        can_msg.address,
-        len(data_bytes),
-        data_bytes.hex(),
-      )
-
-  def _panda_ignition_state(self) -> tuple[bool, bool]:
-    panda_states = self.sm["pandaStates"]
-    ignition_line_active = any(bool(panda_state.ignitionLine) for panda_state in panda_states)
-    ignition_can_active = any(bool(panda_state.ignitionCan) for panda_state in panda_states)
-    return ignition_line_active, ignition_can_active
-
   def _panda_ignition_active(self) -> bool:
-    ignition_line_active, ignition_can_active = self._panda_ignition_state()
-    return ignition_line_active or ignition_can_active
+    panda_states = self.sm["pandaStates"]
+    for panda_state in panda_states:
+      if panda_state.ignitionLine or panda_state.ignitionCan:
+        return True
+    return False
 
   def _handle_panda_state(self, now: float) -> None:
-    ignition_line_active, ignition_can_active = self._panda_ignition_state()
-    ignition_on = ignition_line_active or ignition_can_active
+    ignition_on = self._panda_ignition_active()
 
     if ignition_on:
       if not self.car_active:
         logger.debug("Ignition became active")
-        debug_logger.debug("Ignition active (line=%s, can=%s)", ignition_line_active, ignition_can_active)
       self.off_since = None
       self.car_active = True
       self._awaiting_ignition_cycle = False
@@ -188,7 +160,6 @@ class AutoLockMonitor:
     else:
       if self.car_active:
         logger.debug("Ignition became inactive")
-        debug_logger.debug("Ignition inactive (line=%s, can=%s)", ignition_line_active, ignition_can_active)
         self.off_since = now
         self.lock_attempted_at = None
         self._stop_status_monitor(reset_wait=False)
@@ -305,8 +276,6 @@ class AutoLockMonitor:
     self._door_seen_open_remotely = False
     self._status_poll_logged = False
     logger.debug("Auto-lock status monitor started")
-    off_since = self.off_since if self.off_since is not None else now
-    debug_logger.debug("Status monitor started t_off=%.3f", now - off_since)
 
   def _process_status_monitor(self, now: float, creds: _Creds) -> None:
     if not self._status_monitor_active or self._status_monitor_started_at is None:
@@ -316,8 +285,6 @@ class AutoLockMonitor:
 
     if elapsed >= STATUS_MONITOR_TIMEOUT_S:
       logger.info("Auto-lock polling timed out after %.0f seconds; forcing lock command", STATUS_MONITOR_TIMEOUT_S)
-      off_since = self.off_since if self.off_since is not None else now
-      debug_logger.debug("Status monitor timeout reached t_off=%.3f", now - off_since)
       self._force_lock(now, creds)
       return
 
@@ -341,13 +308,6 @@ class AutoLockMonitor:
 
   def _force_lock(self, now: float, creds: _Creds) -> None:
     logger.info("Auto-lock timeout reached; forcing lock command")
-    off_since = self.off_since if self.off_since is not None else now
-    debug_logger.debug("Force lock triggered at t_off=%.3f", now - off_since)
-    if creds is None:
-      logger.error("Forced auto-lock aborted: credentials unavailable")
-      debug_logger.debug("Force lock aborted due to missing credentials")
-      self._reset_cycle_state()
-      return
     self._try_lock(now, creds, force=True)
 
   def _try_lock(self, now: float, creds: _Creds, *, force: bool) -> None:
@@ -358,7 +318,6 @@ class AutoLockMonitor:
     if lock_client is None:
       if force:
         logger.error("Forced auto-lock aborted: unable to initialise lock client")
-        debug_logger.debug("Force lock aborted due to missing lock client")
         self._reset_cycle_state()
       return
 
@@ -368,8 +327,6 @@ class AutoLockMonitor:
     network_type = getattr(self, "_network_type", None)
     network_label = getattr(network_type, "name", str(network_type)) if network_type is not None else "unknown"
     logger.info("%s | networkType=%s", action_desc, network_label)
-    off_since = self.off_since if self.off_since is not None else now
-    debug_logger.debug("Lock attempt force=%s t_off=%.3f", force, now - off_since)
 
     self.lock_attempted_at = now
     try:
@@ -378,13 +335,11 @@ class AutoLockMonitor:
       if force:
         success_desc += " (forced)"
       logger.info(success_desc)
-      debug_logger.debug("Lock command dispatched force=%s", force)
     except Exception as err:  # pylint: disable=broad-except
       failure_desc = "Auto-lock command failed"
       if force:
         failure_desc += " (forced)"
       logger.error("%s: %s", failure_desc, err)
-      debug_logger.debug("Lock command failure force=%s error=%s", force, err)
     finally:
       self._reset_cycle_state()
 
@@ -401,33 +356,21 @@ class AutoLockMonitor:
       status: Dict[str, Any] = status_client.status()
     except Exception as err:  # pylint: disable=broad-except
       logger.error("Auto-lock status polling failed: %s", err)
-      debug_logger.debug("Status polling error=%s", err)
       return
 
     self._log_status_update(status)
 
     locked_value = status.get("locked")
-    engine = status.get("engine") or {}
-    open_doors = status.get("openDoors") or {}
-    debug_logger.debug(
-      "Status response locked=%s ignition=%s accessory=%s hood=%s trunk=%s doors=%s timestamp=%s",
-      locked_value,
-      engine.get("ignition"),
-      engine.get("accessory"),
-      status.get("hoodOpen"),
-      status.get("trunkOpen"),
-      open_doors,
-      status.get("timestamp"),
-    )
     if locked_value is True:
       logger.info("Remote status indicates vehicle already locked; stopping auto-lock monitor")
-      debug_logger.debug("Remote status reported locked; monitor stopping")
       self._stop_status_monitor(reset_wait=True)
       return
 
+    engine = status.get("engine") or {}
     ignition_on = bool(engine.get("ignition"))
     accessory_on = bool(engine.get("accessory"))
 
+    open_doors = status.get("openDoors") or {}
     door_open = any(bool(open_doors.get(name)) for name in ("frontRight", "frontLeft", "backLeft", "backRight"))
     hood_open = bool(status.get("hoodOpen"))
     trunk_open = bool(status.get("trunkOpen"))
@@ -435,7 +378,6 @@ class AutoLockMonitor:
     door_seen_open = self._door_seen_open_locally or self._door_seen_open_remotely
     if door_open and not door_seen_open:
       logger.debug("Remote door open detected")
-      debug_logger.debug("Remote door open detected doors=%s", open_doors)
     if door_open:
       self._door_seen_open_remotely = True
       if self.door_open_after_off_time is None:
@@ -635,25 +577,6 @@ def main() -> None:
     file_handler.setLevel(logging.DEBUG)
     logger.addHandler(file_handler)
     logger.setLevel(logging.DEBUG)
-
-    debug_logfile = log_dir / "autolock.debug.log"
-    try:
-      debug_logfile.unlink()
-    except FileNotFoundError:
-      pass
-    except OSError as err:
-      logger.warning("Unable to remove existing debug log file %s: %s", debug_logfile, err)
-
-    debug_formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    for handler in list(debug_logger.handlers):
-      handler.close()
-      debug_logger.removeHandler(handler)
-    debug_handler = logging.FileHandler(debug_logfile, mode="w", encoding="utf-8")
-    debug_handler.setFormatter(debug_formatter)
-    debug_handler.setLevel(logging.DEBUG)
-    debug_logger.addHandler(debug_handler)
-    debug_logger.setLevel(logging.DEBUG)
-    debug_logger.propagate = False
 
     kia_status_logger = logging.getLogger("auto_lock_kia_status")
     if not any(isinstance(handler, logging.FileHandler) and handler.baseFilename == str(logfile) for handler in kia_status_logger.handlers):
