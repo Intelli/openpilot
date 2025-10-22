@@ -1546,10 +1546,10 @@ index 0000000000..ae8c43d19a
 \ No newline at end of file
 diff --git b/selfdrive/auto_lock/autolockd.py a/selfdrive/auto_lock/autolockd.py
 new file mode 100644
-index 0000000000..7eb0ac2adf
+index 0000000000..50170abc2c
 --- /dev/null
 +++ a/selfdrive/auto_lock/autolockd.py
-@@ -0,0 +1,595 @@
+@@ -0,0 +1,598 @@
 +from __future__ import annotations
 +
 +import copy
@@ -2051,6 +2051,7 @@ index 0000000000..7eb0ac2adf
 +        logger.error("Unable to locate kia_lock.py at %s", module_path)
 +        return None
 +      module = util.module_from_spec(spec)
++      sys.modules[spec.name] = module
 +      try:
 +        spec.loader.exec_module(module)
 +      except Exception as err:  # pylint: disable=broad-except
@@ -2070,6 +2071,7 @@ index 0000000000..7eb0ac2adf
 +        logger.error("Unable to locate kia_status.py at %s", module_path)
 +        return None
 +      module = util.module_from_spec(spec)
++      sys.modules[spec.name] = module
 +      try:
 +        spec.loader.exec_module(module)
 +      except Exception as err:  # pylint: disable=broad-except
@@ -2089,6 +2091,7 @@ index 0000000000..7eb0ac2adf
 +        logger.error("Unable to locate kia_shared.py at %s", module_path)
 +        return None
 +      module = util.module_from_spec(spec)
++      sys.modules[spec.name] = module
 +      try:
 +        spec.loader.exec_module(module)
 +      except Exception as err:  # pylint: disable=broad-except
