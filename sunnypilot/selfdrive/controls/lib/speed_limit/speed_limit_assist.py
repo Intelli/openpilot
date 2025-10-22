@@ -81,7 +81,6 @@ class SpeedLimitAssist:
     self.speed_limit_prev = 0.
     self.speed_limit_final_last_conv = 0
     self.prev_speed_limit_final_last_conv = 0
-    self._last_announced_limit_conv = 0
     self._distance = 0.
     self.state = SpeedLimitAssistState.disabled
     self._state_prev = SpeedLimitAssistState.disabled
@@ -358,7 +357,6 @@ class SpeedLimitAssist:
     return enabled, active
 
   def update_events(self, events_sp: EventsSP) -> None:
-    limit_conv = self.speed_limit_final_last_conv if self._has_speed_limit else 0
     if self.state == SpeedLimitAssistState.preActive:
       events_sp.add(EventNameSP.speedLimitPreActive)
 
@@ -366,32 +364,16 @@ class SpeedLimitAssist:
       events_sp.add(EventNameSP.speedLimitPending)
 
     if self.is_active:
-      triggered_active_event = False
       if self._state_prev not in ACTIVE_STATES:
         self.update_active_event(events_sp)
-        triggered_active_event = True
 
       # only notify if we acquire a valid speed limit
       # do not check has_speed_limit here
       elif self._speed_limit != self.speed_limit_prev:
         if self.speed_limit_prev <= 0:
           self.update_active_event(events_sp)
-          triggered_active_event = True
         elif self.speed_limit_prev > 0 and self._speed_limit > 0:
           self.update_active_event(events_sp)
-          triggered_active_event = True
-
-      if limit_conv and limit_conv != self._last_announced_limit_conv:
-        if self._last_announced_limit_conv > 0:
-          events_sp.add(EventNameSP.speedLimitChanged)
-        elif not triggered_active_event:
-          self.update_active_event(events_sp)
-          triggered_active_event = True
-        self._last_announced_limit_conv = limit_conv
-      elif triggered_active_event and limit_conv:
-        self._last_announced_limit_conv = limit_conv
-    elif not self._has_speed_limit:
-      self._last_announced_limit_conv = 0
 
   def update(self, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float, v_cruise_cluster: float, speed_limit: float,
              speed_limit_final_last: float, has_speed_limit: bool, distance: float, events_sp: EventsSP) -> None:
