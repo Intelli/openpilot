@@ -366,18 +366,29 @@ class SpeedLimitAssist:
       events_sp.add(EventNameSP.speedLimitPending)
 
     if self.is_active:
-      triggered = False
+      triggered_active_event = False
       if self._state_prev not in ACTIVE_STATES:
-        if limit_conv and limit_conv != self._last_announced_limit_conv:
+        self.update_active_event(events_sp)
+        triggered_active_event = True
+
+      # only notify if we acquire a valid speed limit
+      # do not check has_speed_limit here
+      elif self._speed_limit != self.speed_limit_prev:
+        if self.speed_limit_prev <= 0:
           self.update_active_event(events_sp)
-          triggered = True
-      elif limit_conv and limit_conv != self._last_announced_limit_conv:
-        if self._last_announced_limit_conv <= 0:
+          triggered_active_event = True
+        elif self.speed_limit_prev > 0 and self._speed_limit > 0:
           self.update_active_event(events_sp)
-        else:
+          triggered_active_event = True
+
+      if limit_conv and limit_conv != self._last_announced_limit_conv:
+        if self._last_announced_limit_conv > 0:
           events_sp.add(EventNameSP.speedLimitChanged)
-        triggered = True
-      if triggered:
+        elif not triggered_active_event:
+          self.update_active_event(events_sp)
+          triggered_active_event = True
+        self._last_announced_limit_conv = limit_conv
+      elif triggered_active_event and limit_conv:
         self._last_announced_limit_conv = limit_conv
     elif not self._has_speed_limit:
       self._last_announced_limit_conv = 0
