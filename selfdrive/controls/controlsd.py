@@ -2,6 +2,7 @@
 import math
 import time
 import threading
+from collections import deque
 from numbers import Number
 
 from cereal import car, log
@@ -44,14 +45,23 @@ CENTERING_MIN_SPEED_MS = 1.0
 CENTERING_MAX_CURVATURE_DELTA = 0.01
 CENTERING_MIN_DISPLAY_DELTA = 1e-6
 CENTERING_RATE_LIMIT_M_PER_S = 0.03
+CENTERING_RECENTER_RATE_M_PER_S = 0.12
+CENTERING_RECENTER_BAND_M = 0.02
+CENTERING_HISTORY_WINDOW_S = 1.6
 CENTERING_CURVATURE_MIN_OFFSET_M = 0.008
 CENTERING_CURVATURE_GAIN = 0.22
 CENTERING_EDGE_STD_MAX_ENTER = 1.0
 CENTERING_EDGE_STD_MAX_EXIT = 1.2
 CENTERING_EDGE_STD_SAMPLES = 10
 CENTERING_DISTANCE_RATIO_MAX = 3.0
-CENTERING_DEADBAND_ENTER_M = 0.06
-CENTERING_DEADBAND_EXIT_M = 0.03
+CENTERING_DEADBAND_ENTER_BASE_M = 0.035
+CENTERING_DEADBAND_ENTER_MIN_M = 0.02
+CENTERING_DEADBAND_ENTER_MAX_M = 0.05
+CENTERING_DEADBAND_EXIT_BASE_M = 0.018
+CENTERING_DEADBAND_EXIT_MIN_M = 0.01
+CENTERING_DEADBAND_EXIT_MAX_M = 0.035
+CENTERING_DEADBAND_EXIT_RATIO = 0.55
+CENTERING_DEADBAND_NOISE_BUFFER_M = 0.012
 CENTERING_SIGN_FLIP_MIN_M = 0.12
 CENTERING_TARGET_FILTER_TC = 0.3
 CENTERING_EDGE_MARGIN_M = 0.14
@@ -63,7 +73,10 @@ CENTERING_CURVE_ATTENUATION_START = 0.0035
 CENTERING_CURVE_ATTENUATION_FULL = 0.009
 CENTERING_CURVE_MIN_SCALE = 0.66
 CENTERING_STATUS_HOLD_S = 0.3
-CENTERING_CENTER_BAND_M = 0.08
+CENTERING_CENTER_BAND_BASE_M = 0.05
+CENTERING_CENTER_BAND_MARGIN_M = 0.02
+CENTERING_CENTER_BAND_MIN_M = 0.035
+CENTERING_CENTER_BAND_MAX_M = 0.07
 CENTERING_LOCK_RELEASE_M = 0.01
 CENTERING_GAIN_RAMP_EXP = 2.0
 EDGE_CLEARANCE_MIN_M = 0.381
@@ -118,6 +131,18 @@ class Controls(ControlsExt, ModelStateBase):
     self._centering_source_hold = 0.0
     self.edge_clearance_active = False
     self.edge_clearance_offset_m = 0.0
+    history_len = max(1, int(round(CENTERING_HISTORY_WINDOW_S / DT_CTRL)))
+    self._center_offset_history = deque(maxlen=history_len)
+    self._left_distance_history = deque(maxlen=history_len)
+    self._right_distance_history = deque(maxlen=history_len)
+    self._avg_center_offset = 0.0
+    self._avg_left_distance = None
+    self._avg_right_distance = None
+    self._center_history_valid_ratio = 0.0
+    self._deadband_enter_m = CENTERING_DEADBAND_ENTER_BASE_M
+    self._deadband_exit_m = CENTERING_DEADBAND_EXIT_BASE_M
+    self._center_band_m = CENTERING_CENTER_BAND_BASE_M
+    self._update_deadband_thresholds()
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -223,9 +248,12 @@ class Controls(ControlsExt, ModelStateBase):
       advanced_centering_enabled = self._advanced_centering_enabled
       centering_released = not advanced_centering_enabled
 
+    history_refreshed = False
+
     if CC.latActive and self._lane_centering_enabled():
       self._centering_tracking_ready = False
       lane_offset_raw, centering_available, centering_source, edge_offset_raw, edge_active = self._calculate_centering_target_offset(model_v2, CS.vEgo)
+      history_refreshed = True
       tracking_ready = self._centering_tracking_ready
       display_valid = tracking_ready
       if display_valid:
@@ -243,6 +271,10 @@ class Controls(ControlsExt, ModelStateBase):
           centering_released = False
         else:
           self._centering_target_filtered = 0.0
+    else:
+      self._record_centering_measurements(None, None, None)
+      self._update_deadband_thresholds()
+      history_refreshed = True
 
     if not CC.latActive:
       self.centering_offset_m = 0.0
@@ -258,11 +290,25 @@ class Controls(ControlsExt, ModelStateBase):
       self.centering_valid = False
       self.centering_display_offset = 0.0
       self.centering_adjusting = False
+      if not history_refreshed:
+        self._record_centering_measurements(None, None, None)
+        self._update_deadband_thresholds()
     else:
       if centering_released:
         self.centering_offset_m = 0.0
         self._centering_target_filtered = 0.0
-      rate_step = CENTERING_RATE_LIMIT_M_PER_S * DT_CTRL
+      history_ratio = max(0.0, min(1.0, self._center_history_valid_ratio))
+      if not centering_available:
+        fallback_offset = self._avg_center_offset * history_ratio
+        target_offset_m = fallback_offset
+
+      base_rate = CENTERING_RATE_LIMIT_M_PER_S
+      if centering_available:
+        rate_limit = base_rate
+      else:
+        recenter_rate = CENTERING_RECENTER_RATE_M_PER_S
+        rate_limit = base_rate + (recenter_rate - base_rate) * (1.0 - history_ratio)
+      rate_step = rate_limit * DT_CTRL
       offset_error = target_offset_m - self.centering_offset_m
       if offset_error > rate_step:
         offset_error = rate_step
@@ -271,8 +317,11 @@ class Controls(ControlsExt, ModelStateBase):
       self.centering_offset_m += offset_error
       self.centering_offset_m = max(-CENTERING_MAX_OFFSET_M, min(self.centering_offset_m, CENTERING_MAX_OFFSET_M))
 
-      reset_threshold = CENTERING_CENTER_BAND_M
-      if not centering_available and abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
+      if centering_available:
+        reset_threshold = self._deadband_exit_m
+      else:
+        reset_threshold = CENTERING_RECENTER_BAND_M
+      if abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
         self.centering_offset_m = 0.0
 
     steering_angle_limit_deg = 180.0
@@ -284,7 +333,8 @@ class Controls(ControlsExt, ModelStateBase):
     min_offset_for_curvature = max(CENTERING_CURVATURE_MIN_OFFSET_M, CENTERING_LOCK_RELEASE_M)
     centering_delta = 0.0
     if allow_centering and centering_available:
-      centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset_for_curvature, base_desired_curvature, CS.vEgo)
+      min_offset = max(min_offset_for_curvature, self._deadband_exit_m)
+      centering_delta = self._offset_to_curvature(self.centering_offset_m, min_offset, base_desired_curvature, CS.vEgo)
 
     new_desired_curvature = base_desired_curvature + centering_delta
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
@@ -297,7 +347,7 @@ class Controls(ControlsExt, ModelStateBase):
       correction_mag = abs(self.centering_correction)
       lock_held = self._centering_lock_sign != 0
       lane_engaged = target_mode == "lane" and (centering_available or lock_held)
-      self.centering_adjusting = allow_centering and (lane_engaged or correction_mag > CENTERING_MIN_DISPLAY_DELTA or offset_mag > CENTERING_CENTER_BAND_M)
+      self.centering_adjusting = allow_centering and (lane_engaged or correction_mag > CENTERING_MIN_DISPLAY_DELTA or offset_mag > self._center_band_m)
 
       if advanced_centering_enabled and self._lane_centering_enabled() and target_mode == "lane":
         if tracking_ready:
@@ -308,7 +358,7 @@ class Controls(ControlsExt, ModelStateBase):
           self._centering_source_hold = max(0.0, self._centering_source_hold - DT_CTRL)
 
         engaged = tracking_ready or centering_available or \
-                  offset_mag > CENTERING_CENTER_BAND_M or \
+                  offset_mag > self._center_band_m or \
                   correction_mag > CENTERING_MIN_DISPLAY_DELTA or \
                   self._centering_status_hold > 0.0
 
@@ -386,6 +436,54 @@ class Controls(ControlsExt, ModelStateBase):
     return self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9 and \
            self.CP.steerControlType == car.CarParams.SteerControlType.angle
 
+  def _record_centering_measurements(self, center_offset: float | None, left_distance: float | None, right_distance: float | None) -> None:
+    self._center_offset_history.append(center_offset)
+    self._left_distance_history.append(left_distance)
+    self._right_distance_history.append(right_distance)
+
+  def _history_average(self, history: deque) -> float | None:
+    values = [v for v in history if v is not None]
+    if not values:
+      return None
+    return sum(values) / len(values)
+
+  def _history_valid_fraction(self, history: deque) -> float:
+    total = len(history)
+    if total == 0:
+      return 0.0
+    valid = sum(1 for v in history if v is not None)
+    return float(valid) / float(total)
+
+  def _center_noise_floor(self) -> float:
+    values = [v for v in self._center_offset_history if v is not None]
+    if not values:
+      self._avg_center_offset = 0.0
+      return CENTERING_DEADBAND_ENTER_BASE_M - CENTERING_DEADBAND_NOISE_BUFFER_M
+
+    self._avg_center_offset = sum(values) / len(values)
+    avg_deviation = sum(abs(v - self._avg_center_offset) for v in values) / len(values)
+    min_noise = CENTERING_DEADBAND_ENTER_MIN_M * 0.5
+    return max(avg_deviation, min_noise)
+
+  def _update_deadband_thresholds(self) -> None:
+    noise_floor = self._center_noise_floor()
+    enter = noise_floor + CENTERING_DEADBAND_NOISE_BUFFER_M
+    enter = max(CENTERING_DEADBAND_ENTER_MIN_M, min(CENTERING_DEADBAND_ENTER_MAX_M, enter))
+
+    exit_threshold = enter * CENTERING_DEADBAND_EXIT_RATIO
+    exit_threshold = max(CENTERING_DEADBAND_EXIT_MIN_M, min(CENTERING_DEADBAND_EXIT_MAX_M, max(exit_threshold, CENTERING_DEADBAND_EXIT_BASE_M)))
+
+    center_band = enter + CENTERING_CENTER_BAND_MARGIN_M
+    center_band = max(CENTERING_CENTER_BAND_MIN_M,
+                      min(CENTERING_CENTER_BAND_MAX_M, max(center_band, CENTERING_CENTER_BAND_BASE_M)))
+
+    self._avg_left_distance = self._history_average(self._left_distance_history)
+    self._avg_right_distance = self._history_average(self._right_distance_history)
+    self._center_history_valid_ratio = self._history_valid_fraction(self._center_offset_history)
+    self._deadband_enter_m = enter
+    self._deadband_exit_m = exit_threshold
+    self._center_band_m = center_band
+
   def _lane_y_at_distance(self, lane_line, distance_m: float) -> float | None:
     xs = lane_line.x
     ys = lane_line.y
@@ -406,41 +504,52 @@ class Controls(ControlsExt, ModelStateBase):
     return accum / count
 
   def _calculate_centering_target_offset(self, model_v2, v_ego: float) -> tuple[float, bool, str | None, float, bool]:
+    record_left: float | None = None
+    record_right: float | None = None
+
+    def finalize(center_offset_val: float, available_val: bool, source_val: str | None,
+                 edge_offset_val: float, edge_active_val: bool) -> tuple[float, bool, str | None, float, bool]:
+      center_sample = center_offset_val if record_left is not None and record_right is not None else None
+      self._record_centering_measurements(center_sample, record_left, record_right)
+      self._update_deadband_thresholds()
+      return center_offset_val, available_val, source_val, edge_offset_val, edge_active_val
+
     if v_ego < CENTERING_MIN_SPEED_MS:
       self._lane_reliability.clear()
       self._edges_reliable = False
       self._centering_tracking_ready = False
-      return 0.0, False, None, 0.0, False
+      return finalize(0.0, False, None, 0.0, False)
 
     left_candidates, right_candidates, left_edge_dist, right_edge_dist = self._collect_boundary_candidates(model_v2)
-
     edge_offset, edge_active = self._edge_clearance_target(left_edge_dist, right_edge_dist)
 
     best_pair = self._select_best_boundary_pair(left_candidates, right_candidates)
     if best_pair is None:
       self._centering_tracking_ready = False
-      return 0.0, False, None, edge_offset, edge_active
+      return finalize(0.0, False, None, edge_offset, edge_active)
 
     left_boundary, left_source, right_boundary, right_source = best_pair
 
     lane_width = left_boundary - right_boundary
     if lane_width < CENTERING_LANE_WIDTH_MIN_M or lane_width > CENTERING_LANE_WIDTH_MAX_M:
       self._centering_tracking_ready = False
-      return 0.0, False, None, edge_offset, edge_active
+      return finalize(0.0, False, None, edge_offset, edge_active)
 
     left_distance = max(left_boundary, CENTERING_MIN_OFFSET_M)
     right_distance = max(abs(right_boundary), CENTERING_MIN_OFFSET_M)
     ratio = max(left_distance, right_distance) / max(min(left_distance, right_distance), CENTERING_MIN_OFFSET_M)
     if ratio > CENTERING_DISTANCE_RATIO_MAX:
       self._centering_tracking_ready = False
-      return 0.0, False, None, edge_offset, edge_active
+      return finalize(0.0, False, None, edge_offset, edge_active)
 
     center_offset = 0.5 * (left_boundary + right_boundary)
     center_offset = max(-CENTERING_MAX_OFFSET_M, min(center_offset, CENTERING_MAX_OFFSET_M))
+    record_left = float(left_boundary)
+    record_right = float(right_boundary)
 
     self._centering_tracking_ready = True
 
-    if abs(center_offset) < CENTERING_CENTER_BAND_M:
+    if abs(center_offset) < self._center_band_m:
       lock_sign = self._centering_lock_sign
       offset_sign = 0
       if center_offset > 0.0:
@@ -456,8 +565,8 @@ class Controls(ControlsExt, ModelStateBase):
           source = right_source or left_source
         if source is None:
           source = self._centering_last_source
-        return center_offset, True, source, edge_offset, edge_active
-      return center_offset, False, None, edge_offset, edge_active
+        return finalize(center_offset, True, source, edge_offset, edge_active)
+      return finalize(center_offset, False, None, edge_offset, edge_active)
 
     left_distance = left_boundary
     right_distance = abs(right_boundary)
@@ -470,7 +579,7 @@ class Controls(ControlsExt, ModelStateBase):
 
     source = primary_source or secondary_source
 
-    return center_offset, True, source, 0.0, False
+    return finalize(center_offset, True, source, 0.0, False)
 
   def _apply_offset_hysteresis(self, target_offset_m: float, available: bool) -> tuple[float, bool, bool]:
     if not available:
@@ -490,14 +599,14 @@ class Controls(ControlsExt, ModelStateBase):
       desired_sign = -1
 
     if self._centering_lock_sign == 0:
-      threshold = CENTERING_DEADBAND_ENTER_M + self._centering_cross_slack
+      threshold = self._deadband_enter_m + self._centering_cross_slack
       if magnitude < threshold or desired_sign == 0:
         return 0.0, False, False
       self._centering_lock_sign = desired_sign
       self._centering_cross_slack = 0.0
     else:
       if desired_sign != 0 and desired_sign != self._centering_lock_sign:
-        if magnitude >= CENTERING_DEADBAND_EXIT_M:
+        if magnitude >= self._deadband_exit_m:
           self._centering_lock_sign = 0
           self._centering_cross_slack = CENTERING_POST_CROSS_SLACK_M
           return 0.0, False, True
@@ -512,7 +621,7 @@ class Controls(ControlsExt, ModelStateBase):
   def _filter_centering_target(self, target_offset_m: float) -> float:
     alpha = DT_CTRL / (CENTERING_TARGET_FILTER_TC + DT_CTRL)
     self._centering_target_filtered += alpha * (target_offset_m - self._centering_target_filtered)
-    if abs(target_offset_m) < CENTERING_CENTER_BAND_M and abs(self._centering_target_filtered) < CENTERING_CENTER_BAND_M and self._centering_lock_sign == 0:
+    if abs(target_offset_m) < self._center_band_m and abs(self._centering_target_filtered) < self._center_band_m and self._centering_lock_sign == 0:
       self._centering_target_filtered = 0.0
     return self._centering_target_filtered
 
