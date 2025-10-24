@@ -49,7 +49,7 @@ CENTERING_RECENTER_RATE_M_PER_S = 0.12
 CENTERING_RECENTER_BAND_M = 0.02
 CENTERING_HISTORY_WINDOW_S = 1.6
 CENTERING_CURVATURE_MIN_OFFSET_M = 0.008
-CENTERING_CURVATURE_GAIN = 0.22
+CENTERING_CURVATURE_GAIN = 0.11
 CENTERING_EDGE_STD_MAX_ENTER = 1.0
 CENTERING_EDGE_STD_MAX_EXIT = 1.2
 CENTERING_EDGE_STD_SAMPLES = 10
@@ -65,13 +65,15 @@ CENTERING_DEADBAND_NOISE_BUFFER_M = 0.012
 CENTERING_SIGN_FLIP_MIN_M = 0.12
 CENTERING_TARGET_FILTER_TC = 0.3
 CENTERING_EDGE_MARGIN_M = 0.14
-CENTERING_SOFT_GAIN_MIN = 0.12
+CENTERING_SOFT_GAIN_MIN = 0.06
 CENTERING_SOFT_GAIN_THRESHOLD_M = 0.2
 CENTERING_POST_CROSS_SLACK_M = 0.025
 CENTERING_SLACK_DECAY_RATE_M_PER_S = 0.02
 CENTERING_CURVE_ATTENUATION_START = 0.0035
 CENTERING_CURVE_ATTENUATION_FULL = 0.009
 CENTERING_CURVE_MIN_SCALE = 0.66
+CENTERING_NEAR_CENTER_REF_M = 0.12
+CENTERING_NEAR_CENTER_POWER = 1.3
 CENTERING_STATUS_HOLD_S = 0.3
 CENTERING_CENTER_BAND_BASE_M = 0.05
 CENTERING_CENTER_BAND_MARGIN_M = 0.02
@@ -81,6 +83,12 @@ CENTERING_LOCK_RELEASE_M = 0.01
 CENTERING_GAIN_RAMP_EXP = 2.0
 EDGE_CLEARANCE_MIN_M = 0.381
 CENTERING_REFERENCE_SPEED_KPH = 200.0 # scale adjustment strength down above this speed
+CENTERING_BOUNCE_WINDOW_S = 8.0
+CENTERING_BOUNCE_MIN_CROSS_M = 0.02
+CENTERING_BOUNCE_MIN_PEAK_M = 0.035
+CENTERING_RECENT_CENTER_THRESHOLD_M = 0.03
+CENTERING_RECENT_CENTER_REENGAGE_M = 0.045
+CENTERING_RECENT_CENTER_HOLD_S = 3.0
 
 LANE_CENTERING_SOURCE_MAP = {
   None: LaneCenteringSourceEnum.none,
@@ -143,6 +151,12 @@ class Controls(ControlsExt, ModelStateBase):
     self._deadband_exit_m = CENTERING_DEADBAND_EXIT_BASE_M
     self._center_band_m = CENTERING_CENTER_BAND_BASE_M
     self._update_deadband_thresholds()
+    self._bounce_crossings = deque()
+    self._bounce_last_sign = 0
+    self._bounce_last_peak = 0.0
+    self.centering_bounce_active = False
+    self.centering_bounce_count = 0
+    self._within_center_last_ts = 0.0
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -259,6 +273,12 @@ class Controls(ControlsExt, ModelStateBase):
       if display_valid:
         display_offset_m = lane_offset_raw
       if advanced_centering_enabled:
+        if centering_available and not self.centering_active and self._recently_within_center() and abs(lane_offset_raw) <= CENTERING_RECENT_CENTER_REENGAGE_M:
+          centering_available = False
+          centering_source = None
+          target_offset_m = 0.0
+          self._centering_target_filtered = 0.0
+          centering_released = True
         if centering_available:
           target_mode = "lane"
           filtered_target = self._filter_centering_target(lane_offset_raw)
@@ -293,6 +313,7 @@ class Controls(ControlsExt, ModelStateBase):
       if not history_refreshed:
         self._record_centering_measurements(None, None, None)
         self._update_deadband_thresholds()
+      self._update_bounce_detection(False, 0.0)
     else:
       if centering_released:
         self.centering_offset_m = 0.0
@@ -323,6 +344,7 @@ class Controls(ControlsExt, ModelStateBase):
         reset_threshold = CENTERING_RECENTER_BAND_M
       if abs(self.centering_offset_m) < reset_threshold and abs(target_offset_m) < reset_threshold:
         self.centering_offset_m = 0.0
+      self._update_bounce_detection(True, self.centering_offset_m)
 
     steering_angle_limit_deg = 180.0
     desired_angle_deg = getattr(self.LaC, 'steeringAngleDesiredDeg', None)
@@ -484,6 +506,53 @@ class Controls(ControlsExt, ModelStateBase):
     self._deadband_exit_m = exit_threshold
     self._center_band_m = center_band
 
+  def _recently_within_center(self) -> bool:
+    if self._within_center_last_ts <= 0.0:
+      return False
+    return (time.monotonic() - self._within_center_last_ts) <= CENTERING_RECENT_CENTER_HOLD_S
+
+  def _update_bounce_detection(self, active: bool, offset: float) -> None:
+    if not active:
+      self._bounce_crossings.clear()
+      self._bounce_last_sign = 0
+      self._bounce_last_peak = 0.0
+      self.centering_bounce_active = False
+      self.centering_bounce_count = 0
+      return
+
+    now = time.monotonic()
+    magnitude = abs(offset)
+    sign = 0
+    if magnitude >= CENTERING_BOUNCE_MIN_CROSS_M:
+      sign = 1 if offset > 0.0 else -1
+
+    if sign != 0:
+      if self._bounce_last_sign == sign:
+        self._bounce_last_peak = max(self._bounce_last_peak, magnitude)
+      elif self._bounce_last_sign != 0:
+        if min(self._bounce_last_peak, magnitude) >= CENTERING_BOUNCE_MIN_PEAK_M:
+          self._bounce_crossings.append((now, sign))
+        self._bounce_last_sign = sign
+        self._bounce_last_peak = magnitude
+      else:
+        self._bounce_last_sign = sign
+        self._bounce_last_peak = magnitude
+    elif self._bounce_last_peak > 0.0:
+      self._bounce_last_peak *= 0.98
+      if self._bounce_last_peak < CENTERING_BOUNCE_MIN_CROSS_M * 0.5:
+        self._bounce_last_peak = 0.0
+        self._bounce_last_sign = 0
+
+    window = CENTERING_BOUNCE_WINDOW_S
+    while self._bounce_crossings and now - self._bounce_crossings[0][0] > window:
+      self._bounce_crossings.popleft()
+
+    left_seen = any(direction < 0 for _, direction in self._bounce_crossings)
+    right_seen = any(direction > 0 for _, direction in self._bounce_crossings)
+    crosses = len(self._bounce_crossings)
+    self.centering_bounce_count = crosses
+    self.centering_bounce_active = crosses >= 4 and left_seen and right_seen
+
   def _lane_y_at_distance(self, lane_line, distance_m: float) -> float | None:
     xs = lane_line.x
     ys = lane_line.y
@@ -512,6 +581,8 @@ class Controls(ControlsExt, ModelStateBase):
       center_sample = center_offset_val if record_left is not None and record_right is not None else None
       self._record_centering_measurements(center_sample, record_left, record_right)
       self._update_deadband_thresholds()
+      if center_sample is not None and abs(center_sample) <= CENTERING_RECENT_CENTER_THRESHOLD_M:
+        self._within_center_last_ts = time.monotonic()
       return center_offset_val, available_val, source_val, edge_offset_val, edge_active_val
 
     if v_ego < CENTERING_MIN_SPEED_MS:
@@ -809,6 +880,11 @@ class Controls(ControlsExt, ModelStateBase):
 
     adjusted_offset = math.copysign(effective_offset, offset_m)
     curvature_delta = gain * (2.0 * adjusted_offset) / (CENTERING_LOOKAHEAD_M ** 2)
+
+    near_ref = max(min_offset, CENTERING_NEAR_CENTER_REF_M)
+    near_ratio = min(1.0, max(0.0, offset_abs / max(1e-6, near_ref)))
+    near_scale = near_ratio ** CENTERING_NEAR_CENTER_POWER
+    curvature_delta *= near_scale
 
     curve_mag = abs(base_curvature)
     if curve_mag > CENTERING_CURVE_ATTENUATION_START:
