@@ -458,6 +458,9 @@ void pandad_run(std::vector<Panda *> &pandas) {
   constexpr double IDLE_PANDA_STATE_RATE_HZ = 1.0;
   constexpr double ACTIVE_PERIPHERAL_STATE_PUB_RATE_HZ = 2.0;
   constexpr double IDLE_PERIPHERAL_STATE_PUB_RATE_HZ = 0.5;
+  constexpr uint64_t SEC_TO_NANO = 1'000'000'000ULL;
+  constexpr uint64_t LOW_POWER_REFRESH_INTERVAL_NS = 10ULL * 60ULL * SEC_TO_NANO;  // 10 minutes
+  constexpr uint64_t LOW_POWER_REFRESH_DURATION_NS = 15ULL * SEC_TO_NANO;          // 15 seconds
 
   // Start the CAN send thread
   std::thread send_thread(can_send_thread, pandas, fake_send);
@@ -477,6 +480,8 @@ void pandad_run(std::vector<Panda *> &pandas) {
   bool ignition = false;
   bool ignition_valid = false;
   bool low_power_loop = false;
+  uint64_t low_power_last_refresh_ts = 0;
+  uint64_t low_power_active_until = 0;
   int last_screen_brightness = 100;
 
   auto hz_to_interval = [](double hz) -> uint64_t {
@@ -505,9 +510,37 @@ void pandad_run(std::vector<Panda *> &pandas) {
     is_offroad_param = params.getBool("IsOffroad");
     always_offroad = panda_safety.getOffroadMode();
 
-    uint64_t peripheral_interval = hz_to_interval(low_power_loop ? IDLE_PERIPHERAL_RATE_HZ : ACTIVE_PERIPHERAL_RATE_HZ);
-    uint64_t panda_state_interval = hz_to_interval(low_power_loop ? IDLE_PANDA_STATE_RATE_HZ : ACTIVE_PANDA_STATE_RATE_HZ);
-    uint64_t peripheral_state_interval = hz_to_interval(low_power_loop ? IDLE_PERIPHERAL_STATE_PUB_RATE_HZ : ACTIVE_PERIPHERAL_STATE_PUB_RATE_HZ);
+    bool low_power_candidate = is_offroad_param && !is_onroad && ignition_valid && !ignition && screen_off;
+    bool next_low_power_loop = low_power_candidate && !always_offroad;
+    if (next_low_power_loop && !low_power_loop) {
+      low_power_last_refresh_ts = now;
+      low_power_active_until = now + LOW_POWER_REFRESH_DURATION_NS;
+    } else if (!next_low_power_loop && low_power_loop) {
+      low_power_last_refresh_ts = 0;
+      low_power_active_until = 0;
+    }
+    low_power_loop = next_low_power_loop;
+
+    if (low_power_loop && low_power_last_refresh_ts == 0) {
+      low_power_last_refresh_ts = now;
+    }
+
+    bool forced_active_refresh = false;
+    if (low_power_loop) {
+      if ((now - low_power_last_refresh_ts) >= LOW_POWER_REFRESH_INTERVAL_NS) {
+        low_power_last_refresh_ts = now;
+        low_power_active_until = now + LOW_POWER_REFRESH_DURATION_NS;
+      }
+      forced_active_refresh = now < low_power_active_until;
+    } else {
+      low_power_active_until = 0;
+    }
+
+    bool effective_low_power = low_power_loop && !forced_active_refresh;
+
+    uint64_t peripheral_interval = hz_to_interval(effective_low_power ? IDLE_PERIPHERAL_RATE_HZ : ACTIVE_PERIPHERAL_RATE_HZ);
+    uint64_t panda_state_interval = hz_to_interval(effective_low_power ? IDLE_PANDA_STATE_RATE_HZ : ACTIVE_PANDA_STATE_RATE_HZ);
+    uint64_t peripheral_state_interval = hz_to_interval(effective_low_power ? IDLE_PERIPHERAL_STATE_PUB_RATE_HZ : ACTIVE_PERIPHERAL_STATE_PUB_RATE_HZ);
 
     if (now >= next_peripheral_update) {
       process_peripheral_state(peripheral_panda, &pm, no_fan_control);
@@ -531,10 +564,7 @@ void pandad_run(std::vector<Panda *> &pandas) {
       next_peripheral_state_pub = now + peripheral_state_interval;
     }
 
-    bool low_power_candidate = is_offroad_param && !is_onroad && ignition_valid && !ignition && screen_off;
-    low_power_loop = low_power_candidate && !always_offroad;
-
-    int target_loop_rate_hz = low_power_loop ? IDLE_LOOP_RATE_HZ : ACTIVE_LOOP_RATE_HZ;
+    int target_loop_rate_hz = effective_low_power ? IDLE_LOOP_RATE_HZ : ACTIVE_LOOP_RATE_HZ;
     if (target_loop_rate_hz != current_loop_rate_hz) {
       current_loop_rate_hz = target_loop_rate_hz;
       rk = RateKeeper("pandad", current_loop_rate_hz);
