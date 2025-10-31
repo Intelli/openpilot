@@ -1,5 +1,5 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
-index 021f5b3776..3046e39a27 100644
+index 9eb8da71ec..522cc08495 100644
 --- b/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
 +++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
 @@ -32,12 +32,22 @@ DeveloperPanelSP::DeveloperPanelSP(SettingsWindow *parent) : DeveloperPanel(pare
@@ -27,12 +27,8 @@ index 021f5b3776..3046e39a27 100644
      prebuiltToggle->refresh();
    });
    prebuiltToggle->setVisible(false);
-@@ -59,21 +69,26 @@ DeveloperPanelSP::DeveloperPanelSP(SettingsWindow *parent) : DeveloperPanel(pare
- }
- 
- void DeveloperPanelSP::updateToggles(bool offroad) {
--  bool disable_updates = params.getBool("DisableUpdates");
-   bool is_release = params.getBool("IsReleaseBranch");
+@@ -63,17 +73,23 @@ void DeveloperPanelSP::updateToggles(bool offroad) {
+   bool is_release = params.getBool("IsReleaseBranch") || params.getBool("IsReleaseSpBranch");
    bool is_tested = params.getBool("IsTestedBranch");
    bool is_development = params.getBool("IsDevelopmentBranch");
 -
@@ -93,7 +89,7 @@ index ae130f4b04..310230bc34 100755
  if __name__ == "__main__":
    spinner = Spinner()
 diff --git b/system/updated/updated.py a/system/updated/updated.py
-index 7ab9e070dc..fd08068c7e 100755
+index 181e410fa6..7a20b7a096 100755
 --- b/system/updated/updated.py
 +++ a/system/updated/updated.py
 @@ -173,10 +173,27 @@ def init_overlay() -> None:
