@@ -33,7 +33,7 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
   });
   first_row->addWidget(hkgTuningOverridingCycles);
 
-  hkgAngleMinTorque = new OptionControlSP("HkgTuningAngleMinTorqueReductionGain", tr("Override Steering Effort"), tr("Sets the steering effort percentage used when the driver is overriding lateral control.<br/>Higher values increase resistance and make the wheel feel stiffer."), "../assets/offroad/icon_blank.png", {1, 60}, 1);
+  hkgAngleMinTorque = new OptionControlSP("HkgTuningAngleMinTorqueReductionGain", tr("Override Steering Effort"), tr("Sets the steering effort percentage used when the driver is overriding lateral control.<br/>Higher values increase resistance and make the wheel feel stiffer."), "../assets/offroad/icon_blank.png", {5, 60}, 1);
   connect(hkgAngleMinTorque, &OptionControlSP::updateLabels, hkgAngleMinTorque, [=]() {
     this->updateToggles(offroad);
   });
@@ -53,22 +53,7 @@ AngleTunningSettings::AngleTunningSettings(QWidget *parent) : QWidget(parent) {
   });
   second_row->addWidget(hkgAngleMaxTorque);
   list->addItem(second_row);
-
-  auto third_row = new QHBoxLayout();
-  hkgAngleCustomSpeed = new OptionControlSP("HkgTuningAngleCustomLimitMaxSpeedKph", tr("Speed (EV9 Limits)"), tr("Modify EV9 steering limits only below this speed."), "../assets/offroad/icon_blank.png", {10, 40}, 1);
-  connect(hkgAngleCustomSpeed, &OptionControlSP::updateLabels, hkgAngleCustomSpeed, [=]() {
-    this->updateToggles(offroad);
-  });
-  third_row->addWidget(hkgAngleCustomSpeed);
-
-  // EV9 Alerts speed option
-  hkgEv9AlertsSpeed = new OptionControlSP("HkgTuningEv9AlertsSpeedKph", tr("Speed (EV9 Alerts)"), tr("Modify EV9 steering alerts only below this speed."), "../assets/offroad/icon_blank.png", {10, 50}, 1);
-  connect(hkgEv9AlertsSpeed, &OptionControlSP::updateLabels, hkgEv9AlertsSpeed, [=]() {
-    this->updateToggles(offroad);
-  });
-  third_row->addWidget(hkgEv9AlertsSpeed);
-  list->addItem(third_row);
-
+  
   QObject::connect(uiState(), &UIState::offroadTransition, this, &AngleTunningSettings::updateToggles);
 
   main_layout->addWidget(new ScrollViewSP(list, this));
@@ -94,28 +79,6 @@ void AngleTunningSettings::updateToggles(bool _offroad) {
 
   auto HkgAngleMaxTorqueValue = QString::fromStdString(params.get("HkgTuningAngleMaxTorqueReductionGain")).toInt();
   hkgAngleMaxTorque->setLabel(QString::number(HkgAngleMaxTorqueValue)+"%");
-
-  auto HkgAngleCustomSpeedParam = params.get("HkgTuningAngleCustomLimitMaxSpeedKph");
-  auto HkgAngleCustomSpeedValue = QString::fromStdString(HkgAngleCustomSpeedParam).toInt();
-  if (HkgAngleCustomSpeedParam.empty()) {
-    HkgAngleCustomSpeedValue = 32;
-  } else if (HkgAngleCustomSpeedValue < 10) {
-    HkgAngleCustomSpeedValue = 10;
-  } else if (HkgAngleCustomSpeedValue > 40) {
-    HkgAngleCustomSpeedValue = 40;
-  }
-  hkgAngleCustomSpeed->setLabel(QString::number(HkgAngleCustomSpeedValue)+tr(" km/h"));
-
-  auto HkgEv9AlertsSpeedParam = params.get("HkgTuningEv9AlertsSpeedKph");
-  auto HkgEv9AlertsSpeedValue = QString::fromStdString(HkgEv9AlertsSpeedParam).toInt();
-  if (HkgEv9AlertsSpeedParam.empty()) {
-    HkgEv9AlertsSpeedValue = 40;
-  } else if (HkgEv9AlertsSpeedValue < 10) {
-    HkgEv9AlertsSpeedValue = 10;
-  } else if (HkgEv9AlertsSpeedValue > 50) {
-    HkgEv9AlertsSpeedValue = 50;
-  }
-  hkgEv9AlertsSpeed->setLabel(QString::number(HkgEv9AlertsSpeedValue)+tr(" km/h"));
 
   auto HkgTuningOverridingCyclesValue = QString::fromStdString(params.get("HkgTuningOverridingCycles")).toInt();
   hkgTuningOverridingCycles->setLabel(QString::number(HkgTuningOverridingCyclesValue));

@@ -26,7 +26,7 @@ SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
 
 # Constants
 ALERT_COLORS = {
-  AlertStatus.normal: rl.Color(0, 0, 0, 128),  # Black with 50% transparency
+  AlertStatus.normal: rl.Color(0, 0, 0, 235),  # Black
   AlertStatus.userPrompt: rl.Color(0xFE, 0x8C, 0x34, 235),  # Orange
   AlertStatus.critical: rl.Color(0xC9, 0x22, 0x31, 235),  # Red
 }

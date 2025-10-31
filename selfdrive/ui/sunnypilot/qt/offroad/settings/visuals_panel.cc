@@ -30,8 +30,8 @@ VisualsPanel::VisualsPanel(QWidget *parent) : QWidget(parent) {
     },
     {
       "RainbowMode",
-      tr("Enable Kia EV9 Mode"),
-      RainbowizeWords(tr("A beautiful EV9 effect on the path the model wants to take.")) + "<br/><i>" + tr("It")+ " <b>" + tr("does not") + "</b> " + tr("affect driving in any way.") + "</i>",
+      tr("Enable Tesla Rainbow Mode"),
+      RainbowizeWords(tr("A beautiful rainbow effect on the path the model wants to take.")) + "<br/><i>" + tr("It")+ " <b>" + tr("does not") + "</b> " + tr("affect driving in any way.") + "</i>",
       "",
       false,
     },

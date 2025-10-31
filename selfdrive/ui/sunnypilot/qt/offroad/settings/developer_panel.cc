@@ -32,22 +32,12 @@ DeveloperPanelSP::DeveloperPanelSP(SettingsWindow *parent) : DeveloperPanel(pare
   addItem(enableCopyparty);
 
   // Quickboot Mode Toggle
-  prebuiltToggle = new ParamControlSP("UsePrebuiltToggle", tr("Enable Quickboot Mode"), tr(""), "", this, true);
+  prebuiltToggle = new ParamControlSP("QuickBootToggle", tr("Enable Quickboot Mode"), tr(""), "", this, true);
   addItem(prebuiltToggle);
 
   QObject::connect(prebuiltToggle, &ParamControl::toggleFlipped, [=](bool state) {
     QString prebuiltPath = "/data/openpilot/prebuilt";
-    bool pending_rebuild = params.getBool("QuickBootPendingRebuild");
-
-    if (state) {
-      if (!pending_rebuild) {
-        QFile(prebuiltPath).open(QIODevice::WriteOnly);
-      }
-    } else {
-      QFile::remove(prebuiltPath);
-      params.putBool("QuickBootPendingRebuild", false);
-    }
-
+    state ? QFile(prebuiltPath).open(QIODevice::WriteOnly) : QFile::remove(prebuiltPath);
     prebuiltToggle->refresh();
   });
   prebuiltToggle->setVisible(false);
@@ -73,23 +63,17 @@ void DeveloperPanelSP::updateToggles(bool offroad) {
   bool is_release = params.getBool("IsReleaseBranch") || params.getBool("IsReleaseSpBranch");
   bool is_tested = params.getBool("IsTestedBranch");
   bool is_development = params.getBool("IsDevelopmentBranch");
+
   prebuiltToggle->setVisible(!is_release && !is_tested && !is_development);
-  prebuiltToggle->setEnabled(true);
+  prebuiltToggle->setEnabled(disable_updates);
+  params.putBool("QuickBootToggle", QFile::exists("/data/openpilot/prebuilt"));
   prebuiltToggle->refresh();
 
-  const bool quickboot_pref = params.getBool("UsePrebuiltToggle");
-  const bool prebuilt_exists = QFile::exists("/data/openpilot/prebuilt");
-  const bool pending_rebuild = params.getBool("QuickBootPendingRebuild");
-
-  QString description = tr("When toggled on, this creates a prebuilt file to allow accelerated boot times. When toggled off, "
-                           "it immediately removes the prebuilt file so compilation of locally edited cpp files can be made. "
-                           "<br><br><b>To edit C++ files locally on device, you MUST first turn off this toggle so the changes can recompile.</b>");
-
-  if (quickboot_pref && (!prebuilt_exists || pending_rebuild)) {
-    description += tr("<br><br>Quickboot is temporarily disabled while an update or rebuild is in progress. It will be restored automatically afterwards.");
-  }
-
-  prebuiltToggle->setDescription(description);
+  prebuiltToggle->setDescription(disable_updates
+    ? tr("When toggled on, this creates a prebuilt file to allow accelerated boot times. When toggled off, "
+         "it immediately removes the prebuilt file so compilation of locally edited cpp files can be made. "
+         "<br><br><b>To edit C++ files locally on device, you MUST first turn off this toggle so the changes can recompile.</b>")
+    : tr("Quickboot mode requires updates to be disabled.<br>Enable 'Disable Updates' in the Software panel first."));
   prebuiltToggle->showDescription();
 
   enableGithubRunner->setVisible(!is_release);

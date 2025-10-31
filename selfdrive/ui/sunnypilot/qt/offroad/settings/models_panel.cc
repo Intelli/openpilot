@@ -112,12 +112,12 @@ ModelsPanel::ModelsPanel(QWidget *parent) : QWidget(parent) {
   list->addItem(lane_turn_desire_toggle);
 
   // Lane Turn Value control
-  int max_value_mph = 25;
+  int max_value_mph = 20;
   bool is_metric_initial = params.getBool("IsMetric");
   const float K = 1.609344f;
   int per_value_change_scaled = is_metric_initial ? static_cast<int>(std::round((1.0f / K) * 100.0f)) : 100; // 100 -> 1 mph
   lane_turn_value_control = new OptionControlSP("LaneTurnValue", tr("Adjust Lane Turn Speed"),
-    tr("Set the maximum speed for lane turn desires. Default is 25 %1.").arg(is_metric_initial ? "km/h" : "mph"),
+    tr("Set the maximum speed for lane turn desires. Default is 19 %1.").arg(is_metric_initial ? "km/h" : "mph"),
     "", {5 * 100, max_value_mph * 100}, per_value_change_scaled, false, nullptr, true, true);
   lane_turn_value_control->showDescription();
   list->addItem(lane_turn_value_control);
@@ -126,15 +126,6 @@ ModelsPanel::ModelsPanel(QWidget *parent) : QWidget(parent) {
   refreshLaneTurnValueControl();
   connect(lane_turn_desire_toggle, &ParamControlSP::toggleFlipped, this, &ModelsPanel::refreshLaneTurnValueControl);
   connect(lane_turn_value_control, &OptionControlSP::updateLabels, this, &ModelsPanel::refreshLaneTurnValueControl);
-
-  // Advanced Lane Centering toggle
-  advanced_lane_centering_toggle = new ParamControlSP(
-    "AdvancedLaneCentering",
-    tr("Advanced Lane Centering (EXPERIMENTAL)"),
-    tr("Enable enhanced lane centering logic with dynamic offset corrections and UI feedback."),
-    "../assets/offroad/icon_shell.png");
-  advanced_lane_centering_toggle->showDescription();
-  list->addItem(advanced_lane_centering_toggle);
 
   // LiveDelay toggle
   lagd_toggle_control = new ParamControlSP("LagdToggle", tr("Live Learning Steer Delay"), "", "../assets/offroad/icon_shell.png");

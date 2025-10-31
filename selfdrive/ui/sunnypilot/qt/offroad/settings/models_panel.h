@@ -72,7 +72,6 @@ private:
   ButtonControlSP *currentModelLblBtn;
   ParamControlSP *lagd_toggle_control;
   OptionControlSP *delay_control;
-  ParamControlSP *advanced_lane_centering_toggle;
   QProgressBar *supercomboProgressBar;
   QFrame *supercomboFrame;
   QProgressBar *navigationProgressBar;
