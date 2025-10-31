@@ -1,5 +1,5 @@
 diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
-index 9eb8da71ec..522cc08495 100644
+index 9eb8da71ec..0294360926 100644
 --- b/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
 +++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
 @@ -32,12 +32,22 @@ DeveloperPanelSP::DeveloperPanelSP(SettingsWindow *parent) : DeveloperPanel(pare
@@ -27,7 +27,11 @@ index 9eb8da71ec..522cc08495 100644
      prebuiltToggle->refresh();
    });
    prebuiltToggle->setVisible(false);
-@@ -63,17 +73,23 @@ void DeveloperPanelSP::updateToggles(bool offroad) {
+@@ -59,21 +69,26 @@ DeveloperPanelSP::DeveloperPanelSP(SettingsWindow *parent) : DeveloperPanel(pare
+ }
+ 
+ void DeveloperPanelSP::updateToggles(bool offroad) {
+-  bool disable_updates = params.getBool("DisableUpdates");
    bool is_release = params.getBool("IsReleaseBranch") || params.getBool("IsReleaseSpBranch");
    bool is_tested = params.getBool("IsTestedBranch");
    bool is_development = params.getBool("IsDevelopmentBranch");
