@@ -23,6 +23,7 @@ from openpilot.common.params import Params
 from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.common.timeout import Timeout
 from openpilot.common.realtime import DT_CTRL
+from openpilot.selfdrive.car.card import convert_to_capnp
 from openpilot.system.manager.process_config import managed_processes
 from openpilot.selfdrive.test.process_replay.vision_meta import meta_from_camera_state, available_streams
 from openpilot.selfdrive.test.process_replay.migration import migrate_all
@@ -339,6 +340,7 @@ def get_car_params_callback(rc, pm, msgs, fingerprint):
   if fingerprint:
     CarInterface = interfaces[fingerprint]
     CP = CarInterface.get_non_essential_params(fingerprint)
+    CP_SP = CarInterface.get_non_essential_params_sp(CP, fingerprint)
   else:
     can_msgs = ([CanData(can.address, can.dat, can.src) for can in m.can] for m in msgs if m.which() == "can")
     cached_params_raw = params.get("CarParamsCache")
@@ -354,9 +356,11 @@ def get_car_params_callback(rc, pm, msgs, fingerprint):
       with car.CarParams.from_bytes(cached_params_raw) as _cached_params:
         cached_params = _cached_params
 
-    CP = get_car(can_recv, lambda _msgs: None, lambda obd: None, params.get_bool("AlphaLongitudinalEnabled"), False, cached_params=cached_params).CP
+    _CI = get_car(can_recv, lambda _msgs: None, lambda obd: None, params.get_bool("AlphaLongitudinalEnabled"), False, cached_params=cached_params)
+    CP, CP_SP = _CI.CP, _CI.CP_SP
 
   params.put("CarParams", CP.to_bytes())
+  params.put("CarParamsSP", convert_to_capnp(CP_SP).to_bytes())
 
 
 def card_rcv_callback(msg, cfg, frame):
@@ -492,7 +496,7 @@ CONFIGS = [
     pubs=[
       "cameraOdometry", "accelerometer", "gyroscope", "liveCalibration", "carState"
     ],
-    subs=["livePose"],
+    subs=["liveLocationKalman", "livePose"],
     ignore=["logMonoTime"],
     should_recv_callback=MessageBasedRcvCallback("cameraOdometry"),
     tolerance=NUMPY_TOLERANCE,

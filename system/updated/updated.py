@@ -7,7 +7,6 @@ import psutil
 import shutil
 import signal
 import fcntl
-import time
 import threading
 from collections import defaultdict
 from pathlib import Path
@@ -19,7 +18,7 @@ from openpilot.common.markdown import parse_markdown
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.selfdrived.alertmanager import set_offroad_alert
 from openpilot.system.hardware import AGNOS, HARDWARE
-from openpilot.system.version import get_build_metadata
+from openpilot.system.version import get_build_metadata, SP_BRANCH_MIGRATIONS
 
 LOCK_FILE = os.getenv("UPDATER_LOCK_FILE", "/tmp/safe_staging_overlay.lock")
 STAGING_ROOT = os.getenv("UPDATER_STAGING_ROOT", "/data/safe_staging")
@@ -83,7 +82,7 @@ def set_consistent_flag(consistent: bool) -> None:
 
 def parse_release_notes(basedir: str) -> bytes:
   try:
-    with open(os.path.join(basedir, "RELEASES.md"), "rb") as f:
+    with open(os.path.join(basedir, "CHANGELOG.md"), "rb") as f:
       r = f.read().split(b'\n\n', 1)[0]  # Slice latest release notes
     try:
       return bytes(parse_markdown(r.decode("utf-8")), encoding="utf-8")
@@ -174,26 +173,9 @@ def init_overlay() -> None:
   cloudlog.info(f"git diff output:\n{git_diff}")
 
 
-def remove_prebuilt_artifact(path: Path) -> None:
-  try:
-    if path.is_dir():
-      shutil.rmtree(path)
-    else:
-      path.unlink(missing_ok=True)
-  except FileNotFoundError:
-    pass
-  except Exception:
-    cloudlog.exception(f"failed to remove prebuilt path: {path}")
-
-
 def finalize_update() -> None:
   """Take the current OverlayFS merged view and finalize a copy outside of
   OverlayFS, ready to be swapped-in at BASEDIR. Copy using shutil.copytree"""
-
-  params = Params()
-  quickboot_enabled = params.get_bool("UsePrebuiltToggle")
-  if quickboot_enabled:
-    params.put_bool("QuickBootPendingRebuild", True)
 
   # Remove the update ready flag and any old updates
   cloudlog.info("creating finalized version of the overlay")
@@ -206,19 +188,6 @@ def finalize_update() -> None:
 
   run(["git", "reset", "--hard"], FINALIZED)
   run(["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"], FINALIZED)
-
-  if quickboot_enabled:
-    remove_prebuilt_artifact(Path(FINALIZED) / "prebuilt")
-    remove_prebuilt_artifact(Path(BASEDIR) / "prebuilt")
-
-  cloudlog.info("Starting git cleanup in finalized update")
-  t = time.monotonic()
-  try:
-    run(["git", "gc"], FINALIZED)
-    run(["git", "lfs", "prune"], FINALIZED)
-    cloudlog.event("Done git cleanup", duration=time.monotonic() - t)
-  except subprocess.CalledProcessError:
-    cloudlog.exception(f"Failed git cleanup, took {time.monotonic() - t:.3f} s")
 
   set_consistent_flag(True)
   cloudlog.info("done finalizing overlay")
@@ -263,9 +232,7 @@ class Updater:
     b: str | None = self.params.get("UpdaterTargetBranch")
     if b is None:
       b = self.get_branch(BASEDIR)
-    b = {
-      ("tizi", "release3"): "release-tizi",
-    }.get((HARDWARE.get_device_type(), b), b)
+    b = SP_BRANCH_MIGRATIONS.get((HARDWARE.get_device_type(), b), b)
     return b
 
   @property
@@ -327,7 +294,7 @@ class Updater:
       try:
         branch = self.get_branch(basedir)
         commit = self.get_commit_hash(basedir)[:7]
-        with open(os.path.join(basedir, "common", "version.h")) as f:
+        with open(os.path.join(basedir, "sunnypilot", "common", "version.h")) as f:
           version = f.read().split('"')[1]
 
         commit_unix_ts = run(["git", "show", "-s", "--format=%ct", "HEAD"], basedir).rstrip()
@@ -421,9 +388,6 @@ class Updater:
     ]
     r = [run(cmd, OVERLAY_MERGED) for cmd in cmds]
     cloudlog.info("git reset success: %s", '\n'.join(r))
-
-    if self.params.get_bool("UsePrebuiltToggle"):
-      remove_prebuilt_artifact(Path(OVERLAY_MERGED) / "prebuilt")
 
     # TODO: show agnos download progress
     if AGNOS:

@@ -1,7 +1,5 @@
 import time
 import threading
-import subprocess
-from datetime import datetime, timedelta
 
 from openpilot.common.params import Params
 from openpilot.system.hardware import HARDWARE
@@ -30,8 +28,6 @@ class PowerMonitoring:
     self.car_voltage_mV = 12e3                  # Low-passed version of peripheralState voltage
     self.car_voltage_instant_mV = 12e3          # Last value of peripheralState voltage
     self.integration_lock = threading.Lock()
-    self._last_login_check = 0.0
-    self._remote_logged_in = False
 
     car_battery_capacity_uWh = self.params.get("CarBatteryCapacity") or 0
 
@@ -108,50 +104,20 @@ class PowerMonitoring:
   def get_car_battery_capacity(self) -> int:
     return int(self.car_battery_capacity_uWh)
 
-  def max_time_offroad_exceeded(self, offroad_time: float) -> bool:
-    return 0 < MAX_TIME_OFFROAD_S <= offroad_time
-
-  def _remote_user_logged_in(self) -> bool:
-    now = time.monotonic()
-    if (now - self._last_login_check) < 60.0:
-      return self._remote_logged_in
-
-    remote_logged_in = False
+  # Max Time Offroad
+  def max_time_offroad_exceeded(self, offroad_time):
+    """
+    Check if the max time offroad has been exceeded. If the value is 0, it means no limit.
+    :param offroad_time: Time spent offroad in seconds
+    :return: True if the max time offroad has been exceeded, False otherwise
+    """
     try:
-      result = subprocess.run(["last"], capture_output=True, text=True, check=False)
-      for line in result.stdout.splitlines():
-        if "still logged in" not in line:
-          continue
-        parts = line.split()
-        if not parts:
-          continue
-        user = parts[0]
-        terminal = parts[1] if len(parts) > 1 else ""
-        host = parts[2] if len(parts) > 2 else ""
-        if user in {"reboot", "shutdown", "runlevel", "wtmp"}:
-          continue
-        if terminal.startswith("pts/") or (host and any(ch in host for ch in (".", ":"))):
-          try:
-            still_idx = parts.index("still")
-            date_str = " ".join(parts[3:still_idx])
-            login_time = datetime.strptime(date_str, "%a %b %d %H:%M")
-            now_dt = datetime.now()
-            login_time = login_time.replace(year=now_dt.year)
-            if login_time > now_dt + timedelta(days=1):
-              login_time = login_time.replace(year=now_dt.year - 1)
-            if (now_dt - login_time) > timedelta(hours=24):
-              continue
-          except Exception:
-            remote_logged_in = True
-            break
-          remote_logged_in = True
-          break
+      param = self.params.get("MaxTimeOffroad")
+      sp_max_time_val_s = param * 60 if param is not None and param >= 0 else MAX_TIME_OFFROAD_S
     except Exception:
-      remote_logged_in = False
+      sp_max_time_val_s = MAX_TIME_OFFROAD_S
 
-    self._remote_logged_in = remote_logged_in
-    self._last_login_check = now
-    return remote_logged_in
+    return 0 < sp_max_time_val_s <= offroad_time
 
   # See if we need to shutdown
   def should_shutdown(self, ignition: bool, in_car: bool, offroad_timestamp: float | None, started_seen: bool):
@@ -163,10 +129,7 @@ class PowerMonitoring:
     offroad_time = (now - offroad_timestamp)
     low_voltage_shutdown = (self.car_voltage_mV < (VBATT_PAUSE_CHARGING * 1e3) and
                             offroad_time > VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S)
-    max_time_exceeded = self.max_time_offroad_exceeded(offroad_time)
-    if max_time_exceeded and self._remote_user_logged_in():
-      max_time_exceeded = False
-    should_shutdown |= max_time_exceeded
+    should_shutdown |= self.max_time_offroad_exceeded(offroad_time)
     should_shutdown |= low_voltage_shutdown
     should_shutdown |= (self.car_battery_capacity_uWh <= 0)
     should_shutdown &= not ignition

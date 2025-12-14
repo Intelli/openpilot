@@ -1,13 +1,13 @@
 import colorsys
 import numpy as np
 import pyray as rl
-from cereal import messaging, car, log
+from cereal import messaging, car
 from dataclasses import dataclass, field
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.system.ui.lib.application import gui_app, FontWeight
+from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
 from openpilot.system.ui.widgets import Widget
 
@@ -52,15 +52,6 @@ class ModelRenderer(Widget):
     self._road_edge_stds = np.zeros(2, dtype=np.float32)
     self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
     self._path_offset_z = HEIGHT_INIT[0]
-    self._font_medium = gui_app.font(FontWeight.MEDIUM)
-    self._font_bold = gui_app.font(FontWeight.BOLD)
-
-    self._centering_active = False
-    self._centering_adjusting = False
-    self._centering_offset = 0.0
-    self._centering_source = log.ControlsState.LaneCenteringSource.none
-    self._centering_display = 0.0
-    self._centering_edge = False
 
     # Initialize ModelPoints objects
     self._path = ModelPoints()
@@ -137,8 +128,6 @@ class ModelRenderer(Widget):
 
     if render_lead_indicator and radar_state:
       self._draw_lead_indicator()
-
-    self._draw_centering_overlay(rect)
 
   def _update_raw_points(self, model):
     """Update raw 3D points from model data"""
@@ -318,66 +307,6 @@ class ModelRenderer(Widget):
 
       rl.draw_triangle_fan(lead.glow, len(lead.glow), rl.Color(218, 202, 37, 255))
       rl.draw_triangle_fan(lead.chevron, len(lead.chevron), rl.Color(201, 34, 49, lead.fill_alpha))
-
-  def _draw_centering_overlay(self, rect: rl.Rectangle):
-    sm = ui_state.sm
-    if not sm.alive("controlsState"):
-      return
-
-    cs = sm["controlsState"]
-    active = bool(getattr(cs, "laneCenteringActive", False))
-    edge_active = bool(getattr(cs, "edgeClearanceActive", False))
-    valid = bool(getattr(cs, "laneCenteringValid", False))
-    adjusting = bool(getattr(cs, "laneCenteringAdjusting", False))
-    if not any((active, edge_active, valid, adjusting)):
-      return
-
-    source_enum = getattr(cs, "laneCenteringSource", log.ControlsState.LaneCenteringSource.none)
-    source_map = {
-      log.ControlsState.LaneCenteringSource.none: "none",
-      log.ControlsState.LaneCenteringSource.lane: "lane",
-      log.ControlsState.LaneCenteringSource.edge: "edge",
-    }
-    source = source_map.get(source_enum, "none")
-
-    offset = float(getattr(cs, "laneCenteringOffset", 0.0))
-    display_offset = float(getattr(cs, "laneCenteringDisplayOffset", 0.0))
-    edge_offset = float(getattr(cs, "edgeClearanceOffset", 0.0))
-
-    panel_width = 520
-    panel_height = 180
-    panel_rect = rl.Rectangle(rect.x + 40, rect.y + rect.height - panel_height - 40, panel_width, panel_height)
-    rl.draw_rectangle_rounded(panel_rect, 0.1, 8, rl.Color(15, 15, 15, 180))
-
-    status_color = rl.Color(120, 200, 255, 255) if active else rl.Color(220, 220, 220, 255)
-    if edge_active:
-      status_color = rl.Color(255, 180, 120, 255)
-
-    def draw_line(text: str, y_offset: float, color: rl.Color = rl.WHITE, size: int = 42):
-      rl.draw_text_ex(self._font_medium, text,
-                      rl.Vector2(panel_rect.x + 24, panel_rect.y + y_offset),
-                      size, 0, color)
-
-    state_label = "Centering"
-    if edge_active:
-      state_label = "Edge clearance"
-    elif adjusting:
-      state_label = "Centering (adjusting)"
-    draw_line(state_label, 28, status_color, 46)
-
-    offset_val = edge_offset if edge_active else offset
-    draw_line(f"Offset: {offset_val:+.3f} m", 80, rl.Color(200, 200, 200, 255))
-    draw_line(f"Display: {display_offset:+.3f} m", 118, rl.Color(150, 150, 150, 255), 36)
-    draw_line(f"Source: {source}", 150, rl.Color(150, 150, 150, 255), 32)
-
-    if edge_active and hasattr(self, "_clip_region") and self._clip_region is not None:
-      width = self._clip_region.width / 2
-      height = self._clip_region.height
-      if edge_offset < 0:
-        hl_rect = rl.Rectangle(self._clip_region.x, self._clip_region.y, width, height)
-      else:
-        hl_rect = rl.Rectangle(self._clip_region.x + width, self._clip_region.y, width, height)
-      rl.draw_rectangle_rec(hl_rect, rl.Color(255, 190, 140, 40))
 
   @staticmethod
   def _get_path_length_idx(pos_x_array: np.ndarray, path_distance: float) -> int:

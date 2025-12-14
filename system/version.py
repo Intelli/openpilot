@@ -35,13 +35,13 @@ terms_version: str = "2"
 
 
 def get_version(path: str = BASEDIR) -> str:
-  with open(os.path.join(path, "common", "version.h")) as _versionf:
+  with open(os.path.join(path, "sunnypilot", "common", "version.h")) as _versionf:
     version = _versionf.read().split('"')[1]
   return version
 
 
 def get_release_notes(path: str = BASEDIR) -> str:
-  with open(os.path.join(path, "RELEASES.md")) as f:
+  with open(os.path.join(path, "CHANGELOG.md")) as f:
     return f.read().split('\n\n', 1)[0]
 
 
@@ -97,6 +97,13 @@ class OpenpilotMetadata:
     return self.git_normalized_origin == "github.com/commaai/openpilot"
 
   @property
+  def sunnypilot_remote(self) -> bool:
+    return self.git_normalized_origin in ("github.com/sunnypilot/sunnypilot",
+                                          "github.com/sunnypilot/openpilot",
+                                          "github.com/sunnyhaibin/sunnypilot",
+                                          "github.com/sunnyhaibin/openpilot")
+
+  @property
   def git_normalized_origin(self) -> str:
     return self.git_origin \
       .replace("git@", "", 1) \
@@ -119,12 +126,39 @@ class BuildMetadata:
     return self.channel in RELEASE_BRANCHES
 
   @property
+  def release_sp_channel(self) -> bool:
+    return self.channel in RELEASE_SP_BRANCHES
+
+  @property
   def canonical(self) -> str:
     return f"{self.openpilot.version}-{self.openpilot.git_commit}-{self.openpilot.build_style}"
 
   @property
   def ui_description(self) -> str:
     return f"{self.openpilot.version} / {self.openpilot.git_commit[:6]} / {self.channel}"
+
+  @property
+  def master_channel(self) -> bool:
+    return self.channel in MASTER_SP_BRANCHES
+
+  @property
+  def development_channel(self) -> bool:
+    return self.channel == "dev" or self.channel.startswith("dev-") or self.channel.endswith("-prebuilt")
+
+  @property
+  def channel_type(self) -> str:
+    if self.channel.endswith("-tici"):
+      return "tici"
+    elif self.development_channel:
+      return "development"
+    elif self.tested_channel:
+      return "staging"
+    elif self.master_channel:
+      return "master"
+    elif self.release_channel or self.release_sp_channel:
+      return "release"
+    else:
+      return "feature"
 
 
 def build_metadata_from_dict(build_metadata: dict) -> BuildMetadata:

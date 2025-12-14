@@ -12,6 +12,9 @@ from openpilot.selfdrive.car.helpers import convert_to_capnp
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
+from openpilot.selfdrive.locationd.helpers import Pose
+from openpilot.common.mock.generators import generate_livePose
+from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfaces
 
 
 class TestLatControl:
@@ -21,7 +24,10 @@ class TestLatControl:
   def test_saturation(self, car_name, controller):
     CarInterface = interfaces[car_name]
     CP = CarInterface.get_non_essential_params(car_name)
-    CI = CarInterface(CP)
+    CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+    CI = CarInterface(CP, CP_SP)
+    sunnypilot_interfaces.setup_interfaces(CI)
+    CP_SP = convert_to_capnp(CP_SP)
     VM = VehicleModel(CP)
 
     controller = controller(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
@@ -31,6 +37,9 @@ class TestLatControl:
     CS.steeringPressed = False
 
     params = log.LiveParametersData.new_message()
+
+    lp = generate_livePose()
+    pose = Pose.from_live_pose(lp.livePose)
 
     # Saturate for curvature limited and controller limited
     for _ in range(1000):
