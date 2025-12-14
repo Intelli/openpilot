@@ -5,7 +5,7 @@ import threading
 
 import cereal.messaging as messaging
 
-from cereal import car, log, custom
+from cereal import car, log
 from msgq.visionipc import VisionIpcClient, VisionStreamType
 
 
@@ -14,7 +14,6 @@ from openpilot.common.realtime import config_realtime_process, Priority, Ratekee
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.gps import get_gps_location_service
 
-from opendbc.car.hyundai.values import CAR
 from openpilot.selfdrive.car.car_specific import CarSpecificEvents
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
@@ -24,13 +23,6 @@ from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroa
 
 from openpilot.system.version import get_build_metadata
 from openpilot.system.hardware import HARDWARE
-
-from openpilot.sunnypilot.mads.mads import ModularAssistiveDrivingSystem
-from openpilot.sunnypilot import get_sanitize_int_param
-from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
-from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
-from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
-from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 REPLAY = "REPLAY" in os.environ
 SIMULATION = "SIMULATION" in os.environ
@@ -46,13 +38,12 @@ LaneChangeDirection = log.LaneChangeDirection
 EventName = log.OnroadEvent.EventName
 ButtonType = car.CarState.ButtonEvent.Type
 SafetyModel = car.CarParams.SafetyModel
-TurnDirection = custom.ModelDataV2SP.TurnDirection
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 
 
-class SelfdriveD(CruiseHelper):
-  def __init__(self, CP=None, CP_SP=None):
+class SelfdriveD:
+  def __init__(self, CP=None):
     self.params = Params()
 
     # Ensure the current branch is cached, otherwise the first cycle lags
@@ -65,13 +56,6 @@ class SelfdriveD(CruiseHelper):
     else:
       self.CP = CP
 
-    if CP_SP is None:
-      cloudlog.info("selfdrived is waiting for CarParamsSP")
-      self.CP_SP = messaging.log_from_bytes(self.params.get("CarParamsSP", block=True), custom.CarParamsSP)
-      cloudlog.info("selfdrived got CarParamsSP")
-    else:
-      self.CP_SP = CP_SP
-
     self.car_events = CarSpecificEvents(self.CP)
 
     self.pose_calibrator = PoseCalibrator()
@@ -80,7 +64,7 @@ class SelfdriveD(CruiseHelper):
     self.excessive_actuation = self.params.get("Offroad_ExcessiveActuation") is not None
 
     # Setup sockets
-    self.pm = messaging.PubMaster(['selfdriveState', 'onroadEvents'] + ['selfdriveStateSP', 'onroadEventsSP'])
+    self.pm = messaging.PubMaster(['selfdriveState', 'onroadEvents'])
 
     self.gps_location_service = get_gps_location_service(self.params)
     self.gps_packets = [self.gps_location_service]
@@ -90,7 +74,7 @@ class SelfdriveD(CruiseHelper):
     # TODO: de-couple selfdrived with card/conflate on carState without introducing controls mismatches
     self.car_state_sock = messaging.sub_sock('carState', timeout=20)
 
-    ignore = self.sensor_packets + self.gps_packets + ['alertDebug'] + ['modelDataV2SP']
+    ignore = self.sensor_packets + self.gps_packets + ['alertDebug']
     if SIMULATION:
       ignore += ['driverCameraState', 'managerState']
     if REPLAY:
@@ -99,8 +83,7 @@ class SelfdriveD(CruiseHelper):
     self.sm = messaging.SubMaster(['deviceState', 'pandaStates', 'peripheralState', 'modelV2', 'liveCalibration',
                                    'carOutput', 'driverMonitoringState', 'longitudinalPlan', 'livePose', 'liveDelay',
                                    'managerState', 'liveParameters', 'radarState', 'liveTorqueParameters',
-                                   'controlsState', 'carControl', 'driverAssistance', 'alertDebug', 'userBookmark', 'audioFeedback',
-                                   'modelDataV2SP', 'longitudinalPlanSP'] + \
+                                   'controlsState', 'carControl', 'driverAssistance', 'alertDebug', 'userBookmark', 'audioFeedback'] + \
                                    self.camera_packets + self.sensor_packets + self.gps_packets,
                                   ignore_alive=ignore, ignore_avg_freq=ignore,
                                   ignore_valid=ignore, frequency=int(1/DT_CTRL))
@@ -134,17 +117,10 @@ class SelfdriveD(CruiseHelper):
     self.logged_comm_issue = None
     self.not_running_prev = None
     self.experimental_mode = False
-    self.personality = get_sanitize_int_param(
-      "LongitudinalPersonality",
-      min(log.LongitudinalPersonality.schema.enumerants.values()),
-      max(log.LongitudinalPersonality.schema.enumerants.values()),
-      self.params
-    )
+    self.personality = self.params.get("LongitudinalPersonality", return_default=True)
     self.recalibrating_seen = False
     self.state_machine = StateMachine()
     self.rk = Ratekeeper(100, print_delay_threshold=None)
-
-    self.ignored_processes = {'mapd', }
 
     # Determine startup event
     self.startup_event = EventName.startup if build_metadata.openpilot.comma_remote and build_metadata.tested_channel else EventName.startupMaster
@@ -157,31 +133,16 @@ class SelfdriveD(CruiseHelper):
     elif self.CP.secOcRequired and not self.CP.secOcKeyAvailable:
       self.startup_event = EventName.startupNoSecOcKey
 
-    ev9_supported = self.CP.carFingerprint == CAR.KIA_EV9
-    if self.startup_event == EventName.startupMaster and not ev9_supported and not REPLAY and not SIMULATION:
-      self.events.add(EventName.startupNoControl, static=True)
-
     if not car_recognized:
       self.events.add(EventName.carUnrecognized, static=True)
       set_offroad_alert("Offroad_CarUnrecognized", True)
     elif self.CP.passive:
       self.events.add(EventName.dashcamMode, static=True)
 
-    self.events_sp = EventsSP()
-    self.events_sp_prev = []
-
-    self.mads = ModularAssistiveDrivingSystem(self)
-    self.icbm = IntelligentCruiseButtonManagement(self.CP, self.CP_SP)
-
-    self.car_events_sp = CarSpecificEventsSP(self.CP, self.CP_SP)
-
-    CruiseHelper.__init__(self, self.CP)
-
   def update_events(self, CS):
     """Compute onroadEvents from carState"""
 
     self.events.clear()
-    self.events_sp.clear()
 
     if self.sm['controlsState'].lateralControlState.which() == 'debugState':
       self.events.add(EventName.joystickDebug)
@@ -219,15 +180,11 @@ class SelfdriveD(CruiseHelper):
 
     if not self.CP.notCar:
       self.events.add_from_msg(self.sm['driverMonitoringState'].events)
-      self.events_sp.add_from_msg(self.sm['longitudinalPlanSP'].events)
 
     # Add car events, ignore if CAN isn't valid
     if CS.canValid:
       car_events = self.car_events.update(CS, self.CS_prev, self.sm['carControl']).to_msg()
       self.events.add_from_msg(car_events)
-
-      car_events_sp = self.car_events_sp.update(CS, self.events).to_msg()
-      self.events_sp.add_from_msg(car_events_sp)
 
       if self.CP.notCar:
         # wait for everything to init first
@@ -311,13 +268,6 @@ class SelfdriveD(CruiseHelper):
                                                     LaneChangeState.laneChangeFinishing):
       self.events.add(EventName.laneChange)
 
-    # Handle lane turn
-    lane_turn_direction = self.sm['modelDataV2SP'].laneTurnDirection
-    if lane_turn_direction == TurnDirection.turnLeft:
-      self.events_sp.add(custom.OnroadEventSP.EventName.laneTurnLeft)
-    elif lane_turn_direction == TurnDirection.turnRight:
-      self.events_sp.add(custom.OnroadEventSP.EventName.laneTurnRight)
-
     for i, pandaState in enumerate(self.sm['pandaStates']):
       # All pandas must match the list of safetyConfigs, and if outside this list, must be silent or noOutput
       if i < len(self.CP.safetyConfigs):
@@ -344,7 +294,7 @@ class SelfdriveD(CruiseHelper):
       if not_running != self.not_running_prev:
         cloudlog.event("process_not_running", not_running=not_running, error=True)
       self.not_running_prev = not_running
-    if self.sm.recv_frame['managerState'] and (not_running - self.ignored_processes):
+    if self.sm.recv_frame['managerState'] and not_running:
       self.events.add(EventName.processNotRunning)
     else:
       if not SIMULATION and not self.rk.lagging:
@@ -420,17 +370,8 @@ class SelfdriveD(CruiseHelper):
       desired_lateral_accel = self.sm['modelV2'].action.desiredCurvature * (clipped_speed**2)
       undershooting = abs(desired_lateral_accel) / abs(1e-3 + actual_lateral_accel) > 1.2
       turning = abs(desired_lateral_accel) > 1.0
-      desired_steering_angle = abs(lac.steeringAngleDesiredDeg)
-
       # TODO: lac.saturated includes speed and other checks, should be pulled out
       if undershooting and turning and lac.saturated:
-        # Silence "Turn Exceeds Steering Limit" alert when below custom speed threshold
-        speed_threshold_mps = float(self.params.get("HkgTuningEv9AlertsSpeedKph", return_default=True)) / 3.6
-        if (CS.vEgo > speed_threshold_mps or desired_steering_angle >= 90.0) and desired_steering_angle < 119.9:
-          self.events.add(EventName.steerSaturated)
-
-      # Check for high steering angle saturation
-      if desired_steering_angle >= 119.9:
         self.events.add(EventName.steerSaturated)
 
     # Check for FCW
@@ -453,22 +394,12 @@ class SelfdriveD(CruiseHelper):
       if self.sm['modelV2'].frameDropPerc > 20:
         self.events.add(EventName.modeldLagging)
 
-    # mute canBusMissing event if in Park, as it sometimes may trigger a false alarm with MADS in Paused state
-    if CS.gearShifter == car.CarState.GearShifter.park and self.mads.enabled:
-      self.events.remove(EventName.canBusMissing)
-
-    CruiseHelper.update(self, CS, self.events_sp, self.experimental_mode)
-
-    # decrement personality on distance button press
+    # Decrement personality on distance button press
     if self.CP.openpilotLongitudinalControl:
       if any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents):
-        if not self.experimental_mode_switched:
-          self.personality = (self.personality - 1) % 3
-          self.params.put_nonblocking('LongitudinalPersonality', self.personality)
-          self.events.add(EventName.personalityChanged)
-        self.experimental_mode_switched = False
-
-    self.icbm.run(CS, self.sm['carControl'], self.sm['longitudinalPlanSP'], self.is_metric)
+        self.personality = (self.personality - 1) % 3
+        self.params.put_nonblocking('LongitudinalPersonality', self.personality)
+        self.events.add(EventName.personalityChanged)
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
@@ -525,13 +456,9 @@ class SelfdriveD(CruiseHelper):
       clear_event_types.add(ET.NO_ENTRY)
 
     pers = LONGITUDINAL_PERSONALITY_MAP[self.personality]
-    callback_args = [self.CP, CS, self.sm, self.is_metric,
-                     self.state_machine.soft_disable_timer, pers]
-
-    alerts = self.events.create_alerts(self.state_machine.current_alert_types, callback_args)
-    alerts_sp = self.events_sp.create_alerts(self.state_machine.current_alert_types, callback_args)
-
-    self.AM.add_many(self.sm.frame, alerts + alerts_sp)
+    alerts = self.events.create_alerts(self.state_machine.current_alert_types, [self.CP, CS, self.sm, self.is_metric,
+                                                                                self.state_machine.soft_disable_timer, pers])
+    self.AM.add_many(self.sm.frame, alerts)
     self.AM.process_alerts(self.sm.frame, clear_event_types)
 
   def publish_selfdriveState(self, CS):
@@ -564,38 +491,11 @@ class SelfdriveD(CruiseHelper):
       self.pm.send('onroadEvents', ce_send)
     self.events_prev = self.events.names.copy()
 
-    # selfdriveStateSP
-    ss_sp_msg = messaging.new_message('selfdriveStateSP')
-    ss_sp_msg.valid = True
-    ss_sp = ss_sp_msg.selfdriveStateSP
-    mads = ss_sp.mads
-    mads.state = self.mads.state_machine.state
-    mads.enabled = self.mads.enabled
-    mads.active = self.mads.active
-    mads.available = self.mads.enabled_toggle
-
-    icbm = ss_sp.intelligentCruiseButtonManagement
-    icbm.state = self.icbm.state
-    icbm.sendButton = self.icbm.cruise_button
-    icbm.vTarget = self.icbm.v_target
-
-    self.pm.send('selfdriveStateSP', ss_sp_msg)
-
-    # onroadEventsSP - logged every second or on change
-    if (self.sm.frame % int(1. / DT_CTRL) == 0) or (self.events_sp.names != self.events_sp_prev):
-      ce_send_sp = messaging.new_message('onroadEventsSP')
-      ce_send_sp.valid = True
-      ce_send_sp.onroadEventsSP.events = self.events_sp.to_msg()
-      self.pm.send('onroadEventsSP', ce_send_sp)
-    self.events_sp_prev = self.events_sp.names.copy()
-
   def step(self):
     CS = self.data_sample()
     self.update_events(CS)
     if not self.CP.passive and self.initialized:
       self.enabled, self.active = self.state_machine.update(self.events)
-    if not self.CP.notCar:
-      self.mads.update(CS)
     self.update_alerts(CS)
 
     self.publish_selfdriveState(CS)
@@ -609,8 +509,6 @@ class SelfdriveD(CruiseHelper):
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
       self.personality = self.params.get("LongitudinalPersonality", return_default=True)
-
-      self.mads.read_params()
       time.sleep(0.1)
 
   def run(self):

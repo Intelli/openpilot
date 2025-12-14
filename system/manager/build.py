@@ -86,24 +86,6 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
     cache_size -= f.stat().st_size
     f.unlink()
 
-  try:
-    from openpilot.common.params import Params
-
-    params = Params()
-    quickboot_pref = params.get("UsePrebuiltToggle")
-    if quickboot_pref is None:
-      quickboot_pref = params.get("UsePrebuiltToggle", return_default=True)
-      if quickboot_pref is None:
-        quickboot_pref = True
-      params.put_bool("UsePrebuiltToggle", bool(quickboot_pref))
-
-    if bool(quickboot_pref):
-      prebuilt_marker = Path(BASEDIR) / "prebuilt"
-      prebuilt_marker.touch(exist_ok=True)
-      params.put_bool("QuickBootPendingRebuild", False)
-  except Exception:
-    cloudlog.exception("failed to finalize quickboot state after build")
-
 
 if __name__ == "__main__":
   spinner = Spinner()

@@ -8,8 +8,6 @@ from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.text import wrap_text
 from openpilot.system.ui.widgets import Widget
 
-from openpilot.system.ui.sunnypilot.lib.application import gui_app_sp
-
 # Constants
 if gui_app.big_ui():
   PROGRESS_BAR_WIDTH = 1000
@@ -37,7 +35,7 @@ def clamp(value, min_value, max_value):
 class Spinner(Widget):
   def __init__(self):
     super().__init__()
-    self._comma_texture = gui_app_sp.sp_texture("images/spinner_sunnypilot.png", TEXTURE_SIZE, TEXTURE_SIZE)
+    self._comma_texture = gui_app.texture("images/spinner_comma.png", TEXTURE_SIZE, TEXTURE_SIZE)
     self._spinner_texture = gui_app.texture("images/spinner_track.png", TEXTURE_SIZE, TEXTURE_SIZE, alpha_premultiply=True)
     self._rotation = 0.0
     self._progress: int | None = None
@@ -83,11 +81,6 @@ class Spinner(Widget):
 
       bar.width *= self._progress / 100.0
       rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
-
-      edition_text = "EV9 Edition"
-      edition_size = measure_text_cached(gui_app.font(), edition_text, FONT_SIZE)
-      edition_pos = rl.Vector2(center.x - edition_size.x / 2.0, y_pos + PROGRESS_BAR_HEIGHT + 40)
-      rl.draw_text_ex(gui_app.font(), edition_text, edition_pos, FONT_SIZE, 0.0, rl.WHITE)
     elif self._wrapped_lines:
       for i, line in enumerate(self._wrapped_lines):
         text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)

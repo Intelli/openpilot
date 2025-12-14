@@ -17,14 +17,11 @@ blacklist = [
   ".gitattributes",
   ".git$",
   ".gitmodules",
-  ".run/",
-  ".idea/",
 ]
 
 # gets you through the blacklist
 whitelist: list[str] = [
 ]
-
 
 if __name__ == "__main__":
   for f in Path(ROOT).rglob("**/*"):

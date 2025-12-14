@@ -35,10 +35,6 @@ def manager_init() -> None:
   if build_metadata.release_channel:
     params.clear_all(ParamKeyFlag.DEVELOPMENT_ONLY)
 
-  # device boot mode
-  if params.get("DeviceBootMode") == 1:  # start in Always Offroad mode
-    params.put_bool("OffroadMode", True)
-
   if params.get_bool("RecordFrontLock"):
     params.put_bool("RecordFront", True)
 
@@ -63,10 +59,8 @@ def manager_init() -> None:
   params.put("GitCommitDate", build_metadata.openpilot.git_commit_date)
   params.put("GitBranch", build_metadata.channel)
   params.put("GitRemote", build_metadata.openpilot.git_origin)
-  params.put_bool("IsDevelopmentBranch", build_metadata.development_channel)
   params.put_bool("IsTestedBranch", build_metadata.tested_channel)
   params.put_bool("IsReleaseBranch", build_metadata.release_channel)
-  params.put_bool("IsReleaseSpBranch", build_metadata.release_sp_channel)
   params.put("HardwareSerial", serial)
 
   # set dongle id

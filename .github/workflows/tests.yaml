@@ -19,11 +19,11 @@ concurrency:
 
 env:
   PYTHONWARNINGS: error
-  BASE_IMAGE: sunnypilot-base
+  BASE_IMAGE: openpilot-base
   AZURE_TOKEN: ${{ secrets.AZURE_COMMADATACI_OPENPILOTCI_TOKEN }}
 
   DOCKER_LOGIN: docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
-  BUILD: release/ci/docker_build_sp.sh base
+  BUILD: selfdrive/test/docker_build.sh base
 
   RUN: docker run --shm-size 2G -v $PWD:/tmp/openpilot -w /tmp/openpilot -e CI=1 -e PYTHONWARNINGS=error -e FILEREADER_CACHE=1 -e PYTHONPATH=/tmp/openpilot -e NUM_JOBS -e JOB_ID -e GITHUB_ACTION -e GITHUB_REF -e GITHUB_HEAD_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -v $GITHUB_WORKSPACE/.ci_cache/scons_cache:/tmp/scons_cache -v $GITHUB_WORKSPACE/.ci_cache/comma_download_cache:/tmp/comma_download_cache -v $GITHUB_WORKSPACE/.ci_cache/openpilot_cache:/tmp/openpilot_cache $BASE_IMAGE /bin/bash -c
 
@@ -65,25 +65,9 @@ jobs:
         cd $STRIPPED_DIR
         ${{ env.RUN }} "release/check-dirty.sh"
     - name: Check submodules
-      if: github.repository == 'sunnypilot/sunnypilot'
+      if: github.repository == 'commaai/openpilot'
       timeout-minutes: 3
-      run: |
-        if [ "${{ github.ref }}" != "refs/heads/master" ]; then
-          git fetch  origin master:refs/remotes/origin/master
-
-          SUBMODULE_PATHS=$(git diff origin/master HEAD --name-only | grep -E '^[^/]+$' | while read path; do
-            if git ls-files --stage "$path" | grep -q "^160000"; then
-              echo "$path"
-            fi
-          done | tr '\n' ' ')
-
-          if [ -n "$SUBMODULE_PATHS" ]; then
-            echo "Changed submodule paths: $SUBMODULE_PATHS"
-            export SUBMODULE_PATHS="$SUBMODULE_PATHS"
-            export CHECK_PR_REFS=true
-          fi
-        fi
-        release/check-submodules.sh
+      run: release/check-submodules.sh
 
   build:
     runs-on: ${{
@@ -97,7 +81,7 @@ jobs:
       with:
         submodules: true
     - name: Setup docker push
-      if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && github.repository == 'sunnypilot/sunnypilot'
+      if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && github.repository == 'commaai/openpilot'
       run: |
         echo "PUSH_IMAGE=true" >> "$GITHUB_ENV"
         $DOCKER_LOGIN
@@ -115,9 +99,7 @@ jobs:
     - run: echo "CACHE_COMMIT_DATE=$(git log -1 --pretty='format:%cd' --date=format:'%Y-%m-%d-%H:%M')" >> $GITHUB_ENV
     - name: Homebrew cache
       uses: ./.github/workflows/auto-cache
-      if: false # disabling the cache for now because it is breaking macos builds...
       with:
-        save: false # No need save here if we manually save it later conditionally
         path: ~/Library/Caches/Homebrew
         key: brew-macos-${{ env.CACHE_COMMIT_DATE }}-${{ github.sha }}
         restore-keys: |
@@ -128,17 +110,10 @@ jobs:
       env:
         PYTHONWARNINGS: default  # package install has DeprecationWarnings
         HOMEBREW_DISPLAY_INSTALL_TIMES: 1
-    - name: Save Homebrew cache
-      uses: actions/cache/save@v4
-      if: github.ref == 'refs/heads/master'
-      with:
-        path: ~/Library/Caches/Homebrew
-        key: brew-macos-${{ env.CACHE_COMMIT_DATE }}-${{ github.sha }}
     - run: git lfs pull
     - name: Getting scons cache
       uses: ./.github/workflows/auto-cache
       with:
-        save: false # No need save here if we manually save it later conditionally
         path: /tmp/scons_cache
         key: scons-${{ runner.arch }}-macos-${{ env.CACHE_COMMIT_DATE }}-${{ github.sha }}
         restore-keys: |
@@ -146,12 +121,6 @@ jobs:
           scons-${{ runner.arch }}-macos
     - name: Building openpilot
       run: . .venv/bin/activate && scons -j$(nproc)
-    - name: Save scons cache
-      uses: actions/cache/save@v4
-      if: github.ref == 'refs/heads/master'
-      with:
-        path: /tmp/scons_cache
-        key: scons-${{ runner.arch }}-macos-${{ env.CACHE_COMMIT_DATE }}-${{ github.sha }}
 
   static_analysis:
     name: static analysis
@@ -189,7 +158,7 @@ jobs:
     - name: Build openpilot
       run: ${{ env.RUN }} "scons -j$(nproc)"
     - name: Run unit tests
-      timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 999 }}
+      timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 20 }}
       run: |
         ${{ env.RUN }} "source selfdrive/test/setup_xvfb.sh && \
                         # Pre-compile Python bytecode so each pytest worker doesn't need to
@@ -199,7 +168,6 @@ jobs:
 
   process_replay:
     name: process replay
-    if: false  # disable process_replay for forks
     runs-on: ${{
       (github.repository == 'commaai/openpilot') &&
       ((github.event_name != 'pull_request') ||

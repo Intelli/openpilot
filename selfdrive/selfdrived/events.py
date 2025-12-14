@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+import bisect
 import math
 import os
+from enum import IntEnum
+from collections.abc import Callable
 
 from cereal import log, car
 import cereal.messaging as messaging
@@ -12,11 +15,6 @@ from openpilot.system.micd import SAMPLE_RATE, SAMPLE_BUFFER
 from openpilot.selfdrive.ui.feedback.feedbackd import FEEDBACK_MAX_DURATION
 from openpilot.system.hardware import HARDWARE
 
-from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, \
-  NoEntryAlert, SoftDisableAlert, UserSoftDisableAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, \
-  StartupAlert, AlertCallbackType, wrong_car_mode_alert
-
-
 AlertSize = log.SelfdriveState.AlertSize
 AlertStatus = log.SelfdriveState.AlertStatus
 VisualAlert = car.CarControl.HUDControl.VisualAlert
@@ -24,20 +22,46 @@ AudibleAlert = car.CarControl.HUDControl.AudibleAlert
 EventName = log.OnroadEvent.EventName
 
 
+# Alert priorities
+class Priority(IntEnum):
+  LOWEST = 0
+  LOWER = 1
+  LOW = 2
+  MID = 3
+  HIGH = 4
+  HIGHEST = 5
+
+
+# Event types
+class ET:
+  ENABLE = 'enable'
+  PRE_ENABLE = 'preEnable'
+  OVERRIDE_LATERAL = 'overrideLateral'
+  OVERRIDE_LONGITUDINAL = 'overrideLongitudinal'
+  NO_ENTRY = 'noEntry'
+  WARNING = 'warning'
+  USER_DISABLE = 'userDisable'
+  SOFT_DISABLE = 'softDisable'
+  IMMEDIATE_DISABLE = 'immediateDisable'
+  PERMANENT = 'permanent'
+
+
 # get event name from enum
 EVENT_NAME = {v: k for k, v in EventName.schema.enumerants.items()}
 
 
-class Events(EventsBase):
+class Events:
   def __init__(self):
-    super().__init__()
+    self.events: list[int] = []
+    self.static_events: list[int] = []
     self.event_counters = dict.fromkeys(EVENTS.keys(), 0)
 
-  def get_events_mapping(self) -> dict[int, dict[str, Alert | AlertCallbackType]]:
-    return EVENTS
+  @property
+  def names(self) -> list[int]:
+    return self.events
 
-  def get_event_name(self, event: int):
-    return EVENT_NAME[event]
+  def __len__(self) -> int:
+    return len(self.events)
 
   def add(self, event_name: int, static: bool=False) -> None:
     if static:
@@ -194,6 +218,8 @@ def get_display_speed(speed_ms: float, metric: bool) -> str:
 
 # ********** alert callback functions **********
 
+AlertCallbackType = Callable[[car.CarParams, car.CarState, messaging.SubMaster, bool, int, log.ControlsState], Alert]
+
 
 def soft_disable_alert(alert_text_2: str) -> AlertCallbackType:
   def func(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
@@ -330,6 +356,13 @@ def high_cpu_usage_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
 
 def modeld_lagging_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
   return NormalPermanentAlert("Driving Model Lagging", f"{sm['modelV2'].frameDropPerc:.1f}% frames dropped")
+
+
+def wrong_car_mode_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+  text = "Enable Adaptive Cruise to Engage"
+  if CP.brand == "honda":
+    text = "Enable Main Switch to Engage"
+  return NoEntryAlert(text)
 
 
 def joystick_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
@@ -489,9 +522,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.promptDriverDistracted: {
     ET.PERMANENT: Alert(
+      "Pay Attention",
       "Driver Distracted",
-      "",
-      AlertStatus.userPrompt, AlertSize.small,
+      AlertStatus.userPrompt, AlertSize.mid,
       Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, .1),
   },
 
@@ -581,9 +614,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.steerSaturated: {
     ET.WARNING: Alert(
+      "Take Control",
       "Turn Exceeds Steering Limit",
-      "",
-      AlertStatus.normal, AlertSize.small,
+      AlertStatus.userPrompt, AlertSize.mid,
       Priority.LOW, VisualAlert.steerRequired, AudibleAlert.promptRepeat, 2.),
   },
 

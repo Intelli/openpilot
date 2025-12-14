@@ -864,14 +864,6 @@ struct ControlsState @0x97ff69c53601abf1 {
   ufAccelCmd @33 :Float32;
   curvature @37 :Float32;  # path curvature from vehicle model
   desiredCurvature @61 :Float32;  # lag adjusted curvatures used by lateral controllers
-  laneCenteringOffset @67 :Float32;  # lateral offset correction applied by centering helper (m)
-  laneCenteringActive @68 :Bool;
-  laneCenteringSource @69 :LaneCenteringSource;
-  edgeClearanceActive @70 :Bool;
-  edgeClearanceOffset @71 :Float32;
-  laneCenteringDisplayOffset @72 :Float32;  # raw centering estimate from perception (m)
-  laneCenteringValid @73 :Bool;
-  laneCenteringAdjusting @74 :Bool;
   forceDecel @51 :Bool;
 
   lateralControlState :union {
@@ -965,12 +957,6 @@ struct ControlsState @0x97ff69c53601abf1 {
     steeringAngleDeg @1 :Float32;
     output @2 :Float32;
     saturated @3 :Bool;
-  }
-
-  enum LaneCenteringSource {
-    none @0;
-    lane @1;
-    edge @2;
   }
 
   # deprecated
@@ -2642,16 +2628,16 @@ struct Event {
     # DO change the name of the field and struct
     # DON'T change the ID (e.g. @107)
     # DON'T change which struct it points to
-    selfdriveStateSP @107 :Custom.SelfdriveStateSP;
-    modelManagerSP @108 :Custom.ModelManagerSP;
-    longitudinalPlanSP @109 :Custom.LongitudinalPlanSP;
-    onroadEventsSP @110 :Custom.OnroadEventSP;
-    carParamsSP @111 :Custom.CarParamsSP;
-    carControlSP @112 :Custom.CarControlSP;
-    backupManagerSP @113 :Custom.BackupManagerSP;
-    carStateSP @114 :Custom.CarStateSP;
-    liveMapDataSP @115 :Custom.LiveMapDataSP;
-    modelDataV2SP @116 :Custom.ModelDataV2SP;
+    customReserved0 @107 :Custom.CustomReserved0;
+    customReserved1 @108 :Custom.CustomReserved1;
+    customReserved2 @109 :Custom.CustomReserved2;
+    customReserved3 @110 :Custom.CustomReserved3;
+    customReserved4 @111 :Custom.CustomReserved4;
+    customReserved5 @112 :Custom.CustomReserved5;
+    customReserved6 @113 :Custom.CustomReserved6;
+    customReserved7 @114 :Custom.CustomReserved7;
+    customReserved8 @115 :Custom.CustomReserved8;
+    customReserved9 @116 :Custom.CustomReserved9;
     customReserved10 @136 :Custom.CustomReserved10;
     customReserved11 @137 :Custom.CustomReserved11;
     customReserved12 @138 :Custom.CustomReserved12;
@@ -2704,7 +2690,7 @@ struct Event {
     lateralPlanDEPRECATED @64 :LateralPlan;
     navModelDEPRECATED @104 :NavModelData;
     uiPlanDEPRECATED @106 :UiPlan;
-    liveLocationKalman @72 :LiveLocationKalman;
+    liveLocationKalmanDEPRECATED @72 :LiveLocationKalman;
     liveTracksDEPRECATED @16 :List(LiveTracksDEPRECATED);
     onroadEventsDEPRECATED @68: List(Car.OnroadEventDEPRECATED);
   }
