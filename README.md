@@ -17,7 +17,10 @@ https://docs.sunnypilot.ai/ is your one stop shop for everything from features t
 * One of [the 325+ supported cars](https://github.com/sunnypilot/sunnypilot/blob/master/docs/CARS.md). We support Honda, Toyota, Hyundai, Nissan, Kia, Chrysler, Lexus, Acura, Audi, VW, Ford, and more. If your car is not supported but has adaptive cruise control and lane-keeping assist, it's likely able to run sunnypilot.
 * A [car harness](https://comma.ai/shop/products/car-harness) to connect to your car
 
-Detailed instructions for [how to mount the device in a car](https://comma.ai/setup).
+[![openpilot tests](https://github.com/commaai/openpilot/actions/workflows/tests.yaml/badge.svg)](https://github.com/commaai/openpilot/actions/workflows/tests.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![X Follow](https://img.shields.io/twitter/follow/comma_ai)](https://x.com/comma_ai)
+[![Discord](https://img.shields.io/discord/469524606043160576)](https://discord.comma.ai)
 
 ## Installation
 Please refer to [Recommended Branches](#recommended-branches) to find your preferred/supported branch. This guide will assume you want to install the latest `staging` branch.
@@ -49,9 +52,41 @@ Please refer to [Recommended Branches](#recommended-branches) to find your prefe
 > [!TIP]
 > You can use sunnypilot/targetbranch as an install URL. Example: 'sunnypilot/staging'.
 
-> [!NOTE]
-> Do you require further assistance with software installation? Join the [sunnypilot community forum](https://community.sunnypilot.ai/new-topic?category=general/qa) and create a topic in the General/Q&A Category channel.
 
+### Branches
+
+Running `master` and other branches directly is supported, but it's recommended to run one of the following prebuilt branches:
+
+| comma four branch      | comma 3X branch        | URL                                    | description                                                                         |
+|------------------------|------------------------|----------------------------------------|-------------------------------------------------------------------------------------|
+| `release-mici`         | `release-tizi`         | openpilot.comma.ai                     | This is openpilot's release branch.                                                 |
+| `release-mici-staging` | `release-tizi-staging` | openpilot-test.comma.ai                | This is the staging branch for releases. Use it to get new releases slightly early. |
+| `nightly`              | `nightly`              | openpilot-nightly.comma.ai             | This is the bleeding edge development branch. Do not expect this to be stable.      |
+| `nightly-dev`          | `nightly-dev`          | installer.comma.ai/commaai/nightly-dev | Same as nightly, but includes experimental development features for some cars.      |
+
+To start developing openpilot
+------
+
+openpilot is developed by [comma](https://comma.ai/) and by users like you. We welcome both pull requests and issues on [GitHub](http://github.com/commaai/openpilot).
+
+* Join the [community Discord](https://discord.comma.ai)
+* Check out [the contributing docs](docs/CONTRIBUTING.md)
+* Check out the [openpilot tools](tools/)
+* Code documentation lives at https://docs.comma.ai
+* Information about running openpilot lives on the [community wiki](https://github.com/commaai/openpilot/wiki)
+
+Want to get paid to work on openpilot? [comma is hiring](https://comma.ai/jobs#open-positions) and offers lots of [bounties](https://comma.ai/bounties) for external contributors.
+
+Safety and Testing
+----
+
+* openpilot observes [ISO26262](https://en.wikipedia.org/wiki/ISO_26262) guidelines, see [SAFETY.md](docs/SAFETY.md) for more details.
+* openpilot has software-in-the-loop [tests](.github/workflows/tests.yaml) that run on every commit.
+* The code enforcing the safety model lives in panda and is written in C, see [code rigor](https://github.com/commaai/panda#code-rigor) for more details.
+* panda has software-in-the-loop [safety tests](https://github.com/commaai/panda/tree/master/tests/safety).
+* Internally, we have a hardware-in-the-loop Jenkins test suite that builds and unit tests the various processes.
+* panda has additional hardware-in-the-loop [tests](https://github.com/commaai/panda/blob/master/Jenkinsfile).
+* We run the latest openpilot in a testing closet containing 10 comma devices continuously replaying routes.
 
 <details>
 

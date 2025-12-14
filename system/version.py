@@ -10,23 +10,8 @@ from openpilot.common.basedir import BASEDIR
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.git import get_commit, get_origin, get_branch, get_short_branch, get_commit_date
 
-RELEASE_SP_BRANCHES = ['release-c3', 'release', 'release-tizi', 'release-tici', 'release-tizi-staging', 'release-tici-staging']
-TESTED_SP_BRANCHES = ['staging-c3', 'staging-c3-new', 'staging']
-MASTER_SP_BRANCHES = ['master']
-RELEASE_BRANCHES = ['release3-staging', 'release3', 'release-tici', 'nightly']
-TESTED_BRANCHES = RELEASE_BRANCHES + ['devel', 'devel-staging', 'nightly-dev'] + RELEASE_SP_BRANCHES + TESTED_SP_BRANCHES
-
-SP_BRANCH_MIGRATIONS = {
-  ("tici", "staging-c3-new"): "staging-tici",
-  ("tici", "dev-c3-new"): "staging-tici",
-  ("tici", "master"): "master-tici",
-  ("tici", "master-dev-c3-new"): "master-tici",
-  ("tizi", "staging-c3-new"): "staging",
-  ("tizi", "dev-c3-new"): "dev",
-  ("tizi", "master-dev-c3-new"): "master-dev",
-  ("tici", "hkg-angle-steering-2025"): "hkg-angle-steering-2025-tici",
-  ("tici", "hkg-angle-steering-2025-prebuilt"): "hkg-angle-steering-2025-tici-prebuilt"
-}
+RELEASE_BRANCHES = ['release-tizi-staging', 'release-mici-staging', 'release-tizi', 'release-mici', 'nightly']
+TESTED_BRANCHES = RELEASE_BRANCHES + ['devel-staging', 'nightly-dev']
 
 BUILD_METADATA_FILENAME = "build.json"
 
@@ -52,9 +37,7 @@ def is_prebuilt(path: str = BASEDIR) -> bool:
 
 @cache
 def is_dirty(cwd: str = BASEDIR) -> bool:
-  origin = get_origin()
-  branch = get_branch()
-  if not origin or not branch:
+  if not get_origin() or not get_short_branch():
     return True
 
   dirty = False
@@ -67,6 +50,9 @@ def is_dirty(cwd: str = BASEDIR) -> bool:
       except subprocess.CalledProcessError:
         pass
 
+      branch = get_branch()
+      if not branch:
+        return True
       dirty = (subprocess.call(["git", "diff-index", "--quiet", branch, "--"], cwd=cwd)) != 0
   except subprocess.CalledProcessError:
     cloudlog.exception("git subprocess failed while checking dirty")
@@ -205,10 +191,4 @@ def get_build_metadata(path: str = BASEDIR) -> BuildMetadata:
 
 
 if __name__ == "__main__":
-  from openpilot.common.params import Params
-
-  params = Params()
-  params.put("TermsVersion", terms_version)
-  params.put("TrainingVersion", training_version)
-
   print(get_build_metadata())
