@@ -1,9 +1,10 @@
 import numpy as np
 from abc import abstractmethod, ABC
+from openpilot.selfdrive.locationd.helpers import Pose
 
 
 class LatControl(ABC):
-  def __init__(self, CP, CI, dt):
+  def __init__(self, CP, CP_SP, CI, dt):
     self.dt = dt
     self.sat_limit = CP.steerLimitTimer
     self.sat_time = 0.
@@ -13,7 +14,8 @@ class LatControl(ABC):
     self.steer_max = 1.0
 
   @abstractmethod
-  def update(self, active: bool, CS, VM, params, steer_limited_by_safety: bool, desired_curvature: float, curvature_limited: bool, lat_delay: float):
+  def update(self, active: bool, CS, VM, params, steer_limited_by_safety: bool, desired_curvature: float, calibrated_pose: Pose,
+             curvature_limited: bool, lat_delay: float):
     pass
 
   def reset(self):

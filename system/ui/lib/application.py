@@ -21,6 +21,8 @@ from openpilot.system.hardware import HARDWARE, PC
 from openpilot.system.ui.lib.multilang import multilang
 from openpilot.common.realtime import Ratekeeper
 
+from openpilot.system.ui.sunnypilot.lib.application import GuiApplicationExt
+
 _DEFAULT_FPS = int(os.getenv("FPS", {'tizi': 20}.get(HARDWARE.get_device_type(), 60)))
 FPS_LOG_INTERVAL = 5  # Seconds between logging FPS drops
 FPS_DROP_THRESHOLD = 0.9  # FPS drop threshold for triggering a warning
@@ -96,6 +98,7 @@ class FontWeight(StrEnum):
   BOLD = "Inter-Bold.fnt"
   SEMI_BOLD = "Inter-SemiBold.fnt"
   UNIFONT = "unifont.fnt"
+  AUDIOWIDE = "Audiowide-Regular.fnt"
 
   # Small UI fonts
   DISPLAY_REGULAR = "Inter-Regular.fnt"
@@ -190,7 +193,7 @@ class MouseState:
         self._prev_mouse_event[slot] = ev
 
 
-class GuiApplication:
+class GuiApplication(GuiApplicationExt):
   def __init__(self, width: int | None = None, height: int | None = None):
     self._fonts: dict[FontWeight, rl.Font] = {}
     self._width = width if width is not None else GuiApplication._default_width()
@@ -233,6 +236,8 @@ class GuiApplication:
     self._profile_render_frames = PROFILE_RENDER
     self._render_profiler = None
     self._render_profile_start_time = None
+
+    GuiApplicationExt.__init__(self)
 
   @property
   def frame(self):
@@ -509,6 +514,9 @@ class GuiApplication:
 
         if self._show_touches:
           self._draw_touch_points()
+
+        if self._show_mouse_coords:
+          self._draw_mouse_coordinates(gui_app.font(FontWeight.SEMI_BOLD))
 
         if self._grid_size > 0:
           self._draw_grid()

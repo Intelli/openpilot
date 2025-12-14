@@ -101,7 +101,7 @@ if arch == "larch64":
     "/system/vendor/lib64",
     "/usr/lib/aarch64-linux-gnu",
   ])
-  arch_flags = ["-D__TICI__", "-mcpu=cortex-a57"]
+  arch_flags = ["-D__TICI__", "-mcpu=cortex-a57", "-DQCOM2"]
   env.Append(CCFLAGS=arch_flags)
   env.Append(CXXFLAGS=arch_flags)
 elif arch == "Darwin":
@@ -168,7 +168,8 @@ Export('envCython', 'np_version')
 Export('env', 'arch')
 
 # Setup cache dir
-cache_dir = '/data/scons_cache' if arch == "larch64" else '/tmp/scons_cache'
+default_cache_dir = '/data/scons_cache' if arch == "larch64" else '/tmp/scons_cache'
+cache_dir = ARGUMENTS.get('cache_dir', default_cache_dir)
 CacheDir(cache_dir)
 Clean(["."], cache_dir)
 

@@ -14,6 +14,8 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.system import micd
 from openpilot.system.hardware import HARDWARE
 
+from openpilot.sunnypilot.selfdrive.ui.quiet_mode import QuietMode
+
 SAMPLE_RATE = 48000
 SAMPLE_BUFFER = 4096 # (approx 100ms)
 MAX_VOLUME = 1.0

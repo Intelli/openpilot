@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 import math
-import time
-from collections import deque
 from numbers import Number
 
 from cereal import car, log
@@ -22,6 +20,8 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
+
+from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -86,21 +86,17 @@ CENTERING_RECENT_CENTER_THRESHOLD_M = 0.03
 CENTERING_RECENT_CENTER_REENGAGE_M = 0.045
 CENTERING_RECENT_CENTER_HOLD_S = 3.0
 
-LANE_CENTERING_SOURCE_MAP = {
-  None: LaneCenteringSourceEnum.none,
-  "lane": LaneCenteringSourceEnum.lane,
-  "edge": LaneCenteringSourceEnum.edge,
-}
-
-
-class Controls:
+class Controls(ControlsExt):
   def __init__(self) -> None:
     self.params = Params()
     cloudlog.info("controlsd is waiting for CarParams")
     self.CP = messaging.log_from_bytes(self.params.get("CarParams", block=True), car.CarParams)
     cloudlog.info("controlsd got CarParams")
 
-    self.CI = interfaces[self.CP.carFingerprint](self.CP)
+    # Initialize sunnypilot controlsd extension and base model state
+    ControlsExt.__init__(self, self.CP, self.params)
+
+    self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
     self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
@@ -156,11 +152,11 @@ class Controls:
     self.VM = VehicleModel(self.CP)
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
-      self.LaC = LatControlAngle(self.CP, self.CI, DT_CTRL)
+      self.LaC = LatControlAngle(self.CP, self.CP_SP, self.CI, DT_CTRL)
     elif self.CP.lateralTuning.which() == 'pid':
-      self.LaC = LatControlPID(self.CP, self.CI, DT_CTRL)
+      self.LaC = LatControlPID(self.CP, self.CP_SP, self.CI, DT_CTRL)
     elif self.CP.lateralTuning.which() == 'torque':
-      self.LaC = LatControlTorque(self.CP, self.CI, DT_CTRL)
+      self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI, DT_CTRL)
 
   def update(self):
     self.sm.update(15)
@@ -419,7 +415,7 @@ class Controls:
     actuators.curvature = self.desired_curvature
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
-                                                       curvature_limited, lat_delay)
+                                                       self.calibrated_pose, curvature_limited, lat_delay)
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
     # Ensure no NaNs/Infs
@@ -957,6 +953,8 @@ class Controls:
       self.update()
       CC, lac_log = self.state_control()
       self.publish(CC, lac_log)
+      self.get_params_sp(self.sm)
+      self.run_ext(self.sm, self.pm)
       rk.monitor_time()
 
 

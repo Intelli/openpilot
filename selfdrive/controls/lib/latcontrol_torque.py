@@ -33,8 +33,8 @@ LAT_ACCEL_REQUEST_BUFFER_SECONDS = 1.0
 VERSION = 1
 
 class LatControlTorque(LatControl):
-  def __init__(self, CP, CI, dt):
-    super().__init__(CP, CI, dt)
+  def __init__(self, CP, CP_SP, CI, dt):
+    super().__init__(CP, CP_SP, CI, dt)
     self.torque_params = CP.lateralTuning.torque.as_builder()
     self.torque_from_lateral_accel = CI.torque_from_lateral_accel()
     self.lateral_accel_from_torque = CI.lateral_accel_from_torque()
@@ -56,7 +56,11 @@ class LatControlTorque(LatControl):
     self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
+    # Override torque params from extension
+    if self.extension.update_override_torque_params(self.torque_params):
+      self.update_limits()
+
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
     if not active:
@@ -91,6 +95,12 @@ class LatControlTorque(LatControl):
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
       output_lataccel = self.pid.update(pid_log.error, speed=CS.vEgo, feedforward=ff, freeze_integrator=freeze_integrator)
       output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
+
+      # Lateral acceleration torque controller extension updates
+      # Overrides pid_log.error and output_torque
+      pid_log, output_torque = self.extension.update(CS, VM, self.pid, params, ff, pid_log, setpoint, measurement, calibrated_pose, roll_compensation,
+                                                     future_desired_lateral_accel, measurement, lateral_accel_deadzone, gravity_adjusted_future_lateral_accel,
+                                                     desired_curvature, measured_curvature, steer_limited_by_safety, output_torque)
 
       pid_log.active = True
       pid_log.p = float(self.pid.p)

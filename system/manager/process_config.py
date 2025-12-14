@@ -6,6 +6,12 @@ from cereal import car
 from openpilot.common.params import Params
 from openpilot.system.hardware import PC, TICI
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
+from openpilot.system.hardware.hw import Paths
+
+from openpilot.sunnypilot.mapd.mapd_manager import MAPD_PATH
+
+from openpilot.sunnypilot.models.helpers import get_active_model_runner
+from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnylink_ready, use_sunnylink_uploader
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
 

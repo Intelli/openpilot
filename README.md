@@ -22,10 +22,7 @@
 
 Quick start: `bash <(curl -fsSL openpilot.comma.ai)`
 
-[![openpilot tests](https://github.com/commaai/openpilot/actions/workflows/tests.yaml/badge.svg)](https://github.com/commaai/openpilot/actions/workflows/tests.yaml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![X Follow](https://img.shields.io/twitter/follow/comma_ai)](https://x.com/comma_ai)
-[![Discord](https://img.shields.io/discord/469524606043160576)](https://discord.comma.ai)
+Detailed instructions for [how to mount the device in a car](https://comma.ai/setup).
 
 </div>
 
@@ -49,41 +46,9 @@ To use openpilot in a car, you need four things:
 
 We have detailed instructions for [how to install the harness and device in a car](https://comma.ai/setup). Note that it's possible to run openpilot on [other hardware](https://blog.comma.ai/self-driving-car-for-free/), although it's not plug-and-play.
 
+> [!NOTE]
+> Do you require further assistance with software installation? Join the [sunnypilot community forum](https://community.sunnypilot.ai/new-topic?category=general/qa) and create a topic in the General/Q&A Category channel.
 
-### Branches
-
-Running `master` and other branches directly is supported, but it's recommended to run one of the following prebuilt branches:
-
-| comma four branch      | comma 3X branch        | URL                                    | description                                                                         |
-|------------------------|------------------------|----------------------------------------|-------------------------------------------------------------------------------------|
-| `release-mici`         | `release-tizi`         | openpilot.comma.ai                     | This is openpilot's release branch.                                                 |
-| `release-mici-staging` | `release-tizi-staging` | openpilot-test.comma.ai                | This is the staging branch for releases. Use it to get new releases slightly early. |
-| `nightly`              | `nightly`              | openpilot-nightly.comma.ai             | This is the bleeding edge development branch. Do not expect this to be stable.      |
-| `nightly-dev`          | `nightly-dev`          | installer.comma.ai/commaai/nightly-dev | Same as nightly, but includes experimental development features for some cars.      |
-
-To start developing openpilot
-------
-
-openpilot is developed by [comma](https://comma.ai/) and by users like you. We welcome both pull requests and issues on [GitHub](http://github.com/commaai/openpilot).
-
-* Join the [community Discord](https://discord.comma.ai)
-* Check out [the contributing docs](docs/CONTRIBUTING.md)
-* Check out the [openpilot tools](tools/)
-* Code documentation lives at https://docs.comma.ai
-* Information about running openpilot lives on the [community wiki](https://github.com/commaai/openpilot/wiki)
-
-Want to get paid to work on openpilot? [comma is hiring](https://comma.ai/jobs#open-positions) and offers lots of [bounties](https://comma.ai/bounties) for external contributors.
-
-Safety and Testing
-----
-
-* openpilot observes [ISO26262](https://en.wikipedia.org/wiki/ISO_26262) guidelines, see [SAFETY.md](docs/SAFETY.md) for more details.
-* openpilot has software-in-the-loop [tests](.github/workflows/tests.yaml) that run on every commit.
-* The code enforcing the safety model lives in panda and is written in C, see [code rigor](https://github.com/commaai/panda#code-rigor) for more details.
-* panda has software-in-the-loop [safety tests](https://github.com/commaai/panda/tree/master/tests/safety).
-* Internally, we have a hardware-in-the-loop Jenkins test suite that builds and unit tests the various processes.
-* panda has additional hardware-in-the-loop [tests](https://github.com/commaai/panda/blob/master/Jenkinsfile).
-* We run the latest openpilot in a testing closet containing 10 comma devices continuously replaying routes.
 
 <details>
 <summary>MIT Licensed</summary>
