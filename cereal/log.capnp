@@ -864,6 +864,14 @@ struct ControlsState @0x97ff69c53601abf1 {
   ufAccelCmd @33 :Float32;
   curvature @37 :Float32;  # path curvature from vehicle model
   desiredCurvature @61 :Float32;  # lag adjusted curvatures used by lateral controllers
+  laneCenteringOffset @67 :Float32;  # lateral offset correction applied by centering helper (m)
+  laneCenteringActive @68 :Bool;
+  laneCenteringSource @69 :LaneCenteringSource;
+  edgeClearanceActive @70 :Bool;
+  edgeClearanceOffset @71 :Float32;
+  laneCenteringDisplayOffset @72 :Float32;  # raw centering estimate from perception (m)
+  laneCenteringValid @73 :Bool;
+  laneCenteringAdjusting @74 :Bool;
   forceDecel @51 :Bool;
 
   lateralControlState :union {
@@ -875,6 +883,12 @@ struct ControlsState @0x97ff69c53601abf1 {
     curvatureStateDEPRECATED @65 :LateralCurvatureState;
     lqrStateDEPRECATED @55 :LateralLQRState;
     indiStateDEPRECATED @52 :LateralINDIState;
+  }
+
+  enum LaneCenteringSource {
+    none @0;
+    lane @1;
+    edge @2;
   }
 
   struct LateralINDIState {

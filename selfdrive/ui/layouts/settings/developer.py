@@ -1,3 +1,4 @@
+from pathlib import Path
 from openpilot.common.params import Params
 from openpilot.selfdrive.ui.widgets.ssh_key import ssh_key_item
 from openpilot.selfdrive.ui.ui_state import ui_state
@@ -24,6 +25,10 @@ DESCRIPTIONS = {
     "On this car, openpilot defaults to the car's built-in ACC instead of openpilot's longitudinal control. " +
     "Enable this to switch to openpilot longitudinal control. Enabling Experimental mode is recommended when enabling openpilot longitudinal control alpha. " +
     "Changing this setting will restart openpilot if the car is powered on."
+  ),
+  'quickboot': tr_noop(
+    "Enables quickboot by creating a prebuilt marker. Turn off before editing C++ files so changes will rebuild. " +
+    "If an update triggers a rebuild, quickboot is temporarily disabled and will be restored automatically afterwards."
   ),
 }
 
@@ -75,6 +80,13 @@ class DeveloperLayout(Widget):
       enabled=lambda: not ui_state.engaged,
     )
 
+    self._quickboot_toggle = toggle_item(
+      lambda: tr("Enable Quickboot Mode"),
+      description=lambda: tr(DESCRIPTIONS["quickboot"]),
+      initial_state=self._params.get_bool("UsePrebuiltToggle"),
+      callback=self._on_quickboot_toggle,
+    )
+
     self._ui_debug_toggle = toggle_item(
       lambda: tr("UI Debug Mode"),
       description="",
@@ -90,6 +102,7 @@ class DeveloperLayout(Widget):
       self._joystick_toggle,
       self._long_maneuver_toggle,
       self._alpha_long_toggle,
+      self._quickboot_toggle,
       self._ui_debug_toggle,
     ], line_separator=True, spacing=0)
 
@@ -137,6 +150,7 @@ class DeveloperLayout(Widget):
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
+      ("UsePrebuiltToggle", self._quickboot_toggle),
       ("ShowDebugInfo", self._ui_debug_toggle),
     ):
       item.action_item.set_state(self._params.get_bool(key))
@@ -183,3 +197,18 @@ class DeveloperLayout(Widget):
       self._params.put_bool("AlphaLongitudinalEnabled", False)
       self._params.put_bool("OnroadCycleRequested", True)
       self._update_toggles()
+
+  def _on_quickboot_toggle(self, state: bool):
+    prebuilt_path = Path("/data/openpilot/prebuilt")
+    pending_rebuild = self._params.get_bool("QuickBootPendingRebuild")
+    if state:
+      if not pending_rebuild:
+        prebuilt_path.touch(exist_ok=True)
+    else:
+      try:
+        prebuilt_path.unlink()
+      except FileNotFoundError:
+        pass
+      self._params.put_bool("QuickBootPendingRebuild", False)
+    self._params.put_bool("UsePrebuiltToggle", state)
+    self._quickboot_toggle.set_description(tr(DESCRIPTIONS["quickboot"]))

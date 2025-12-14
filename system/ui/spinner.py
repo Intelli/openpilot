@@ -81,6 +81,10 @@ class Spinner(Widget):
 
       bar.width *= self._progress / 100.0
       rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
+      edition_text = "EV9 Edition"
+      edition_size = measure_text_cached(gui_app.font(), edition_text, FONT_SIZE)
+      edition_pos = rl.Vector2(center.x - edition_size.x / 2.0, y_pos + PROGRESS_BAR_HEIGHT + 40)
+      rl.draw_text_ex(gui_app.font(), edition_text, edition_pos, FONT_SIZE, 0.0, rl.WHITE)
     elif self._wrapped_lines:
       for i, line in enumerate(self._wrapped_lines):
         text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)

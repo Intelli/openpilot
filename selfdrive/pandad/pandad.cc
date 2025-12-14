@@ -7,6 +7,9 @@
 #include <cerrno>
 #include <memory>
 #include <thread>
+#include <limits>
+#include <optional>
+#include <cmath>
 #include <utility>
 
 #include "cereal/gen/cpp/car.capnp.h"
@@ -322,7 +325,8 @@ void send_peripheral_state(Panda *panda, PubMaster *pm) {
   pm->send("peripheralState", msg);
 }
 
-void process_panda_state(std::vector<Panda *> &pandas, PubMaster *pm, bool engaged, bool is_onroad, bool spoofing_started) {
+std::optional<bool> process_panda_state(std::vector<Panda *> &pandas, PubMaster *pm, bool engaged, bool engaged_mads, bool is_onroad, bool spoofing_started) {
+  (void)engaged_mads;
   std::vector<std::string> connected_serials;
   for (Panda *p : pandas) {
     connected_serials.push_back(p->hw_serial());
@@ -332,11 +336,13 @@ void process_panda_state(std::vector<Panda *> &pandas, PubMaster *pm, bool engag
     auto ignition_opt = send_panda_states(pm, pandas, is_onroad, spoofing_started);
     if (!ignition_opt) {
       LOGE("Failed to get ignition_opt");
-      return;
+      return std::nullopt;
     }
 
+    bool ignition_local = ignition_opt.value();
+
     // check if we should have pandad reconnect
-    if (!ignition_opt.value()) {
+    if (!ignition_local) {
       bool comms_healthy = true;
       for (const auto &panda : pandas) {
         comms_healthy &= panda->comms_healthy();
@@ -362,6 +368,8 @@ void process_panda_state(std::vector<Panda *> &pandas, PubMaster *pm, bool engag
       panda->send_heartbeat(engaged);
     }
   }
+
+  return ignition_opt.value();
 }
 
 void process_peripheral_state(Panda *panda, PubMaster *pm, bool no_fan_control) {
@@ -433,39 +441,131 @@ void pandad_run(std::vector<Panda *> &pandas) {
   const bool spoofing_started = getenv("STARTED") != nullptr;
   const bool fake_send = getenv("FAKESEND") != nullptr;
 
+  constexpr int ACTIVE_LOOP_RATE_HZ = 100;
+  constexpr int IDLE_LOOP_RATE_HZ = 10;
+  constexpr double ACTIVE_PERIPHERAL_RATE_HZ = 20.0;
+  constexpr double IDLE_PERIPHERAL_RATE_HZ = 2.0;
+  constexpr double ACTIVE_PANDA_STATE_RATE_HZ = 10.0;
+  constexpr double IDLE_PANDA_STATE_RATE_HZ = 1.0;
+  constexpr double ACTIVE_PERIPHERAL_STATE_PUB_RATE_HZ = 2.0;
+  constexpr double IDLE_PERIPHERAL_STATE_PUB_RATE_HZ = 0.5;
+  constexpr uint64_t SEC_TO_NANO = 1'000'000'000ULL;
+  constexpr uint64_t LOW_POWER_REFRESH_INTERVAL_NS = 10ULL * 60ULL * SEC_TO_NANO;  // 10 minutes
+  constexpr uint64_t LOW_POWER_REFRESH_DURATION_NS = 15ULL * SEC_TO_NANO;          // 15 seconds
+
   // Start the CAN send thread
   std::thread send_thread(can_send_thread, pandas, fake_send);
 
   Params params;
-  RateKeeper rk("pandad", 100);
-  SubMaster sm({"selfdriveState"});
+  int current_loop_rate_hz = ACTIVE_LOOP_RATE_HZ;
+  RateKeeper rk("pandad", current_loop_rate_hz);
+  SubMaster sm({"selfdriveState", "selfdriveStateSP", "carParams", "deviceState"});
   PubMaster pm({"can", "pandaStates", "peripheralState"});
   PandaSafety panda_safety(pandas);
   Panda *peripheral_panda = pandas[0];
   bool engaged = false;
+  bool engaged_mads = false;
   bool is_onroad = false;
+  bool is_offroad_param = false;
+  bool always_offroad = false;
+  bool ignition = false;
+  bool ignition_valid = false;
+  bool low_power_loop = false;
+  uint64_t low_power_last_refresh_ts = 0;
+  uint64_t low_power_active_until = 0;
+  int last_screen_brightness = 100;
+
+  auto hz_to_interval = [](double hz) -> uint64_t {
+    return hz > 0.0 ? static_cast<uint64_t>(std::round(1e9 / hz)) : std::numeric_limits<uint64_t>::max();
+  };
+
+  uint64_t next_peripheral_update = 0;
+  uint64_t next_panda_state_update = 0;
+  uint64_t next_peripheral_state_pub = 0;
 
   // Main loop: receive CAN data and process states
   while (!do_exit && check_all_connected(pandas)) {
+    uint64_t now = nanos_since_boot();
+
     can_recv(pandas, &pm);
 
-    // Process peripheral state at 20 Hz
-    if (rk.frame() % 5 == 0) {
+    sm.update(0);
+    if (sm.updated("deviceState")) {
+      const auto &device_state = sm["deviceState"].getDeviceState();
+      last_screen_brightness = device_state.getScreenBrightnessPercent();
+    }
+
+    bool previous_low_power_loop = low_power_loop;
+    bool screen_off = last_screen_brightness == 0;
+    is_onroad = params.getBool("IsOnroad");
+    is_offroad_param = params.getBool("IsOffroad");
+    always_offroad = panda_safety.getOffroadMode();
+
+    bool low_power_candidate = is_offroad_param && !is_onroad && ignition_valid && !ignition && screen_off;
+    bool next_low_power_loop = low_power_candidate && !always_offroad;
+    if (next_low_power_loop && !low_power_loop) {
+      low_power_last_refresh_ts = now;
+      low_power_active_until = now + LOW_POWER_REFRESH_DURATION_NS;
+    } else if (!next_low_power_loop && low_power_loop) {
+      low_power_last_refresh_ts = 0;
+      low_power_active_until = 0;
+    }
+    low_power_loop = next_low_power_loop;
+
+    if (low_power_loop && low_power_last_refresh_ts == 0) {
+      low_power_last_refresh_ts = now;
+    }
+
+    bool forced_active_refresh = false;
+    if (low_power_loop) {
+      if ((now - low_power_last_refresh_ts) >= LOW_POWER_REFRESH_INTERVAL_NS) {
+        low_power_last_refresh_ts = now;
+        low_power_active_until = now + LOW_POWER_REFRESH_DURATION_NS;
+      }
+      forced_active_refresh = now < low_power_active_until;
+    } else {
+      low_power_active_until = 0;
+    }
+
+    bool effective_low_power = low_power_loop && !forced_active_refresh;
+
+    uint64_t peripheral_interval = hz_to_interval(effective_low_power ? IDLE_PERIPHERAL_RATE_HZ : ACTIVE_PERIPHERAL_RATE_HZ);
+    uint64_t panda_state_interval = hz_to_interval(effective_low_power ? IDLE_PANDA_STATE_RATE_HZ : ACTIVE_PANDA_STATE_RATE_HZ);
+    uint64_t peripheral_state_interval = hz_to_interval(effective_low_power ? IDLE_PERIPHERAL_STATE_PUB_RATE_HZ : ACTIVE_PERIPHERAL_STATE_PUB_RATE_HZ);
+
+    if (now >= next_peripheral_update) {
       process_peripheral_state(peripheral_panda, &pm, no_fan_control);
+      next_peripheral_update = now + peripheral_interval;
     }
 
-    // Process panda state at 10 Hz
-    if (rk.frame() % 10 == 0) {
-      sm.update(0);
+    if (now >= next_panda_state_update) {
       engaged = sm.allAliveAndValid({"selfdriveState"}) && sm["selfdriveState"].getSelfdriveState().getEnabled();
-      is_onroad = params.getBool("IsOnroad");
-      process_panda_state(pandas, &pm, engaged, is_onroad, spoofing_started);
+      engaged_mads = sm.allAliveAndValid({"selfdriveStateSP"}) && sm["selfdriveStateSP"].getSelfdriveStateSP().getMads().getEnabled();
+      auto ignition_opt = process_panda_state(pandas, &pm, engaged, engaged_mads, is_onroad, spoofing_started);
+      if (ignition_opt.has_value()) {
+        ignition = ignition_opt.value();
+        ignition_valid = true;
+      }
       panda_safety.configureSafetyMode(is_onroad);
+      next_panda_state_update = now + panda_state_interval;
     }
 
-    // Send out peripheralState at 2Hz
-    if (rk.frame() % 50 == 0) {
+    if (now >= next_peripheral_state_pub) {
       send_peripheral_state(peripheral_panda, &pm);
+      next_peripheral_state_pub = now + peripheral_state_interval;
+    }
+
+    int target_loop_rate_hz = effective_low_power ? IDLE_LOOP_RATE_HZ : ACTIVE_LOOP_RATE_HZ;
+    if (target_loop_rate_hz != current_loop_rate_hz) {
+      current_loop_rate_hz = target_loop_rate_hz;
+      rk = RateKeeper("pandad", current_loop_rate_hz);
+      next_peripheral_update = now;
+      next_panda_state_update = now;
+      next_peripheral_state_pub = now;
+    } else if (low_power_loop != previous_low_power_loop) {
+      next_peripheral_update = now;
+      next_panda_state_update = now;
+      next_peripheral_state_pub = now;
     }
 
     // Forward logs from pandas to cloudlog if available

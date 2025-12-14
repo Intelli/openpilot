@@ -1,5 +1,6 @@
 import numpy as np
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
+from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL, DT_MDL
 
 MIN_SPEED = 1.0
@@ -13,6 +14,8 @@ MAX_VEL_ERR = 5.0  # m/s
 MAX_LATERAL_JERK = 5.0  # m/s^3
 MAX_LATERAL_ACCEL_NO_ROLL = 3.0  # m/s^2
 
+_CURVATURE_PARAMS = Params()
+
 
 def clamp(val, min_val, max_val):
   clamped_val = float(np.clip(val, min_val, max_val))
@@ -22,20 +25,29 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
   alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
   return alpha * val + (1 - alpha) * prev_val
 
-def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, bool]:
+def clip_curvature(v_ego, prev_curvature, new_curvature, roll, params: Params | None = None) -> tuple[float, bool]:
   # This function respects ISO lateral jerk and acceleration limits + a max curvature
+  params = params or _CURVATURE_PARAMS
   v_ego = max(v_ego, MIN_SPEED)
   max_curvature_rate = MAX_LATERAL_JERK / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
   new_curvature = np.clip(new_curvature,
                           prev_curvature - max_curvature_rate * DT_CTRL,
                           prev_curvature + max_curvature_rate * DT_CTRL)
 
+  speed_threshold_mps = float(params.get("HkgTuningAngleCustomLimitMaxSpeedKph", return_default=True)) / 3.6
   roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
-  max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
-  min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
+  if v_ego <= speed_threshold_mps:
+    max_lat_accel = 4.2
+    min_lat_accel = -4.2
+  else:
+    max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
+    min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
   new_curvature, limited_accel = clamp(new_curvature, min_lat_accel / v_ego ** 2, max_lat_accel / v_ego ** 2)
 
-  new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+  if v_ego <= speed_threshold_mps:
+    limited_max_curv = False
+  else:
+    new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
   return float(new_curvature), limited_accel or limited_max_curv
 
 
