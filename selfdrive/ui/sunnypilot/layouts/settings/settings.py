@@ -9,35 +9,35 @@ from enum import IntEnum
 
 import pyray as rl
 from openpilot.selfdrive.ui.layouts.settings import settings as OP
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.device import DeviceLayoutSP
 from openpilot.selfdrive.ui.layouts.settings.firehose import FirehoseLayout
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.software import SoftwareLayoutSP
 from openpilot.selfdrive.ui.layouts.settings.toggles import TogglesLayout
-from openpilot.system.ui.lib.application import gui_app, MousePos
-from openpilot.system.ui.lib.multilang import tr_noop
-from openpilot.system.ui.sunnypilot.lib.styles import style
-from openpilot.system.ui.widgets.scroller_tici import Scroller
-from openpilot.system.ui.lib.text_measure import measure_text_cached
-from openpilot.system.ui.lib.wifi_manager import WifiManager
-from openpilot.system.ui.widgets import Widget
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise import CruiseLayout
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.developer import DeveloperLayoutSP
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.device import DeviceLayoutSP
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import DisplayLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.models import ModelsLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.network import NetworkUISP
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.sunnylink import SunnylinkLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.osm import OSMLayout
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.software import SoftwareLayoutSP
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.steering import SteeringLayout
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.sunnylink import SunnylinkLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.trips import TripsLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.vehicle import VehicleLayout
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.steering import SteeringLayout
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise import CruiseLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.visuals import VisualsLayout
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import DisplayLayout
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.developer import DeveloperLayoutSP
+from openpilot.system.ui.lib.application import gui_app, MousePos
+from openpilot.system.ui.lib.multilang import tr_noop
+from openpilot.system.ui.lib.text_measure import measure_text_cached
+from openpilot.system.ui.lib.wifi_manager import WifiManager
+from openpilot.system.ui.sunnypilot.lib.styles import style
+from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.widgets.scroller_tici import Scroller
 
 # from openpilot.selfdrive.ui.sunnypilot.layouts.settings.navigation import NavigationLayout
 
 OP.PANEL_COLOR = rl.Color(10, 10, 10, 255)
 ICON_SIZE = 70
 
-OP.PanelType = IntEnum(  # type: ignore
+OP.PanelType = IntEnum(
   "PanelType",
   [es.name for es in OP.PanelType] + [
     "SUNNYLINK",
@@ -82,8 +82,7 @@ class NavButton(Widget):
 
     if self.panel_info.icon:
       icon_texture = gui_app.texture(self.panel_info.icon, ICON_SIZE, ICON_SIZE, keep_aspect_ratio=True)
-      rl.draw_texture(icon_texture, int(content_x), int(rect.y + (OP.NAV_BTN_HEIGHT - icon_texture.height) / 2),
-                      rl.WHITE)
+      rl.draw_texture_ex(icon_texture, rl.Vector2(content_x, rect.y + (OP.NAV_BTN_HEIGHT - icon_texture.height) / 2), 0.0, 1.0, rl.WHITE)
       content_x += ICON_SIZE + 20
 
     # Draw button text (right-aligned)

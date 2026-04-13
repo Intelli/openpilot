@@ -7,7 +7,8 @@ from openpilot.selfdrive.ui.ui_state import ui_state, device
 from openpilot.selfdrive.selfdrived.events import EVENTS, ET
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
-from openpilot.system.ui.widgets import NavWidget
+from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.widgets.nav_widget import NavWidget
 from openpilot.system.ui.widgets.label import gui_label
 
 EventName = log.OnroadEvent.EventName
@@ -24,26 +25,20 @@ class DriverCameraView(CameraView):
     return base
 
 
-class DriverCameraDialog(NavWidget):
-  def __init__(self, no_escape=False):
+class BaseDriverCameraDialog(Widget):
+  # Not a NavWidget so training guide can use this without back navigation
+  def __init__(self):
     super().__init__()
     self._camera_view = DriverCameraView("camerad", VisionStreamType.VISION_STREAM_DRIVER)
     self.driver_state_renderer = DriverStateRenderer(lines=True)
     self.driver_state_renderer.set_rect(rl.Rectangle(0, 0, 200, 200))
     self.driver_state_renderer.load_icons()
     self._pm: messaging.PubMaster | None = None
-    if not no_escape:
-      # TODO: this can grow unbounded, should be given some thought
-      device.add_interactive_timeout_callback(lambda: gui_app.set_modal_overlay(None))
-    self.set_back_callback(lambda: gui_app.set_modal_overlay(None))
-    self.set_back_enabled(not no_escape)
 
     # Load eye icons
     self._eye_fill_texture = None
     self._eye_orange_texture = None
     self._eye_size = 74
-    self._glasses_texture = None
-    self._glasses_size = 171
 
     self._load_eye_textures()
 
@@ -51,14 +46,14 @@ class DriverCameraDialog(NavWidget):
     super().show_event()
     ui_state.params.put_bool("IsDriverViewEnabled", True)
     self._publish_alert_sound(None)
-    device.reset_interactive_timeout(300)
+    device.set_override_interactive_timeout(300)
     ui_state.params.remove("DriverTooDistracted")
     self._pm = messaging.PubMaster(['selfdriveState'])
 
   def hide_event(self):
     super().hide_event()
     ui_state.params.put_bool("IsDriverViewEnabled", False)
-    device.reset_interactive_timeout()
+    device.set_override_interactive_timeout(None)
 
   def _handle_mouse_release(self, _):
     ui_state.params.remove("DriverTooDistracted")
@@ -87,14 +82,15 @@ class DriverCameraDialog(NavWidget):
                 alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER)
       rl.end_scissor_mode()
       self._publish_alert_sound(None)
-      return -1
+      return
 
-    self._draw_face_detection(rect)
+    driver_data = self._draw_face_detection(rect)
+    if driver_data is not None:
+      self._draw_eyes(rect, driver_data)
 
     # Position dmoji on opposite side from driver
-    dm_state = ui_state.sm["driverMonitoringState"]
     driver_state_rect = (
-      rect.x if dm_state.isRHD else rect.x + rect.width - self.driver_state_renderer.rect.width,
+      rect.x if self.driver_state_renderer.is_rhd else rect.x + rect.width - self.driver_state_renderer.rect.width,
       rect.y + (rect.height - self.driver_state_renderer.rect.height) / 2,
     )
     self.driver_state_renderer.set_position(*driver_state_rect)
@@ -104,7 +100,7 @@ class DriverCameraDialog(NavWidget):
     self._render_dm_alerts(rect)
 
     rl.end_scissor_mode()
-    return -1
+    return
 
   def _publish_alert_sound(self, dm_state):
     """Publish selfdriveState with only alertSound field set"""
@@ -138,7 +134,7 @@ class DriverCameraDialog(NavWidget):
 
     # Show first event (only one should be active at a time)
     event_name_str = str(dm_state.events[0].name).split('.')[-1]
-    alignment = rl.GuiTextAlignment.TEXT_ALIGN_RIGHT if dm_state.isRHD else rl.GuiTextAlignment.TEXT_ALIGN_LEFT
+    alignment = rl.GuiTextAlignment.TEXT_ALIGN_RIGHT if self.driver_state_renderer.is_rhd else rl.GuiTextAlignment.TEXT_ALIGN_LEFT
 
     shadow_rect = rl.Rectangle(rect.x + 2, rect.y + 2, rect.width, rect.height)
     gui_label(shadow_rect, event_name_str, font_size=40, font_weight=FontWeight.BOLD,
@@ -156,15 +152,11 @@ class DriverCameraDialog(NavWidget):
       self._eye_fill_texture = gui_app.texture("icons_mici/onroad/eye_fill.png", self._eye_size, self._eye_size)
     if self._eye_orange_texture is None:
       self._eye_orange_texture = gui_app.texture("icons_mici/onroad/eye_orange.png", self._eye_size, self._eye_size)
-    if self._glasses_texture is None:
-      self._glasses_texture = gui_app.texture("icons_mici/onroad/glasses.png", self._glasses_size, self._glasses_size)
 
-  def _draw_face_detection(self, rect: rl.Rectangle) -> None:
-    driver_state = ui_state.sm["driverStateV2"]
-    is_rhd = driver_state.wheelOnRightProb > 0.5
-    driver_data = driver_state.rightDriverData if is_rhd else driver_state.leftDriverData
-    face_detect = driver_data.faceProb > 0.7
-    if not face_detect:
+  def _draw_face_detection(self, rect: rl.Rectangle):
+    dm_state = ui_state.sm["driverMonitoringState"]
+    driver_data = self.driver_state_renderer.get_driver_data()
+    if not dm_state.faceDetected:
       return
 
     # Get face position and orientation
@@ -188,7 +180,7 @@ class DriverCameraDialog(NavWidget):
     scale_y = rect.height / 1080.0
     fbox_x = rect.x + rect.width / 2 + offset_x * scale_x
     fbox_y = rect.y + rect.height / 2 + offset_y * scale_y
-    box_size = 50
+    box_size = 75
     line_thickness = 3
 
     line_color = rl.Color(255, 255, 255, int(alpha * 255))
@@ -199,44 +191,43 @@ class DriverCameraDialog(NavWidget):
       line_thickness,
       line_color,
     )
+    return driver_data
 
+  def _draw_eyes(self, rect: rl.Rectangle, driver_data):
     # Draw eye indicators based on eye probabilities
     eye_offset_x = 10
     eye_offset_y = 10
     eye_spacing = self._eye_size + 15
+    eyes_prob = driver_data.eyesVisibleProb
 
     left_eye_x = rect.x + eye_offset_x
     left_eye_y = rect.y + eye_offset_y
-    left_eye_prob = driver_data.leftEyeProb
 
     right_eye_x = rect.x + eye_offset_x + eye_spacing
     right_eye_y = rect.y + eye_offset_y
-    right_eye_prob = driver_data.rightEyeProb
 
     # Draw eyes with opacity based on probability
-    for eye_x, eye_y, eye_prob in [(left_eye_x, left_eye_y, left_eye_prob), (right_eye_x, right_eye_y, right_eye_prob)]:
-      fill_opacity = eye_prob
-      orange_opacity = 1.0 - eye_prob
-
+    fill_opacity = eyes_prob
+    orange_opacity = 1.0 - eyes_prob
+    for eye_x, eye_y in [(left_eye_x, left_eye_y), (right_eye_x, right_eye_y)]:
       rl.draw_texture_v(self._eye_orange_texture, (eye_x, eye_y), rl.Color(255, 255, 255, int(255 * orange_opacity)))
       rl.draw_texture_v(self._eye_fill_texture, (eye_x, eye_y), rl.Color(255, 255, 255, int(255 * fill_opacity)))
 
-    # Draw sunglasses indicator based on sunglasses probability
-    # Position glasses centered between the two eyes at top left
-    glasses_x = rect.x + eye_offset_x - 4
-    glasses_y = rect.y
-    glasses_pos = rl.Vector2(glasses_x, glasses_y)
-    glasses_prob = driver_data.sunglassesProb
-    rl.draw_texture_v(self._glasses_texture, glasses_pos, rl.Color(70, 80, 161, int(255 * glasses_prob)))
+
+class DriverCameraDialog(NavWidget, BaseDriverCameraDialog):
+  def __init__(self):
+    super().__init__()
+    # TODO: this can grow unbounded, should be given some thought
+    device.add_interactive_timeout_callback(gui_app.pop_widget)
 
 
 if __name__ == "__main__":
   gui_app.init_window("Driver Camera View (mici)")
 
   driver_camera_view = DriverCameraDialog()
+  gui_app.push_widget(driver_camera_view)
   try:
     for _ in gui_app.render():
       ui_state.update()
-      driver_camera_view.render(rl.Rectangle(0, 0, gui_app.width, gui_app.height))
   finally:
     driver_camera_view.close()

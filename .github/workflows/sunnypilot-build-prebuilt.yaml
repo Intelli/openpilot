@@ -180,14 +180,12 @@ jobs:
           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
-          echo "Building sunnypilot's modeld..."
-          scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal sunnypilot/modeld
           echo "Building sunnypilot's modeld_v2..."
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal sunnypilot/modeld_v2
           echo "Building sunnypilot's locationd..."
           scons -j2 cache_dir=${{env.SCONS_CACHE_DIR}} --minimal sunnypilot/selfdrive/locationd
           echo "Building openpilot's locationd..."
-          scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal selfdrive/locationd
+          scons -j1 cache_dir=${{env.SCONS_CACHE_DIR}} --minimal selfdrive/locationd
           echo "Building rest of sunnypilot"
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
           touch ${BUILD_DIR}/prebuilt
@@ -200,37 +198,27 @@ jobs:
           sudo rm -rf ${OUTPUT_DIR}
           mkdir -p ${OUTPUT_DIR}
           rsync -am${RUNNER_DEBUG:+v} \
-            --include='**/panda/board/' \
-            --include='**/panda/board/obj' \
-            --include='**/panda/board/obj/panda.bin.signed' \
-            --include='**/panda/board/obj/panda_h7.bin.signed' \
-            --include='**/panda/board/obj/bootstub.panda.bin' \
-            --include='**/panda/board/obj/bootstub.panda_h7.bin' \
             --exclude='.sconsign.dblite' \
             --exclude='*.a' \
             --exclude='*.o' \
             --exclude='*.os' \
             --exclude='*.pyc' \
             --exclude='moc_*' \
-            --exclude='*.cc' \
+            --exclude='__pycache__' \
             --exclude='Jenkinsfile' \
-            --exclude='supercombo.onnx' \
-            --exclude='**/panda/board/*' \
-            --exclude='**/panda/board/obj/**' \
-            --exclude='**/panda/certs/' \
-            --exclude='**/panda/crypto/' \
             --exclude='**/release/' \
             --exclude='**/.github/' \
             --exclude='**/selfdrive/ui/replay/' \
             --exclude='**/__pycache__/' \
-            --exclude='**/selfdrive/ui/*.h' \
-            --exclude='**/selfdrive/ui/**/*.h' \
-            --exclude='**/selfdrive/ui/qt/offroad/sunnypilot/' \
             --exclude='${{env.SCONS_CACHE_DIR}}' \
             --exclude='**/.git/' \
             --exclude='**/SConstruct' \
             --exclude='**/SConscript' \
             --exclude='**/.venv/' \
+            --exclude='selfdrive/modeld/models/driving_vision.onnx' \
+            --exclude='selfdrive/modeld/models/driving_policy.onnx' \
+            --exclude='third_party/*x86*' \
+            --exclude='third_party/*Darwin*' \
             --delete-excluded \
             --chown=comma:comma \
             ${BUILD_DIR}/ ${OUTPUT_DIR}/

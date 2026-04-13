@@ -1,6 +1,7 @@
 import numpy as np
+import pytest
 
-from cereal import log
+from cereal import log, car
 from openpilot.common.realtime import DT_DMON
 from openpilot.selfdrive.monitoring.helpers import DriverMonitoring, DRIVER_MONITOR_SETTINGS
 from openpilot.system.hardware import HARDWARE
@@ -19,10 +20,8 @@ def make_msg(face_detected, distracted=False, model_uncertain=False):
   ds.leftDriverData.faceOrientation = [0., 0., 0.]
   ds.leftDriverData.facePosition = [0., 0.]
   ds.leftDriverData.faceProb = 1. * face_detected
-  ds.leftDriverData.leftEyeProb = 1.
-  ds.leftDriverData.rightEyeProb = 1.
-  ds.leftDriverData.leftBlinkProb = 1. * distracted
-  ds.leftDriverData.rightBlinkProb = 1. * distracted
+  ds.leftDriverData.eyesVisibleProb = 1.
+  ds.leftDriverData.eyesClosedProb = 1. * distracted
   ds.leftDriverData.faceOrientationStd = [1.*model_uncertain, 1.*model_uncertain, 1.*model_uncertain]
   ds.leftDriverData.facePositionStd = [1.*model_uncertain, 1.*model_uncertain]
   # TODO: test both separately when e2e is used
@@ -186,10 +185,10 @@ class TestMonitoring:
     standstill_vector = always_true[:]
     standstill_vector[int(_redlight_time/DT_DMON):] = [False] * int((TEST_TIMESPAN-_redlight_time)/DT_DMON)
     events, d_status = self._run_seq(always_distracted, always_false, always_true, standstill_vector)
-    assert events[int((d_status.settings._DISTRACTED_TIME-d_status.settings._DISTRACTED_PRE_TIME_TILL_TERMINAL+1)/DT_DMON)].names[0] == \
-                                                                                                                    EventName.preDriverDistracted
-    assert events[int((_redlight_time-0.1)/DT_DMON)].names[0] == EventName.preDriverDistracted
-    assert events[int((_redlight_time+0.5)/DT_DMON)].names[0] == EventName.promptDriverDistracted
+    assert len(events[int((_redlight_time-0.1)/DT_DMON)]) == 0
+    _pre_to_prompt = d_status.settings._DISTRACTED_PRE_TIME_TILL_TERMINAL - d_status.settings._DISTRACTED_PROMPT_TIME_TILL_TERMINAL
+    assert events[int((_redlight_time+0.5)/DT_DMON)].names[0] == EventName.preDriverDistracted
+    assert events[int((_redlight_time+_pre_to_prompt+0.5)/DT_DMON)].names[0] == EventName.promptDriverDistracted
 
   # engaged, model is somehow uncertain and driver is distracted
   #  - should fall back to wheel touch after uncertain alert
@@ -203,4 +202,67 @@ class TestMonitoring:
                               events[int((INVISIBLE_SECONDS_TO_ORANGE-1+DT_DMON*d_status.settings._HI_STD_FALLBACK_TIME+0.1)/DT_DMON)].names
     assert EventName.driverUnresponsive in \
                               events[int((INVISIBLE_SECONDS_TO_RED-1+DT_DMON*d_status.settings._HI_STD_FALLBACK_TIME+0.1)/DT_DMON)].names
+
+
+@pytest.mark.parametrize("enabled_state, lat_active_state, expected", [
+  (False, False, False), # Both Disabled
+  (True, False, True),   # OP Enabled, Lat Inactive
+  (False, True, True),   # OP Disabled, Lat Active (e.g. MADS)
+  (True, True, True)     # Both Active
+])
+def test_enabled_states(enabled_state, lat_active_state, expected):
+  """
+  Test DriverMonitoring.run_step with all 4 combinations of:
+  - selfdriveState.enabled (True/False)
+  - carControl.latActive (True/False)
+  """
+  cs = car.CarState.new_message()
+  cs.vEgo = 30.0
+  cs.gearShifter = car.CarState.GearShifter.drive
+  cs.standstill = False
+  cs.steeringPressed = False
+  cs.gasPressed = False
+
+  ss = log.SelfdriveState.new_message()
+  ss.enabled = enabled_state
+
+  cc = car.CarControl.new_message()
+  cc.latActive = lat_active_state
+
+  mv2 = log.ModelDataV2.new_message()
+  mv2.meta.disengagePredictions.brakeDisengageProbs = [0.0]
+
+  lc = log.LiveCalibrationData.new_message()
+  lc.rpyCalib = [0.0, 0.0, 0.0]
+
+  ds = make_msg(False)
+
+  sm = {
+      'carState': cs,
+      'selfdriveState': ss,
+      'carControl': cc,
+      'modelV2': mv2,
+      'liveCalibration': lc,
+      'driverStateV2': ds
+  }
+
+  driver_monitoring = DriverMonitoring()
+
+  # run_test doesn't assign enabled to a variable, so we need to spy on _update_events to see its value
+  captured_args = []
+  original_update_events = driver_monitoring._update_events
+
+  def spy_update_events(driver_engaged, op_engaged, standstill, wrong_gear, car_speed):
+      captured_args.append(op_engaged)
+      return original_update_events(driver_engaged, op_engaged, standstill, wrong_gear, car_speed)
+
+  driver_monitoring._update_events = spy_update_events
+
+  driver_monitoring.run_step(sm, demo=False)
+
+  # Assertion
+  assert len(captured_args) == 1, "Expected _update_events to be called exactly once"
+  actual_enabled = captured_args[0]
+
+  assert actual_enabled == expected, f"Expected op_engaged={expected}, but got {actual_enabled}"
 

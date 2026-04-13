@@ -11,7 +11,9 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.button import Button, ButtonStyle
 from openpilot.system.ui.widgets.label import Label
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.system.version import terms_version, training_version
+from openpilot.system.version import terms_version, training_version, terms_version_sp
+
+from openpilot.selfdrive.ui.sunnypilot.layouts.onboarding import SunnylinkOnboarding
 
 DEBUG = False
 
@@ -33,6 +35,7 @@ class OnboardingState(IntEnum):
   TERMS = 0
   ONBOARDING = 1
   DECLINE = 2
+  SUNNYLINK_CONSENT = 3
 
 
 class TrainingGuide(Widget):
@@ -81,6 +84,9 @@ class TrainingGuide(Widget):
         if self._completed_callback:
           self._completed_callback()
 
+        # NOTE: this pops OnboardingWindow during real onboarding
+        gui_app.pop_widget()
+
   def _update_state(self):
     if len(self._image_objs):
       self._textures.append(gui_app._load_texture_from_image(self._image_objs.pop(0)))
@@ -88,7 +94,7 @@ class TrainingGuide(Widget):
   def _render(self, _):
     # Safeguard against fast tapping
     step = min(self._step, len(self._textures) - 1)
-    rl.draw_texture(self._textures[step], 0, 0, rl.WHITE)
+    rl.draw_texture_ex(self._textures[step], rl.Vector2(0, 0), 0.0, 1.0, rl.WHITE)
 
     # progress bar
     if 0 < step < len(STEP_RECTS) - 1:
@@ -110,14 +116,14 @@ class TermsPage(Widget):
     self._on_decline = on_decline
 
     self._title = Label(tr("Welcome to sunnypilot"), font_size=90, font_weight=FontWeight.BOLD, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT)
-    self._desc = Label(tr("You must accept the Terms and Conditions to use sunnypilot. Read the latest terms at https://comma.ai/terms before continuing."),
+    self._desc = Label(tr("You must accept the Terms of Service to use sunnypilot. Read the latest terms at https://sunnypilot.ai/terms before continuing."),
                        font_size=90, font_weight=FontWeight.MEDIUM, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT)
 
     self._decline_btn = Button(tr("Decline"), click_callback=on_decline)
     self._accept_btn = Button(tr("Agree"), button_style=ButtonStyle.PRIMARY, click_callback=on_accept)
 
   def _render(self, _):
-    welcome_x = self._rect.x + 165
+    welcome_x = self._rect.x + 95
     welcome_y = self._rect.y + 165
     welcome_rect = rl.Rectangle(welcome_x, welcome_y, self._rect.width - welcome_x, 90)
     self._title.render(welcome_rect)
@@ -143,7 +149,7 @@ class TermsPage(Widget):
 class DeclinePage(Widget):
   def __init__(self, back_callback=None):
     super().__init__()
-    self._text = Label(tr("You must accept the Terms and Conditions in order to use sunnypilot."),
+    self._text = Label(tr("You must accept the Terms of Service in order to use sunnypilot."),
                        font_size=90, font_weight=FontWeight.MEDIUM, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT)
     self._back_btn = Button(tr("Back"), click_callback=back_callback)
     self._uninstall_btn = Button(tr("Decline, uninstall sunnypilot"), button_style=ButtonStyle.DANGER,
@@ -180,9 +186,21 @@ class OnboardingWindow(Widget):
     self._training_guide: TrainingGuide | None = None
     self._decline_page = DeclinePage(back_callback=self._on_decline_back)
 
+    # sunnylink consent pages
+    self._accepted_terms = self._accepted_terms and ui_state.params.get("HasAcceptedTermsSP") == terms_version_sp
+    self._sunnylink = SunnylinkOnboarding()
+    if not self._accepted_terms:
+      self._state = OnboardingState.TERMS
+    elif not self._sunnylink.completed:
+      self._state = OnboardingState.SUNNYLINK_CONSENT
+    elif not self._training_done:
+      self._state = OnboardingState.ONBOARDING
+    else:
+      self._state = OnboardingState.ONBOARDING
+
   @property
   def completed(self) -> bool:
-    return self._accepted_terms and self._training_done
+    return self._accepted_terms and self._sunnylink.completed and self._training_done
 
   def _on_terms_declined(self):
     self._state = OnboardingState.DECLINE
@@ -192,13 +210,16 @@ class OnboardingWindow(Widget):
 
   def _on_terms_accepted(self):
     ui_state.params.put("HasAcceptedTerms", terms_version)
-    self._state = OnboardingState.ONBOARDING
-    if self._training_done:
-      gui_app.set_modal_overlay(None)
+    ui_state.params.put("HasAcceptedTermsSP", terms_version_sp)
+    if not self._sunnylink.completed:
+      self._state = OnboardingState.SUNNYLINK_CONSENT
+    elif not self._training_done:
+      self._state = OnboardingState.ONBOARDING
+    else:
+      gui_app.pop_widget()
 
   def _on_completed_training(self):
     ui_state.params.put("CompletedTrainingVersion", training_version)
-    gui_app.set_modal_overlay(None)
 
   def _render(self, _):
     if self._training_guide is None:
@@ -206,8 +227,18 @@ class OnboardingWindow(Widget):
 
     if self._state == OnboardingState.TERMS:
       self._terms.render(self._rect)
-    if self._state == OnboardingState.ONBOARDING:
-      self._training_guide.render(self._rect)
+    elif self._state == OnboardingState.SUNNYLINK_CONSENT:
+      self._sunnylink.render(self._rect)
+      if self._sunnylink.completed:
+        if not self._training_done:
+          self._state = OnboardingState.ONBOARDING
+        else:
+          gui_app.pop_widget()
+    elif self._state == OnboardingState.ONBOARDING:
+      if not self._training_done:
+        self._training_guide.render(self._rect)
+      else:
+        gui_app.pop_widget()
     elif self._state == OnboardingState.DECLINE:
       self._decline_page.render(self._rect)
     return -1
