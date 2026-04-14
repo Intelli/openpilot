@@ -17,6 +17,7 @@ EXCLUDES=(
   'create_patch_manual.sh'
   'update_patch.sh'
   '.gitmodules'
+  'opendbc_repo'
   'patches'
   'auto-lock/lock-closed-white.png'
   'auto-lock/lock-closed-white.svg'
@@ -73,6 +74,24 @@ take_upstream_path() {
 # Resolve a conflicted path in favor of our pre-sync tree ($PRE_SYNC_REF)
 take_ours_path() {
   local path="$1"
+  local entry mode sha
+
+  entry="$(git ls-tree "${PRE_SYNC_REF}" -- "${path}" 2>/dev/null | head -n1 || true)"
+  if [[ -z "${entry}" ]]; then
+    # Didn't exist pre-sync -> remove it
+    git rm -f --cached -- "${path}" >/dev/null 2>&1 || true
+    rm -rf -- "${path}" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  mode="$(echo "${entry}" | awk '{print $1}')"
+  sha="$(echo "${entry}" | awk '{print $3}')"
+
+  if [[ "${mode}" == "160000" ]]; then
+    # Submodule gitlink: restore index directly to pre-sync SHA.
+    git update-index --cacheinfo 160000 "${sha}" "${path}"
+    return 0
+  fi
 
   if git cat-file -e "${PRE_SYNC_REF}:${path}" >/dev/null 2>&1; then
     git restore --source="${PRE_SYNC_REF}" --staged --worktree --no-overlay -- "${path}"
@@ -192,6 +211,21 @@ if [[ ${#EXCLUDES[@]} -gt 0 ]]; then
   git restore --source="${PRE_SYNC_REF}" --staged --worktree -- "${EXCLUDES[@]}" || true
 fi
 
+# git restore above can miss submodule gitlinks in some merge/no-conflict flows.
+# Force excluded submodule pointers back to their pre-sync SHAs.
+if [[ ${#EXCLUDES[@]} -gt 0 ]]; then
+  for path in "${EXCLUDES[@]}"; do
+    entry="$(git ls-tree "${PRE_SYNC_REF}" -- "${path}" 2>/dev/null | head -n1 || true)"
+    [[ -z "${entry}" ]] && continue
+
+    mode="$(echo "${entry}" | awk '{print $1}')"
+    sha="$(echo "${entry}" | awk '{print $3}')"
+    if [[ "${mode}" == "160000" ]]; then
+      git update-index --cacheinfo 160000 "${sha}" "${path}"
+    fi
+  done
+fi
+
 # Align submodules to the SHAs recorded in the (now-upstream) superproject.
 submodules=()
 if [[ -f .gitmodules ]]; then
@@ -217,4 +251,3 @@ fi
 
 # Uncomment if you want the script to auto-commit:
 # git commit -m "Sync upstream"
-
