@@ -1,5 +1,5 @@
 diff --git b/selfdrive/selfdrived/selfdrived.py a/selfdrive/selfdrived/selfdrived.py
-index 94d73392ad..6795c36e1b 100755
+index 41c252be8c..3fb28cec16 100755
 --- b/selfdrive/selfdrived/selfdrived.py
 +++ a/selfdrive/selfdrived/selfdrived.py
 @@ -14,6 +14,7 @@ from openpilot.common.realtime import config_realtime_process, Priority, Ratekee
@@ -47,9 +47,18 @@ index 8200089c28..3ae6718716 100644
      self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
      self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
 diff --git b/system/ui/spinner.py a/system/ui/spinner.py
-index 33f4543c3e..882b53ca7a 100755
+index 33f4543c3e..01ac402d08 100755
 --- b/system/ui/spinner.py
 +++ a/system/ui/spinner.py
+@@ -3,7 +3,7 @@ import pyray as rl
+ import select
+ import sys
+ 
+-from openpilot.system.ui.lib.application import gui_app
++from openpilot.system.ui.lib.application import FONT_SCALE, gui_app
+ from openpilot.system.ui.lib.text_measure import measure_text_cached
+ from openpilot.system.ui.text import wrap_text
+ from openpilot.system.ui.widgets import Widget
 @@ -12,12 +12,16 @@ from openpilot.system.ui.widgets import Widget
  if gui_app.big_ui():
    PROGRESS_BAR_WIDTH = 1000
@@ -82,8 +91,8 @@ index 33f4543c3e..882b53ca7a 100755
 +      rl.draw_rectangle_rounded(bar_fill, 1, 10, rl.WHITE)
 +
 +      edition_text = "EV9 Edition"
-+      edition_size = measure_text_cached(gui_app.font(), edition_text, EDITION_FONT_SIZE)
-+      edition_x = bar_bg.x + (PROGRESS_BAR_WIDTH - edition_size.x) / 2.0
++      edition_width = rl.measure_text_ex(gui_app.font(), edition_text, EDITION_FONT_SIZE * FONT_SCALE, 0.0).x
++      edition_x = center.x - edition_width / 2.0
 +      edition_y = y_pos + PROGRESS_BAR_HEIGHT + EDITION_TEXT_SPACING
 +      rl.draw_text_ex(gui_app.font(), edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
      elif self._wrapped_lines:
