@@ -71,11 +71,11 @@ index 35a7bc3bc4..4803a83947 100644
      {"ModelRunnerTypeCache", {CLEAR_ON_ONROAD_TRANSITION, INT}},
      {"OffroadMode", {CLEAR_ON_MANAGER_START, BOOL}},
      {"Offroad_TiciSupport", {CLEAR_ON_MANAGER_START, JSON}},
-@@ -175,13 +182,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -175,13 +182,15 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"OnroadScreenOffTimer", {PERSISTENT | BACKUP, INT, "15"}},
      {"OnroadScreenOffTimerMigrated", {PERSISTENT | BACKUP, STRING, "0.0"}},
      {"OnroadUploads", {PERSISTENT | BACKUP, BOOL, "1"}},
--    {"QuickBootToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
+     {"QuickBootToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
 +    {"UsePrebuiltToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
 +    {"QuickBootPendingRebuild", {PERSISTENT | BACKUP, BOOL, "0"}},
      {"QuietMode", {PERSISTENT | BACKUP, BOOL, "0"}},
