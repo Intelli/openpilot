@@ -47,7 +47,7 @@ index 8200089c28..3ae6718716 100644
      self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
      self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
 diff --git b/system/ui/spinner.py a/system/ui/spinner.py
-index 33f4543c3e..01ac402d08 100755
+index 33f4543c3e..e228e20d0b 100755
 --- b/system/ui/spinner.py
 +++ a/system/ui/spinner.py
 @@ -3,7 +3,7 @@ import pyray as rl
@@ -55,7 +55,7 @@ index 33f4543c3e..01ac402d08 100755
  import sys
  
 -from openpilot.system.ui.lib.application import gui_app
-+from openpilot.system.ui.lib.application import FONT_SCALE, gui_app
++from openpilot.system.ui.lib.application import FONT_SCALE, font_fallback, gui_app
  from openpilot.system.ui.lib.text_measure import measure_text_cached
  from openpilot.system.ui.text import wrap_text
  from openpilot.system.ui.widgets import Widget
@@ -76,25 +76,28 @@ index 33f4543c3e..01ac402d08 100755
    TEXTURE_SIZE = 140
    WRAPPED_SPACING = 10
    CENTERED_SPACING = 20
-@@ -76,11 +80,17 @@ class Spinner(Widget):
+@@ -76,11 +80,19 @@ class Spinner(Widget):
  
      # Display the progress bar or text based on user input
      if self._progress is not None:
 -      bar = rl.Rectangle(center.x - PROGRESS_BAR_WIDTH / 2.0, y_pos, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT)
 -      rl.draw_rectangle_rounded(bar, 1, 10, DARKGRAY)
-+      bar_bg = rl.Rectangle(center.x - PROGRESS_BAR_WIDTH / 2.0, y_pos, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT)
-+      rl.draw_rectangle_rounded(bar_bg, 1, 10, DARKGRAY)
- 
+-
 -      bar.width *= self._progress / 100.0
 -      rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
++      bar_bg = rl.Rectangle(center.x - PROGRESS_BAR_WIDTH / 2.0, y_pos, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT)
++      rl.draw_rectangle_rounded(bar_bg, 1, 10, DARKGRAY)
++
 +      bar_fill = rl.Rectangle(bar_bg.x, bar_bg.y, bar_bg.width * self._progress / 100.0, bar_bg.height)
 +      rl.draw_rectangle_rounded(bar_fill, 1, 10, rl.WHITE)
 +
 +      edition_text = "EV9 Edition"
-+      edition_width = rl.measure_text_ex(gui_app.font(), edition_text, EDITION_FONT_SIZE * FONT_SCALE, 0.0).x
++      edition_font = font_fallback(gui_app.font())
++      # Measure with the exact font used for drawing to avoid fallback metric mismatches.
++      edition_width = rl.measure_text_ex(edition_font, edition_text, EDITION_FONT_SIZE * FONT_SCALE, 0.0).x
 +      edition_x = center.x - edition_width / 2.0
 +      edition_y = y_pos + PROGRESS_BAR_HEIGHT + EDITION_TEXT_SPACING
-+      rl.draw_text_ex(gui_app.font(), edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
++      rl.draw_text_ex(edition_font, edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
      elif self._wrapped_lines:
        for i, line in enumerate(self._wrapped_lines):
          text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)
