@@ -3,7 +3,7 @@ import pyray as rl
 import select
 import sys
 
-from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.lib.application import FONT_SCALE, gui_app
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.text import wrap_text
 from openpilot.system.ui.widgets import Widget
@@ -87,8 +87,8 @@ class Spinner(Widget):
       rl.draw_rectangle_rounded(bar_fill, 1, 10, rl.WHITE)
 
       edition_text = "EV9 Edition"
-      edition_size = measure_text_cached(gui_app.font(), edition_text, EDITION_FONT_SIZE)
-      edition_x = bar_bg.x + (PROGRESS_BAR_WIDTH - edition_size.x) / 2.0
+      edition_width = rl.measure_text_ex(gui_app.font(), edition_text, EDITION_FONT_SIZE * FONT_SCALE, 0.0).x
+      edition_x = center.x - edition_width / 2.0
       edition_y = y_pos + PROGRESS_BAR_HEIGHT + EDITION_TEXT_SPACING
       rl.draw_text_ex(gui_app.font(), edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
     elif self._wrapped_lines:
