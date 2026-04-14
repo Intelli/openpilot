@@ -1,0 +1,287 @@
+diff --git b/selfdrive/ui/mici/onroad/model_renderer.py a/selfdrive/ui/mici/onroad/model_renderer.py
+index ca051c6d94..586c6a13cc 100644
+--- b/selfdrive/ui/mici/onroad/model_renderer.py
++++ a/selfdrive/ui/mici/onroad/model_renderer.py
+@@ -342,7 +342,7 @@ class ModelRenderer(Widget, ModelRendererSP):
+     self._blend_filter.update(int(allow_throttle))
+ 
+     if ui_state.rainbow_path:
+-      self.rainbow_path.draw_rainbow_path(self._rect, self._path)
++      self.rainbow_path.draw_rainbow_path(self._rect, self._path, sm)
+       return
+ 
+     if self._experimental_mode:
+diff --git b/selfdrive/ui/onroad/model_renderer.py a/selfdrive/ui/onroad/model_renderer.py
+index 353cc5aa40..bc880c9867 100644
+--- b/selfdrive/ui/onroad/model_renderer.py
++++ a/selfdrive/ui/onroad/model_renderer.py
+@@ -292,7 +292,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
+     self._blend_filter.update(int(allow_throttle))
+ 
+     if ui_state.rainbow_path:
+-      self.rainbow_path.draw_rainbow_path(self._rect, self._path)
++      self.rainbow_path.draw_rainbow_path(self._rect, self._path, sm)
+       return
+ 
+     if self._experimental_mode:
+diff --git b/selfdrive/ui/sunnypilot/onroad/rainbow_path.py a/selfdrive/ui/sunnypilot/onroad/rainbow_path.py
+index de383a659d..5f480c665d 100644
+--- b/selfdrive/ui/sunnypilot/onroad/rainbow_path.py
++++ a/selfdrive/ui/sunnypilot/onroad/rainbow_path.py
+@@ -4,19 +4,46 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+ This file is part of sunnypilot and is licensed under the MIT License.
+ See the LICENSE.md file in the root directory for more details.
+ """
+-import time
+ import colorsys
++import math
++import time
+ import pyray as rl
+ from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
+ 
+ 
+ class RainbowPath:
+-  DEFAULT_NUM_SEGMENTS = 8
+-  DEFAULT_SPEED = 50.0  # degrees per second
++  DEFAULT_NUM_SEGMENTS = 9
++  DEFAULT_SPEED = 0.35  # radians per second for wave phase
+   DEFAULT_SATURATION = 0.9
+   DEFAULT_LIGHTNESS = 0.6
+   BASE_ALPHA = 0.8
+   ALPHA_FADE = 0.3  # Alpha reduction from bottom to top
++  TAU = 2.0 * math.pi
++
++  ACCEL_START_THRESHOLD = 0.25
++  ACCEL_STOP_THRESHOLD = 0.15
++  ACCEL_FADE_IN_SECONDS = 0.5
++  ACCEL_FADE_OUT_SECONDS = 1.0
++  HAZARD_HOLD_SECONDS = 0.5
++  HAZARD_FADE_SECONDS = 1.0
++  HAZARD_ALPHA_SCALE = 0.82
++
++  OCEAN_STOPS = (
++    (0.00, 206.0, 0.70, 0.32, 0.85),
++    (0.35, 202.0, 0.72, 0.40, 0.75),
++    (0.70, 198.0, 0.74, 0.55, 0.65),
++    (1.00, 192.0, 0.60, 0.68, 0.55),
++  )
++
++  HAZARD_PREFIXES = (
++    "steerSaturated",
++    "aeb",
++    "stockAeb",
++    "fcw",
++    "driverDistracted",
++    "driverUnresponsive",
++    "manualRestart",
++  )
+ 
+   def __init__(self, num_segments: int = DEFAULT_NUM_SEGMENTS, speed: float = DEFAULT_SPEED,
+                saturation: float = DEFAULT_SATURATION, lightness: float = DEFAULT_LIGHTNESS):
+@@ -25,6 +52,15 @@ class RainbowPath:
+     self.saturation = saturation
+     self.lightness = lightness
+ 
++    self._last_update_time = time.monotonic()
++    self._accel_presence = 0.0
++    self._accel_state = False
++    self._hazard_mix = 0.0
++    self._hazard_hold = 0.0
++    self._wave_phase = 0.0
++    self._rainbow_phase_shift = 0.0
++    self._rainbow_wave_phase = 0.0
++
+   def set_speed(self, speed: float):
+     self.speed = speed
+ 
+@@ -37,33 +73,153 @@ class RainbowPath:
+   def set_lightness(self, lightness: float):
+     self.lightness = max(0.0, min(1.0, lightness))
+ 
+-  def get_gradient(self) -> Gradient:
+-    time_offset = time.monotonic()
+-    hue_offset = (time_offset * self.speed) % 360.0
+-
+-    segment_colors = []
+-    gradient_stops = []
+-
+-    for i in range(self.num_segments):
+-      position = i / (self.num_segments - 1)
+-      hue = (hue_offset + position * 360.0) % 360.0
+-      alpha = self.BASE_ALPHA * (1.0 - position * self.ALPHA_FADE)
+-      color = self._hsla_to_color(
+-        hue / 360.0,
+-        self.saturation,
+-        self.lightness,
+-        alpha
++  @staticmethod
++  def _clamp01(value: float) -> float:
++    return max(0.0, min(1.0, value))
++
++  @staticmethod
++  def _lerp(a: float, b: float, t: float) -> float:
++    return a + (b - a) * t
++
++  @staticmethod
++  def _wrap_unit(value: float) -> float:
++    wrapped = math.fmod(value, 1.0)
++    return wrapped + 1.0 if wrapped < 0.0 else wrapped
++
++  def _sample_stops(self, stops: tuple[tuple[float, float, float, float, float], ...], position: float):
++    if position <= stops[0][0]:
++      return stops[0]
++    if position >= stops[-1][0]:
++      return stops[-1]
++
++    for i in range(1, len(stops)):
++      if position <= stops[i][0]:
++        left = stops[i - 1]
++        right = stops[i]
++        span = max(1e-4, right[0] - left[0])
++        t = self._clamp01((position - left[0]) / span)
++        return (
++          position,
++          self._lerp(left[1], right[1], t),
++          self._lerp(left[2], right[2], t),
++          self._lerp(left[3], right[3], t),
++          self._lerp(left[4], right[4], t),
++        )
++    return stops[-1]
++
++  @staticmethod
++  def _blend_colors(color_a: rl.Color, color_b: rl.Color, t: float) -> rl.Color:
++    mix = max(0.0, min(1.0, t))
++    inv = 1.0 - mix
++    return rl.Color(
++      int(inv * color_a.r + mix * color_b.r),
++      int(inv * color_a.g + mix * color_b.g),
++      int(inv * color_a.b + mix * color_b.b),
++      int(inv * color_a.a + mix * color_b.a),
++    )
++
++  def _build_hazard_gradient(self) -> Gradient:
++    mix = self._clamp01(self._hazard_mix)
++    alpha_scale = self.HAZARD_ALPHA_SCALE * mix
++    colors = [
++      rl.Color(115, 0, 0, int(255 * alpha_scale)),
++      rl.Color(199, 36, 36, int(255 * 0.68 * mix)),
++      rl.Color(235, 115, 115, int(255 * 0.55 * mix)),
++    ]
++    return Gradient(
++      start=(0.0, 1.0),
++      end=(0.0, 0.0),
++      colors=colors,
++      stops=[0.0, 0.5, 1.0],
++    )
++
++  def _build_ocean_gradient(self) -> Gradient:
++    accel_visibility = self._clamp01(self._accel_presence)
++
++    sample_count = max(2, int(self.num_segments))
++    sample_positions = [i / (sample_count - 1) for i in range(sample_count)]
++    segment_colors: list[rl.Color] = []
++    gradient_stops: list[float] = []
++
++    for position in sample_positions:
++      _, ocean_hue, ocean_sat, ocean_light, ocean_alpha = self._sample_stops(self.OCEAN_STOPS, position)
++      wave = 0.5 * math.sin(self._wave_phase + position * 3.0) + 0.5
++      wave_offset = wave - 0.5
++      base_wave_strength = 0.0 if accel_visibility > 0.0 else 1.0
++
++      hue_mod = 10.0 + 3.0 * accel_visibility
++      lightness_mod = 0.08 + 0.03 * accel_visibility
++      saturation_mod = 0.05 + 0.08 * accel_visibility
++      alpha_mod = 0.04 + 0.05 * accel_visibility
++
++      base_hue = math.fmod(ocean_hue + wave_offset * hue_mod * base_wave_strength + 360.0, 360.0)
++      base_lightness = self._clamp01(ocean_light + wave_offset * lightness_mod * base_wave_strength + 0.05 * accel_visibility)
++      base_saturation = self._clamp01(ocean_sat - wave_offset * saturation_mod * base_wave_strength + 0.08 * accel_visibility)
++      base_alpha = self._clamp01(ocean_alpha - wave_offset * alpha_mod * base_wave_strength + 0.08 * accel_visibility)
++      base_color = self._hsla_to_color(
++        base_hue / 360.0,
++        base_saturation,
++        base_lightness,
++        self._clamp01(0.45 + 0.45 * base_alpha),
++      )
++
++      rainbow_phase = self._wrap_unit(position + self._rainbow_phase_shift)
++      rainbow_wave_primary = 0.5 * math.sin(self._rainbow_wave_phase + position * (self.TAU * 0.8)) + 0.5
++      rainbow_wave_secondary = 0.5 * math.sin(self._rainbow_wave_phase * 1.3 + position * (self.TAU * 0.45)) + 0.5
++      hue_cycle = self._wrap_unit(rainbow_phase + (rainbow_wave_primary - 0.5) * 0.25)
++      rainbow_hue = hue_cycle * 360.0
++      rainbow_saturation = self._clamp01(0.80 + 0.14 * accel_visibility + (rainbow_wave_secondary - 0.5) * 0.24)
++      rainbow_lightness = self._clamp01(0.52 + accel_visibility * 0.10 + (0.5 - rainbow_wave_primary) * 0.20)
++      rainbow_alpha = self._clamp01(0.66 + 0.18 * accel_visibility + (rainbow_wave_secondary - 0.5) * 0.12)
++      rainbow_color = self._hsla_to_color(
++        rainbow_hue / 360.0,
++        rainbow_saturation,
++        rainbow_lightness,
++        rainbow_alpha,
+       )
++
++      segment_colors.append(self._blend_colors(base_color, rainbow_color, accel_visibility))
+       gradient_stops.append(position)
+-      segment_colors.append(color)
+ 
+     return Gradient(
+-      start=(0.0, 1.0),  # Bottom of path
+-      end=(0.0, 0.0),  # Top of path
++      start=(0.0, 1.0),
++      end=(0.0, 0.0),
+       colors=segment_colors,
+       stops=gradient_stops,
+     )
+ 
++  def _update_state(self, sm) -> None:
++    now = time.monotonic()
++    dt = max(0.0, now - self._last_update_time)
++    self._last_update_time = now
++
++    a_ego = float(sm['carState'].aEgo)
++    if not self._accel_state and a_ego >= self.ACCEL_START_THRESHOLD:
++      self._accel_state = True
++    elif self._accel_state and a_ego <= self.ACCEL_STOP_THRESHOLD:
++      self._accel_state = False
++
++    if self._accel_state:
++      self._accel_presence = min(1.0, self._accel_presence + dt / self.ACCEL_FADE_IN_SECONDS)
++    else:
++      self._accel_presence = max(0.0, self._accel_presence - dt / self.ACCEL_FADE_OUT_SECONDS)
++
++    alert_type = str(sm['selfdriveState'].alertType)
++    hazard_active = bool(alert_type) and any(alert_type.startswith(prefix) for prefix in self.HAZARD_PREFIXES)
++    if hazard_active:
++      self._hazard_mix = 1.0
++      self._hazard_hold = self.HAZARD_HOLD_SECONDS
++    elif self._hazard_mix > 0.0:
++      if self._hazard_hold > 0.0:
++        self._hazard_hold = max(0.0, self._hazard_hold - dt)
++      else:
++        self._hazard_mix = max(0.0, self._hazard_mix - dt / self.HAZARD_FADE_SECONDS)
++
++    rainbow_speed_multiplier = 1.5 + self._accel_presence * 0.4 if self._accel_presence > 0.0 else 1.0
++    self._wave_phase = math.fmod(self._wave_phase + self.speed * rainbow_speed_multiplier * dt, self.TAU)
++    self._rainbow_phase_shift = self._wrap_unit(self._rainbow_phase_shift + 0.10 * rainbow_speed_multiplier * dt)
++    self._rainbow_wave_phase = math.fmod(self._rainbow_wave_phase + 0.8 * dt, self.TAU)
++
+   @staticmethod
+   def _hsla_to_color(h: float, s: float, l: float, a: float) -> rl.Color:
+     rgb = colorsys.hls_to_rgb(h, l, s)
+@@ -74,6 +230,14 @@ class RainbowPath:
+       int(a * 255)
+     )
+ 
+-  def draw_rainbow_path(self, rect, path):
+-    gradient = self.get_gradient()
+-    draw_polygon(rect, path.projected_points, gradient=gradient)
++  def draw_rainbow_path(self, rect, path, sm):
++    if not path.projected_points.size:
++      return
++
++    self._update_state(sm)
++
++    if self._hazard_mix > 0.0:
++      draw_polygon(rect, path.projected_points, gradient=self._build_hazard_gradient())
++      return
++
++    draw_polygon(rect, path.projected_points, gradient=self._build_ocean_gradient())
