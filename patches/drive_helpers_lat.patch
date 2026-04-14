@@ -1,5 +1,18 @@
+diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
+index b53185ca2b..575ec2d46e 100755
+--- b/selfdrive/controls/controlsd.py
++++ a/selfdrive/controls/controlsd.py
+@@ -139,7 +139,7 @@ class Controls(ControlsExt):
+       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
+     else:
+       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+-    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
++    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll, self.params)
+     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+ 
+     actuators.curvature = self.desired_curvature
 diff --git b/selfdrive/controls/lib/drive_helpers.py a/selfdrive/controls/lib/drive_helpers.py
-index e28fa3021c..5ae1835e14 100644
+index bf6dd04f60..22ff939da6 100644
 --- b/selfdrive/controls/lib/drive_helpers.py
 +++ a/selfdrive/controls/lib/drive_helpers.py
 @@ -1,5 +1,6 @@
@@ -13,15 +26,17 @@ index e28fa3021c..5ae1835e14 100644
    alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
    return alpha * val + (1 - alpha) * prev_val
  
--def clip_curvature(v_ego, prev_curvature, new_curvature, roll):
-+def clip_curvature(v_ego, prev_curvature, new_curvature, roll, params=Params()):
+-def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, bool]:
++def clip_curvature(v_ego, prev_curvature, new_curvature, roll, params: Params | None = None) -> tuple[float, bool]:
    # This function respects ISO lateral jerk and acceleration limits + a max curvature
    v_ego = max(v_ego, MIN_SPEED)
    max_curvature_rate = MAX_LATERAL_JERK / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
-@@ -30,12 +31,20 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll):
+@@ -30,12 +31,22 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, b
                            prev_curvature - max_curvature_rate * DT_CTRL,
                            prev_curvature + max_curvature_rate * DT_CTRL)
  
++  if params is None:
++    params = Params()
 +  speed_threshold_mps = float(params.get("HkgTuningAngleCustomLimitMaxSpeedKph", return_default=True)) / 3.6
    roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
 -  max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
@@ -42,3 +57,15 @@ index e28fa3021c..5ae1835e14 100644
    return float(new_curvature), limited_accel or limited_max_curv
  
  
+diff --git b/sunnypilot/selfdrive/car/interfaces.py a/sunnypilot/selfdrive/car/interfaces.py
+index e4db6c8e97..81652660f3 100644
+--- b/sunnypilot/selfdrive/car/interfaces.py
++++ a/sunnypilot/selfdrive/car/interfaces.py
+@@ -115,6 +115,7 @@ def initialize_params(params) -> list[dict[str, Any]]:
+   # hyundai
+   keys.extend([
+     "HyundaiLongitudinalTuning",
++    "HkgTuningAngleCustomLimitMaxSpeedKph",
+   ])
+ 
+   # subaru

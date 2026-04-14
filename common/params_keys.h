@@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"CarParamsCache", {CLEAR_ON_MANAGER_START, BYTES}},
     {"CarParamsPersistent", {PERSISTENT, BYTES}},
     {"CarParamsPrevRoute", {PERSISTENT, BYTES}},
-    {"CompletedTrainingVersion", {PERSISTENT, STRING, "0"}},
+    {"CompletedTrainingVersion", {PERSISTENT, STRING, "0.2.0"}},
     {"ControlsReady", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
     {"CurrentBootlog", {PERSISTENT, STRING}},
     {"CurrentRoute", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, STRING}},
@@ -53,12 +53,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"GsmMetered", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"GsmRoaming", {PERSISTENT | BACKUP, BOOL}},
     {"HardwareSerial", {PERSISTENT, STRING}},
-    {"HasAcceptedTerms", {PERSISTENT, STRING, "0"}},
+    {"HasAcceptedTerms", {PERSISTENT, STRING, "2"}},
+    {"IgnitionOn", {CLEAR_ON_MANAGER_START, BOOL, "0"}},
     {"InstallDate", {PERSISTENT, TIME}},
     {"IsDriverViewEnabled", {CLEAR_ON_MANAGER_START, BOOL}},
     {"IsEngaged", {PERSISTENT, BOOL}},
     {"IsLdwEnabled", {PERSISTENT | BACKUP, BOOL}},
-    {"IsMetric", {PERSISTENT | BACKUP, BOOL}},
+    {"IsMetric", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"IsOffroad", {CLEAR_ON_MANAGER_START, BOOL}},
     {"IsOnroad", {PERSISTENT, BOOL}},
     {"IsRhdDetected", {PERSISTENT, BOOL}},
@@ -110,6 +111,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"RecordAudioFeedback", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"RecordFront", {PERSISTENT | BACKUP, BOOL}},
     {"RecordFrontLock", {PERSISTENT, BOOL}},  // for the internal fleet
+    {"ScreenOff", {CLEAR_ON_MANAGER_START, BOOL, "0"}},
     {"SecOCKey", {PERSISTENT | DONT_LOG | BACKUP, STRING}},
     {"ShowDebugInfo", {PERSISTENT, BOOL}},
     {"RouteCount", {PERSISTENT, INT, "0"}},
@@ -136,8 +138,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     // --- sunnypilot params --- //
     {"ApiCache_DriveStats", {PERSISTENT, JSON}},
-    {"AutoLaneChangeBsmDelay", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"AutoLaneChangeTimer", {PERSISTENT | BACKUP, INT, "0"}},
+    {"AutoLockUsername", {PERSISTENT | BACKUP | DONT_LOG, STRING}},
+    {"AutoLockPassword", {PERSISTENT | BACKUP | DONT_LOG, STRING}},
+    {"AutoLockPin", {PERSISTENT | BACKUP | DONT_LOG, STRING}},
+    {"AutoLockRegion", {PERSISTENT | BACKUP, STRING}},
+    {"AutoLaneChangeBsmDelay", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"AutoLaneChangeTimer", {PERSISTENT | BACKUP, INT, "1"}},
+    {"AdvancedLaneCentering", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"BlinkerLateralReengageDelay", {PERSISTENT | BACKUP, INT, "0"}},  // seconds
     {"BlinkerMinLateralControlSpeed", {PERSISTENT | BACKUP, INT, "20"}},  // MPH or km/h
     {"BlinkerPauseLateralControl", {PERSISTENT | BACKUP, INT, "0"}},
@@ -156,7 +163,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"DevUIInfo", {PERSISTENT | BACKUP, INT, "0"}},
     {"EnableCopyparty", {PERSISTENT | BACKUP, BOOL}},
     {"EnableGithubRunner", {PERSISTENT | BACKUP, BOOL}},
-    {"GreenLightAlert", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"GreenLightAlert", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"GithubRunnerSufficientVoltage", {CLEAR_ON_MANAGER_START , BOOL}},
     {"HasAcceptedTermsSP", {PERSISTENT, STRING, "0"}},
     {"HideVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},
@@ -165,8 +172,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"IsDevelopmentBranch", {CLEAR_ON_MANAGER_START, BOOL}},
     {"IsReleaseSpBranch", {CLEAR_ON_MANAGER_START, BOOL}},
     {"LastGPSPositionLLK", {PERSISTENT, STRING}},
-    {"LeadDepartAlert", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"MaxTimeOffroad", {PERSISTENT | BACKUP, INT, "1800"}},
+    {"LeadDepartAlert", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"MaxTimeOffroad", {PERSISTENT | BACKUP, INT, "30"}},
     {"ModelRunnerTypeCache", {CLEAR_ON_ONROAD_TRANSITION, INT}},
     {"OffroadMode", {CLEAR_ON_MANAGER_START, BOOL}},
     {"Offroad_TiciSupport", {CLEAR_ON_MANAGER_START, JSON}},
@@ -175,13 +182,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"OnroadScreenOffTimer", {PERSISTENT | BACKUP, INT, "15"}},
     {"OnroadScreenOffTimerMigrated", {PERSISTENT | BACKUP, STRING, "0.0"}},
     {"OnroadUploads", {PERSISTENT | BACKUP, BOOL, "1"}},
-    {"QuickBootToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"UsePrebuiltToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"QuickBootPendingRebuild", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"QuietMode", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"RainbowMode", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"RainbowMode", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"RocketFuel", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"ShowAdvancedControls", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"ShowTurnSignals", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"StandstillTimer", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"ShowTurnSignals", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"StandstillTimer", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TrueVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},
 
     // MADS params
@@ -224,15 +232,15 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ToyotaStopAndGoHack", {PERSISTENT | BACKUP, BOOL, "0"}},
 
     {"DynamicExperimentalControl", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "1"}},
 
     // sunnypilot model params
     {"CameraOffset", {PERSISTENT | BACKUP, FLOAT, "0.0"}},
     {"LagdToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"LagdToggleDelay", {PERSISTENT | BACKUP, FLOAT, "0.2"}},
     {"LagdValueCache", {PERSISTENT, FLOAT, "0.2"}},
-    {"LaneTurnDesire", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"LaneTurnValue", {PERSISTENT | BACKUP, FLOAT, "19.0"}},
+    {"LaneTurnDesire", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"LaneTurnValue", {PERSISTENT | BACKUP, FLOAT, "25.0"}},
     {"PlanplusControl", {PERSISTENT | BACKUP, FLOAT, "1.0"}},
 
     // mapd
@@ -254,13 +262,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"OsmStateTitle", {PERSISTENT, STRING}},
     {"OsmWayTest", {PERSISTENT, STRING}},
     {"RoadName", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
-    {"RoadNameToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"RoadNameToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
 
     // Speed Limit
     {"SpeedLimitMode", {PERSISTENT | BACKUP, INT, "1"}},
-    {"SpeedLimitOffsetType", {PERSISTENT | BACKUP, INT, "0"}},
+    {"SpeedLimitOffsetType", {PERSISTENT | BACKUP, INT, "2"}},
     {"SpeedLimitPolicy", {PERSISTENT | BACKUP, INT, "3"}},
-    {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "0"}},
+    {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "10"}},
 
     // Smart Cruise Control
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
@@ -276,4 +284,12 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TorqueParamsOverrideEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TorqueParamsOverrideFriction", {PERSISTENT | BACKUP, FLOAT, "0.1"}},
     {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
+    // Tuning keys
+    {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"HkgTuningAngleMinTorqueReductionGain", {PERSISTENT | BACKUP, INT, "1"}},
+    {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
+    {"HkgTuningAngleActiveTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
+    {"HkgTuningAngleCustomLimitMaxSpeedKph", {PERSISTENT | BACKUP, INT, "40"}},
+    {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT | BACKUP, INT, "50"}},
+    {"HkgTuningOverridingCycles", {PERSISTENT | BACKUP, INT, "17"}},
 };
