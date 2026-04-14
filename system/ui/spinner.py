@@ -3,7 +3,7 @@ import pyray as rl
 import select
 import sys
 
-from openpilot.system.ui.lib.application import FONT_SCALE, FontWeight, font_fallback, gui_app
+from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.text import wrap_text
 from openpilot.system.ui.widgets import Widget
@@ -14,7 +14,7 @@ if gui_app.big_ui():
   PROGRESS_BAR_HEIGHT = 20
   EDITION_FONT_SIZE = 72
   EDITION_TEXT_SPACING = 36
-  EDITION_X_OFFSET = 0.0
+  EDITION_X_OFFSET = 3.0
   TEXTURE_SIZE = 360
   WRAPPED_SPACING = 50
   CENTERED_SPACING = 150
@@ -23,7 +23,7 @@ else:
   PROGRESS_BAR_HEIGHT = 10
   EDITION_FONT_SIZE = 40
   EDITION_TEXT_SPACING = 18
-  EDITION_X_OFFSET = 0.0
+  EDITION_X_OFFSET = 1.0
   TEXTURE_SIZE = 140
   WRAPPED_SPACING = 10
   CENTERED_SPACING = 20
@@ -38,18 +38,12 @@ def clamp(value, min_value, max_value):
   return max(min(value, max_value), min_value)
 
 
-def _measure_text_width_safe(font: rl.Font, text: str, font_size: int) -> float:
-  width = rl.measure_text_ex(font, text, font_size * FONT_SCALE, 0.0).x
-  if width <= 0 or width > PROGRESS_BAR_WIDTH * 4.0:
-    width = len(text) * font_size * FONT_SCALE * 0.62
-  return width
-
-
 class Spinner(Widget):
   def __init__(self):
     super().__init__()
     self._comma_texture = gui_app.texture("../../sunnypilot/selfdrive/assets/images/spinner_sunnypilot.png", TEXTURE_SIZE, TEXTURE_SIZE)
     self._spinner_texture = gui_app.texture("images/spinner_track.png", TEXTURE_SIZE, TEXTURE_SIZE, alpha_premultiply=True)
+    self._edition_font = gui_app.font(FontWeight.AUDIOWIDE)
     self._rotation = 0.0
     self._progress: int | None = None
     self._wrapped_lines: list[str] = []
@@ -96,12 +90,11 @@ class Spinner(Widget):
       rl.draw_rectangle_rounded(bar_fill, 1, 10, rl.WHITE)
 
       edition_text = "EV9 Edition"
-      edition_font = font_fallback(gui_app.font(FontWeight.AUDIOWIDE))
-      edition_width = _measure_text_width_safe(edition_font, edition_text, EDITION_FONT_SIZE)
+      edition_width = measure_text_cached(self._edition_font, edition_text, EDITION_FONT_SIZE).x
       edition_center_x = bar_bg.x + bar_bg.width / 2.0 + EDITION_X_OFFSET
-      edition_x = edition_center_x - edition_width / 2.0
+      edition_x = round(edition_center_x - edition_width / 2.0)
       edition_y = y_pos + PROGRESS_BAR_HEIGHT + EDITION_TEXT_SPACING
-      rl.draw_text_ex(edition_font, edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
+      rl.draw_text_ex(self._edition_font, edition_text, rl.Vector2(edition_x, round(edition_y)), EDITION_FONT_SIZE, 0.0, rl.WHITE)
     elif self._wrapped_lines:
       for i, line in enumerate(self._wrapped_lines):
         text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)
