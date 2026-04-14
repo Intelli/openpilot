@@ -352,6 +352,7 @@ struct CarParamsSP @0x80ae746ee2596b11 {
   intelligentCruiseButtonManagementAvailable @4 :Bool;
   enableGasInterceptor @5 :Bool;
   hkgTuningAngleCustomLimitMaxSpeedKph @6 :Float32;
+  hkgTuningAngleOverrideEffortPercent @7 :Float32;
 
   neuralNetworkLateralControl @2 :NeuralNetworkLateralControl;
 
