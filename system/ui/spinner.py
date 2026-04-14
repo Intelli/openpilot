@@ -12,12 +12,16 @@ from openpilot.system.ui.widgets import Widget
 if gui_app.big_ui():
   PROGRESS_BAR_WIDTH = 1000
   PROGRESS_BAR_HEIGHT = 20
+  EDITION_FONT_SIZE = 72
+  EDITION_TEXT_SPACING = 36
   TEXTURE_SIZE = 360
   WRAPPED_SPACING = 50
   CENTERED_SPACING = 150
 else:
   PROGRESS_BAR_WIDTH = 268
   PROGRESS_BAR_HEIGHT = 10
+  EDITION_FONT_SIZE = 40
+  EDITION_TEXT_SPACING = 18
   TEXTURE_SIZE = 140
   WRAPPED_SPACING = 10
   CENTERED_SPACING = 20
@@ -76,16 +80,17 @@ class Spinner(Widget):
 
     # Display the progress bar or text based on user input
     if self._progress is not None:
-      bar = rl.Rectangle(center.x - PROGRESS_BAR_WIDTH / 2.0, y_pos, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT)
-      rl.draw_rectangle_rounded(bar, 1, 10, DARKGRAY)
+      bar_bg = rl.Rectangle(center.x - PROGRESS_BAR_WIDTH / 2.0, y_pos, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT)
+      rl.draw_rectangle_rounded(bar_bg, 1, 10, DARKGRAY)
 
-      bar.width *= self._progress / 100.0
-      rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
+      bar_fill = rl.Rectangle(bar_bg.x, bar_bg.y, bar_bg.width * self._progress / 100.0, bar_bg.height)
+      rl.draw_rectangle_rounded(bar_fill, 1, 10, rl.WHITE)
 
       edition_text = "EV9 Edition"
-      edition_size = measure_text_cached(gui_app.font(), edition_text, FONT_SIZE)
-      edition_pos = rl.Vector2(center.x - edition_size.x / 2.0, y_pos + PROGRESS_BAR_HEIGHT + 40)
-      rl.draw_text_ex(gui_app.font(), edition_text, edition_pos, FONT_SIZE, 0.0, rl.WHITE)
+      edition_size = measure_text_cached(gui_app.font(), edition_text, EDITION_FONT_SIZE)
+      edition_x = bar_bg.x + (PROGRESS_BAR_WIDTH - edition_size.x) / 2.0
+      edition_y = y_pos + PROGRESS_BAR_HEIGHT + EDITION_TEXT_SPACING
+      rl.draw_text_ex(gui_app.font(), edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
     elif self._wrapped_lines:
       for i, line in enumerate(self._wrapped_lines):
         text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)
