@@ -164,6 +164,7 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           python3 - <<'PY'
           import importlib.util
+          import shutil
           import subprocess
           import sys
           import tomllib
@@ -196,8 +197,23 @@ jobs:
             raise RuntimeError(f"Missing dependency specs in pyproject.toml for: {', '.join(unresolved)}")
 
           print(f"Installing missing vendored deps: {', '.join(missing)}")
-          subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
-          subprocess.check_call([sys.executable, "-m", "pip", "install", *specs])
+          pyexe = sys.executable
+          uv = shutil.which("uv")
+          if uv:
+            # uv can install into a target interpreter even when pip isn't bootstrapped there.
+            subprocess.check_call([uv, "pip", "install", "--python", pyexe, *specs])
+            raise SystemExit(0)
+
+          def has_pip(exe: str) -> bool:
+            return subprocess.call([exe, "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+
+          if not has_pip(pyexe):
+            if importlib.util.find_spec("ensurepip") is None:
+              raise RuntimeError("pip is unavailable and ensurepip is not present; install uv or provide pip in the runner image")
+            subprocess.check_call([pyexe, "-m", "ensurepip", "--upgrade"])
+
+          subprocess.check_call([pyexe, "-m", "pip", "install", "--upgrade", "pip"])
+          subprocess.check_call([pyexe, "-m", "pip", "install", *specs])
           PY
 
       - name: Cache SCons
