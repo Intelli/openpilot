@@ -14,7 +14,7 @@ if gui_app.big_ui():
   PROGRESS_BAR_HEIGHT = 20
   EDITION_FONT_SIZE = 72
   EDITION_TEXT_SPACING = 36
-  EDITION_X_OFFSET = 3.0
+  EDITION_X_OFFSET = 1.0
   TEXTURE_SIZE = 360
   WRAPPED_SPACING = 50
   CENTERED_SPACING = 150
@@ -23,7 +23,7 @@ else:
   PROGRESS_BAR_HEIGHT = 10
   EDITION_FONT_SIZE = 40
   EDITION_TEXT_SPACING = 18
-  EDITION_X_OFFSET = 1.0
+  EDITION_X_OFFSET = 0.0
   TEXTURE_SIZE = 140
   WRAPPED_SPACING = 10
   CENTERED_SPACING = 20
@@ -92,9 +92,9 @@ class Spinner(Widget):
       edition_text = "EV9 Edition"
       edition_width = measure_text_cached(self._edition_font, edition_text, EDITION_FONT_SIZE).x
       edition_center_x = bar_bg.x + bar_bg.width / 2.0 + EDITION_X_OFFSET
-      edition_x = round(edition_center_x - edition_width / 2.0)
+      edition_x = edition_center_x - edition_width / 2.0
       edition_y = y_pos + PROGRESS_BAR_HEIGHT + EDITION_TEXT_SPACING
-      rl.draw_text_ex(self._edition_font, edition_text, rl.Vector2(edition_x, round(edition_y)), EDITION_FONT_SIZE, 0.0, rl.WHITE)
+      rl.draw_text_ex(self._edition_font, edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
     elif self._wrapped_lines:
       for i, line in enumerate(self._wrapped_lines):
         text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)
