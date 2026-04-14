@@ -1,0 +1,41 @@
+diff --git b/selfdrive/selfdrived/events.py a/selfdrive/selfdrived/events.py
+index 0597aa9f17..c8a7833a05 100755
+--- b/selfdrive/selfdrived/events.py
++++ a/selfdrive/selfdrived/events.py
+@@ -348,9 +348,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+ 
+   EventName.promptDriverDistracted: {
+     ET.PERMANENT: Alert(
+-      "Pay Attention",
+       "Driver Distracted",
+-      AlertStatus.userPrompt, AlertSize.mid,
++      "",
++      AlertStatus.userPrompt, AlertSize.small,
+       Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, .1),
+   },
+ 
+@@ -440,9 +440,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+ 
+   EventName.steerSaturated: {
+     ET.WARNING: Alert(
+-      "Take Control",
+       "Turn Exceeds Steering Limit",
+-      AlertStatus.userPrompt, AlertSize.mid,
++      "",
++      AlertStatus.normal, AlertSize.small,
+       Priority.LOW, VisualAlert.steerRequired, AudibleAlert.promptRepeat, 2.),
+   },
+ 
+diff --git b/selfdrive/ui/onroad/alert_renderer.py a/selfdrive/ui/onroad/alert_renderer.py
+index 6e79d23253..b78acc018f 100644
+--- b/selfdrive/ui/onroad/alert_renderer.py
++++ a/selfdrive/ui/onroad/alert_renderer.py
+@@ -32,7 +32,7 @@ SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
+ 
+ # Constants
+ ALERT_COLORS = {
+-  AlertStatus.normal: rl.Color(0x15, 0x15, 0x15, 0xF1),      # #151515 with alpha 0xF1
++  AlertStatus.normal: rl.Color(0, 0, 0, 128),                # Black with 50% transparency
+   AlertStatus.userPrompt: rl.Color(0xDA, 0x6F, 0x25, 0xF1),  # #DA6F25 with alpha 0xF1
+   AlertStatus.critical: rl.Color(0xC9, 0x22, 0x31, 0xF1),    # #C92231 with alpha 0xF1
+ }
