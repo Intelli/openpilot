@@ -292,7 +292,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     self._blend_filter.update(int(allow_throttle))
 
     if ui_state.rainbow_path:
-      self.rainbow_path.draw_rainbow_path(self._rect, self._path)
+      self.rainbow_path.draw_rainbow_path(self._rect, self._path, sm)
       return
 
     if self._experimental_mode:
