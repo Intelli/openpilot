@@ -1,35 +1,51 @@
 diff --git b/selfdrive/controls/lib/latcontrol_angle.py a/selfdrive/controls/lib/latcontrol_angle.py
-index 787bd2dbe1..dee5604b78 100644
+index 9aa5b3cd01..99b2b17353 100644
 --- b/selfdrive/controls/lib/latcontrol_angle.py
 +++ a/selfdrive/controls/lib/latcontrol_angle.py
 @@ -10,7 +10,7 @@ STEER_ANGLE_SATURATION_THRESHOLD = 2.5  # Degrees
  class LatControlAngle(LatControl):
-   def __init__(self, CP, CP_SP, CI):
-     super().__init__(CP, CP_SP, CI)
+   def __init__(self, CP, CP_SP, CI, dt):
+     super().__init__(CP, CP_SP, CI, dt)
 -    self.sat_check_min_speed = 5.
 +    self.sat_check_min_speed = 2.5 / 3.6  # 2.5 km/h
-     self.use_steer_limited_by_safety = CP.brand == "tesla"
+     self.use_steer_limited_by_safety = CP.brand in ("tesla", "hyundai")
  
-   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited):
+   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
 diff --git b/selfdrive/selfdrived/selfdrived.py a/selfdrive/selfdrived/selfdrived.py
-index 33e5357541..6925e30af6 100755
+index 6795c36e1b..3fb28cec16 100755
 --- b/selfdrive/selfdrived/selfdrived.py
 +++ a/selfdrive/selfdrived/selfdrived.py
-@@ -410,8 +410,17 @@ class SelfdriveD(CruiseHelper):
+@@ -417,16 +417,31 @@ class SelfdriveD(CruiseHelper):
+       self.last_steering_pressed_frame = self.sm.frame
+     recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
+     controlstate = self.sm['controlsState']
+-    lac = getattr(controlstate.lateralControlState, controlstate.lateralControlState.which())
++    lateral_control_state = controlstate.lateralControlState.which()
++    lac = getattr(controlstate.lateralControlState, lateral_control_state)
+     if lac.active and not recent_steer_pressed and not self.CP.notCar:
+       clipped_speed = max(CS.vEgo, 0.3)
+       actual_lateral_accel = controlstate.curvature * (clipped_speed**2)
        desired_lateral_accel = self.sm['modelV2'].action.desiredCurvature * (clipped_speed**2)
        undershooting = abs(desired_lateral_accel) / abs(1e-3 + actual_lateral_accel) > 1.2
        turning = abs(desired_lateral_accel) > 1.0
-+      desired_steering_angle = abs(lac.steeringAngleDesiredDeg)
-+
++      has_desired_steering_angle = hasattr(lac, "steeringAngleDesiredDeg")
++      desired_steering_angle = abs(getattr(lac, "steeringAngleDesiredDeg", 0.0))
        # TODO: lac.saturated includes speed and other checks, should be pulled out
        if undershooting and turning and lac.saturated:
+-        self.events.add(EventName.steerSaturated)
 +        # Silence "Turn Exceeds Steering Limit" alert when below custom speed threshold
-+        speed_threshold_mps = float(self.params.get("HkgTuningEv9AlertsSpeedKph", return_default=True)) / 3.6
-+        if (CS.vEgo > speed_threshold_mps or desired_steering_angle >= 90.0) and desired_steering_angle < 119.9:
-+          self.events.add(EventName.steerSaturated)
++        # for controllers exposing steeringAngleDesiredDeg (angle/pid/indi/lqr states).
++        if has_desired_steering_angle:
++          speed_threshold_mps = float(self.params.get("HkgTuningEv9AlertsSpeedKph", return_default=True)) / 3.6
++          if (CS.vEgo > speed_threshold_mps or desired_steering_angle >= 90.0) and desired_steering_angle < 119.9:
++            self.events.add(EventName.steerSaturated)
 +
-+      # Check for high steering angle saturation
-+      if desired_steering_angle >= 119.9:
-         self.events.add(EventName.steerSaturated)
++          # Check for high steering angle saturation
++          if desired_steering_angle >= 119.9:
++            self.events.add(EventName.steerSaturated)
++        else:
++          # Keep previous behavior for states without steeringAngleDesiredDeg (e.g. torqueState).
++          self.events.add(EventName.steerSaturated)
  
      # Check for FCW
+     stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
