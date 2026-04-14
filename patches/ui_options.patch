@@ -128,3 +128,18 @@ index 20c9903a63..82ed1f3dd4 100644
 +    self.ev9_alerts_speed_item.set_description(ev9_alerts_speed_desc)
 +    self.ev9_alerts_speed_item.show_description(True)
 +    self.ev9_alerts_speed_item.set_visible(self.has_angle_steering)
+diff --git b/selfdrive/ui/sunnypilot/layouts/settings/visuals.py a/selfdrive/ui/sunnypilot/layouts/settings/visuals.py
+index 84be5a26ab..558dd9b4b4 100644
+--- b/selfdrive/ui/sunnypilot/layouts/settings/visuals.py
++++ a/selfdrive/ui/sunnypilot/layouts/settings/visuals.py
+@@ -40,8 +40,8 @@ class VisualsLayout(Widget):
+         None,
+       ),
+       "RainbowMode": (
+-        lambda: tr("Enable Tesla Rainbow Mode"),
+-        tr("A beautiful rainbow effect on the path the model wants to take. " +
++        lambda: tr("Enable Kia EV9 Mode"),
++        tr("A beautiful EV9 effect on the path the model wants to take. " +
+            "It does not affect driving in any way."),
+         None,
+       ),
