@@ -1,3 +1,15 @@
+diff --git b/cereal/custom.capnp a/cereal/custom.capnp
+index fe3ed9196f..b7a0f219ab 100644
+--- b/cereal/custom.capnp
++++ a/cereal/custom.capnp
+@@ -351,6 +351,7 @@ struct CarParamsSP @0x80ae746ee2596b11 {
+   pcmCruiseSpeed @3 :Bool;
+   intelligentCruiseButtonManagementAvailable @4 :Bool;
+   enableGasInterceptor @5 :Bool;
++  hkgTuningAngleCustomLimitMaxSpeedKph @6 :Float32;
+ 
+   neuralNetworkLateralControl @2 :NeuralNetworkLateralControl;
+ 
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
 index b53185ca2b..575ec2d46e 100755
 --- b/selfdrive/controls/controlsd.py
