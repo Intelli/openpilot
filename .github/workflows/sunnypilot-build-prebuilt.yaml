@@ -170,14 +170,17 @@ jobs:
           import tomllib
           from pathlib import Path
 
-          pkg_names = ['bzip2', 'capnproto', 'eigen', 'ffmpeg', 'libjpeg', 'libyuv', 'ncurses', 'zeromq', 'zstd']
+          pkg_names = ['bzip2', 'capnproto', 'eigen', 'ffmpeg', 'libjpeg', 'libyuv', 'ncurses', 'zeromq', 'zstd', 'libusb', 'imgui']
           missing = [name for name in pkg_names if importlib.util.find_spec(name) is None]
           if not missing:
             print("All vendored Python deps already available.")
             raise SystemExit(0)
 
           pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-          deps = pyproject["project"]["dependencies"]
+          deps = list(pyproject["project"]["dependencies"])
+          optional_deps = pyproject["project"].get("optional-dependencies", {})
+          for optional_group in optional_deps.values():
+            deps.extend(optional_group)
           dep_map = {}
           for dep in deps:
             if " @ " in dep:
