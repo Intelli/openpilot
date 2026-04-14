@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       wait_for_tests:
-        description: 'Wait for selfdrive_tests to finish'
+        description: 'Wait for tests to finish'
         required: false
         type: boolean
         default: false
@@ -109,7 +109,7 @@ jobs:
       - name: Wait for Tests
         uses: ./.github/workflows/wait-for-action # Path to where you place the action
         with:
-          workflow: selfdrive_tests.yaml # The workflow file to monitor
+          workflow: tests.yaml # The workflow file to monitor
           github-token: ${{ secrets.GITHUB_TOKEN }}
           should-wait-for-start: ${{ github.event_name == 'push' && 'true' || 'false' }}
 
@@ -157,6 +157,67 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git rev-parse --is-inside-work-tree
           git lfs pull --exclude="auto-lock/lock-closed-white.*" --include=""
+
+      - name: Ensure vendored Python deps for SCons
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import importlib.util
+          import shutil
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          pkg_names = ['bzip2', 'capnproto', 'eigen', 'ffmpeg', 'libjpeg', 'libyuv', 'ncurses', 'zeromq', 'zstd', 'libusb', 'imgui']
+          missing = [name for name in pkg_names if importlib.util.find_spec(name) is None]
+          if not missing:
+            print("All vendored Python deps already available.")
+            raise SystemExit(0)
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          deps = list(pyproject["project"]["dependencies"])
+          optional_deps = pyproject["project"].get("optional-dependencies", {})
+          for optional_group in optional_deps.values():
+            deps.extend(optional_group)
+          dep_map = {}
+          for dep in deps:
+            if " @ " in dep:
+              dep_name = dep.split(" @ ", 1)[0].strip()
+              dep_map[dep_name] = dep
+
+          specs = []
+          unresolved = []
+          for name in missing:
+            spec = dep_map.get(name)
+            if spec is None:
+              unresolved.append(name)
+            else:
+              specs.append(spec)
+
+          if unresolved:
+            raise RuntimeError(f"Missing dependency specs in pyproject.toml for: {', '.join(unresolved)}")
+
+          print(f"Installing missing vendored deps: {', '.join(missing)}")
+          pyexe = sys.executable
+          uv = shutil.which("uv")
+          if uv:
+            # uv can install into a target interpreter even when pip isn't bootstrapped there.
+            subprocess.check_call([uv, "pip", "install", "--python", pyexe, *specs])
+            raise SystemExit(0)
+
+          def has_pip(exe: str) -> bool:
+            return subprocess.call([exe, "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+
+          if not has_pip(pyexe):
+            if importlib.util.find_spec("ensurepip") is None:
+              raise RuntimeError("pip is unavailable and ensurepip is not present; install uv or provide pip in the runner image")
+            subprocess.check_call([pyexe, "-m", "ensurepip", "--upgrade"])
+
+          subprocess.check_call([pyexe, "-m", "pip", "install", "--upgrade", "pip"])
+          subprocess.check_call([pyexe, "-m", "pip", "install", *specs])
+          PY
 
       - name: Cache SCons
         uses: actions/cache@v4
@@ -249,8 +310,7 @@ jobs:
             --exclude='*.os' \
             --exclude='*.pyc' \
             --exclude='moc_*' \
-            --exclude='*.cc' \
-            --exclude='supercombo.onnx' \
+            --exclude='__pycache__' \
             --exclude='**/.github/' \
             --exclude='**/__pycache__/' \
             --exclude='**/selfdrive/ui/*.h' \
@@ -260,6 +320,7 @@ jobs:
             --exclude='**/SConstruct' \
             --exclude='**/SConscript' \
             --exclude='**/.venv/' \
+            --exclude='supercombo.onnx' \
             --delete-excluded \
             --chown=comma:comma \
             ${BUILD_DIR}/ ${OUTPUT_DIR}/

@@ -14,7 +14,7 @@ from openpilot.system.version import get_build_metadata
 MAX_CACHE_SIZE = 4e9 if "CI" in os.environ else 2e9
 CACHE_DIR = Path("/data/scons_cache" if AGNOS else "/tmp/scons_cache")
 
-TOTAL_SCONS_NODES = 3800
+TOTAL_SCONS_NODES = 2705
 MAX_BUILD_PROGRESS = 100
 
 def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
@@ -85,24 +85,6 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
       break
     cache_size -= f.stat().st_size
     f.unlink()
-
-  try:
-    from openpilot.common.params import Params
-
-    params = Params()
-    quickboot_pref = params.get("UsePrebuiltToggle")
-    if quickboot_pref is None:
-      quickboot_pref = params.get("UsePrebuiltToggle", return_default=True)
-      if quickboot_pref is None:
-        quickboot_pref = True
-      params.put_bool("UsePrebuiltToggle", bool(quickboot_pref))
-
-    if bool(quickboot_pref):
-      prebuilt_marker = Path(BASEDIR) / "prebuilt"
-      prebuilt_marker.touch(exist_ok=True)
-      params.put_bool("QuickBootPendingRebuild", False)
-  except Exception:
-    cloudlog.exception("failed to finalize quickboot state after build")
 
 
 if __name__ == "__main__":

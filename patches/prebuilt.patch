@@ -1,17 +1,17 @@
 diff --git b/.gitattributes a/.gitattributes
-index cc1605a132..8a0b2a6889 100644
+index 41a7367d84..ef7a77288f 100644
 --- b/.gitattributes
 +++ a/.gitattributes
-@@ -9,6 +9,9 @@
- *.ttf filter=lfs diff=lfs merge=lfs -text
+@@ -10,6 +10,9 @@
+ *.otf filter=lfs diff=lfs merge=lfs -text
  *.wav filter=lfs diff=lfs merge=lfs -text
  
 +# exclude auto-lock assets from LFS
 +auto-lock/lock-closed-white.* -filter -diff -merge -text
 +
  selfdrive/car/tests/test_models_segs.txt filter=lfs diff=lfs merge=lfs -text
- system/hardware/tici/updater filter=lfs diff=lfs merge=lfs -text
- third_party/**/*.a filter=lfs diff=lfs merge=lfs -text
+ system/hardware/tici/updater_weston filter=lfs diff=lfs merge=lfs -text
+ system/hardware/tici/updater_magic filter=lfs diff=lfs merge=lfs -text
 diff --git b/.githooks/pre-push a/.githooks/pre-push
 new file mode 100755
 index 0000000000..592d763338
@@ -22,7 +22,7 @@ index 0000000000..592d763338
 +# block LFS uploads
 +exit 0
 diff --git b/.github/workflows/prebuilt.yaml a/.github/workflows/prebuilt.yaml
-index dde290d5c5..b2e1d4c744 100644
+index aeb0f11d84..fe8de652b8 100644
 --- b/.github/workflows/prebuilt.yaml
 +++ a/.github/workflows/prebuilt.yaml
 @@ -12,7 +12,7 @@ jobs:
@@ -43,9 +43,9 @@ index dde290d5c5..b2e1d4c744 100644
          wait-interval: 30
          running-workflow-name: 'build prebuilt'
          repo-token: ${{ secrets.GITHUB_TOKEN }}
--        check-regexp: ^((?!.*(build master-ci).*).)*$
-+        check-regexp: ^((?!.*(build ev9-dev-ci).*).)*$
-     - uses: actions/checkout@v4
+-        check-regexp: ^((?!.*(build master-ci|create badges).*).)*$
++        check-regexp: ^((?!.*(build ev9-dev-ci|create badges).*).)*$
+     - uses: actions/checkout@v6
        with:
          submodules: true
 +        lfs: true
@@ -53,7 +53,7 @@ index dde290d5c5..b2e1d4c744 100644
      - name: Build and Push docker image
        run: |
 diff --git b/.github/workflows/sunnypilot-build-prebuilt.yaml a/.github/workflows/sunnypilot-build-prebuilt.yaml
-index 12fb01cbd1..a5a4ebe943 100644
+index 79cb5e3d61..fce9301b8c 100644
 --- b/.github/workflows/sunnypilot-build-prebuilt.yaml
 +++ a/.github/workflows/sunnypilot-build-prebuilt.yaml
 @@ -5,18 +5,17 @@ env:
@@ -61,14 +61,12 @@ index 12fb01cbd1..a5a4ebe943 100644
    CI_DIR: ${{ github.workspace }}/release/ci
    SCONS_CACHE_DIR: ${{ github.workspace }}/release/ci/scons_cache
 -  PUBLIC_REPO_URL: "https://github.com/sunnypilot/sunnypilot"
--  
 +  PUBLIC_REPO_URL: "https://github.com/Intelli/openpilot"
-+
+ 
    # Branch configurations
 -  STAGING_SOURCE_BRANCH: 'master'
--  
 +  STAGING_SOURCE_BRANCH: 'ev9-dev'
-+
+ 
    # Runtime configuration
    SOURCE_BRANCH: "${{ github.head_ref || github.ref_name }}"
  
@@ -123,24 +121,6 @@ index 12fb01cbd1..a5a4ebe943 100644
            else
            echo "Matched config: $CONFIG"
              environment=$(echo "$CONFIG" | jq -r '.environment')
-@@ -75,7 +85,7 @@ jobs:
-             cancel="$(echo "$CONFIG" | jq -r '.cancel_publish_in_progress')";
-             echo "cancel_publish_in_progress=$( [ "$cancel" = "null" ] && echo "true" || echo $cancel)" >> $GITHUB_OUTPUT
-             echo "publish_concurrency_group=publish-${BRANCH}$( [ "$cancel" = "null" ] || [ "$cancel" = "true" ] || echo "${{ github.sha }}" )" >> $GITHUB_OUTPUT
--          
-+
-             is_stable_branch="$(echo "$CONFIG" | jq -r '.stable_branch // false')";
-             echo "is_stable_branch=$is_stable_branch" >> $GITHUB_OUTPUT
- 
-@@ -85,7 +95,7 @@ jobs:
-           fi
-           echo "build=$BUILD" >> $GITHUB_OUTPUT
-           cat $GITHUB_OUTPUT
--  
-+
-   validate_tests:
-     runs-on: ubuntu-24.04
-     needs: [ prepare_strategy ]
 @@ -108,7 +118,9 @@ jobs:
      concurrency:
        group: build-${{ github.head_ref || github.ref_name }}
@@ -152,14 +132,7 @@ index 12fb01cbd1..a5a4ebe943 100644
      outputs:
        new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
        version: ${{ needs.prepare_strategy.outputs.version }}
-@@ -119,22 +131,39 @@ jobs:
-       needs.prepare_strategy.result == 'success' &&
-       (needs.validate_tests.result == 'success' || needs.validate_tests.result == 'skipped') &&
-       (!contains(github.event_name, 'pull_request') ||
--      (github.event.action == 'labeled' && github.event.label.name == 'prebuilt')) 
-+      (github.event.action == 'labeled' && github.event.label.name == 'prebuilt'))
-       }}
-     steps:
+@@ -125,15 +137,32 @@ jobs:
        - uses: actions/checkout@v4
          with:
            submodules: recursive
@@ -190,13 +163,11 @@ index 12fb01cbd1..a5a4ebe943 100644
          with:
            path: ${{env.SCONS_CACHE_DIR}}
 -          key: scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}-${{ github.sha }}
--          # Note: GitHub Actions enforces cache isolation between different build sources (PR builds, workflow dispatches, etc.) 
 +          key: scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}
-+          # Note: GitHub Actions enforces cache isolation between different build sources (PR builds, workflow dispatches, etc.)
+           # Note: GitHub Actions enforces cache isolation between different build sources (PR builds, workflow dispatches, etc.)
            #   for security. Only caches from the default branch are shared across all builds. This is by design and cannot be overridden.
            restore-keys: |
-             scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}
-@@ -143,12 +172,13 @@ jobs:
+@@ -143,6 +172,7 @@ jobs:
  
        - name: Set environment variables
          id: set-env
@@ -204,13 +175,6 @@ index 12fb01cbd1..a5a4ebe943 100644
          run: |
            echo "new_branch=${{ needs.prepare_strategy.outputs.new_branch }}" >> $GITHUB_OUTPUT
            echo "version=${{ needs.prepare_strategy.outputs.version }}" >> $GITHUB_OUTPUT
-           echo "extra_version_identifier=${{ needs.prepare_strategy.outputs.extra_version_identifier }}" >> $GITHUB_OUTPUT
-           echo "commit_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
--          
-+
-           # Set up common environment
-           source /etc/profile;
-           export UV_PROJECT_ENVIRONMENT=${HOME}/venv
 @@ -161,7 +191,7 @@ jobs:
        - name: Setup build environment
          run: |
@@ -235,9 +199,17 @@ index 12fb01cbd1..a5a4ebe943 100644
  
        - name: Build Main Project
          run: |
-@@ -181,22 +213,36 @@ jobs:
+@@ -180,19 +212,32 @@ jobs:
+           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
            cd $BUILD_DIR
            sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
+-          echo "Building sunnypilot's modeld_v2..."
+-          scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal sunnypilot/modeld_v2
+-          echo "Building sunnypilot's locationd..."
+-          scons -j2 cache_dir=${{env.SCONS_CACHE_DIR}} --minimal sunnypilot/selfdrive/locationd
+-          echo "Building openpilot's locationd..."
+-          scons -j1 cache_dir=${{env.SCONS_CACHE_DIR}} --minimal selfdrive/locationd
+-          echo "Building rest of sunnypilot"
            scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
 +          python3 opendbc_repo/opendbc/dbc/generator/generator.py
            touch ${BUILD_DIR}/prebuilt
@@ -268,53 +240,42 @@ index 12fb01cbd1..a5a4ebe943 100644
        - name: Prepare Output
          run: |
            sudo rm -rf ${OUTPUT_DIR}
-           mkdir -p ${OUTPUT_DIR}
-           rsync -am${RUNNER_DEBUG:+v} \
--            --include='**/panda/board/' \
--            --include='**/panda/board/obj' \
--            --include='**/panda/board/obj/panda.bin.signed' \
--            --include='**/panda/board/obj/panda_h7.bin.signed' \
--            --include='**/panda/board/obj/bootstub.panda.bin' \
--            --include='**/panda/board/obj/bootstub.panda_h7.bin' \
-             --exclude='.sconsign.dblite' \
-             --exclude='*.a' \
-             --exclude='*.o' \
-@@ -204,19 +250,11 @@ jobs:
+@@ -205,20 +250,16 @@ jobs:
              --exclude='*.pyc' \
              --exclude='moc_*' \
-             --exclude='*.cc' \
+             --exclude='__pycache__' \
 -            --exclude='Jenkinsfile' \
-             --exclude='supercombo.onnx' \
--            --exclude='**/panda/board/*' \
--            --exclude='**/panda/board/obj/**' \
--            --exclude='**/panda/certs/' \
--            --exclude='**/panda/crypto/' \
 -            --exclude='**/release/' \
              --exclude='**/.github/' \
 -            --exclude='**/selfdrive/ui/replay/' \
              --exclude='**/__pycache__/' \
-             --exclude='**/selfdrive/ui/*.h' \
-             --exclude='**/selfdrive/ui/**/*.h' \
--            --exclude='**/selfdrive/ui/qt/offroad/sunnypilot/' \
++            --exclude='**/selfdrive/ui/*.h' \
++            --exclude='**/selfdrive/ui/**/*.h' \
              --exclude='${{env.SCONS_CACHE_DIR}}' \
              --exclude='**/.git/' \
              --exclude='**/SConstruct' \
-@@ -240,9 +278,11 @@ jobs:
+             --exclude='**/SConscript' \
+             --exclude='**/.venv/' \
+-            --exclude='selfdrive/modeld/models/driving_vision.onnx' \
+-            --exclude='selfdrive/modeld/models/driving_policy.onnx' \
+-            --exclude='third_party/*x86*' \
+-            --exclude='third_party/*Darwin*' \
++            --exclude='supercombo.onnx' \
+             --delete-excluded \
+             --chown=comma:comma \
+             ${BUILD_DIR}/ ${OUTPUT_DIR}/
+@@ -237,7 +278,9 @@ jobs:
        - name: Re-enable powersave
          if: always()
          run: |
 -          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
--  
--  
 +          if [ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]; then
 +            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ "${{ github.workspace }}/scripts/manage-powersave.py" --enable
 +          fi
-+
-+
+ 
+ 
    publish:
-     concurrency:
-       # We do a bit of a hack here to avoid canceling the publishing job if a new commit comes in while we're publishing by adding the sha to the group name.
-@@ -279,12 +319,17 @@ jobs:
+@@ -276,12 +319,17 @@ jobs:
            echo '${{ toJSON(needs.build.outputs) }}'
            ls -la ${{ env.OUTPUT_DIR }}
  
@@ -333,21 +294,12 @@ index 12fb01cbd1..a5a4ebe943 100644
              "${{ needs.build.outputs.extra_version_identifier }}"
  
            echo ""
-@@ -293,7 +338,7 @@ jobs:
-           echo "1. Go to: ${{ github.server_url }}/${{ github.repository }}/settings/variables/actions/AUTO_DEPLOY_PREBUILT_BRANCHES"
-           echo "2. Current value: ${{ vars.AUTO_DEPLOY_PREBUILT_BRANCHES }}"
-           echo "3. Update as needed (JSON array with no spaces)"
--      
-+
-       - name: Tag ${{ needs.prepare_strategy.outputs.environment }}
-         if: ${{ needs.prepare_strategy.outputs.is_stable_branch == 'true' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')) }}
-         run: |
-@@ -301,53 +346,6 @@ jobs:
+@@ -298,53 +346,6 @@ jobs:
              git tag -f -a ${TAG} -m "${{ needs.prepare_strategy.outputs.environment }} @ ${{ needs.prepare_strategy.outputs.version }} of build ${{ needs.build.outputs.build }}."
              git push -f origin ${TAG}
  
 -  notify:
--    needs: 
+-    needs:
 -    - prepare_strategy
 -    - build
 -    - publish
@@ -376,7 +328,7 @@ index 12fb01cbd1..a5a4ebe943 100644
 -          ${{ vars.DISCOURSE_GENERAL_UPDATE_NOTICE }}
 -          EOF
 -          )
--          
+-
 -          {
 -            echo 'content<<EOFMARKER'
 -            echo "$MESSAGE"
@@ -396,27 +348,42 @@ index 12fb01cbd1..a5a4ebe943 100644
    manage-pr-labels:
      name: Remove prebuilt label
      runs-on: ubuntu-latest
-diff --git b/release/ci/docker_common_sp.sh a/release/ci/docker_common_sp.sh
-index e8f515762a..bf49e39bce 100755
---- b/release/ci/docker_common_sp.sh
-+++ a/release/ci/docker_common_sp.sh
-@@ -2,14 +2,14 @@ if [ "$1" = "base" ]; then
-   export DOCKER_IMAGE=sunnypilot-base
-   export DOCKER_FILE=Dockerfile.sunnypilot_base
- elif [ "$1" = "prebuilt" ]; then
--  export DOCKER_IMAGE=sunnypilot-prebuilt
-+  export DOCKER_IMAGE=intelli-openpilot-prebuilt
-   export DOCKER_FILE=Dockerfile.sunnypilot
- else
-   echo "Invalid docker build image: '$1'"
-   exit 1
- fi
+diff --git b/.github/workflows/test-discourse.yaml.yml a/.github/workflows/test-discourse.yaml.yml
+index fadaec4eaa..90a0759f60 100644
+--- b/.github/workflows/test-discourse.yaml.yml
++++ a/.github/workflows/test-discourse.yaml.yml
+@@ -1,7 +1,7 @@
+ name: Debug Discourse Posting
  
--export DOCKER_REGISTRY=ghcr.io/sunnypilot
-+export DOCKER_REGISTRY=ghcr.io/intelli
- export COMMIT_SHA=$(git rev-parse HEAD)
+ on:
+-  push:
++  workflow_dispatch:
  
- TAG_SUFFIX=$2
+ jobs:
+   test-discourse-post:
+@@ -75,4 +75,4 @@ jobs:
+         if: always()
+         run: |
+           echo "::notice::Discourse post test completed"
+-          echo "Check your Discourse topic to verify the post appeared correctly"
+\ No newline at end of file
++          echo "Check your Discourse topic to verify the post appeared correctly"
+diff --git b/release/ci/docker_build_sp.sh a/release/ci/docker_build_sp.sh
+index 369daf5233..820cd2e766 100755
+--- b/release/ci/docker_build_sp.sh
++++ a/release/ci/docker_build_sp.sh
+@@ -4,9 +4,9 @@ set -e
+ SCRIPT_DIR=$(dirname "$0")
+ OPENPILOT_DIR=$SCRIPT_DIR/../../
+ 
+-DOCKER_IMAGE=sunnypilot
++DOCKER_IMAGE=intelli-openpilot-prebuilt
+ DOCKER_FILE=Dockerfile.openpilot
+-DOCKER_REGISTRY=ghcr.io/sunnypilot
++DOCKER_REGISTRY=ghcr.io/intelli
+ COMMIT_SHA=$(git rev-parse HEAD)
+ 
+ if [ -n "$TARGET_ARCHITECTURE" ]; then
 diff --git b/release/ci/publish.sh a/release/ci/publish.sh
 index 315ae22bfe..f81e0c7fc7 100755
 --- b/release/ci/publish.sh

@@ -16,8 +16,8 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.system.hardware.hw import Paths
 
 from cereal import messaging, custom
-from sunnypilot.models.fetcher import ModelFetcher
-from sunnypilot.models.helpers import verify_file, get_active_bundle
+from openpilot.sunnypilot.models.fetcher import ModelFetcher
+from openpilot.sunnypilot.models.helpers import verify_file, get_active_bundle
 
 
 class ModelManagerSP:
@@ -62,6 +62,9 @@ class ModelManagerSP:
           async for chunk in response.content.iter_chunked(self._chunk_size):  # type: bytes
             f.write(chunk)
             bytes_downloaded += len(chunk)
+
+            if not self.params.get("ModelManager_DownloadIndex"):
+              raise Exception("Download cancelled")
 
             if total_size > 0:
               progress = (bytes_downloaded / total_size) * 100
@@ -161,33 +164,14 @@ class ModelManagerSP:
 
   def main_thread(self) -> None:
     """Main thread for model management"""
-    ACTIVE_RATE_HZ = 1.0
-    IDLE_RATE_HZ = 0.1
-    rk = Ratekeeper(ACTIVE_RATE_HZ, print_delay_threshold=None)
-    last_screen_off = False
-    last_is_offroad = False
-    last_ignition = False
-    low_power_loop = False
-
-    def refresh_rate(target_hz):
-      nonlocal rk
-      rk = Ratekeeper(target_hz, print_delay_threshold=None)
+    rk = Ratekeeper(1, print_delay_threshold=None)
 
     while True:
       try:
-        screen_off = self.params.get_bool("ScreenOff")
-        is_offroad = self.params.get_bool("IsOffroad")
-        ignition = self.params.get_bool("IsOnroad")
-
-        desired_low_power = screen_off and is_offroad and not ignition
-        if desired_low_power != low_power_loop:
-          low_power_loop = desired_low_power
-          refresh_rate(IDLE_RATE_HZ if low_power_loop else ACTIVE_RATE_HZ)
-
         self.available_models = self.model_fetcher.get_available_bundles()
         self.active_bundle = get_active_bundle(self.params)
 
-        if index_to_download := self.params.get("ModelManager_DownloadIndex"):
+        if (index_to_download := self.params.get("ModelManager_DownloadIndex")) is not None:
           if model_to_download := next((model for model in self.available_models if model.index == index_to_download), None):
             try:
               self.download(model_to_download, Paths.model_root())
@@ -195,6 +179,7 @@ class ModelManagerSP:
               cloudlog.exception(e)
             finally:
               self.params.remove("ModelManager_DownloadIndex")
+              self.selected_bundle = None
 
         if self.params.get("ModelManager_ClearCache"):
             self.clear_model_cache()

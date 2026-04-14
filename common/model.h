@@ -1,1 +1,1 @@
-#define DEFAULT_MODEL "Firehose (Default)"
+#define DEFAULT_MODEL "OP Model (Default)"

@@ -1,5 +1,5 @@
 diff --git b/selfdrive/selfdrived/selfdrived.py a/selfdrive/selfdrived/selfdrived.py
-index 170e184629..33e5357541 100755
+index 94d73392ad..6795c36e1b 100755
 --- b/selfdrive/selfdrived/selfdrived.py
 +++ a/selfdrive/selfdrived/selfdrived.py
 @@ -14,6 +14,7 @@ from openpilot.common.realtime import config_realtime_process, Priority, Ratekee
@@ -10,7 +10,7 @@ index 170e184629..33e5357541 100755
  from openpilot.selfdrive.car.car_specific import CarSpecificEvents
  from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
  from openpilot.selfdrive.selfdrived.events import Events, ET
-@@ -147,6 +148,10 @@ class SelfdriveD(CruiseHelper):
+@@ -157,6 +158,10 @@ class SelfdriveD(CruiseHelper):
      elif self.CP.secOcRequired and not self.CP.secOcKeyAvailable:
        self.startup_event = EventName.startupNoSecOcKey
  
@@ -21,24 +21,36 @@ index 170e184629..33e5357541 100755
      if not car_recognized:
        self.events.add(EventName.carUnrecognized, static=True)
        set_offroad_alert("Offroad_CarUnrecognized", True)
-diff --git b/selfdrive/ui/qt/util.cc a/selfdrive/ui/qt/util.cc
-index 9af76e4aea..6553d6de5a 100644
---- b/selfdrive/ui/qt/util.cc
-+++ a/selfdrive/ui/qt/util.cc
-@@ -27,7 +27,7 @@ QString getVersion() {
- }
+diff --git b/selfdrive/ui/layouts/home.py a/selfdrive/ui/layouts/home.py
+index be231dcd4b..161f78584a 100644
+--- b/selfdrive/ui/layouts/home.py
++++ a/selfdrive/ui/layouts/home.py
+@@ -228,6 +228,6 @@ class HomeLayout(Widget):
+     self._prev_alerts_present = alerts_present
  
- QString getBrand() {
--  return QObject::tr("sunnypilot");
-+  return QObject::tr("sunnypilot - EV9 Edition");
- }
+   def _get_version_text(self) -> str:
+-    brand = "sunnypilot"
++    brand = "sunnypilot - EV9 Edition"
+     description = self.params.get("UpdaterCurrentDescription")
+     return f"{brand} {description}" if description else brand
+diff --git b/selfdrive/ui/mici/layouts/home.py a/selfdrive/ui/mici/layouts/home.py
+index 8200089c28..3ae6718716 100644
+--- b/selfdrive/ui/mici/layouts/home.py
++++ a/selfdrive/ui/mici/layouts/home.py
+@@ -103,7 +103,7 @@ class MiciHomeLayout(Widget):
+       self._mic_icon,
+     ], spacing=18)
  
- QString getUserAgent() {
+-    self._openpilot_label = UnifiedLabel("sunnypilot", font_size=96, font_weight=FontWeight.DISPLAY, max_width=480, wrap_text=False)
++    self._openpilot_label = UnifiedLabel("sunnypilot - EV9 Edition", font_size=96, font_weight=FontWeight.DISPLAY, max_width=480, wrap_text=False)
+     self._version_label = UnifiedLabel("", font_size=36, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
+     self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
+     self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
 diff --git b/system/ui/spinner.py a/system/ui/spinner.py
-index dd7fadc538..8684883c44 100755
+index 33f4543c3e..6c70b9241d 100755
 --- b/system/ui/spinner.py
 +++ a/system/ui/spinner.py
-@@ -74,6 +74,11 @@ class Spinner(Widget):
+@@ -81,6 +81,11 @@ class Spinner(Widget):
  
        bar.width *= self._progress / 100.0
        rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
