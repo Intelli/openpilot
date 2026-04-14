@@ -1,5 +1,5 @@
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 35a7bc3bc4..4803a83947 100644
+index 35a7bc3bc4..77b3d6f780 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -71,11 +71,10 @@ index 35a7bc3bc4..4803a83947 100644
      {"ModelRunnerTypeCache", {CLEAR_ON_ONROAD_TRANSITION, INT}},
      {"OffroadMode", {CLEAR_ON_MANAGER_START, BOOL}},
      {"Offroad_TiciSupport", {CLEAR_ON_MANAGER_START, JSON}},
-@@ -175,13 +182,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
-     {"OnroadScreenOffTimer", {PERSISTENT | BACKUP, INT, "15"}},
+@@ -176,12 +183,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"OnroadScreenOffTimerMigrated", {PERSISTENT | BACKUP, STRING, "0.0"}},
      {"OnroadUploads", {PERSISTENT | BACKUP, BOOL, "1"}},
--    {"QuickBootToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
+     {"QuickBootToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
 +    {"UsePrebuiltToggle", {PERSISTENT | BACKUP, BOOL, "1"}},
 +    {"QuickBootPendingRebuild", {PERSISTENT | BACKUP, BOOL, "0"}},
      {"QuietMode", {PERSISTENT | BACKUP, BOOL, "0"}},
@@ -90,7 +89,7 @@ index 35a7bc3bc4..4803a83947 100644
      {"TrueVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},
  
      // MADS params
-@@ -224,15 +232,15 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -224,15 +233,15 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"ToyotaStopAndGoHack", {PERSISTENT | BACKUP, BOOL, "0"}},
  
      {"DynamicExperimentalControl", {PERSISTENT | BACKUP, BOOL, "0"}},
@@ -109,7 +108,7 @@ index 35a7bc3bc4..4803a83947 100644
      {"PlanplusControl", {PERSISTENT | BACKUP, FLOAT, "1.0"}},
  
      // mapd
-@@ -254,13 +262,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -254,13 +263,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"OsmStateTitle", {PERSISTENT, STRING}},
      {"OsmWayTest", {PERSISTENT, STRING}},
      {"RoadName", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
@@ -126,7 +125,7 @@ index 35a7bc3bc4..4803a83947 100644
  
      // Smart Cruise Control
      {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
-@@ -276,4 +284,12 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -276,4 +285,12 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"TorqueParamsOverrideEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
      {"TorqueParamsOverrideFriction", {PERSISTENT | BACKUP, FLOAT, "0.1"}},
      {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
