@@ -417,16 +417,31 @@ class SelfdriveD(CruiseHelper):
       self.last_steering_pressed_frame = self.sm.frame
     recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
     controlstate = self.sm['controlsState']
-    lac = getattr(controlstate.lateralControlState, controlstate.lateralControlState.which())
+    lateral_control_state = controlstate.lateralControlState.which()
+    lac = getattr(controlstate.lateralControlState, lateral_control_state)
     if lac.active and not recent_steer_pressed and not self.CP.notCar:
       clipped_speed = max(CS.vEgo, 0.3)
       actual_lateral_accel = controlstate.curvature * (clipped_speed**2)
       desired_lateral_accel = self.sm['modelV2'].action.desiredCurvature * (clipped_speed**2)
       undershooting = abs(desired_lateral_accel) / abs(1e-3 + actual_lateral_accel) > 1.2
       turning = abs(desired_lateral_accel) > 1.0
+      has_desired_steering_angle = hasattr(lac, "steeringAngleDesiredDeg")
+      desired_steering_angle = abs(getattr(lac, "steeringAngleDesiredDeg", 0.0))
       # TODO: lac.saturated includes speed and other checks, should be pulled out
       if undershooting and turning and lac.saturated:
-        self.events.add(EventName.steerSaturated)
+        # Silence "Turn Exceeds Steering Limit" alert when below custom speed threshold
+        # for controllers exposing steeringAngleDesiredDeg (angle/pid/indi/lqr states).
+        if has_desired_steering_angle:
+          speed_threshold_mps = float(self.params.get("HkgTuningEv9AlertsSpeedKph", return_default=True)) / 3.6
+          if (CS.vEgo > speed_threshold_mps or desired_steering_angle >= 90.0) and desired_steering_angle < 119.9:
+            self.events.add(EventName.steerSaturated)
+
+          # Check for high steering angle saturation
+          if desired_steering_angle >= 119.9:
+            self.events.add(EventName.steerSaturated)
+        else:
+          # Keep previous behavior for states without steeringAngleDesiredDeg (e.g. torqueState).
+          self.events.add(EventName.steerSaturated)
 
     # Check for FCW
     stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
