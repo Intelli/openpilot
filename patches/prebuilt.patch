@@ -53,7 +53,7 @@ index aeb0f11d84..fe8de652b8 100644
      - name: Build and Push docker image
        run: |
 diff --git b/.github/workflows/sunnypilot-build-prebuilt.yaml a/.github/workflows/sunnypilot-build-prebuilt.yaml
-index 79cb5e3d61..fce9301b8c 100644
+index 79cb5e3d61..fc130b7a46 100644
 --- b/.github/workflows/sunnypilot-build-prebuilt.yaml
 +++ a/.github/workflows/sunnypilot-build-prebuilt.yaml
 @@ -5,18 +5,17 @@ env:
@@ -132,7 +132,7 @@ index 79cb5e3d61..fce9301b8c 100644
      outputs:
        new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
        version: ${{ needs.prepare_strategy.outputs.version }}
-@@ -125,15 +137,32 @@ jobs:
+@@ -125,15 +137,93 @@ jobs:
        - uses: actions/checkout@v4
          with:
            submodules: recursive
@@ -157,6 +157,67 @@ index 79cb5e3d61..fce9301b8c 100644
 +          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 +          git rev-parse --is-inside-work-tree
 +          git lfs pull --exclude="auto-lock/lock-closed-white.*" --include=""
++
++      - name: Ensure vendored Python deps for SCons
++        shell: bash
++        run: |
++          cd "$GITHUB_WORKSPACE"
++          python3 - <<'PY'
++          import importlib.util
++          import shutil
++          import subprocess
++          import sys
++          import tomllib
++          from pathlib import Path
++
++          pkg_names = ['bzip2', 'capnproto', 'eigen', 'ffmpeg', 'libjpeg', 'libyuv', 'ncurses', 'zeromq', 'zstd', 'libusb', 'imgui']
++          missing = [name for name in pkg_names if importlib.util.find_spec(name) is None]
++          if not missing:
++            print("All vendored Python deps already available.")
++            raise SystemExit(0)
++
++          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
++          deps = list(pyproject["project"]["dependencies"])
++          optional_deps = pyproject["project"].get("optional-dependencies", {})
++          for optional_group in optional_deps.values():
++            deps.extend(optional_group)
++          dep_map = {}
++          for dep in deps:
++            if " @ " in dep:
++              dep_name = dep.split(" @ ", 1)[0].strip()
++              dep_map[dep_name] = dep
++
++          specs = []
++          unresolved = []
++          for name in missing:
++            spec = dep_map.get(name)
++            if spec is None:
++              unresolved.append(name)
++            else:
++              specs.append(spec)
++
++          if unresolved:
++            raise RuntimeError(f"Missing dependency specs in pyproject.toml for: {', '.join(unresolved)}")
++
++          print(f"Installing missing vendored deps: {', '.join(missing)}")
++          pyexe = sys.executable
++          uv = shutil.which("uv")
++          if uv:
++            # uv can install into a target interpreter even when pip isn't bootstrapped there.
++            subprocess.check_call([uv, "pip", "install", "--python", pyexe, *specs])
++            raise SystemExit(0)
++
++          def has_pip(exe: str) -> bool:
++            return subprocess.call([exe, "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
++
++          if not has_pip(pyexe):
++            if importlib.util.find_spec("ensurepip") is None:
++              raise RuntimeError("pip is unavailable and ensurepip is not present; install uv or provide pip in the runner image")
++            subprocess.check_call([pyexe, "-m", "ensurepip", "--upgrade"])
++
++          subprocess.check_call([pyexe, "-m", "pip", "install", "--upgrade", "pip"])
++          subprocess.check_call([pyexe, "-m", "pip", "install", *specs])
++          PY
  
        - name: Cache SCons
          uses: actions/cache@v4
@@ -167,7 +228,7 @@ index 79cb5e3d61..fce9301b8c 100644
            # Note: GitHub Actions enforces cache isolation between different build sources (PR builds, workflow dispatches, etc.)
            #   for security. Only caches from the default branch are shared across all builds. This is by design and cannot be overridden.
            restore-keys: |
-@@ -143,6 +172,7 @@ jobs:
+@@ -143,6 +233,7 @@ jobs:
  
        - name: Set environment variables
          id: set-env
@@ -175,7 +236,7 @@ index 79cb5e3d61..fce9301b8c 100644
          run: |
            echo "new_branch=${{ needs.prepare_strategy.outputs.new_branch }}" >> $GITHUB_OUTPUT
            echo "version=${{ needs.prepare_strategy.outputs.version }}" >> $GITHUB_OUTPUT
-@@ -161,7 +191,7 @@ jobs:
+@@ -161,7 +252,7 @@ jobs:
        - name: Setup build environment
          run: |
            mkdir -p "${BUILD_DIR}/"
@@ -184,7 +245,7 @@ index 79cb5e3d61..fce9301b8c 100644
            echo "Starting build stage..."
            echo "BUILD_DIR: ${BUILD_DIR}"
            echo "CI_DIR: ${CI_DIR}"
-@@ -169,10 +199,12 @@ jobs:
+@@ -169,10 +260,12 @@ jobs:
            echo "UV_PROJECT_ENVIRONMENT: ${UV_PROJECT_ENVIRONMENT}"
            echo "VIRTUAL_ENV: ${VIRTUAL_ENV}"
            echo "-------"
@@ -199,7 +260,7 @@ index 79cb5e3d61..fce9301b8c 100644
  
        - name: Build Main Project
          run: |
-@@ -180,19 +212,32 @@ jobs:
+@@ -180,19 +273,32 @@ jobs:
            ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
            cd $BUILD_DIR
            sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
@@ -240,7 +301,7 @@ index 79cb5e3d61..fce9301b8c 100644
        - name: Prepare Output
          run: |
            sudo rm -rf ${OUTPUT_DIR}
-@@ -205,20 +250,16 @@ jobs:
+@@ -205,20 +311,16 @@ jobs:
              --exclude='*.pyc' \
              --exclude='moc_*' \
              --exclude='__pycache__' \
@@ -264,7 +325,7 @@ index 79cb5e3d61..fce9301b8c 100644
              --delete-excluded \
              --chown=comma:comma \
              ${BUILD_DIR}/ ${OUTPUT_DIR}/
-@@ -237,7 +278,9 @@ jobs:
+@@ -237,7 +339,9 @@ jobs:
        - name: Re-enable powersave
          if: always()
          run: |
@@ -275,7 +336,7 @@ index 79cb5e3d61..fce9301b8c 100644
  
  
    publish:
-@@ -276,12 +319,17 @@ jobs:
+@@ -276,12 +380,17 @@ jobs:
            echo '${{ toJSON(needs.build.outputs) }}'
            ls -la ${{ env.OUTPUT_DIR }}
  
@@ -294,7 +355,7 @@ index 79cb5e3d61..fce9301b8c 100644
              "${{ needs.build.outputs.extra_version_identifier }}"
  
            echo ""
-@@ -298,53 +346,6 @@ jobs:
+@@ -298,53 +407,6 @@ jobs:
              git tag -f -a ${TAG} -m "${{ needs.prepare_strategy.outputs.environment }} @ ${{ needs.prepare_strategy.outputs.version }} of build ${{ needs.build.outputs.build }}."
              git push -f origin ${TAG}
  
