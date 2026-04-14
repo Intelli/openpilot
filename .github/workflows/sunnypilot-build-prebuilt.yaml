@@ -158,6 +158,48 @@ jobs:
           git rev-parse --is-inside-work-tree
           git lfs pull --exclude="auto-lock/lock-closed-white.*" --include=""
 
+      - name: Ensure vendored Python deps for SCons
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import importlib.util
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          pkg_names = ['bzip2', 'capnproto', 'eigen', 'ffmpeg', 'libjpeg', 'libyuv', 'ncurses', 'zeromq', 'zstd']
+          missing = [name for name in pkg_names if importlib.util.find_spec(name) is None]
+          if not missing:
+            print("All vendored Python deps already available.")
+            raise SystemExit(0)
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          deps = pyproject["project"]["dependencies"]
+          dep_map = {}
+          for dep in deps:
+            if " @ " in dep:
+              dep_name = dep.split(" @ ", 1)[0].strip()
+              dep_map[dep_name] = dep
+
+          specs = []
+          unresolved = []
+          for name in missing:
+            spec = dep_map.get(name)
+            if spec is None:
+              unresolved.append(name)
+            else:
+              specs.append(spec)
+
+          if unresolved:
+            raise RuntimeError(f"Missing dependency specs in pyproject.toml for: {', '.join(unresolved)}")
+
+          print(f"Installing missing vendored deps: {', '.join(missing)}")
+          subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
+          subprocess.check_call([sys.executable, "-m", "pip", "install", *specs])
+          PY
+
       - name: Cache SCons
         uses: actions/cache@v4
         with:
