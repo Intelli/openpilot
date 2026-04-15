@@ -47,7 +47,7 @@ index 8200089c28..3ae6718716 100644
      self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
      self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
 diff --git b/system/ui/spinner.py a/system/ui/spinner.py
-index 33f4543c3e..33a9e65f8f 100755
+index 33f4543c3e..4c9303dbeb 100755
 --- b/system/ui/spinner.py
 +++ a/system/ui/spinner.py
 @@ -3,7 +3,7 @@ import pyray as rl
@@ -65,7 +65,7 @@ index 33f4543c3e..33a9e65f8f 100755
    PROGRESS_BAR_HEIGHT = 20
 +  EDITION_FONT_SIZE = 72
 +  EDITION_TEXT_SPACING = 36
-+  EDITION_X_OFFSET = 1.0
++  EDITION_X_OFFSET = 2.0
    TEXTURE_SIZE = 360
    WRAPPED_SPACING = 50
    CENTERED_SPACING = 150
