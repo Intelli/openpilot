@@ -47,7 +47,7 @@ index 8200089c28..3ae6718716 100644
      self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
      self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
 diff --git b/system/ui/spinner.py a/system/ui/spinner.py
-index 33f4543c3e..16f9521a8e 100755
+index 33f4543c3e..f5201eb6c8 100755
 --- b/system/ui/spinner.py
 +++ a/system/ui/spinner.py
 @@ -3,7 +3,7 @@ import pyray as rl
@@ -55,17 +55,16 @@ index 33f4543c3e..16f9521a8e 100755
  import sys
  
 -from openpilot.system.ui.lib.application import gui_app
-+from openpilot.system.ui.lib.application import FontWeight, gui_app
++from openpilot.system.ui.lib.application import FONT_SCALE, FontWeight, font_fallback, gui_app
  from openpilot.system.ui.lib.text_measure import measure_text_cached
  from openpilot.system.ui.text import wrap_text
  from openpilot.system.ui.widgets import Widget
-@@ -12,12 +12,18 @@ from openpilot.system.ui.widgets import Widget
+@@ -12,12 +12,16 @@ from openpilot.system.ui.widgets import Widget
  if gui_app.big_ui():
    PROGRESS_BAR_WIDTH = 1000
    PROGRESS_BAR_HEIGHT = 20
 +  EDITION_FONT_SIZE = 72
 +  EDITION_TEXT_SPACING = 36
-+  EDITION_X_OFFSET = 1.0
    TEXTURE_SIZE = 360
    WRAPPED_SPACING = 50
    CENTERED_SPACING = 150
@@ -74,39 +73,48 @@ index 33f4543c3e..16f9521a8e 100755
    PROGRESS_BAR_HEIGHT = 10
 +  EDITION_FONT_SIZE = 40
 +  EDITION_TEXT_SPACING = 18
-+  EDITION_X_OFFSET = 0.0
    TEXTURE_SIZE = 140
    WRAPPED_SPACING = 10
    CENTERED_SPACING = 20
-@@ -37,6 +43,7 @@ class Spinner(Widget):
+@@ -32,11 +36,21 @@ def clamp(value, min_value, max_value):
+   return max(min(value, max_value), min_value)
+ 
+ 
++def _draw_text_centered_x(font: rl.Font, text: str, center_x: float, y: float, font_size: int, color: rl.Color):
++  # Measure and draw with the exact same resolved font path to avoid width/render mismatches.
++  resolved_font = font_fallback(font)
++  text_width = rl.measure_text_ex(resolved_font, text, font_size * FONT_SCALE, 0.0).x
++  x = center_x - text_width / 2.0
++  rl.draw_text_ex(resolved_font, text, rl.Vector2(x, y), font_size, 0.0, color)
++
++
+ class Spinner(Widget):
+   def __init__(self):
      super().__init__()
      self._comma_texture = gui_app.texture("../../sunnypilot/selfdrive/assets/images/spinner_sunnypilot.png", TEXTURE_SIZE, TEXTURE_SIZE)
      self._spinner_texture = gui_app.texture("images/spinner_track.png", TEXTURE_SIZE, TEXTURE_SIZE, alpha_premultiply=True)
 +    self._edition_font = gui_app.font(FontWeight.AUDIOWIDE)
++    rl.set_texture_filter(self._edition_font.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
      self._rotation = 0.0
      self._progress: int | None = None
      self._wrapped_lines: list[str] = []
-@@ -76,11 +83,18 @@ class Spinner(Widget):
+@@ -76,11 +90,15 @@ class Spinner(Widget):
  
      # Display the progress bar or text based on user input
      if self._progress is not None:
 -      bar = rl.Rectangle(center.x - PROGRESS_BAR_WIDTH / 2.0, y_pos, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT)
 -      rl.draw_rectangle_rounded(bar, 1, 10, DARKGRAY)
--
--      bar.width *= self._progress / 100.0
--      rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
 +      bar_bg = rl.Rectangle(center.x - PROGRESS_BAR_WIDTH / 2.0, y_pos, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT)
 +      rl.draw_rectangle_rounded(bar_bg, 1, 10, DARKGRAY)
 +
 +      bar_fill = rl.Rectangle(bar_bg.x, bar_bg.y, bar_bg.width * self._progress / 100.0, bar_bg.height)
 +      rl.draw_rectangle_rounded(bar_fill, 1, 10, rl.WHITE)
-+
+ 
+-      bar.width *= self._progress / 100.0
+-      rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
 +      edition_text = "EV9 Edition"
-+      edition_width = measure_text_cached(self._edition_font, edition_text, EDITION_FONT_SIZE).x
-+      edition_center_x = bar_bg.x + bar_bg.width / 2.0 + EDITION_X_OFFSET
-+      edition_x = edition_center_x - edition_width / 2.0
 +      edition_y = y_pos + PROGRESS_BAR_HEIGHT + EDITION_TEXT_SPACING
-+      rl.draw_text_ex(self._edition_font, edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
++      _draw_text_centered_x(self._edition_font, edition_text, bar_bg.x + bar_bg.width / 2.0, edition_y, EDITION_FONT_SIZE, rl.WHITE)
      elif self._wrapped_lines:
        for i, line in enumerate(self._wrapped_lines):
          text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)
