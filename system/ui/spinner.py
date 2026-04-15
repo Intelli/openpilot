@@ -14,6 +14,7 @@ if gui_app.big_ui():
   PROGRESS_BAR_HEIGHT = 20
   EDITION_FONT_SIZE = 72
   EDITION_TEXT_SPACING = 36
+  EDITION_X_OFFSET = 1.0
   TEXTURE_SIZE = 360
   WRAPPED_SPACING = 50
   CENTERED_SPACING = 150
@@ -22,6 +23,7 @@ else:
   PROGRESS_BAR_HEIGHT = 10
   EDITION_FONT_SIZE = 40
   EDITION_TEXT_SPACING = 18
+  EDITION_X_OFFSET = 0.0
   TEXTURE_SIZE = 140
   WRAPPED_SPACING = 10
   CENTERED_SPACING = 20
@@ -36,12 +38,11 @@ def clamp(value, min_value, max_value):
   return max(min(value, max_value), min_value)
 
 
-def _draw_text_centered_x(font: rl.Font, text: str, center_x: float, y: float, font_size: int, color: rl.Color):
-  # Measure and draw with the exact same resolved font path to avoid width/render mismatches.
-  resolved_font = font_fallback(font)
-  text_width = rl.measure_text_ex(resolved_font, text, font_size * FONT_SCALE, 0.0).x
-  x = center_x - text_width / 2.0
-  rl.draw_text_ex(resolved_font, text, rl.Vector2(x, y), font_size, 0.0, color)
+def _measure_text_width_safe(font: rl.Font, text: str, font_size: int) -> float:
+  width = rl.measure_text_ex(font, text, font_size * FONT_SCALE, 0.0).x
+  if width <= 0 or width > PROGRESS_BAR_WIDTH * 4.0:
+    width = len(text) * font_size * FONT_SCALE * 0.62
+  return width
 
 
 class Spinner(Widget):
@@ -98,7 +99,11 @@ class Spinner(Widget):
 
       edition_text = "EV9 Edition"
       edition_y = y_pos + PROGRESS_BAR_HEIGHT + EDITION_TEXT_SPACING
-      _draw_text_centered_x(self._edition_font, edition_text, bar_bg.x + bar_bg.width / 2.0, edition_y, EDITION_FONT_SIZE, rl.WHITE)
+      edition_font = font_fallback(self._edition_font)
+      edition_width = _measure_text_width_safe(edition_font, edition_text, EDITION_FONT_SIZE)
+      edition_center_x = bar_bg.x + bar_bg.width / 2.0 + EDITION_X_OFFSET
+      edition_x = edition_center_x - edition_width / 2.0
+      rl.draw_text_ex(edition_font, edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
     elif self._wrapped_lines:
       for i, line in enumerate(self._wrapped_lines):
         text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)

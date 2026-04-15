@@ -148,7 +148,10 @@ class ModelRendererSP:
 
     if force_panel_visible:
       self.centering_panel_visible_state = True
-      self.centering_panel_request_active = False
+      # Keep request state primed so we don't briefly hide when transitioning
+      # from force-visible ("Adjusting") to normal panel states.
+      self.centering_panel_request_active = True
+      self.centering_panel_request_start = now - CENTERING_PANEL_MIN_VISIBLE_S
       self.centering_panel_visible = True
     else:
       if panel_request_now:
@@ -225,7 +228,7 @@ class ModelRendererSP:
       if not display_offset_valid and not self.centering_adjusting_display and not self.centering_edge_mode:
         primary_text = "Center Unknown"
       elif show_centered:
-        primary_text = "Maintaining Center" if self.centering_status_active else "Centered"
+        primary_text = "Maintaining Center" if self.centering_adjusting_display else "Centered"
       elif use_edge_mode and (self.centering_adjusting_display or self.centering_edge_mode):
         if correction_sign > 0.0:
           primary_text = f"Adjusting Right ({feature_text})"
