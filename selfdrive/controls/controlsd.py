@@ -85,6 +85,30 @@ CENTERING_BOUNCE_MIN_PEAK_M = 0.035
 CENTERING_RECENT_CENTER_THRESHOLD_M = 0.03
 CENTERING_RECENT_CENTER_REENGAGE_M = 0.045
 CENTERING_RECENT_CENTER_HOLD_S = 3.0
+CENTERING_PACE_INITIAL_HOLD_S = 0.8
+CENTERING_PACE_CROSS_HOLD_S = 1.0
+CENTERING_PACE_WALL_SCALE = 0.45
+CENTERING_PACE_WALL_MIN_M = 0.010
+CENTERING_PACE_WALL_MAX_M = 0.030
+CENTERING_PACE_MIN_COMMAND_M = 0.008
+CENTERING_PACE_INIT_COMMAND_M = 0.020
+CENTERING_PACE_MAX_COMMAND_M = 0.220
+CENTERING_PACE_ERR_IMPROVE_M = 0.004
+CENTERING_PACE_AWAY_STEP_BASE_M = 0.004
+CENTERING_PACE_AWAY_STEP_GAIN_M = 0.012
+CENTERING_PACE_TOWARD_STEP_BASE_M = 0.0015
+CENTERING_PACE_TOWARD_STEP_GAIN_M = 0.004
+CENTERING_PACE_TOUCH_CENTER_M = 0.012
+CENTERING_PACE_CROSS_CENTER_M = 0.020
+CENTERING_PACE_TOUCH_RELAX_STEP_M = 0.003
+CENTERING_PACE_CROSS_RELAX_STEP_M = 0.008
+CENTERING_PACE_BOUNCE_RELAX_STEP_M = 0.004
+CENTERING_PACE_BOUNCE_INTERVAL_MIN_S = 1.0
+CENTERING_PACE_INTERVAL_MIN_S = 0.50
+CENTERING_PACE_INTERVAL_MAX_S = 1.40
+CENTERING_PACE_INTERVAL_REF_M = 0.22
+CENTERING_PACE_AWAY_INTERVAL_MAX_S = 0.60
+CENTERING_PACE_TOWARD_INTERVAL_MIN_S = 0.80
 
 LANE_CENTERING_SOURCE_MAP = {
   None: LaneCenteringSourceEnum.none,
@@ -152,6 +176,14 @@ class Controls(ControlsExt):
     self.centering_bounce_active = False
     self.centering_bounce_count = 0
     self._within_center_last_ts = 0.0
+    self._paced_centering_active = False
+    self._paced_centering_sign = 0
+    self._paced_centering_command_m = 0.0
+    self._paced_centering_wall_target_m = 0.0
+    self._paced_centering_last_error_m = None
+    self._paced_centering_last_eval_ts = 0.0
+    self._paced_centering_next_eval_ts = 0.0
+    self._paced_centering_hold_until_ts = 0.0
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -278,22 +310,32 @@ class Controls(ControlsExt):
           centering_source = None
           target_offset_m = 0.0
           self._centering_target_filtered = 0.0
+          self._reset_paced_centering()
           centering_released = True
         if centering_available:
           target_mode = "lane"
           filtered_target = self._filter_centering_target(lane_offset_raw)
           target_offset_m, centering_available, centering_released = self._apply_offset_hysteresis(filtered_target, True)
+          if centering_available:
+            target_offset_m = self._update_paced_centering_target(lane_offset_raw, target_offset_m)
+          else:
+            self._reset_paced_centering()
         elif edge_active:
           target_mode = "edge"
           filtered_target = self._filter_centering_target(edge_offset_raw)
           target_offset_m, centering_available, _ = self._apply_offset_hysteresis(filtered_target, True)
           edge_clearance_active = centering_available
+          self._reset_paced_centering()
           centering_released = False
         else:
           self._centering_target_filtered = 0.0
+          self._reset_paced_centering()
+      else:
+        self._reset_paced_centering()
     else:
       self._record_centering_measurements(None, None, None)
       self._update_deadband_thresholds()
+      self._reset_paced_centering()
       history_refreshed = True
 
     if not CC.latActive:
@@ -310,6 +352,7 @@ class Controls(ControlsExt):
       self.centering_valid = False
       self.centering_display_offset = 0.0
       self.centering_adjusting = False
+      self._reset_paced_centering()
       if not history_refreshed:
         self._record_centering_measurements(None, None, None)
         self._update_deadband_thresholds()
@@ -432,6 +475,7 @@ class Controls(ControlsExt):
       self.centering_valid = False
       self.centering_display_offset = 0.0
       self.centering_adjusting = False
+      self._reset_paced_centering()
 
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
@@ -687,6 +731,116 @@ class Controls(ControlsExt):
 
     locked_sign = self._centering_lock_sign if self._centering_lock_sign != 0 else desired_sign
     return locked_sign * magnitude, True, False
+
+  def _reset_paced_centering(self) -> None:
+    self._paced_centering_active = False
+    self._paced_centering_sign = 0
+    self._paced_centering_command_m = 0.0
+    self._paced_centering_wall_target_m = 0.0
+    self._paced_centering_last_error_m = None
+    self._paced_centering_last_eval_ts = 0.0
+    self._paced_centering_next_eval_ts = 0.0
+    self._paced_centering_hold_until_ts = 0.0
+
+  @staticmethod
+  def _paced_wall_target(sign: int, measured_offset_m: float) -> float:
+    wall_mag = abs(measured_offset_m) * CENTERING_PACE_WALL_SCALE
+    wall_mag = max(CENTERING_PACE_WALL_MIN_M, min(CENTERING_PACE_WALL_MAX_M, wall_mag))
+    return float(sign) * wall_mag
+
+  @staticmethod
+  def _paced_eval_interval(error_abs_m: float, drifting_away: bool, drifting_toward: bool, bounce_active: bool) -> float:
+    far_ratio = min(1.0, max(0.0, error_abs_m / max(CENTERING_PACE_INTERVAL_REF_M, 1e-3)))
+    interval_s = CENTERING_PACE_INTERVAL_MAX_S - (CENTERING_PACE_INTERVAL_MAX_S - CENTERING_PACE_INTERVAL_MIN_S) * far_ratio
+
+    if drifting_away:
+      interval_s = min(interval_s, CENTERING_PACE_AWAY_INTERVAL_MAX_S)
+    elif drifting_toward:
+      interval_s = max(interval_s, CENTERING_PACE_TOWARD_INTERVAL_MIN_S)
+
+    if bounce_active:
+      interval_s = max(interval_s, CENTERING_PACE_BOUNCE_INTERVAL_MIN_S)
+
+    return max(CENTERING_PACE_INTERVAL_MIN_S, min(CENTERING_PACE_INTERVAL_MAX_S, interval_s))
+
+  def _update_paced_centering_target(self, lane_offset_raw_m: float, locked_target_m: float) -> float:
+    sign = 0
+    if locked_target_m > 0.0:
+      sign = 1
+    elif locked_target_m < 0.0:
+      sign = -1
+    if sign == 0:
+      self._reset_paced_centering()
+      return 0.0
+
+    now = time.monotonic()
+    wall_target_m = self._paced_wall_target(sign, lane_offset_raw_m)
+    error_m = lane_offset_raw_m - wall_target_m
+    error_abs = abs(error_m)
+
+    if not self._paced_centering_active or self._paced_centering_sign != sign:
+      far_ratio = min(1.0, max(0.0, error_abs / max(CENTERING_PACE_INTERVAL_REF_M, 1e-3)))
+      init_command_mag = CENTERING_PACE_INIT_COMMAND_M + 0.02 * far_ratio
+      init_command_mag = max(CENTERING_PACE_MIN_COMMAND_M, min(CENTERING_PACE_MAX_COMMAND_M, init_command_mag))
+      self._paced_centering_active = True
+      self._paced_centering_sign = sign
+      self._paced_centering_command_m = float(sign) * init_command_mag
+      self._paced_centering_wall_target_m = wall_target_m
+      self._paced_centering_last_error_m = error_m
+      self._paced_centering_last_eval_ts = now
+      self._paced_centering_hold_until_ts = now + CENTERING_PACE_INITIAL_HOLD_S
+      self._paced_centering_next_eval_ts = self._paced_centering_hold_until_ts
+      return self._paced_centering_command_m
+
+    # Keep the wall target stable but responsive to sustained drift changes.
+    self._paced_centering_wall_target_m += 0.25 * (wall_target_m - self._paced_centering_wall_target_m)
+    error_m = lane_offset_raw_m - self._paced_centering_wall_target_m
+    error_abs = abs(error_m)
+
+    if now < self._paced_centering_next_eval_ts:
+      return self._paced_centering_command_m
+
+    last_error = self._paced_centering_last_error_m
+    if last_error is None:
+      last_error = error_m
+    last_abs = abs(last_error)
+    improve = last_abs - error_abs
+    drifting_toward = improve > CENTERING_PACE_ERR_IMPROVE_M
+    drifting_away = improve < -CENTERING_PACE_ERR_IMPROVE_M
+
+    signed_offset = lane_offset_raw_m * float(sign)
+    touched_or_crossed = signed_offset <= CENTERING_PACE_TOUCH_CENTER_M
+    crossed_center = signed_offset <= -CENTERING_PACE_CROSS_CENTER_M
+
+    command_abs = abs(self._paced_centering_command_m)
+    far_ratio = min(1.0, max(0.0, error_abs / max(CENTERING_PACE_INTERVAL_REF_M, 1e-3)))
+    allow_increase = now >= self._paced_centering_hold_until_ts
+
+    if crossed_center:
+      command_abs = max(CENTERING_PACE_MIN_COMMAND_M, command_abs - CENTERING_PACE_CROSS_RELAX_STEP_M)
+      self._paced_centering_hold_until_ts = now + CENTERING_PACE_CROSS_HOLD_S
+    elif touched_or_crossed:
+      command_abs = max(CENTERING_PACE_MIN_COMMAND_M, command_abs - CENTERING_PACE_TOUCH_RELAX_STEP_M)
+    elif drifting_away and allow_increase:
+      command_abs += CENTERING_PACE_AWAY_STEP_BASE_M + CENTERING_PACE_AWAY_STEP_GAIN_M * far_ratio
+    elif drifting_toward:
+      close_ratio = 1.0 - far_ratio
+      command_abs -= CENTERING_PACE_TOWARD_STEP_BASE_M + CENTERING_PACE_TOWARD_STEP_GAIN_M * close_ratio
+
+    if self.centering_bounce_active:
+      command_abs = max(CENTERING_PACE_MIN_COMMAND_M, command_abs - CENTERING_PACE_BOUNCE_RELAX_STEP_M)
+
+    command_abs = max(CENTERING_PACE_MIN_COMMAND_M, min(CENTERING_PACE_MAX_COMMAND_M, command_abs))
+    self._paced_centering_command_m = float(sign) * command_abs
+
+    next_interval = self._paced_eval_interval(error_abs, drifting_away, drifting_toward, self.centering_bounce_active)
+    if self._paced_centering_hold_until_ts > now:
+      next_interval = max(next_interval, self._paced_centering_hold_until_ts - now)
+
+    self._paced_centering_last_error_m = error_m
+    self._paced_centering_last_eval_ts = now
+    self._paced_centering_next_eval_ts = now + next_interval
+    return self._paced_centering_command_m
 
   def _filter_centering_target(self, target_offset_m: float) -> float:
     alpha = DT_CTRL / (CENTERING_TARGET_FILTER_TC + DT_CTRL)
