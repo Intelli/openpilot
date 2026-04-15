@@ -6,7 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 import pyray as rl
 from openpilot.selfdrive.ui.ui_state import UIStatus
-from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
+from openpilot.selfdrive.ui.sunnypilot.onroad.model_renderer import ModelRendererSP as BaseModelRendererSP
 
 LANE_LINE_COLORS_SP = {
   UIStatus.LAT_ONLY: rl.Color(0, 255, 64, 255),
@@ -14,6 +14,6 @@ LANE_LINE_COLORS_SP = {
 }
 
 
-class ModelRendererSP:
+class ModelRendererSP(BaseModelRendererSP):
   def __init__(self):
-    self.rainbow_path = RainbowPath()
+    super().__init__()
