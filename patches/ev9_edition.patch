@@ -47,7 +47,7 @@ index 8200089c28..3ae6718716 100644
      self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
      self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
 diff --git b/system/ui/spinner.py a/system/ui/spinner.py
-index 33f4543c3e..4c9303dbeb 100755
+index 33f4543c3e..7631eb9c0d 100755
 --- b/system/ui/spinner.py
 +++ a/system/ui/spinner.py
 @@ -3,7 +3,7 @@ import pyray as rl
@@ -65,7 +65,7 @@ index 33f4543c3e..4c9303dbeb 100755
    PROGRESS_BAR_HEIGHT = 20
 +  EDITION_FONT_SIZE = 72
 +  EDITION_TEXT_SPACING = 36
-+  EDITION_X_OFFSET = 2.0
++  EDITION_X_OFFSET = 90.0
    TEXTURE_SIZE = 360
    WRAPPED_SPACING = 50
    CENTERED_SPACING = 150
@@ -119,7 +119,7 @@ index 33f4543c3e..4c9303dbeb 100755
 +      edition_font = font_fallback(self._edition_font)
 +      edition_width = _measure_text_width_safe(edition_font, edition_text, EDITION_FONT_SIZE)
 +      edition_center_x = bar_bg.x + bar_bg.width / 2.0 + EDITION_X_OFFSET
-+      edition_x = edition_center_x - edition_width / 2.0
++      edition_x = round(edition_center_x - edition_width / 2.0)
 +      rl.draw_text_ex(edition_font, edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
      elif self._wrapped_lines:
        for i, line in enumerate(self._wrapped_lines):
