@@ -11,6 +11,20 @@ index 9aa5b3cd01..99b2b17353 100644
      self.use_steer_limited_by_safety = CP.brand in ("tesla", "hyundai")
  
    def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
+diff --git b/selfdrive/selfdrived/events.py a/selfdrive/selfdrived/events.py
+index c8a7833a05..fd5135822e 100755
+--- b/selfdrive/selfdrived/events.py
++++ a/selfdrive/selfdrived/events.py
+@@ -73,6 +73,9 @@ def startup_master_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
+   if "REPLAY" in os.environ:
+     branch = "replay"
+ 
++  if branch == "ev9":
++    return EVENTS[EventName.startup][ET.PERMANENT]
++
+   return StartupAlert("WARNING: This branch is not tested", branch, alert_status=AlertStatus.userPrompt)
+ 
+ def below_engage_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
 diff --git b/selfdrive/selfdrived/selfdrived.py a/selfdrive/selfdrived/selfdrived.py
 index 6795c36e1b..3fb28cec16 100755
 --- b/selfdrive/selfdrived/selfdrived.py
