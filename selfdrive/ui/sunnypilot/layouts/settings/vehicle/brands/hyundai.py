@@ -106,7 +106,7 @@ class HyundaiSettings(BrandSettings):
     self.longitudinal_tuning_item.set_visible(self.alpha_long_available)
 
     shared_autonomy_mode_param = ui_state.params.get("HkgSharedAutonomyMode", return_default=True)
-    shared_autonomy_mode = int(shared_autonomy_mode_param) if shared_autonomy_mode_param is not None else 2
+    shared_autonomy_mode = int(shared_autonomy_mode_param) if shared_autonomy_mode_param is not None else 1
     shared_autonomy_mode = max(0, min(shared_autonomy_mode, 2))
     shared_autonomy_stock_mode = shared_autonomy_mode == 0
     shared_autonomy_descs = [
