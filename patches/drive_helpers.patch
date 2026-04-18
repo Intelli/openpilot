@@ -1,24 +1,27 @@
 diff --git b/cereal/custom.capnp a/cereal/custom.capnp
-index fe3ed9196f..3ecae14282 100644
+index fe3ed9196f..e2b0aa952e 100644
 --- b/cereal/custom.capnp
 +++ a/cereal/custom.capnp
-@@ -351,6 +351,8 @@ struct CarParamsSP @0x80ae746ee2596b11 {
+@@ -351,6 +351,10 @@ struct CarParamsSP @0x80ae746ee2596b11 {
    pcmCruiseSpeed @3 :Bool;
    intelligentCruiseButtonManagementAvailable @4 :Bool;
    enableGasInterceptor @5 :Bool;
 +  hkgTuningAngleCustomLimitMaxSpeedKph @6 :Float32;
 +  hkgTuningAngleOverrideEffortPercent @7 :Float32;
++  hkgSharedAutonomyEnabled @8 :Bool;
++  hkgSharedAutonomyMode @9 :UInt8;
  
    neuralNetworkLateralControl @2 :NeuralNetworkLateralControl;
  
 diff --git b/common/params_keys.h a/common/params_keys.h
-index 77b3d6f780..79dad540b7 100644
+index 77b3d6f780..826589a79a 100644
 --- b/common/params_keys.h
 +++ a/common/params_keys.h
-@@ -287,6 +287,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -287,6 +287,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
      // Tuning keys
      {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
++    {"HkgSharedAutonomyMode", {PERSISTENT | BACKUP, INT, "1"}},
 +    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT | BACKUP, INT, "10"}},
      {"HkgTuningAngleMinTorqueReductionGain", {PERSISTENT | BACKUP, INT, "1"}},
      {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
@@ -83,13 +86,14 @@ index bf6dd04f60..22ff939da6 100644
  
  
 diff --git b/sunnypilot/selfdrive/car/interfaces.py a/sunnypilot/selfdrive/car/interfaces.py
-index e4db6c8e97..90f91943a0 100644
+index e4db6c8e97..a273b3379a 100644
 --- b/sunnypilot/selfdrive/car/interfaces.py
 +++ a/sunnypilot/selfdrive/car/interfaces.py
-@@ -115,6 +115,8 @@ def initialize_params(params) -> list[dict[str, Any]]:
+@@ -115,6 +115,9 @@ def initialize_params(params) -> list[dict[str, Any]]:
    # hyundai
    keys.extend([
      "HyundaiLongitudinalTuning",
++    "HkgSharedAutonomyMode",
 +    "HkgTuningAngleCustomLimitMaxSpeedKph",
 +    "HkgTuningAngleOverrideEffortPercent",
    ])
