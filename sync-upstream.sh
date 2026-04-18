@@ -21,6 +21,8 @@ EXCLUDES=(
   'patches'
   'auto-lock/lock-closed-white.png'
   'auto-lock/lock-closed-white.svg'
+  'selfdrive/assets/sounds/engage_tizi_custom.wav'
+  'selfdrive/assets/sounds/disengage_tizi_custom.wav'
 )
 
 usage() {

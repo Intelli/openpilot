@@ -392,24 +392,6 @@
       }
     ]
   },
-  "HkgSharedAutonomyMode": {
-    "title": "Shared Autonomy",
-    "description": "",
-    "options": [
-      {
-        "value": 0,
-        "label": "Stock"
-      },
-      {
-        "value": 1,
-        "label": "Partial"
-      },
-      {
-        "value": 2,
-        "label": "Disabled"
-      }
-    ]
-  },
   "InstallDate": {
     "title": "Install Date",
     "description": ""
