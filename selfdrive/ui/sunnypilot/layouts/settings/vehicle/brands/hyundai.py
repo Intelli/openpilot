@@ -111,9 +111,10 @@ class HyundaiSettings(BrandSettings):
     shared_autonomy_stock_mode = shared_autonomy_mode == 0
     shared_autonomy_descs = [
       tr("Stock: openpilot can continue lateral control while you manually steer. Steering Override Effort applies in this mode."),
-      tr("Partial: openpilot sends no lateral actuation while strong manual steering override is detected, then resumes immediately on release."),
-      tr("Disabled: openpilot sends no lateral actuation while any manual steering intent is detected " +
-         "(including hands-on steering detection when available), then resumes immediately on release."),
+      tr("Partial: openpilot sends no lateral actuation while steeringPressed is active, then resumes immediately on release."),
+      tr("Disabled: openpilot enters full manual control on steeringPressed, or on hands-on touch with torque input. " +
+         "Touch alone will not trigger override. Manual control stays active until wheel release, or until steering is not pressed " +
+         "and car steering demand stays low for 1 second."),
     ]
     shared_autonomy_base_desc = shared_autonomy_descs[shared_autonomy_mode]
     if not self.has_angle_steering:
