@@ -5,6 +5,10 @@
 - Python import root is `openpilot/` (symlink). Import as `openpilot.<module>`.
 - After clone: `git lfs pull && git submodule update --init --recursive`.
 
+## opendbc Edit Routing
+- For any requested change that targets files under `openpilot/opendbc/`, make the edit in the standalone repo at `/Volumes/2TB/Documents/GitHub/opendbc` instead.
+- Treat paths as mirrored from the `openpilot/opendbc/` root (for example: `openpilot/opendbc/car/hyundai/carcontroller.py` → `/Volumes/2TB/Documents/GitHub/opendbc/car/hyundai/carcontroller.py`).
+
 ## Build, Test, and Development
 - macOS setup: `tools/mac_setup.sh`.
 - Build: `scons -j$(nproc)`; fast dev: `scons --minimal -j$(nproc)`; run: `python3 system/manager/build.py`.
