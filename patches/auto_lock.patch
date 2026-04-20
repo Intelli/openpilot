@@ -1,6 +1,6 @@
 diff --git b/auto-lock/README.md a/auto-lock/README.md
 new file mode 100644
-index 0000000000..60b24aed89
+index 0000000000..bc5468ed9e
 --- /dev/null
 +++ a/auto-lock/README.md
 @@ -0,0 +1,122 @@
@@ -126,10 +126,9 @@ index 0000000000..60b24aed89
 +
 +- **Keep Files Lean**: `kia_lock.py` is large; prefer adding helpers over inlining large code blocks to avoid lint issues.
 +- **Log Carefully**: Debug logs may leak sensitive server payloads. Mask or remove before enabling in production.
-\ No newline at end of file
 diff --git b/auto-lock/kia_lock.py a/auto-lock/kia_lock.py
 new file mode 100644
-index 0000000000..0a3bc34298
+index 0000000000..82ecdfc0e1
 --- /dev/null
 +++ a/auto-lock/kia_lock.py
 @@ -0,0 +1,149 @@
@@ -282,16 +281,16 @@ index 0000000000..0a3bc34298
 +  "_raise_for_status",
 +  "_extract_error_message",
 +]
-\ No newline at end of file
 diff --git b/auto-lock/kia_shared.py a/auto-lock/kia_shared.py
 new file mode 100644
-index 0000000000..83a6a1fe77
+index 0000000000..4230390db2
 --- /dev/null
 +++ a/auto-lock/kia_shared.py
-@@ -0,0 +1,946 @@
+@@ -0,0 +1,956 @@
 +from __future__ import annotations
 +
 +import base64
++import datetime
 +import json
 +import logging
 +import time
@@ -468,10 +467,10 @@ index 0000000000..83a6a1fe77
 +  device_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 +
 +  def has_valid_access_token(self) -> bool:
-+    return bool(self.access_token) and time.time() < self.access_token_expires_at - 10
++    return bool(self.access_token) and time.monotonic() < self.access_token_expires_at - 10
 +
 +  def has_valid_control_token(self) -> bool:
-+    return bool(self.control_token) and time.time() < self.control_token_expires_at - 10
++    return bool(self.control_token) and time.monotonic() < self.control_token_expires_at - 10
 +
 +
 +@dataclass
@@ -533,7 +532,8 @@ index 0000000000..83a6a1fe77
 +    self._app_id = app_id
 +
 +  def __call__(self) -> str:
-+    payload = f"{self._app_id}:{int(time.time() * 1000)}".encode()
++    epoch_ms = int(datetime.datetime.now(datetime.UTC).timestamp() * 1000)
++    payload = f"{self._app_id}:{epoch_ms}".encode()
 +    if len(payload) < len(self._cfb):
 +      payload = payload.ljust(len(self._cfb), b"0")
 +    elif len(payload) > len(self._cfb):
@@ -570,9 +570,9 @@ index 0000000000..83a6a1fe77
 +  def _ensure_vehicle(self) -> Dict[str, Any]:
 +    if not self.session.has_valid_access_token():
 +      self._login()
-+    elif self.creds.region in {Region.US, Region.EU, Region.AU, Region.CN} and time.time() > self.session.access_token_expires_at - 120:
++    elif self.creds.region in {Region.US, Region.EU, Region.AU, Region.CN} and time.monotonic() > self.session.access_token_expires_at - 120:
 +      self._refresh_access_token()
-+    if self._vehicle and time.time() - self._vehicles_fetched_at < 300:
++    if self._vehicle and time.monotonic() - self._vehicles_fetched_at < 300:
 +      return self._vehicle
 +    fetchers = {
 +      Region.US: self._fetch_vehicles_us,
@@ -583,7 +583,7 @@ index 0000000000..83a6a1fe77
 +    }
 +    vehicles = fetchers[self.creds.region]()
 +    self._vehicles = vehicles
-+    self._vehicles_fetched_at = time.time()
++    self._vehicles_fetched_at = time.monotonic()
 +    self._vehicle = self._select_vehicle(vehicles)
 +    if not self._vehicle:
 +      raise RuntimeError("No vehicles available for selected account")
@@ -638,7 +638,7 @@ index 0000000000..83a6a1fe77
 +    self.session.access_token = data.get("access_token")
 +    self.session.refresh_token = data.get("refresh_token")
 +    expires_in = int(data.get("expires_in", 1800))
-+    self.session.access_token_expires_at = time.time() + expires_in
++    self.session.access_token_expires_at = time.monotonic() + expires_in
 +    logger.debug("US login successful; expires in %s", expires_in)
 +
 +  def _refresh_us(self) -> None:
@@ -660,7 +660,7 @@ index 0000000000..83a6a1fe77
 +    self.session.access_token = data.get("access_token")
 +    self.session.refresh_token = data.get("refresh_token", self.session.refresh_token)
 +    expires_in = int(data.get("expires_in", 1800))
-+    self.session.access_token_expires_at = time.time() + expires_in
++    self.session.access_token_expires_at = time.monotonic() + expires_in
 +    logger.debug("US token refresh successful; expires in %s", expires_in)
 +
 +  def _login_ca(self) -> None:
@@ -688,7 +688,7 @@ index 0000000000..83a6a1fe77
 +    self.session.access_token = access_token
 +    self.session.refresh_token = refresh_token
 +    expires_in = int(data.get("expireIn", 900))
-+    self.session.access_token_expires_at = time.time() + expires_in
++    self.session.access_token_expires_at = time.monotonic() + expires_in
 +    logger.debug("CA login successful; expires in %s", expires_in)
 +
 +  def _fetch_vehicles_us(self) -> Any:
@@ -875,7 +875,7 @@ index 0000000000..83a6a1fe77
 +      raise RuntimeError(f"EU token exchange failed: {payload}")
 +    self.session.access_token = f"Bearer {payload.get('access_token')}"
 +    self.session.refresh_token = payload.get("refresh_token")
-+    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    self.session.access_token_expires_at = time.monotonic() + float(payload.get("expires_in", 1800))
 +    logger.debug("EU token exchange successful; expires in %s", payload.get("expires_in", 1800))
 +
 +  def _refresh_eu(self) -> None:
@@ -901,7 +901,7 @@ index 0000000000..83a6a1fe77
 +    if resp.status_code != 200:
 +      raise RuntimeError(f"EU refresh failed: {payload}")
 +    self.session.access_token = f"Bearer {payload.get('access_token')}"
-+    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    self.session.access_token_expires_at = time.monotonic() + float(payload.get("expires_in", 1800))
 +    logger.debug("EU token refresh successful; expires in %s", payload.get("expires_in", 1800))
 +
 +  def _ensure_control_token_eu(self) -> None:
@@ -919,12 +919,16 @@ index 0000000000..83a6a1fe77
 +      raise RuntimeError(f"EU control token missing: {body}")
 +    self.session.control_token = f"Bearer {control_token}"
 +    expires = body.get("expiresTime") or body.get("resMsg", {}).get("expiresTime", 600)
-+    self.session.control_token_expires_at = time.time() + float(expires)
++    self.session.control_token_expires_at = time.monotonic() + float(expires)
 +    logger.debug("EU control token acquired; expires in %s", expires)
 +
 +  def _login_au(self) -> None:
 +    self.http.cookies.clear()
-+    session_url = f"{self._env.base_url}/api/v1/user/oauth2/authorize?response_type=code&client_id={self._env.client_id}&redirect_uri={self._env.base_url}/api/v1/user/oauth2/redirect&lang=en"
++    session_url = (
++      f"{self._env.base_url}/api/v1/user/oauth2/authorize?response_type=code"
++      f"&client_id={self._env.client_id}"
++      f"&redirect_uri={self._env.base_url}/api/v1/user/oauth2/redirect&lang=en"
++    )
 +    self.http.get(session_url)
 +    auth_url = f"{self._env.base_url}/api/v1/user/signin"
 +    payload = {"email": self.creds.username, "password": self.creds.password, "mobileNum": ""}
@@ -974,7 +978,7 @@ index 0000000000..83a6a1fe77
 +      raise RuntimeError(f"AU token exchange failed: {payload}")
 +    self.session.access_token = f"Bearer {payload.get('access_token')}"
 +    self.session.refresh_token = payload.get("refresh_token")
-+    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    self.session.access_token_expires_at = time.monotonic() + float(payload.get("expires_in", 1800))
 +    logger.debug("AU token exchange successful; expires in %s", payload.get("expires_in", 1800))
 +
 +  def _refresh_au(self) -> None:
@@ -998,7 +1002,7 @@ index 0000000000..83a6a1fe77
 +    if resp.status_code != 200:
 +      raise RuntimeError(f"AU refresh failed: {payload}")
 +    self.session.access_token = f"Bearer {payload.get('access_token')}"
-+    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    self.session.access_token_expires_at = time.monotonic() + float(payload.get("expires_in", 1800))
 +    logger.debug("AU token refresh successful; expires in %s", payload.get("expires_in", 1800))
 +
 +  def _ensure_control_token_au(self) -> None:
@@ -1016,7 +1020,7 @@ index 0000000000..83a6a1fe77
 +      raise RuntimeError(f"AU control token missing: {body}")
 +    self.session.control_token = f"Bearer {control_token}"
 +    expires = body.get("expiresTime") or body.get("resMsg", {}).get("expiresTime", 600)
-+    self.session.control_token_expires_at = time.time() + float(expires)
++    self.session.control_token_expires_at = time.monotonic() + float(expires)
 +
 +  def _login_cn(self) -> None:
 +    self.http.cookies.clear()
@@ -1033,7 +1037,11 @@ index 0000000000..83a6a1fe77
 +    self._exchange_code_for_token_cn(code)
 +
 +  def _init_cn_session(self) -> None:
-+    self.http.get(f"{self._env.base_url}/api/v1/user/oauth2/authorize?response_type=code&client_id={self._env.client_id}&redirect_uri={self._env.base_url}:443/api/v1/user/oauth2/redirect&state=test")
++    self.http.get(
++      f"{self._env.base_url}/api/v1/user/oauth2/authorize?response_type=code"
++      f"&client_id={self._env.client_id}"
++      f"&redirect_uri={self._env.base_url}:443/api/v1/user/oauth2/redirect&state=test"
++    )
 +    headers = {"Content-Type": "application/json"}
 +    self.http.post(f"{self._env.base_url}/api/v1/user/language", data='{"lang":"zh"}', headers=headers)
 +
@@ -1069,7 +1077,7 @@ index 0000000000..83a6a1fe77
 +      raise RuntimeError(f"CN token exchange failed: {payload}")
 +    self.session.access_token = f"Bearer {payload.get('access_token')}"
 +    self.session.refresh_token = payload.get("refresh_token")
-+    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    self.session.access_token_expires_at = time.monotonic() + float(payload.get("expires_in", 1800))
 +
 +  def _refresh_cn(self) -> None:
 +    if not self.session.refresh_token:
@@ -1091,7 +1099,7 @@ index 0000000000..83a6a1fe77
 +    if resp.status_code != 200:
 +      raise RuntimeError(f"CN refresh failed: {payload}")
 +    self.session.access_token = f"Bearer {payload.get('access_token')}"
-+    self.session.access_token_expires_at = time.time() + float(payload.get("expires_in", 1800))
++    self.session.access_token_expires_at = time.monotonic() + float(payload.get("expires_in", 1800))
 +    logger.debug("CN token refresh successful; expires in %s", payload.get("expires_in", 1800))
 +
 +  def _ensure_control_token_cn(self) -> None:
@@ -1108,7 +1116,7 @@ index 0000000000..83a6a1fe77
 +      raise RuntimeError(f"CN control token missing: {body}")
 +    self.session.control_token = f"Bearer {control_token}"
 +    expires = body.get("expiresTime") or body.get("resMsg", {}).get("expiresTime", 600)
-+    self.session.control_token_expires_at = time.time() + float(expires)
++    self.session.control_token_expires_at = time.monotonic() + float(expires)
 +
 +  def _ca_get_preauth(self, vehicle: Dict[str, Any]) -> str:
 +    url = f"{self._env.base_url}/tods/api/vrfypin"
@@ -1235,10 +1243,9 @@ index 0000000000..83a6a1fe77
 +  "_extract_error_message",
 +  "json_dumps",
 +]
-\ No newline at end of file
 diff --git b/auto-lock/kia_status.py a/auto-lock/kia_status.py
 new file mode 100644
-index 0000000000..715b3f5fd8
+index 0000000000..e916f36ba2
 --- /dev/null
 +++ a/auto-lock/kia_status.py
 @@ -0,0 +1,179 @@
@@ -1421,10 +1428,9 @@ index 0000000000..715b3f5fd8
 +      if value:
 +        return str(value)
 +    return None
-\ No newline at end of file
 diff --git b/auto-lock/lock_cli.py a/auto-lock/lock_cli.py
-new file mode 100644
-index 0000000000..537e477a82
+new file mode 100755
+index 0000000000..4f0042f978
 --- /dev/null
 +++ a/auto-lock/lock_cli.py
 @@ -0,0 +1,53 @@
@@ -1481,10 +1487,9 @@ index 0000000000..537e477a82
 +
 +if __name__ == "__main__":
 +  sys.exit(main())
-\ No newline at end of file
 diff --git b/auto-lock/status_cli.py a/auto-lock/status_cli.py
-new file mode 100644
-index 0000000000..ae8c43d19a
+new file mode 100755
+index 0000000000..48514273ac
 --- /dev/null
 +++ a/auto-lock/status_cli.py
 @@ -0,0 +1,55 @@
@@ -1543,13 +1548,15 @@ index 0000000000..ae8c43d19a
 +
 +if __name__ == "__main__":
 +  sys.exit(main())
-\ No newline at end of file
+diff --git b/selfdrive/auto_lock/__init__.py a/selfdrive/auto_lock/__init__.py
+new file mode 100644
+index 0000000000..e69de29bb2
 diff --git b/selfdrive/auto_lock/autolockd.py a/selfdrive/auto_lock/autolockd.py
 new file mode 100644
-index 0000000000..50170abc2c
+index 0000000000..67c3bafff4
 --- /dev/null
 +++ a/selfdrive/auto_lock/autolockd.py
-@@ -0,0 +1,598 @@
+@@ -0,0 +1,602 @@
 +from __future__ import annotations
 +
 +import copy
@@ -1562,7 +1569,6 @@ index 0000000000..50170abc2c
 +from typing import Any, Dict, Optional
 +
 +import cereal.messaging as messaging
-+from cereal import log
 +from openpilot.common.params import Params
 +
 +logger = logging.getLogger(__name__)
@@ -2119,7 +2125,12 @@ index 0000000000..50170abc2c
 +  logging.basicConfig(level=logging.INFO)
 +  if USE_CUSTOM_LOGFILE:
 +    log_dir = Path("/data/openpilot/auto-lock")
-+    log_dir.mkdir(parents=True, exist_ok=True)
++    try:
++      log_dir.mkdir(parents=True, exist_ok=True)
++    except OSError:
++      # Fallback path for non-device environments.
++      log_dir = Path(__file__).resolve().parents[2] / "auto-lock"
++      log_dir.mkdir(parents=True, exist_ok=True)
 +    logfile = log_dir / "autolock.log"
 +    try:
 +      logfile.unlink()
@@ -2148,188 +2159,184 @@ index 0000000000..50170abc2c
 +
 +if __name__ == "__main__":
 +  main()
-diff --git b/selfdrive/ui/sunnypilot/SConscript a/selfdrive/ui/sunnypilot/SConscript
-index ca4a03b880..7ab94c1d32 100644
---- b/selfdrive/ui/sunnypilot/SConscript
-+++ a/selfdrive/ui/sunnypilot/SConscript
-@@ -31,6 +31,7 @@ qt_src = [
-   "sunnypilot/qt/offroad/settings/brightness.cc",
-   "sunnypilot/qt/offroad/settings/models_panel.cc",
-   "sunnypilot/qt/offroad/settings/osm_panel.cc",
-+  "sunnypilot/qt/offroad/settings/auto_lock_panel.cc",
-   "sunnypilot/qt/offroad/settings/settings.cc",
-   "sunnypilot/qt/offroad/settings/software_panel.cc",
-   "sunnypilot/qt/offroad/settings/sunnylink_panel.cc",
-diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.cc
+diff --git b/selfdrive/ui/sunnypilot/layouts/settings/auto_lock.py a/selfdrive/ui/sunnypilot/layouts/settings/auto_lock.py
 new file mode 100644
-index 0000000000..e7aa4b282e
+index 0000000000..d02dbcbf56
 --- /dev/null
-+++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.cc
-@@ -0,0 +1,102 @@
-+#include "selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h"
++++ a/selfdrive/ui/sunnypilot/layouts/settings/auto_lock.py
+@@ -0,0 +1,139 @@
++"""
++Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 +
-+#include <QVBoxLayout>
++This file is part of sunnypilot and is licensed under the MIT License.
++See the LICENSE.md file in the root directory for more details.
++"""
++from openpilot.common.params import Params
++from openpilot.system.ui.lib.application import gui_app
++from openpilot.system.ui.lib.multilang import tr
++from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
++from openpilot.system.ui.sunnypilot.widgets.list_view import button_item_sp
++from openpilot.system.ui.widgets import DialogResult, Widget
++from openpilot.system.ui.widgets.option_dialog import MultiOptionDialog
++from openpilot.system.ui.widgets.scroller_tici import LineSeparator, Scroller
 +
-+namespace {
-+const QStringList kAutoLockRegions = {"US", "CA", "EU", "CN", "AU"};
++AUTO_LOCK_REGIONS = ["US", "CA", "EU", "CN", "AU"]
 +
-+const QString kAutoLockUsernameParam = "AutoLockUsername";
-+const QString kAutoLockPasswordParam = "AutoLockPassword";
-+const QString kAutoLockPinParam = "AutoLockPin";
-+const QString kAutoLockRegionParam = "AutoLockRegion";
++AUTO_LOCK_USERNAME_PARAM = "AutoLockUsername"
++AUTO_LOCK_PASSWORD_PARAM = "AutoLockPassword"
++AUTO_LOCK_PIN_PARAM = "AutoLockPin"
++AUTO_LOCK_REGION_PARAM = "AutoLockRegion"
 +
-+QString maskedValue(const QString &value) {
-+  return value.isEmpty() ? QObject::tr("Not Set") : QString(value.size(), QChar(0x2022));
-+}
 +
-+QString plainValue(const QString &value) {
-+  return value.isEmpty() ? QObject::tr("Not Set") : value;
-+}
-+}  // namespace
++class AutoLockLayout(Widget):
++  def __init__(self):
++    super().__init__()
++    self._params = Params()
++    self._region_dialog: MultiOptionDialog | None = None
++    self._initialize_items()
++    self._scroller = Scroller(self._items, line_separator=True, spacing=0)
 +
-+AutoLockPanel::AutoLockPanel(QWidget *parent) : QWidget(parent) {
-+  QVBoxLayout *main_layout = new QVBoxLayout(this);
-+  main_layout->setContentsMargins(50, 20, 50, 20);
++  def _initialize_items(self):
++    description = tr("Tap to update. Stored locally in device Params.")
 +
-+  list_widget = new ListWidgetSP(this, false);
-+  list_widget->setSpacing(25);
++    self._username_btn = button_item_sp(
++      title=tr("Username"),
++      button_text=tr("EDIT"),
++      description=description,
++      callback=lambda: self._edit_credential(tr("Enter Username"), AUTO_LOCK_USERNAME_PARAM, False),
++    )
++    self._password_btn = button_item_sp(
++      title=tr("Password"),
++      button_text=tr("EDIT"),
++      description=description,
++      callback=lambda: self._edit_credential(tr("Enter Password"), AUTO_LOCK_PASSWORD_PARAM, True),
++    )
++    self._pin_btn = button_item_sp(
++      title=tr("PIN"),
++      button_text=tr("EDIT"),
++      description=description,
++      callback=lambda: self._edit_credential(tr("Enter PIN"), AUTO_LOCK_PIN_PARAM, True),
++    )
++    self._region_btn = button_item_sp(
++      title=tr("Region"),
++      button_text=tr("SELECT"),
++      description=tr("Select the Kia/Hyundai account region for remote commands."),
++      callback=self._edit_region,
++    )
 +
-+  addCredentialRow(tr("Username"), kAutoLockUsernameParam, false);
-+  addCredentialRow(tr("Password"), kAutoLockPasswordParam, true);
-+  addCredentialRow(tr("PIN"), kAutoLockPinParam, true);
-+  addRegionRow();
++    self._items = [
++      self._username_btn,
++      LineSeparator(),
++      self._password_btn,
++      LineSeparator(),
++      self._pin_btn,
++      LineSeparator(),
++      self._region_btn,
++    ]
 +
-+  ScrollViewSP *scroller = new ScrollViewSP(list_widget, this);
-+  main_layout->addWidget(scroller);
++  def _edit_credential(self, title: str, param_key: str, password_mode: bool):
++    current_value = self._params.get(param_key) or ""
++    dialog = InputDialogSP(
++      title=title,
++      sub_title=tr("Leave blank to clear"),
++      current_text=current_value,
++      callback=lambda result, text: self._save_credential(result, param_key, text),
++      password_mode=password_mode,
++    )
++    dialog.show()
 +
-+  refreshValues();
-+}
++  def _save_credential(self, result: DialogResult, param_key: str, value: str):
++    if result != DialogResult.CONFIRM:
++      return
 +
-+void AutoLockPanel::addCredentialRow(const QString &title, const QString &param, bool secret) {
-+  const QString desc = tr("Tap to update. Stored locally in device Params.");
-+  auto control = new ButtonControlSP(title, tr("EDIT"), desc, this);
-+  control->showDescription();
-+  credential_controls.insert(param, control);
-+  secret_params.insert(param, secret);
-+  list_widget->addItem(control);
++    cleaned = value.strip()
++    if cleaned:
++      self._params.put(param_key, cleaned)
++    else:
++      self._params.remove(param_key)
 +
-+  QObject::connect(control, &ButtonControlSP::clicked, this, [=]() {
-+    const QString current_value = QString::fromStdString(params.get(param.toStdString()));
-+    const QString prompt = tr("Enter %1").arg(title.toLower());
-+    const QString subtitle = tr("Leave blank to clear");
-+    QString value = InputDialog::getText(prompt, this, subtitle, secret, -1, current_value);
-+    if (!value.isNull()) {
-+      const std::string key = param.toStdString();
-+      if (value.isEmpty()) {
-+        params.remove(key);
-+      } else {
-+        params.put(key, value.toStdString());
-+      }
-+      refreshValues();
-+    }
-+  });
-+}
++  def _edit_region(self):
++    current_region = (self._params.get(AUTO_LOCK_REGION_PARAM) or "").strip().upper()
++    if current_region not in AUTO_LOCK_REGIONS:
++      current_region = ""
 +
-+void AutoLockPanel::addRegionRow() {
-+  const QString desc = tr("Select the Kia/Hyundai account region for remote commands.");
-+  region_button = new ButtonControlSP(tr("Region"), tr("SELECT"), desc, this);
-+  region_button->showDescription();
-+  list_widget->addItem(region_button);
++    self._region_dialog = MultiOptionDialog(
++      tr("Select Region"),
++      AUTO_LOCK_REGIONS,
++      current=current_region,
++      callback=self._save_region,
++    )
++    gui_app.push_widget(self._region_dialog)
 +
-+  QObject::connect(region_button, &ButtonControlSP::clicked, this, [=]() {
-+    const QString current = QString::fromStdString(params.get(kAutoLockRegionParam.toStdString()));
-+    QString selection = MultiOptionDialog::getSelection(tr("Select Region"), kAutoLockRegions, current, this);
-+    if (!selection.isEmpty()) {
-+      params.put(kAutoLockRegionParam.toStdString(), selection.toStdString());
-+      refreshValues();
-+    }
-+  });
-+}
++  def _save_region(self, result: DialogResult):
++    if result == DialogResult.CONFIRM and self._region_dialog is not None:
++      selection = self._region_dialog.selection.strip().upper()
++      if selection in AUTO_LOCK_REGIONS:
++        self._params.put(AUTO_LOCK_REGION_PARAM, selection)
++    self._region_dialog = None
 +
-+void AutoLockPanel::refreshValues() {
-+  for (auto it = credential_controls.constBegin(); it != credential_controls.constEnd(); ++it) {
-+    const QString param = it.key();
-+    ButtonControlSP *control = it.value();
-+    const QString stored = QString::fromStdString(params.get(param.toStdString()));
-+    const bool secret = secret_params.value(param, false);
-+    control->setValue(secret ? maskedValue(stored) : plainValue(stored));
-+  }
++  @staticmethod
++  def _masked_or_not_set(value: str) -> str:
++    return tr("Not Set") if not value else "*" * len(value)
 +
-+  if (region_button) {
-+    QString region = QString::fromStdString(params.get(kAutoLockRegionParam.toStdString()));
-+    if (region.isEmpty()) {
-+      region = tr("Not Set");
-+    }
-+    region_button->setValue(region);
-+  }
-+}
++  @staticmethod
++  def _plain_or_not_set(value: str) -> str:
++    return tr("Not Set") if not value else value
 +
-+void AutoLockPanel::showEvent(QShowEvent *event) {
-+  QWidget::showEvent(event);
-+  refreshValues();
-+}
-\ No newline at end of file
-diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h
-new file mode 100644
-index 0000000000..efd04cf17d
---- /dev/null
-+++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h
-@@ -0,0 +1,29 @@
-+#pragma once
++  def _update_state(self):
++    super()._update_state()
 +
-+#include <QMap>
-+#include <QStringList>
-+#include <QShowEvent>
++    username = self._params.get(AUTO_LOCK_USERNAME_PARAM) or ""
++    password = self._params.get(AUTO_LOCK_PASSWORD_PARAM) or ""
++    pin = self._params.get(AUTO_LOCK_PIN_PARAM) or ""
++    region = (self._params.get(AUTO_LOCK_REGION_PARAM) or "").strip().upper()
++    if region not in AUTO_LOCK_REGIONS:
++      region = ""
 +
-+#include "selfdrive/ui/sunnypilot/qt/offroad/settings/settings.h"
-+#include "selfdrive/ui/sunnypilot/qt/widgets/controls.h"
-+#include "selfdrive/ui/sunnypilot/qt/widgets/scrollview.h"
-+#include "selfdrive/ui/qt/widgets/input.h"
++    self._username_btn.action_item.set_value(self._plain_or_not_set(username))
++    self._password_btn.action_item.set_value(self._masked_or_not_set(password))
++    self._pin_btn.action_item.set_value(self._masked_or_not_set(pin))
++    self._region_btn.action_item.set_value(self._plain_or_not_set(region))
 +
-+class AutoLockPanel : public QWidget {
-+  Q_OBJECT
++  def _render(self, rect):
++    self._scroller.render(rect)
 +
-+public:
-+  explicit AutoLockPanel(QWidget *parent = nullptr);
-+
-+private:
-+  void addCredentialRow(const QString &title, const QString &param, bool secret = false);
-+  void addRegionRow();
-+  void refreshValues();
-+  void showEvent(QShowEvent *event) override;
-+
-+  Params params;
-+  ListWidgetSP *list_widget = nullptr;
-+  QMap<QString, ButtonControlSP*> credential_controls;
-+  ButtonControlSP *region_button = nullptr;
-+  QMap<QString, bool> secret_params;
-+};
-\ No newline at end of file
-diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc
-index c712442df3..95508e0b77 100644
---- b/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc
-+++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/settings.cc
-@@ -15,6 +15,7 @@
- #include "selfdrive/ui/sunnypilot/qt/offroad/settings/device_panel.h"
- #include "selfdrive/ui/sunnypilot/qt/offroad/settings/display_panel.h"
- #include "selfdrive/ui/sunnypilot/qt/offroad/settings/models_panel.h"
-+#include "selfdrive/ui/sunnypilot/qt/offroad/settings/auto_lock_panel.h"
- #include "selfdrive/ui/sunnypilot/qt/offroad/settings/software_panel.h"
- #include "selfdrive/ui/sunnypilot/qt/offroad/settings/sunnylink_panel.h"
- #include "selfdrive/ui/sunnypilot/qt/offroad/settings/lateral_panel.h"
-@@ -81,6 +82,7 @@ SettingsWindowSP::SettingsWindowSP(QWidget *parent) : SettingsWindow(parent) {
-   QList<PanelInfo> panels = {
-     PanelInfo("   " + tr("Device"), device, "../../sunnypilot/selfdrive/assets/offroad/icon_home.svg"),
-     PanelInfo("   " + tr("Network"), networking, "../assets/icons/network.png"),
-+    PanelInfo("   " + tr("Auto Lock"), new AutoLockPanel(this), "/data/openpilot/auto-lock/lock-closed-white.png"),
-     PanelInfo("   " + tr("sunnylink"), new SunnylinkPanel(this), "../assets/icons/wifi_strength_full.svg"),
-     PanelInfo("   " + tr("Toggles"), toggles, "../../sunnypilot/selfdrive/assets/offroad/icon_toggle.png"),
-     PanelInfo("   " + tr("Software"), new SoftwarePanelSP(this), "../../sunnypilot/selfdrive/assets/offroad/icon_software.png"),
++  def show_event(self):
++    super().show_event()
++    self._scroller.show_event()
+diff --git b/selfdrive/ui/sunnypilot/layouts/settings/settings.py a/selfdrive/ui/sunnypilot/layouts/settings/settings.py
+index 4917c9a157..1ce703061e 100644
+--- b/selfdrive/ui/sunnypilot/layouts/settings/settings.py
++++ a/selfdrive/ui/sunnypilot/layouts/settings/settings.py
+@@ -11,6 +11,7 @@ import pyray as rl
+ from openpilot.selfdrive.ui.layouts.settings import settings as OP
+ from openpilot.selfdrive.ui.layouts.settings.firehose import FirehoseLayout
+ from openpilot.selfdrive.ui.layouts.settings.toggles import TogglesLayout
++from openpilot.selfdrive.ui.sunnypilot.layouts.settings.auto_lock import AutoLockLayout
+ from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise import CruiseLayout
+ from openpilot.selfdrive.ui.sunnypilot.layouts.settings.developer import DeveloperLayoutSP
+ from openpilot.selfdrive.ui.sunnypilot.layouts.settings.device import DeviceLayoutSP
+@@ -40,6 +41,7 @@ ICON_SIZE = 70
+ OP.PanelType = IntEnum(
+   "PanelType",
+   [es.name for es in OP.PanelType] + [
++    "AUTO_LOCK",
+     "SUNNYLINK",
+     "MODELS",
+     "STEERING",
+@@ -111,6 +113,7 @@ class SettingsLayoutSP(OP.SettingsLayout):
+     self._panels = {
+       OP.PanelType.DEVICE: PanelInfo(tr_noop("Device"), DeviceLayoutSP(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_home.png"),
+       OP.PanelType.NETWORK: PanelInfo(tr_noop("Network"), NetworkUISP(wifi_manager), icon="icons/network.png"),
++      OP.PanelType.AUTO_LOCK: PanelInfo(tr_noop("Auto Lock"), AutoLockLayout(), icon="icons/lock_closed.png"),
+       OP.PanelType.SUNNYLINK: PanelInfo(tr_noop("sunnylink"), SunnylinkLayout(), icon="icons/wifi_strength_full.png"),
+       OP.PanelType.TOGGLES: PanelInfo(tr_noop("Toggles"), TogglesLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_toggle.png"),
+       OP.PanelType.SOFTWARE: PanelInfo(tr_noop("Software"), SoftwareLayoutSP(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_software.png"),
 diff --git b/system/manager/process_config.py a/system/manager/process_config.py
-index c5f20e511b..9cf72f304d 100644
+index a9ecf302f2..d9b67f0e46 100644
 --- b/system/manager/process_config.py
 +++ a/system/manager/process_config.py
-@@ -141,6 +141,7 @@ procs = [
+@@ -139,6 +139,7 @@ procs = [
    PythonProcess("dmonitoringd", "selfdrive.monitoring.dmonitoringd", driverview, enabled=(WEBCAM or not PC)),
    PythonProcess("qcomgpsd", "system.qcomgpsd.qcomgpsd", qcomgps, enabled=TICI),
    PythonProcess("pandad", "selfdrive.pandad.pandad", always_run),
