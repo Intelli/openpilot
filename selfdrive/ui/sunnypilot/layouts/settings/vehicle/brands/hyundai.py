@@ -10,19 +10,12 @@ from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.widgets.list_view import multiple_button_item_sp, option_item_sp, toggle_item_sp
 from opendbc.car.hyundai.values import CAR, UNSUPPORTED_LONGITUDINAL_CAR, HyundaiFlags
 
-ANGLE_CMD_PATH_AUTO = 0
-ANGLE_CMD_PATH_FORCE_LFA = 1
-ANGLE_CMD_PATH_FORCE_LKAS = 2
-ANGLE_CMD_PATH_FORCE_LKAS_ALT = 3
-
 
 class HyundaiSettings(BrandSettings):
   def __init__(self):
     super().__init__()
     self.alpha_long_available = False
     self.has_angle_steering = False
-    self.has_lka_steering = False
-    self.has_lka_steering_alt = False
 
     tuning_texts = [tr("Off"), tr("Dynamic"), tr("Predictive")]
     self.longitudinal_tuning_item = multiple_button_item_sp(tr("Custom Longitudinal Tuning"), "", tuning_texts,
@@ -32,16 +25,6 @@ class HyundaiSettings(BrandSettings):
       title=tr("Improved Manual Control"),
       description="",
       callback=self._on_improved_manual_control_toggled,
-    )
-    angle_path_texts = [tr("Auto"), tr("LFA"), tr("LKAS"), tr("LKAS_ALT")]
-    self.angle_command_path_item = multiple_button_item_sp(
-      tr("Angle Steering Command Path"),
-      "",
-      angle_path_texts,
-      button_width=220,
-      callback=self._on_angle_command_path_selected,
-      param="HkgAngleSteeringCommandPath",
-      inline=False,
     )
     self.angle_override_effort_item = option_item_sp(
       title=tr("Steering Override Effort"),
@@ -70,7 +53,7 @@ class HyundaiSettings(BrandSettings):
       description="",
       label_callback=lambda value: f"{value} km/h",
     )
-    self.items = [self.longitudinal_tuning_item, self.improved_manual_control_item, self.angle_command_path_item, self.angle_override_effort_item,
+    self.items = [self.longitudinal_tuning_item, self.improved_manual_control_item, self.angle_override_effort_item,
                   self.angle_custom_limit_speed_item, self.ev9_alerts_speed_item]
 
   @staticmethod
@@ -84,28 +67,18 @@ class HyundaiSettings(BrandSettings):
     ui_state.params.put("HkgSharedAutonomyMode", 1 if enabled else 0)
     self.update_settings()
 
-  @staticmethod
-  def _on_angle_command_path_selected(index):
-    ui_state.params.put("HkgAngleSteeringCommandPath", index)
-
   def update_settings(self):
     self.alpha_long_available = False
     self.has_angle_steering = False
-    self.has_lka_steering = False
-    self.has_lka_steering_alt = False
     bundle = ui_state.params.get("CarPlatformBundle")
     if bundle:
       platform = bundle.get("platform")
       config = CAR[platform].config
       self.alpha_long_available = CAR[platform] not in set().union(*UNSUPPORTED_LONGITUDINAL_CAR.values())
       self.has_angle_steering = bool(config.flags & HyundaiFlags.CANFD_ANGLE_STEERING)
-      self.has_lka_steering = bool(config.flags & HyundaiFlags.CANFD_LKA_STEER_MSG)
-      self.has_lka_steering_alt = bool(config.flags & HyundaiFlags.CANFD_LKA_STEER_MSG_ALT)
     elif ui_state.CP is not None:
       self.alpha_long_available = ui_state.CP.alphaLongitudinalAvailable
       self.has_angle_steering = bool(ui_state.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING)
-      self.has_lka_steering = bool(ui_state.CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG)
-      self.has_lka_steering_alt = bool(ui_state.CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG_ALT)
 
     tuning_param = int(ui_state.params.get("HyundaiLongitudinalTuning") or "0")
     long_enabled = ui_state.has_longitudinal_control
@@ -156,43 +129,6 @@ class HyundaiSettings(BrandSettings):
     self.improved_manual_control_item.show_description(True)
     self.improved_manual_control_item.action_item.set_state(improved_manual_control_enabled)
     self.improved_manual_control_item.set_visible(self.has_angle_steering)
-
-    angle_cmd_path_param = ui_state.params.get("HkgAngleSteeringCommandPath", return_default=True)
-    angle_cmd_path = int(angle_cmd_path_param) if angle_cmd_path_param is not None else ANGLE_CMD_PATH_AUTO
-    angle_cmd_path = max(ANGLE_CMD_PATH_AUTO, min(angle_cmd_path, ANGLE_CMD_PATH_FORCE_LKAS_ALT))
-    enabled_angle_path_buttons = {ANGLE_CMD_PATH_AUTO, ANGLE_CMD_PATH_FORCE_LFA}
-    if self.has_lka_steering:
-      enabled_angle_path_buttons.add(ANGLE_CMD_PATH_FORCE_LKAS)
-    if self.has_lka_steering_alt:
-      enabled_angle_path_buttons.add(ANGLE_CMD_PATH_FORCE_LKAS_ALT)
-    if angle_cmd_path not in enabled_angle_path_buttons:
-      angle_cmd_path = ANGLE_CMD_PATH_AUTO
-      ui_state.params.put("HkgAngleSteeringCommandPath", angle_cmd_path)
-
-    angle_cmd_path_base_desc = tr(
-      "Select which steering command message is sent on CAN-FD angle-steering platforms. "
-      + "Auto follows the default platform behavior."
-    )
-    if not self.has_angle_steering:
-      angle_cmd_path_desc = tr("This feature is only available on angle-steering Hyundai/Kia/Genesis platforms.")
-    elif not ui_state.is_offroad():
-      unavailable_desc = tr("Enable \"Always Offroad\" in Device panel, or turn vehicle off to adjust this setting.")
-      angle_cmd_path_desc = f"<b>{unavailable_desc}</b><br><br>{angle_cmd_path_base_desc}"
-    elif not self.has_lka_steering:
-      unavailable_desc = tr("LKAS and LKAS_ALT paths are unavailable on this platform.")
-      angle_cmd_path_desc = f"<b>{unavailable_desc}</b><br><br>{angle_cmd_path_base_desc}"
-    elif not self.has_lka_steering_alt:
-      unavailable_desc = tr("LKAS_ALT path is unavailable on this platform.")
-      angle_cmd_path_desc = f"<b>{unavailable_desc}</b><br><br>{angle_cmd_path_base_desc}"
-    else:
-      angle_cmd_path_desc = angle_cmd_path_base_desc
-
-    self.angle_command_path_item.action_item.set_enabled(self.has_angle_steering and ui_state.is_offroad())
-    self.angle_command_path_item.action_item.set_enabled_buttons(enabled_angle_path_buttons)
-    self.angle_command_path_item.action_item.set_selected_button(angle_cmd_path)
-    self.angle_command_path_item.set_description(angle_cmd_path_desc)
-    self.angle_command_path_item.show_description(True)
-    self.angle_command_path_item.set_visible(self.has_angle_steering)
 
     angle_override_base_desc = tr("Adjust steering effort required to manually override lateral control on angle-steering platforms. " +
                                   "Lower values make override easier. 100% keeps stock behavior.")
