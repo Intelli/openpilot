@@ -355,6 +355,7 @@ struct CarParamsSP @0x80ae746ee2596b11 {
   hkgTuningAngleOverrideEffortPercent @7 :Float32;
   hkgSharedAutonomyEnabled @8 :Bool;
   hkgSharedAutonomyMode @9 :UInt8;
+  hkgAngleSteeringCommandPath @10 :UInt8;
 
   neuralNetworkLateralControl @2 :NeuralNetworkLateralControl;
 
