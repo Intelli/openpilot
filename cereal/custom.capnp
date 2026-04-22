@@ -439,6 +439,10 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 
 struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
+  hodDirStatus @1 :UInt8;
+  hodTouch @2 :Bool;
+  hodGrip @3 :Bool;
+  hodStrong @4 :Bool;
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {
