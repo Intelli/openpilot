@@ -91,6 +91,12 @@ class ModelRendererSP:
         self.advanced_lane_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
       self.prev_lat_active = lat_active
 
+    if not self.advanced_lane_centering_enabled:
+      self.centering_panel_visible_state = False
+      self.centering_panel_request_active = False
+      self.centering_indicator_last_nonzero_source = SOURCE_NONE
+      return
+
     if enabled and sm.alive["controlsState"]:
       controls_state = sm["controlsState"]
       controls_state_stale = abs(now - sm.recv_time["controlsState"]) > CENTERING_SIGNAL_STALE_S
