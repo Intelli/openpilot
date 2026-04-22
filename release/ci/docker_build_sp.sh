@@ -4,9 +4,9 @@ set -e
 SCRIPT_DIR=$(dirname "$0")
 OPENPILOT_DIR=$SCRIPT_DIR/../../
 
-DOCKER_IMAGE=sunnypilot
+DOCKER_IMAGE=intelli-openpilot-prebuilt
 DOCKER_FILE=Dockerfile.openpilot
-DOCKER_REGISTRY=ghcr.io/sunnypilot
+DOCKER_REGISTRY=ghcr.io/intelli
 COMMIT_SHA=$(git rev-parse HEAD)
 
 if [ -n "$TARGET_ARCHITECTURE" ]; then

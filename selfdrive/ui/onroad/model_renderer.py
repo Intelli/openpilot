@@ -131,13 +131,18 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
         self._update_leads(radar_state, path_x_array)
       self._transform_dirty = False
 
+    self.update_lane_centering_ui(sm)
+
     # Draw elements
     self._draw_lane_lines()
     self._draw_path(sm)
+    self.draw_lane_highlight(self._lane_lines)
 
     if render_lead_indicator and radar_state:
       self._draw_lead_indicator()
       self.chevron_metrics.draw_lead_status(sm, radar_state, self._rect, self._lead_vehicles)
+
+    self.draw_lane_centering_panel(self._rect)
 
   def _update_raw_points(self, model):
     """Update raw 3D points from model data"""
@@ -292,7 +297,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     self._blend_filter.update(int(allow_throttle))
 
     if ui_state.rainbow_path:
-      self.rainbow_path.draw_rainbow_path(self._rect, self._path)
+      self.rainbow_path.draw_rainbow_path(self._rect, self._path, sm)
       return
 
     if self._experimental_mode:

@@ -5,18 +5,17 @@ env:
   OUTPUT_DIR: ${{ github.workspace }}/output
   CI_DIR: ${{ github.workspace }}/release/ci
   SCONS_CACHE_DIR: ${{ github.workspace }}/release/ci/scons_cache
-  PUBLIC_REPO_URL: "https://github.com/sunnypilot/sunnypilot"
+  PUBLIC_REPO_URL: "https://github.com/Intelli/openpilot"
 
   # Branch configurations
-  STAGING_SOURCE_BRANCH: 'master'
+  STAGING_SOURCE_BRANCH: 'ev9-dev'
 
   # Runtime configuration
   SOURCE_BRANCH: "${{ github.head_ref || github.ref_name }}"
 
 on:
   push:
-    branches: [ master, master-dev ]
-    tags: [ 'release/*' ]
+    branches: [ ev9-dev ]
   pull_request_target:
     types: [ labeled ]
   workflow_dispatch:
@@ -50,23 +49,34 @@ jobs:
           echo "Current branch: $BRANCH"
 
           STRATEGY_JSON='${{ vars.DEPLOY_STRATEGY }}'
+          if [[ -z "$STRATEGY_JSON" || "$STRATEGY_JSON" == "null" ]]; then
+            STRATEGY_JSON='{ "configs": [] }'
+          fi
           CONFIG=$(echo "$STRATEGY_JSON" | jq -r --arg branch "$BRANCH" '
             .configs[] | select(.branch == $branch)
           ')
 
           BUILD="$(date '+%Y.%m.%d')-${{ github.run_number }}"
           if [[ -z "$CONFIG" || "$CONFIG" == "null" ]]; then
-            echo "No exact strategy match found. Falling back to feature/fork logic."
-            IS_FORK="${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}"
-            FORK_SUFFIX=$( [[ "$IS_FORK" == "true" ]] && echo "-fork" || echo "" )
-            NEW_BRANCH="${BRANCH}${FORK_SUFFIX}-prebuilt"
+            echo "No exact strategy match found. Falling back to Intelli ev9-dev defaults."
+            if [[ "$BRANCH" == "ev9-dev" ]]; then
+              NEW_BRANCH="ev9-prebuilt"
+              echo "cancel_publish_in_progress=false" >> $GITHUB_OUTPUT
+              echo "publish_concurrency_group=publish-ev9-dev" >> $GITHUB_OUTPUT
+              echo "environment=ev9-dev" >> $GITHUB_OUTPUT
+              echo "extra_version_identifier=ev9-dev" >> $GITHUB_OUTPUT
+            else
+              IS_FORK="${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}"
+              FORK_SUFFIX=$( [[ "$IS_FORK" == "true" ]] && echo "-fork" || echo "" )
+              NEW_BRANCH="${BRANCH}${FORK_SUFFIX}-prebuilt"
+              echo "cancel_publish_in_progress=true" >> $GITHUB_OUTPUT
+              echo "publish_concurrency_group=publish-${BRANCH}" >> $GITHUB_OUTPUT
+              echo "environment=feature-branch" >> $GITHUB_OUTPUT
+              echo "extra_version_identifier=feature-branch" >> $GITHUB_OUTPUT
+            fi
 
             echo "new_branch=$NEW_BRANCH" >> $GITHUB_OUTPUT
             echo "version=$BUILD" >> $GITHUB_OUTPUT
-            echo "cancel_publish_in_progress=true" >> $GITHUB_OUTPUT
-            echo "publish_concurrency_group=publish-${BRANCH}" >> $GITHUB_OUTPUT
-            echo "environment=feature-branch" >> $GITHUB_OUTPUT
-            echo "extra_version_identifier=feature-branch" >> $GITHUB_OUTPUT
           else
           echo "Matched config: $CONFIG"
             environment=$(echo "$CONFIG" | jq -r '.environment')
@@ -108,7 +118,9 @@ jobs:
     concurrency:
       group: build-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
-    runs-on: [self-hosted, tici]
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/sunnypilot/sunnypilot-prebuilt:latest
     outputs:
       new_branch: ${{ needs.prepare_strategy.outputs.new_branch }}
       version: ${{ needs.prepare_strategy.outputs.version }}
@@ -125,15 +137,93 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          lfs: false
           ref: ${{ env.SOURCE_BRANCH }}
           repository: ${{ github.event.pull_request.head.repo.fork && github.event.pull_request.head.repo.full_name || github.repository }}
-      - run: git lfs pull
+      - name: Configure Git LFS mirror
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          echo "Using workspace: $GITHUB_WORKSPACE"
+          pwd
+          ls -a
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git rev-parse --is-inside-work-tree
+          git lfs install --local
+          git config lfs.url https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
+
+      - name: Fetch LFS objects from GitLab
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git rev-parse --is-inside-work-tree
+          git lfs pull --exclude="auto-lock/lock-closed-white.*" --include=""
+
+      - name: Ensure vendored Python deps for SCons
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import importlib.util
+          import shutil
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          pkg_names = ['bzip2', 'capnproto', 'eigen', 'ffmpeg', 'libjpeg', 'libyuv', 'ncurses', 'zeromq', 'zstd', 'libusb', 'imgui']
+          missing = [name for name in pkg_names if importlib.util.find_spec(name) is None]
+          if not missing:
+            print("All vendored Python deps already available.")
+            raise SystemExit(0)
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          deps = list(pyproject["project"]["dependencies"])
+          optional_deps = pyproject["project"].get("optional-dependencies", {})
+          for optional_group in optional_deps.values():
+            deps.extend(optional_group)
+          dep_map = {}
+          for dep in deps:
+            if " @ " in dep:
+              dep_name = dep.split(" @ ", 1)[0].strip()
+              dep_map[dep_name] = dep
+
+          specs = []
+          unresolved = []
+          for name in missing:
+            spec = dep_map.get(name)
+            if spec is None:
+              unresolved.append(name)
+            else:
+              specs.append(spec)
+
+          if unresolved:
+            raise RuntimeError(f"Missing dependency specs in pyproject.toml for: {', '.join(unresolved)}")
+
+          print(f"Installing missing vendored deps: {', '.join(missing)}")
+          pyexe = sys.executable
+          uv = shutil.which("uv")
+          if uv:
+            # uv can install into a target interpreter even when pip isn't bootstrapped there.
+            subprocess.check_call([uv, "pip", "install", "--python", pyexe, *specs])
+            raise SystemExit(0)
+
+          def has_pip(exe: str) -> bool:
+            return subprocess.call([exe, "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+
+          if not has_pip(pyexe):
+            if importlib.util.find_spec("ensurepip") is None:
+              raise RuntimeError("pip is unavailable and ensurepip is not present; install uv or provide pip in the runner image")
+            subprocess.check_call([pyexe, "-m", "ensurepip", "--upgrade"])
+
+          subprocess.check_call([pyexe, "-m", "pip", "install", "--upgrade", "pip"])
+          subprocess.check_call([pyexe, "-m", "pip", "install", *specs])
+          PY
 
       - name: Cache SCons
         uses: actions/cache@v4
         with:
           path: ${{env.SCONS_CACHE_DIR}}
-          key: scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}-${{ github.sha }}
+          key: scons-${{ runner.os }}-${{ runner.arch }}-${{ env.SOURCE_BRANCH }}
           # Note: GitHub Actions enforces cache isolation between different build sources (PR builds, workflow dispatches, etc.)
           #   for security. Only caches from the default branch are shared across all builds. This is by design and cannot be overridden.
           restore-keys: |
@@ -143,6 +233,7 @@ jobs:
 
       - name: Set environment variables
         id: set-env
+        shell: bash
         run: |
           echo "new_branch=${{ needs.prepare_strategy.outputs.new_branch }}" >> $GITHUB_OUTPUT
           echo "version=${{ needs.prepare_strategy.outputs.version }}" >> $GITHUB_OUTPUT
@@ -161,7 +252,7 @@ jobs:
       - name: Setup build environment
         run: |
           mkdir -p "${BUILD_DIR}/"
-          sudo find $BUILD_DIR/ -mindepth 1 -delete
+          sudo find "$BUILD_DIR/" -mindepth 1 -delete
           echo "Starting build stage..."
           echo "BUILD_DIR: ${BUILD_DIR}"
           echo "CI_DIR: ${CI_DIR}"
@@ -169,10 +260,12 @@ jobs:
           echo "UV_PROJECT_ENVIRONMENT: ${UV_PROJECT_ENVIRONMENT}"
           echo "VIRTUAL_ENV: ${VIRTUAL_ENV}"
           echo "-------"
-          if [[ "${{ runner.debug }}" == "1" ]]; then
+          if [ "${{ runner.debug }}" = "1" ]; then
             printenv
           fi
-          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
+          if [ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]; then
+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ "${{ github.workspace }}/scripts/manage-powersave.py" --disable
+          fi
 
       - name: Build Main Project
         run: |
@@ -180,18 +273,31 @@ jobs:
           ./release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
-          echo "Building sunnypilot's modeld_v2..."
-          scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal sunnypilot/modeld_v2
-          echo "Building sunnypilot's locationd..."
-          scons -j2 cache_dir=${{env.SCONS_CACHE_DIR}} --minimal sunnypilot/selfdrive/locationd
-          echo "Building openpilot's locationd..."
-          scons -j1 cache_dir=${{env.SCONS_CACHE_DIR}} --minimal selfdrive/locationd
-          echo "Building rest of sunnypilot"
           scons -j$(nproc) cache_dir=${{env.SCONS_CACHE_DIR}} --minimal
+          python3 opendbc_repo/opendbc/dbc/generator/generator.py
           touch ${BUILD_DIR}/prebuilt
-          if [[ "${{ runner.debug }}" == "1" ]]; then
+          if [ "${{ runner.debug }}" = "1" ]; then
             ls -la ${BUILD_DIR}
           fi
+
+      - name: Cleanup build artifacts
+        run: |
+          if [ "${{ runner.debug }}" = "1" ]; then
+            echo "Cleaning up build artifacts"
+          fi
+          cd $BUILD_DIR
+          find . -name '*.a' -delete || true
+          find . -name '*.o' -delete || true
+          find . -name '*.os' -delete || true
+          find . -name '*.pyc' -delete || true
+          find . -name 'moc_*' -delete || true
+          rm -rf .sconsign.dblite Jenkinsfile release/ || true
+          rm -rf third_party/x86*/ third_party/*Darwin*/ || true
+
+      - name: Restore third_party
+        run: |
+          cd $BUILD_DIR
+          git checkout -- third_party/ || true
 
       - name: Prepare Output
         run: |
@@ -205,20 +311,16 @@ jobs:
             --exclude='*.pyc' \
             --exclude='moc_*' \
             --exclude='__pycache__' \
-            --exclude='Jenkinsfile' \
-            --exclude='**/release/' \
             --exclude='**/.github/' \
-            --exclude='**/selfdrive/ui/replay/' \
             --exclude='**/__pycache__/' \
+            --exclude='**/selfdrive/ui/*.h' \
+            --exclude='**/selfdrive/ui/**/*.h' \
             --exclude='${{env.SCONS_CACHE_DIR}}' \
             --exclude='**/.git/' \
             --exclude='**/SConstruct' \
             --exclude='**/SConscript' \
             --exclude='**/.venv/' \
-            --exclude='selfdrive/modeld/models/driving_vision.onnx' \
-            --exclude='selfdrive/modeld/models/driving_policy.onnx' \
-            --exclude='third_party/*x86*' \
-            --exclude='third_party/*Darwin*' \
+            --exclude='supercombo.onnx' \
             --delete-excluded \
             --chown=comma:comma \
             ${BUILD_DIR}/ ${OUTPUT_DIR}/
@@ -237,7 +339,9 @@ jobs:
       - name: Re-enable powersave
         if: always()
         run: |
-          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
+          if [ -x "${{ github.workspace }}/scripts/manage-powersave.py" ]; then
+            PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ "${{ github.workspace }}/scripts/manage-powersave.py" --enable
+          fi
 
 
   publish:
@@ -276,12 +380,17 @@ jobs:
           echo '${{ toJSON(needs.build.outputs) }}'
           ls -la ${{ env.OUTPUT_DIR }}
 
+          git config --global http.postBuffer 1048576000
+          git config --global transfer.fsckObjects false
+          git config --global fetch.fsckObjects false
+          git config --global receive.fsckObjects false
+
           ${{ env.CI_DIR }}/publish.sh \
             "${{ github.workspace }}" \
             "${{ env.OUTPUT_DIR }}" \
             "${{ needs.build.outputs.new_branch }}" \
             "${{ needs.build.outputs.version }}" \
-            "https://x-access-token:${{github.token}}@github.com/sunnypilot/sunnypilot.git" \
+            "https://x-access-token:${{secrets.PREBUILT_PUSH_TOKEN}}@github.com/Intelli/openpilot.git" \
             "${{ needs.build.outputs.extra_version_identifier }}"
 
           echo ""
@@ -297,53 +406,6 @@ jobs:
             TAG="${{ needs.prepare_strategy.outputs.environment }}/${{ needs.prepare_strategy.outputs.version }}/${{ needs.prepare_strategy.outputs.build }}"
             git tag -f -a ${TAG} -m "${{ needs.prepare_strategy.outputs.environment }} @ ${{ needs.prepare_strategy.outputs.version }} of build ${{ needs.build.outputs.build }}."
             git push -f origin ${TAG}
-
-  notify:
-    needs:
-    - prepare_strategy
-    - build
-    - publish
-    runs-on: ubuntu-24.04
-    if: ${{ (always() && !cancelled() && !failure())
-      && needs.publish.result == 'success'
-      && (!contains(github.event_name, 'pull_request') || (github.event.action == 'labeled' && github.event.label.name == 'prebuilt'))
-      && (fromJSON(vars.DEV_FEEDBACK_NOTIFICATION_BRANCHES_V2)[github.head_ref || github.ref_name] != null) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Prepare notification message
-        id: message
-        run: |
-          TEMPLATE='${{ vars.DISCOURSE_GENERAL_UPDATE_NOTICE }}'
-          export VERSION="${{ needs.prepare_strategy.outputs.version }}"
-          export branch_name="${{ env.SOURCE_BRANCH }}"
-          export new_branch="${{ needs.prepare_strategy.outputs.new_branch }}"
-          export commit_sha="${{ github.sha }}"
-          export commit_short_sha="${{ github.sha }}"
-          export commit_short_sha="${commit_short_sha:0:7}"
-          export extra_version_identifier="${{ needs.prepare_strategy.outputs.extra_version_identifier || github.run_number }}"
-          export PUBLIC_REPO_URL="${{ env.PUBLIC_REPO_URL }}"
-
-          MESSAGE=$(cat << 'EOF' | envsubst
-          ${{ vars.DISCOURSE_GENERAL_UPDATE_NOTICE }}
-          EOF
-          )
-
-          {
-            echo 'content<<EOFMARKER'
-            echo "$MESSAGE"
-            echo 'EOFMARKER'
-          } >> $GITHUB_OUTPUT
-        shell: bash
-
-      - name: Post to Discourse
-        uses: ./.github/workflows/post-to-discourse
-        with:
-          discourse-url: ${{ vars.DISCOURSE_URL }}
-          api-key: ${{ secrets.DISCOURSE_API_KEY }}
-          api-username: "system"
-          topic-id: ${{ fromJSON(vars.DEV_FEEDBACK_NOTIFICATION_BRANCHES_V2)[github.head_ref || github.ref_name].topic_id }}
-          message: ${{ steps.message.outputs.content }}
 
   manage-pr-labels:
     name: Remove prebuilt label

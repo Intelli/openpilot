@@ -74,8 +74,8 @@ class ModelsLayout(Widget):
 
     self.cancel_download_item = button_item(tr("Cancel Download"), tr("Cancel"), "", lambda: ui_state.params.remove("ModelManager_DownloadIndex"))
 
-    self.lane_turn_value_control = option_item_sp(tr("Adjust Lane Turn Speed"), "LaneTurnValue", 500, 2000,
-                                                  tr("Set the maximum speed for lane turn desires. Default is 19 mph."),
+    self.lane_turn_value_control = option_item_sp(tr("Adjust Lane Turn Speed"), "LaneTurnValue", 500, 2500,
+                                                  tr("Set the maximum speed for lane turn desires. Default is 25 mph."),
                                                   int(round(100 / CV.MPH_TO_KPH)), None, True, "", style.BUTTON_ACTION_WIDTH, None, True,
                                                   lambda v: f"{int(round(v / 100 * (CV.MPH_TO_KPH if ui_state.is_metric else 1)))}" +
                                                             f" {'km/h' if ui_state.is_metric else 'mph'}")
@@ -90,11 +90,18 @@ class ModelsLayout(Widget):
                                         tr("Adjust the software delay when Live Learning Steer Delay is toggled off. The default software delay value is 0.2"),
                                         1, None, True, "", style.BUTTON_ACTION_WIDTH, None, True, lambda v: f"{v / 100:.2f}s")
 
+    self.advanced_lane_centering_toggle = toggle_item_sp(
+      tr("Advanced Lane Centering (EXPERIMENTAL)"),
+      tr("Enable enhanced lane centering logic with dynamic offset corrections and UI feedback."),
+      param="AdvancedLaneCentering",
+    )
+    self.advanced_lane_centering_toggle.show_description(True)
+
     self.lagd_toggle = toggle_item_sp(tr("Live Learning Steer Delay"), "", param="LagdToggle")
 
     self.items = [self.current_model_item, self.cancel_download_item, self.supercombo_label, self.vision_label,
                   self.policy_label, self.off_policy_label, self.on_policy_label, self.refresh_item, self.clear_cache_item, self.lane_turn_desire_toggle,
-                  self.lane_turn_value_control, self.lagd_toggle, self.delay_control]
+                  self.lane_turn_value_control, self.advanced_lane_centering_toggle, self.lagd_toggle, self.delay_control]
 
   def _update_lagd_description(self, lagd_toggle: bool):
     desc = tr("Enable this for the car to learn and adapt its steering response time. Disable to use a fixed steering response time. " +
@@ -231,9 +238,12 @@ class ModelsLayout(Widget):
     advanced_controls: bool = ui_state.params.get_bool("ShowAdvancedControls")
     turn_desire: bool = ui_state.params.get_bool("LaneTurnDesire")
     live_delay: bool = ui_state.params.get_bool("LagdToggle")
+    advanced_lane_centering: bool = ui_state.params.get_bool("AdvancedLaneCentering")
 
     self.lane_turn_desire_toggle.action_item.set_state(turn_desire)
     self.lane_turn_value_control.set_visible(turn_desire and advanced_controls)
+    self.advanced_lane_centering_toggle.action_item.set_state(advanced_lane_centering)
+    self.advanced_lane_centering_toggle.set_visible(advanced_controls)
     self.lagd_toggle.action_item.set_state(live_delay)
     self.delay_control.set_visible(not live_delay and advanced_controls)
     new_step = int(round(100 / CV.MPH_TO_KPH)) if ui_state.is_metric else 100
