@@ -22,8 +22,6 @@ CENTERING_CENTER_BAND_M = 0.08
 CENTERING_PANEL_MIN_VISIBLE_S = 0.5
 CENTERING_HIGHLIGHT_FREQ_HZ = 1.0
 HOD_SIGNAL_STALE_S = 0.4
-HOD_TAP_MIN_CONTACT_S = 0.03
-HOD_TAP_MAX_CONTACT_S = 0.35
 HOD_TAP_GAP_S = 0.55
 HOD_TAP_DISPLAY_HOLD_S = 2.0
 
@@ -70,9 +68,9 @@ class ModelRendererSP:
     self.hod_touch = False
     self.hod_grip = False
     self.hod_strong = False
-    self.hod_contact_active = False
-    self._hod_prev_contact_active = False
-    self._hod_contact_started_at = 0.0
+    self._hod_prev_dir_status_raw = 0
+    self._hod_prev_touch = False
+    self._hod_prev_strong = False
     self._hod_tap_count_pending = 0
     self._hod_tap_finalize_deadline = 0.0
     self._hod_last_tap_label = "none"
@@ -230,19 +228,43 @@ class ModelRendererSP:
       return "triple"
     return f"{count}x"
 
+  @staticmethod
+  def _is_tappable_hod_status(status: int) -> bool:
+    return status in (1, 3, 4)
+
+  def _is_hod_tap_event(self, status_raw: int, touch: bool, strong: bool) -> bool:
+    prev_status = self._hod_prev_dir_status_raw
+    prev_touch = self._hod_prev_touch
+    prev_strong = self._hod_prev_strong
+
+    touch_rise = (not prev_touch) and touch and prev_status == 0 and status_raw == 1
+    strong_rise = (not prev_strong) and strong
+    tappable_state_change = (
+      self._is_tappable_hod_status(prev_status) and
+      self._is_tappable_hod_status(status_raw) and
+      status_raw != prev_status
+    )
+    tappable_contact_rise = prev_status == 0 and self._is_tappable_hod_status(status_raw)
+
+    return touch_rise or strong_rise or tappable_state_change or tappable_contact_rise
+
   def _update_hod_debug(self, sm, enabled: bool, now: float) -> None:
     self.hod_debug_available = False
     self.hod_debug_primary = "HOD unavailable"
     self.hod_debug_secondary = "Taps: none"
 
     if not self.advanced_lane_centering_enabled:
-      self._hod_prev_contact_active = False
+      self._hod_prev_dir_status_raw = 0
+      self._hod_prev_touch = False
+      self._hod_prev_strong = False
       self._hod_tap_count_pending = 0
       self._hod_tap_finalize_deadline = 0.0
       return
 
     if not enabled:
-      self._hod_prev_contact_active = False
+      self._hod_prev_dir_status_raw = 0
+      self._hod_prev_touch = False
+      self._hod_prev_strong = False
       self.hod_debug_available = True
       self.hod_debug_primary = "HOD debug paused (not enabled)"
       self.hod_debug_secondary = f"Taps: {self._hod_last_tap_label}"
@@ -266,18 +288,13 @@ class ModelRendererSP:
     self.hod_touch = bool(getattr(car_state_sp, "hodTouch", False))
     self.hod_grip = bool(getattr(car_state_sp, "hodGrip", False))
     self.hod_strong = bool(getattr(car_state_sp, "hodStrong", False))
-    self.hod_contact_active = self.hod_touch or self.hod_grip
 
-    if self.hod_contact_active and not self._hod_prev_contact_active:
-      self._hod_contact_started_at = now
-    elif not self.hod_contact_active and self._hod_prev_contact_active:
-      contact_duration = now - self._hod_contact_started_at
-      if HOD_TAP_MIN_CONTACT_S <= contact_duration <= HOD_TAP_MAX_CONTACT_S:
-        if self._hod_tap_count_pending > 0 and now <= self._hod_tap_finalize_deadline:
-          self._hod_tap_count_pending += 1
-        else:
-          self._hod_tap_count_pending = 1
-        self._hod_tap_finalize_deadline = now + HOD_TAP_GAP_S
+    if self._is_hod_tap_event(self.hod_dir_status_raw, self.hod_touch, self.hod_strong):
+      if self._hod_tap_count_pending > 0 and now <= self._hod_tap_finalize_deadline:
+        self._hod_tap_count_pending += 1
+      else:
+        self._hod_tap_count_pending = 1
+      self._hod_tap_finalize_deadline = now + HOD_TAP_GAP_S
 
     if self._hod_tap_count_pending > 0 and now > self._hod_tap_finalize_deadline:
       tap_count = self._hod_tap_count_pending
@@ -286,7 +303,9 @@ class ModelRendererSP:
       self._hod_last_tap_label = self._tap_label(tap_count)
       self._hod_last_tap_time = now
 
-    self._hod_prev_contact_active = self.hod_contact_active
+    self._hod_prev_dir_status_raw = self.hod_dir_status_raw
+    self._hod_prev_touch = self.hod_touch
+    self._hod_prev_strong = self.hod_strong
 
     active_tap_label = self._hod_last_tap_label
     if now - self._hod_last_tap_time > HOD_TAP_DISPLAY_HOLD_S:
