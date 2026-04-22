@@ -5,7 +5,6 @@
 #include <cassert>
 #include <cerrno>
 #include <memory>
-#include <optional>
 #include <thread>
 #include <utility>
 
@@ -289,17 +288,15 @@ void send_peripheral_state(Panda *panda, PubMaster *pm) {
   pm->send("peripheralState", msg);
 }
 
-std::optional<bool> process_panda_state(Panda *panda, PubMaster *pm, bool engaged, bool engaged_mads, bool is_onroad, bool spoofing_started, bool always_offroad) {
+void process_panda_state(Panda *panda, PubMaster *pm, bool engaged, bool engaged_mads, bool is_onroad, bool spoofing_started, bool always_offroad) {
   auto ignition_opt = send_panda_states(pm, panda, is_onroad, spoofing_started, always_offroad);
   if (!ignition_opt) {
     LOGE("Failed to get ignition_opt");
-    return std::nullopt;
+    return;
   }
 
-  bool ignition_local = ignition_opt.value();
-
   // check if we should have pandad reconnect
-  if (!ignition_local) {
+  if (!ignition_opt.value()) {
     if (!panda->comms_healthy()) {
       LOGE("Reconnecting, communication to panda not healthy");
       do_exit = true;
@@ -307,7 +304,6 @@ std::optional<bool> process_panda_state(Panda *panda, PubMaster *pm, bool engage
   }
 
   panda->send_heartbeat(engaged, engaged_mads);
-  return ignition_local;
 }
 
 void process_peripheral_state(Panda *panda, PubMaster *pm, bool no_fan_control) {
@@ -379,95 +375,41 @@ void pandad_run(Panda *panda) {
   const bool spoofing_started = getenv("STARTED") != nullptr;
   const bool fake_send = getenv("FAKESEND") != nullptr;
 
-  constexpr int ACTIVE_LOOP_RATE_HZ = 100;
-  constexpr int IDLE_LOOP_RATE_HZ = 10;
-  constexpr uint64_t PERIPHERAL_DIVISOR = 5;
-  constexpr uint64_t PANDA_STATE_DIVISOR = 10;
-  constexpr uint64_t ACTIVE_PERIPHERAL_STATE_DIVISOR = 50;
-  constexpr uint64_t IDLE_PERIPHERAL_STATE_DIVISOR = 20;
-  constexpr uint64_t SEC_TO_NANO = 1'000'000'000ULL;
-  constexpr uint64_t LOW_POWER_INITIAL_GRACE_NS = 5ULL * 60ULL * SEC_TO_NANO;
-  constexpr uint64_t LOW_POWER_REFRESH_INTERVAL_NS = 10ULL * 60ULL * SEC_TO_NANO;
-  constexpr uint64_t LOW_POWER_REFRESH_DURATION_NS = 15ULL * SEC_TO_NANO;
-
   // Start the CAN send thread
   std::thread send_thread(can_send_thread, panda, fake_send);
 
   Params params;
-  int current_loop_rate_hz = ACTIVE_LOOP_RATE_HZ;
-  RateKeeper rk("pandad", current_loop_rate_hz);
+  RateKeeper rk("pandad", 100);
   SubMaster sm({"selfdriveState", "selfdriveStateSP", "carParams"});
   PubMaster pm({"can", "pandaStates", "peripheralState"});
   PandaSafety panda_safety(panda);
   bool engaged = false;
   bool engaged_mads = false;
   bool is_onroad = false;
-  bool is_offroad_param = false;
   bool always_offroad = false;
-  bool ignition = false;
-  bool ignition_valid = false;
-  bool low_power_loop = false;
-  uint64_t low_power_next_refresh_ts = 0;
-  uint64_t low_power_active_until = 0;
 
   // Main loop: receive CAN data and process states
   while (!do_exit && check_connected(panda)) {
-    uint64_t now = nanos_since_boot();
-
     can_recv(panda, &pm);
 
-    bool screen_off = params.getBool("ScreenOff");
-    is_onroad = params.getBool("IsOnroad");
-    is_offroad_param = params.getBool("IsOffroad");
-    always_offroad = panda_safety.getOffroadMode();
-
-    bool low_power_candidate = is_offroad_param && !is_onroad && ignition_valid && !ignition && screen_off;
-    bool next_low_power_loop = low_power_candidate && !always_offroad;
-    if (next_low_power_loop && !low_power_loop) {
-      low_power_active_until = now + LOW_POWER_INITIAL_GRACE_NS;
-      low_power_next_refresh_ts = now + LOW_POWER_REFRESH_INTERVAL_NS;
-    } else if (!next_low_power_loop && low_power_loop) {
-      low_power_active_until = 0;
-      low_power_next_refresh_ts = 0;
-    }
-    low_power_loop = next_low_power_loop;
-
-    if (low_power_loop && low_power_next_refresh_ts != 0 && now >= low_power_next_refresh_ts) {
-      low_power_next_refresh_ts = now + LOW_POWER_REFRESH_INTERVAL_NS;
-      if (now >= low_power_active_until) {
-        low_power_active_until = now + LOW_POWER_REFRESH_DURATION_NS;
-      }
-    }
-
-    bool effective_low_power = low_power_loop && now >= low_power_active_until;
-    uint64_t peripheral_state_divisor = effective_low_power ? IDLE_PERIPHERAL_STATE_DIVISOR : ACTIVE_PERIPHERAL_STATE_DIVISOR;
-
-    int target_loop_rate_hz = effective_low_power ? IDLE_LOOP_RATE_HZ : ACTIVE_LOOP_RATE_HZ;
-    if (target_loop_rate_hz != current_loop_rate_hz) {
-      current_loop_rate_hz = target_loop_rate_hz;
-      rk = RateKeeper("pandad", current_loop_rate_hz);
-    }
-
-    // Process peripheral state at 20 Hz (active) or 2 Hz (low power)
-    if (rk.frame() % PERIPHERAL_DIVISOR == 0) {
+    // Process peripheral state at 20 Hz
+    if (rk.frame() % 5 == 0) {
       process_peripheral_state(panda, &pm, no_fan_control);
     }
 
-    // Process panda state at 10 Hz (active) or 1 Hz (low power)
-    if (rk.frame() % PANDA_STATE_DIVISOR == 0) {
+    // Process panda state at 10 Hz
+    if (rk.frame() % 10 == 0) {
       sm.update(0);
       engaged = sm.allAliveAndValid({"selfdriveState"}) && sm["selfdriveState"].getSelfdriveState().getEnabled();
       engaged_mads = process_mads_heartbeat(&sm);
-      auto ignition_opt = process_panda_state(panda, &pm, engaged, engaged_mads, is_onroad, spoofing_started, always_offroad);
-      if (ignition_opt.has_value()) {
-        ignition = ignition_opt.value();
-        ignition_valid = true;
-      }
+      is_onroad = params.getBool("IsOnroad");
+      always_offroad = panda_safety.getOffroadMode();
+      process_panda_state(panda, &pm, engaged, engaged_mads, is_onroad, spoofing_started, always_offroad);
       panda_safety.configureSafetyMode(is_onroad);
     }
 
-    // Send out peripheralState at 2 Hz (active) or 0.5 Hz (low power)
-    if (rk.frame() % peripheral_state_divisor == 0) {
+    // Send out peripheralState at 2Hz
+    if (rk.frame() % 50 == 0) {
       send_peripheral_state(panda, &pm);
     }
 

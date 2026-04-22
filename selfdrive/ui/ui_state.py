@@ -303,7 +303,6 @@ class Device(DeviceSP):
       self._awake = on
       cloudlog.debug(f"setting display power {int(on)}")
       HARDWARE.set_display_power(on)
-      ui_state.params.put_bool_nonblocking("ScreenOff", not on)
       gui_app.set_should_render(on)
 
 

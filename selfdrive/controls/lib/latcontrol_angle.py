@@ -10,7 +10,7 @@ STEER_ANGLE_SATURATION_THRESHOLD = 2.5  # Degrees
 class LatControlAngle(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
-    self.sat_check_min_speed = 2.5 / 3.6  # 2.5 km/h
+    self.sat_check_min_speed = 5.
     self.use_steer_limited_by_safety = CP.brand in ("tesla", "hyundai")
 
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):

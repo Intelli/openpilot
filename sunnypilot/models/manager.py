@@ -164,21 +164,10 @@ class ModelManagerSP:
 
   def main_thread(self) -> None:
     """Main thread for model management"""
-    ACTIVE_RATE_HZ = 1.0
-    IDLE_RATE_HZ = 0.1
-    rk = Ratekeeper(ACTIVE_RATE_HZ, print_delay_threshold=None)
-    low_power_loop = False
+    rk = Ratekeeper(1, print_delay_threshold=None)
 
     while True:
       try:
-        screen_off = self.params.get_bool("ScreenOff")
-        is_offroad = self.params.get_bool("IsOffroad")
-        is_onroad = self.params.get_bool("IsOnroad")
-        desired_low_power = screen_off and is_offroad and not is_onroad
-        if desired_low_power != low_power_loop:
-          low_power_loop = desired_low_power
-          rk = Ratekeeper(IDLE_RATE_HZ if low_power_loop else ACTIVE_RATE_HZ, print_delay_threshold=None)
-
         self.available_models = self.model_fetcher.get_available_bundles()
         self.active_bundle = get_active_bundle(self.params)
 

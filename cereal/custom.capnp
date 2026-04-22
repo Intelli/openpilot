@@ -351,10 +351,6 @@ struct CarParamsSP @0x80ae746ee2596b11 {
   pcmCruiseSpeed @3 :Bool;
   intelligentCruiseButtonManagementAvailable @4 :Bool;
   enableGasInterceptor @5 :Bool;
-  hkgTuningAngleCustomLimitMaxSpeedKph @6 :Float32;
-  hkgTuningAngleOverrideEffortPercent @7 :Float32;
-  hkgSharedAutonomyEnabled @8 :Bool;
-  hkgSharedAutonomyMode @9 :UInt8;
 
   neuralNetworkLateralControl @2 :NeuralNetworkLateralControl;
 
@@ -439,10 +435,6 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 
 struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
-  hodDirStatus @1 :UInt8;
-  hodTouch @2 :Bool;
-  hodGrip @3 :Bool;
-  hodStrong @4 :Bool;
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {

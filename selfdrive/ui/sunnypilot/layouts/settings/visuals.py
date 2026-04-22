@@ -40,8 +40,8 @@ class VisualsLayout(Widget):
         None,
       ),
       "RainbowMode": (
-        lambda: tr("Enable Kia EV9 Mode"),
-        tr("A beautiful EV9 effect on the path the model wants to take. " +
+        lambda: tr("Enable Tesla Rainbow Mode"),
+        tr("A beautiful rainbow effect on the path the model wants to take. " +
            "It does not affect driving in any way."),
         None,
       ),
