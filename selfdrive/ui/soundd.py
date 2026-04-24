@@ -58,8 +58,8 @@ sound_list: dict[int, tuple[str, int | None, float]] = {
 }
 if HARDWARE.get_device_type() == "tizi":
   sound_list.update({
-    AudibleAlert.engage: ("engage_tizi_custom.wav", 1, MAX_VOLUME),
-    AudibleAlert.disengage: ("disengage_tizi_custom.wav", 1, MAX_VOLUME),
+    AudibleAlert.engage: ("engage_tizi.wav", 1, MAX_VOLUME),
+    AudibleAlert.disengage: ("disengage_tizi.wav", 1, MAX_VOLUME),
   })
 
 def check_selfdrive_timeout_alert(sm):
