@@ -69,6 +69,7 @@ struct LeadData {
 struct SelfdriveStateSP @0x81c2f05a394cf4af {
   mads @0 :ModularAssistiveDrivingSystem;
   intelligentCruiseButtonManagement @1 :IntelligentCruiseButtonManagement;
+  hkgSharedAutonomyMode @2 :UInt8;
 
   enum AudibleAlert {
     none @0;
@@ -342,6 +343,8 @@ struct OnroadEventSP @0xda96579883444c35 {
     speedLimitChanged @21;
     speedLimitPending @22;
     e2eChime @23;
+    hkgSharedAutonomyEnabled @24;
+    hkgSharedAutonomyDisabled @25;
   }
 }
 
@@ -375,6 +378,7 @@ struct CarControlSP @0xa5cd762cd951a455 {
   leadOne @2 :LeadData;
   leadTwo @3 :LeadData;
   intelligentCruiseButtonManagement @4 :IntelligentCruiseButtonManagement;
+  hkgSharedAutonomyMode @5 :UInt8 = 255;
 
   struct Param {
     key @0 :Text;
@@ -439,6 +443,10 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 
 struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
+  hodDirStatus @1 :UInt8;
+  hodTouch @2 :Bool;
+  hodGrip @3 :Bool;
+  hodStrong @4 :Bool;
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {
