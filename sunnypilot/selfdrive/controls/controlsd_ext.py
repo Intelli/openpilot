@@ -95,10 +95,6 @@ class ControlsExt(ModelStateBase):
     CC_SP.mads = sm['selfdriveStateSP'].mads
 
     CC_SP.intelligentCruiseButtonManagement = sm['selfdriveStateSP'].intelligentCruiseButtonManagement
-    hkg_shared_autonomy_mode = int(getattr(self.CP_SP, "hkgSharedAutonomyMode", 0))
-    if sm.seen['selfdriveStateSP']:
-      hkg_shared_autonomy_mode = int(getattr(sm['selfdriveStateSP'], "hkgSharedAutonomyMode", hkg_shared_autonomy_mode))
-    CC_SP.hkgSharedAutonomyMode = max(0, min(hkg_shared_autonomy_mode, 2))
 
     return CC_SP
 

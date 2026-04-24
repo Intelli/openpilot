@@ -14,7 +14,7 @@ from openpilot.common.realtime import config_realtime_process, Priority, Ratekee
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.gps import get_gps_location_service
 
-from opendbc.car.hyundai.values import CAR, HyundaiFlags
+from opendbc.car.hyundai.values import CAR
 from openpilot.selfdrive.car.car_specific import CarSpecificEvents
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
@@ -49,15 +49,6 @@ SafetyModel = car.CarParams.SafetyModel
 TurnDirection = custom.ModelDataV2SP.TurnDirection
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
-HKG_SHARED_AUTONOMY_MODE_STOCK = 0
-HKG_SHARED_AUTONOMY_MODE_IMPROVED = 1
-HKG_SHARED_AUTONOMY_MODE_IMPROVED_LEGACY = 2
-HKG_HOD_SIGNAL_STALE_S = 0.4
-HKG_HOD_TAP_MIN_CONTACT_S = 0.03
-HKG_HOD_TAP_MAX_CONTACT_S = 0.45
-HKG_HOD_TAP_MIN_GAP_S = 0.15
-HKG_HOD_DOUBLE_TAP_GAP_S = 0.55
-HKG_SHARED_AUTONOMY_TOGGLE_COOLDOWN_S = 1.0
 
 
 class SelfdriveD(CruiseHelper):
@@ -99,7 +90,7 @@ class SelfdriveD(CruiseHelper):
     # TODO: de-couple selfdrived with card/conflate on carState without introducing controls mismatches
     self.car_state_sock = messaging.sub_sock('carState', timeout=20)
 
-    ignore = self.sensor_packets + self.gps_packets + ['alertDebug', 'lateralManeuverPlan'] + ['modelDataV2SP', 'carStateSP']
+    ignore = self.sensor_packets + self.gps_packets + ['alertDebug', 'lateralManeuverPlan'] + ['modelDataV2SP']
     if SIMULATION:
       ignore += ['driverCameraState', 'managerState']
     if REPLAY:
@@ -109,7 +100,7 @@ class SelfdriveD(CruiseHelper):
                                    'carOutput', 'driverMonitoringState', 'longitudinalPlan', 'livePose', 'liveDelay',
                                    'managerState', 'liveParameters', 'radarState', 'liveTorqueParameters',
                                    'controlsState', 'carControl', 'driverAssistance', 'alertDebug', 'userBookmark', 'audioFeedback',
-                                   'lateralManeuverPlan', 'modelDataV2SP', 'longitudinalPlanSP', 'carStateSP'] + \
+                                   'lateralManeuverPlan', 'modelDataV2SP', 'longitudinalPlanSP'] + \
                                    self.camera_packets + self.sensor_packets + self.gps_packets,
                                   ignore_alive=ignore, ignore_avg_freq=ignore,
                                   ignore_valid=ignore, frequency=int(1/DT_CTRL))
@@ -179,17 +170,6 @@ class SelfdriveD(CruiseHelper):
 
     self.events_sp = EventsSP()
     self.events_sp_prev = []
-    self.hkg_shared_autonomy_saved_mode = self._sanitize_hkg_shared_autonomy_mode(getattr(self.CP_SP, "hkgSharedAutonomyMode", 1))
-    self.hkg_shared_autonomy_runtime_mode = self.hkg_shared_autonomy_saved_mode
-    self.hkg_shared_autonomy_on_mode = self.hkg_shared_autonomy_saved_mode if self.hkg_shared_autonomy_saved_mode != 0 else HKG_SHARED_AUTONOMY_MODE_IMPROVED
-    self._hkg_hod_prev_contact = False
-    self._hkg_hod_prev_strong = False
-    self._hkg_hod_contact_start_time = 0.0
-    self._hkg_hod_contact_generated_tap = False
-    self._hkg_hod_tap_count_pending = 0
-    self._hkg_hod_tap_finalize_deadline = 0.0
-    self._hkg_hod_last_tap_time = 0.0
-    self._hkg_last_shared_autonomy_toggle_time = 0.0
 
     self.mads = ModularAssistiveDrivingSystem(self)
     self.icbm = IntelligentCruiseButtonManagement(self.CP, self.CP_SP)
@@ -197,98 +177,6 @@ class SelfdriveD(CruiseHelper):
     self.car_events_sp = CarSpecificEventsSP(self.CP, self.CP_SP)
 
     CruiseHelper.__init__(self, self.CP)
-
-  @staticmethod
-  def _sanitize_hkg_shared_autonomy_mode(mode) -> int:
-    try:
-      mode = int(mode)
-    except (TypeError, ValueError):
-      mode = HKG_SHARED_AUTONOMY_MODE_IMPROVED
-    return max(HKG_SHARED_AUTONOMY_MODE_STOCK, min(mode, HKG_SHARED_AUTONOMY_MODE_IMPROVED_LEGACY))
-
-  def _hkg_shared_autonomy_available(self) -> bool:
-    return self.CP.brand == "hyundai" and bool(self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING) and not self.CP.passive
-
-  def _reset_hkg_hod_tap_detection(self) -> None:
-    self._hkg_hod_prev_contact = False
-    self._hkg_hod_prev_strong = False
-    self._hkg_hod_contact_start_time = 0.0
-    self._hkg_hod_contact_generated_tap = False
-    self._hkg_hod_tap_count_pending = 0
-    self._hkg_hod_tap_finalize_deadline = 0.0
-    self._hkg_hod_last_tap_time = 0.0
-
-  def _toggle_hkg_shared_autonomy_mode(self) -> int:
-    if self.hkg_shared_autonomy_runtime_mode != HKG_SHARED_AUTONOMY_MODE_STOCK:
-      self.hkg_shared_autonomy_runtime_mode = HKG_SHARED_AUTONOMY_MODE_STOCK
-      return custom.OnroadEventSP.EventName.hkgSharedAutonomyDisabled
-
-    self.hkg_shared_autonomy_runtime_mode = self.hkg_shared_autonomy_on_mode
-    return custom.OnroadEventSP.EventName.hkgSharedAutonomyEnabled
-
-  def _register_hkg_hod_tap(self, now: float) -> int | None:
-    if now - self._hkg_hod_last_tap_time < HKG_HOD_TAP_MIN_GAP_S:
-      return None
-
-    if now - self._hkg_last_shared_autonomy_toggle_time < HKG_SHARED_AUTONOMY_TOGGLE_COOLDOWN_S:
-      self._hkg_hod_tap_count_pending = 0
-      self._hkg_hod_tap_finalize_deadline = 0.0
-      return None
-
-    self._hkg_hod_last_tap_time = now
-
-    if self._hkg_hod_tap_count_pending > 0 and now <= self._hkg_hod_tap_finalize_deadline:
-      self._hkg_hod_tap_count_pending += 1
-    else:
-      self._hkg_hod_tap_count_pending = 1
-
-    if self._hkg_hod_tap_count_pending >= 2:
-      self._hkg_hod_tap_count_pending = 0
-      self._hkg_hod_tap_finalize_deadline = 0.0
-      self._hkg_last_shared_autonomy_toggle_time = now
-      return self._toggle_hkg_shared_autonomy_mode()
-
-    self._hkg_hod_tap_finalize_deadline = now + HKG_HOD_DOUBLE_TAP_GAP_S
-    return None
-
-  def _update_hkg_shared_autonomy_toggle(self, CS) -> int | None:
-    if not self._hkg_shared_autonomy_available() or not self.enabled:
-      self._reset_hkg_hod_tap_detection()
-      return None
-
-    now = time.monotonic()
-    if not self.sm.seen["carStateSP"] or now - self.sm.recv_time["carStateSP"] > HKG_HOD_SIGNAL_STALE_S:
-      self._reset_hkg_hod_tap_detection()
-      return None
-
-    car_state_sp = self.sm["carStateSP"]
-    hod_status = int(getattr(car_state_sp, "hodDirStatus", 0))
-    contact = bool(getattr(car_state_sp, "hodTouch", False)) or hod_status in (1, 2, 3, 4)
-    strong = bool(getattr(car_state_sp, "hodStrong", False)) or hod_status in (2, 4)
-    toggle_event = None
-
-    if contact and not self._hkg_hod_prev_contact:
-      self._hkg_hod_contact_start_time = now
-      self._hkg_hod_contact_generated_tap = False
-
-    if contact and strong and not self._hkg_hod_prev_strong:
-      toggle_event = self._register_hkg_hod_tap(now)
-      self._hkg_hod_contact_generated_tap = True
-    elif not contact and self._hkg_hod_prev_contact:
-      contact_duration = now - self._hkg_hod_contact_start_time
-      if not self._hkg_hod_contact_generated_tap and HKG_HOD_TAP_MIN_CONTACT_S <= contact_duration <= HKG_HOD_TAP_MAX_CONTACT_S:
-        toggle_event = self._register_hkg_hod_tap(now)
-      self._hkg_hod_contact_start_time = 0.0
-      self._hkg_hod_contact_generated_tap = False
-
-    self._hkg_hod_prev_contact = contact
-    self._hkg_hod_prev_strong = strong
-
-    if self._hkg_hod_tap_count_pending > 0 and now > self._hkg_hod_tap_finalize_deadline:
-      self._hkg_hod_tap_count_pending = 0
-      self._hkg_hod_tap_finalize_deadline = 0.0
-
-    return toggle_event
 
   def update_events(self, CS):
     """Compute onroadEvents from carState"""
@@ -327,10 +215,6 @@ class SelfdriveD(CruiseHelper):
     # Don't add any more events while in dashcam mode
     if self.CP.passive:
       return
-
-    hkg_shared_autonomy_event = self._update_hkg_shared_autonomy_toggle(CS)
-    if hkg_shared_autonomy_event is not None:
-      self.events_sp.add(hkg_shared_autonomy_event)
 
     # Block resume if cruise never previously enabled
     resume_pressed = any(be.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for be in CS.buttonEvents)
@@ -704,7 +588,6 @@ class SelfdriveD(CruiseHelper):
     icbm.state = self.icbm.state
     icbm.sendButton = self.icbm.cruise_button
     icbm.vTarget = self.icbm.v_target
-    ss_sp.hkgSharedAutonomyMode = self.hkg_shared_autonomy_runtime_mode
 
     self.pm.send('selfdriveStateSP', ss_sp_msg)
 

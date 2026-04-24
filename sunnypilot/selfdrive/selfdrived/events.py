@@ -236,22 +236,6 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.LOW, VisualAlert.none, AudibleAlertSP.promptSingleHigh, 5.),
   },
 
-  EventNameSP.hkgSharedAutonomyEnabled: {
-    ET.PERMANENT: Alert(
-      "Improved Manual Control ON",
-      "",
-      AlertStatus.normal, AlertSize.small,
-      Priority.MID, VisualAlert.none, AudibleAlert.engage, 1.5),
-  },
-
-  EventNameSP.hkgSharedAutonomyDisabled: {
-    ET.PERMANENT: Alert(
-      "Improved Manual Control OFF",
-      "",
-      AlertStatus.normal, AlertSize.small,
-      Priority.MID, VisualAlert.none, AudibleAlert.disengage, 1.5),
-  },
-
   EventNameSP.e2eChime: {
     ET.PERMANENT: Alert(
       "",
