@@ -14,7 +14,7 @@ index 9f1d4b12a2..6a3cfe8f53 100644
                                                    lambda v: f"{int(round(v / 100 * (CV.MPH_TO_KPH if ui_state.is_metric else 1)))}" +
                                                              f" {'km/h' if ui_state.is_metric else 'mph'}")
 diff --git b/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py a/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py
-index 20c9903a63..11bf080915 100644
+index 20c9903a63..779ba04a72 100644
 --- b/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py
 +++ a/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py
 @@ -7,33 +7,78 @@ See the LICENSE.md file in the root directory for more details.
@@ -99,7 +99,7 @@ index 20c9903a63..11bf080915 100644
  
      tuning_param = int(ui_state.params.get("HyundaiLongitudinalTuning") or "0")
      long_enabled = ui_state.has_longitudinal_control
-@@ -57,3 +102,70 @@ class HyundaiSettings(BrandSettings):
+@@ -57,3 +102,66 @@ class HyundaiSettings(BrandSettings):
      self.longitudinal_tuning_item.show_description(True)
      self.longitudinal_tuning_item.action_item.set_selected_button(tuning_param)
      self.longitudinal_tuning_item.set_visible(self.alpha_long_available)
@@ -108,14 +108,13 @@ index 20c9903a63..11bf080915 100644
 +    shared_autonomy_mode = int(shared_autonomy_mode_param) if shared_autonomy_mode_param is not None else 1
 +    shared_autonomy_mode = max(0, min(shared_autonomy_mode, 2))
 +    improved_manual_control_enabled = shared_autonomy_mode != 0
-+    shared_autonomy_stock_mode = shared_autonomy_mode == 0
 +    shared_autonomy_base_desc = tr(
 +      "When enabled, openpilot suppresses lateral actuation during explicit manual steering intent " +
 +      "(hands-on plus torque input), and resumes when manual control exits. Manual control exits immediately " +
 +      "on wheel release, or after low steering demand for 1 second while steering is not pressed."
 +    ) if improved_manual_control_enabled else tr(
 +      "When disabled, openpilot keeps stock shared-autonomy behavior and can continue lateral control while you manually steer. " +
-+      "Steering Override Effort applies in this mode."
++      "Steering Override Effort still applies during manual override."
 +    )
 +    if not self.has_angle_steering:
 +      shared_autonomy_desc = tr("This feature is only available on angle-steering Hyundai/Kia/Genesis platforms.")
@@ -135,16 +134,13 @@ index 20c9903a63..11bf080915 100644
 +                                  "Lower values make override easier. 100% keeps stock behavior.")
 +    if not self.has_angle_steering:
 +      angle_override_desc = tr("This feature is only available on angle-steering Hyundai/Kia/Genesis platforms.")
-+    elif not shared_autonomy_stock_mode:
-+      unavailable_desc = tr("Turn off Improved Manual Control to use this setting.")
-+      angle_override_desc = f"<b>{unavailable_desc}</b><br><br>{angle_override_base_desc}"
 +    elif not ui_state.is_offroad():
 +      angle_override_desc = tr("Enable \"Always Offroad\" in Device panel, or turn vehicle off to adjust this setting.")
 +      angle_override_desc = f"<b>{angle_override_desc}</b><br><br>{angle_override_base_desc}"
 +    else:
 +      angle_override_desc = angle_override_base_desc
 +
-+    self.angle_override_effort_item.action_item.set_enabled(self.has_angle_steering and ui_state.is_offroad() and shared_autonomy_stock_mode)
++    self.angle_override_effort_item.action_item.set_enabled(self.has_angle_steering and ui_state.is_offroad())
 +    self.angle_override_effort_item.set_description(angle_override_desc)
 +    self.angle_override_effort_item.show_description(True)
 +    self.angle_override_effort_item.set_visible(self.has_angle_steering)
