@@ -107,14 +107,13 @@ class HyundaiSettings(BrandSettings):
     shared_autonomy_mode = int(shared_autonomy_mode_param) if shared_autonomy_mode_param is not None else 1
     shared_autonomy_mode = max(0, min(shared_autonomy_mode, 2))
     improved_manual_control_enabled = shared_autonomy_mode != 0
-    shared_autonomy_stock_mode = shared_autonomy_mode == 0
     shared_autonomy_base_desc = tr(
       "When enabled, openpilot suppresses lateral actuation during explicit manual steering intent " +
       "(hands-on plus torque input), and resumes when manual control exits. Manual control exits immediately " +
       "on wheel release, or after low steering demand for 1 second while steering is not pressed."
     ) if improved_manual_control_enabled else tr(
       "When disabled, openpilot keeps stock shared-autonomy behavior and can continue lateral control while you manually steer. " +
-      "Steering Override Effort applies in this mode."
+      "Steering Override Effort still applies during manual override."
     )
     if not self.has_angle_steering:
       shared_autonomy_desc = tr("This feature is only available on angle-steering Hyundai/Kia/Genesis platforms.")
@@ -134,16 +133,13 @@ class HyundaiSettings(BrandSettings):
                                   "Lower values make override easier. 100% keeps stock behavior.")
     if not self.has_angle_steering:
       angle_override_desc = tr("This feature is only available on angle-steering Hyundai/Kia/Genesis platforms.")
-    elif not shared_autonomy_stock_mode:
-      unavailable_desc = tr("Turn off Improved Manual Control to use this setting.")
-      angle_override_desc = f"<b>{unavailable_desc}</b><br><br>{angle_override_base_desc}"
     elif not ui_state.is_offroad():
       angle_override_desc = tr("Enable \"Always Offroad\" in Device panel, or turn vehicle off to adjust this setting.")
       angle_override_desc = f"<b>{angle_override_desc}</b><br><br>{angle_override_base_desc}"
     else:
       angle_override_desc = angle_override_base_desc
 
-    self.angle_override_effort_item.action_item.set_enabled(self.has_angle_steering and ui_state.is_offroad() and shared_autonomy_stock_mode)
+    self.angle_override_effort_item.action_item.set_enabled(self.has_angle_steering and ui_state.is_offroad())
     self.angle_override_effort_item.set_description(angle_override_desc)
     self.angle_override_effort_item.show_description(True)
     self.angle_override_effort_item.set_visible(self.has_angle_steering)
