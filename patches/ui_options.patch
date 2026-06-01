@@ -14,7 +14,7 @@ index 9f1d4b12a2..6a3cfe8f53 100644
                                                    lambda v: f"{int(round(v / 100 * (CV.MPH_TO_KPH if ui_state.is_metric else 1)))}" +
                                                              f" {'km/h' if ui_state.is_metric else 'mph'}")
 diff --git b/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py a/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py
-index 20c9903a63..779ba04a72 100644
+index 20c9903a63..6fcd4cc149 100644
 --- b/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py
 +++ a/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py
 @@ -7,33 +7,78 @@ See the LICENSE.md file in the root directory for more details.
@@ -105,7 +105,7 @@ index 20c9903a63..779ba04a72 100644
      self.longitudinal_tuning_item.set_visible(self.alpha_long_available)
 +
 +    shared_autonomy_mode_param = ui_state.params.get("HkgSharedAutonomyMode", return_default=True)
-+    shared_autonomy_mode = int(shared_autonomy_mode_param) if shared_autonomy_mode_param is not None else 1
++    shared_autonomy_mode = int(shared_autonomy_mode_param) if shared_autonomy_mode_param is not None else 0
 +    shared_autonomy_mode = max(0, min(shared_autonomy_mode, 2))
 +    improved_manual_control_enabled = shared_autonomy_mode != 0
 +    shared_autonomy_base_desc = tr(
