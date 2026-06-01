@@ -450,7 +450,7 @@ index 369daf5233..820cd2e766 100755
  
  if [ -n "$TARGET_ARCHITECTURE" ]; then
 diff --git b/release/ci/publish.sh a/release/ci/publish.sh
-index 315ae22bfe..f81e0c7fc7 100755
+index 315ae22bfe..306758cea7 100755
 --- b/release/ci/publish.sh
 +++ a/release/ci/publish.sh
 @@ -39,6 +39,165 @@ echo "#define SUNNYPILOT_VERSION \"$VERSION\"" > ${OUTPUT_DIR}/sunnypilot/common
@@ -619,3 +619,12 @@ index 315ae22bfe..f81e0c7fc7 100755
  
  # set git username/password
  #source /data/identity.sh
+@@ -50,6 +209,8 @@ git remote add origin $GIT_ORIGIN
+ git fetch origin $DEV_BRANCH || (git checkout -b $DEV_BRANCH && git commit --allow-empty -m "sunnypilot v$VERSION release" && git push -u origin $DEV_BRANCH)
+ 
+ echo "[-] committing version $VERSION T=$SECONDS"
++# x86 dev tools; not built on device (larch64) and exceed GitHub size limits
++rm -f tools/cabana/_cabana tools/replay/replay tools/jotpluggler/jotpluggler
+ git add -f .
+ 
+ # include source commit hash and build date in commit

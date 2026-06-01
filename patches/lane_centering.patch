@@ -1,8 +1,8 @@
 diff --git b/cereal/log.capnp a/cereal/log.capnp
-index 1ad9430db8..433892f38d 100644
+index cf91e017e6..bef70942bb 100644
 --- b/cereal/log.capnp
 +++ a/cereal/log.capnp
-@@ -868,6 +868,14 @@ struct ControlsState @0x97ff69c53601abf1 {
+@@ -807,6 +807,14 @@ struct ControlsState @0x97ff69c53601abf1 {
    ufAccelCmd @33 :Float32;
    curvature @37 :Float32;  # path curvature from vehicle model
    desiredCurvature @61 :Float32;  # lag adjusted curvatures used by lateral controllers
@@ -17,7 +17,7 @@ index 1ad9430db8..433892f38d 100644
    forceDecel @51 :Bool;
  
    lateralControlState :union {
-@@ -963,6 +971,12 @@ struct ControlsState @0x97ff69c53601abf1 {
+@@ -864,6 +872,12 @@ struct ControlsState @0x97ff69c53601abf1 {
      saturated @3 :Bool;
    }
  
@@ -27,9 +27,9 @@ index 1ad9430db8..433892f38d 100644
 +    edge @2;
 +  }
 +
-   # deprecated
-   vEgoDEPRECATED @0 :Float32;
-   vEgoRawDEPRECATED @32 :Float32;
+   deprecated :group {
+     vEgo @0 :Float32;
+     vEgoRaw @32 :Float32;
 diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
 index 575ec2d46e..f56be1f1ed 100755
 --- b/selfdrive/controls/controlsd.py
@@ -1034,7 +1034,7 @@ index bc880c9867..f60590cb35 100644
      """Update raw 3D points from model data"""
      self._path.raw_points = np.array([model.position.x, np.array(model.position.y) + self._camera_offset, model.position.z], dtype=np.float32).T
 diff --git b/selfdrive/ui/sunnypilot/layouts/settings/models.py a/selfdrive/ui/sunnypilot/layouts/settings/models.py
-index f77346c240..6a3cfe8f53 100644
+index fabd21e608..03de481900 100644
 --- b/selfdrive/ui/sunnypilot/layouts/settings/models.py
 +++ a/selfdrive/ui/sunnypilot/layouts/settings/models.py
 @@ -90,11 +90,18 @@ class ModelsLayout(Widget):

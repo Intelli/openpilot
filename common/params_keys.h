@@ -213,6 +213,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // sunnylink params
     {"EnableSunnylinkUploader", {PERSISTENT | BACKUP, BOOL}},
     {"LastSunnylinkPingTime", {CLEAR_ON_MANAGER_START, INT}},
+    {"ParamsVersion", {PERSISTENT, INT}},
     {"SunnylinkCache_Roles", {PERSISTENT, STRING}},
     {"SunnylinkCache_Users", {PERSISTENT, STRING}},
     {"SunnylinkDongleId", {PERSISTENT, STRING}},
@@ -287,7 +288,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
     // Tuning keys
     {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
-    {"HkgSharedAutonomyMode", {PERSISTENT | BACKUP, INT, "1"}},
+    {"HkgSharedAutonomyMode", {PERSISTENT | BACKUP, INT, "0"}},
     {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT | BACKUP, INT, "10"}},
     {"HkgTuningAngleMinTorqueReductionGain", {PERSISTENT | BACKUP, INT, "1"}},
     {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},

@@ -1,10 +1,10 @@
 diff --git b/selfdrive/selfdrived/events.py a/selfdrive/selfdrived/events.py
-index 0597aa9f17..c8a7833a05 100755
+index 7458b85371..21481f9a5c 100755
 --- b/selfdrive/selfdrived/events.py
 +++ a/selfdrive/selfdrived/events.py
-@@ -348,9 +348,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+@@ -351,9 +351,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
  
-   EventName.promptDriverDistracted: {
+   EventName.driverDistracted2: {
      ET.PERMANENT: Alert(
 -      "Pay Attention",
        "Driver Distracted",
@@ -14,7 +14,7 @@ index 0597aa9f17..c8a7833a05 100755
        Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, .1),
    },
  
-@@ -440,9 +440,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+@@ -443,9 +443,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
  
    EventName.steerSaturated: {
      ET.WARNING: Alert(
