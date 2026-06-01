@@ -872,6 +872,12 @@ struct ControlsState @0x97ff69c53601abf1 {
     saturated @3 :Bool;
   }
 
+  enum LaneCenteringSource {
+    none @0;
+    lane @1;
+    edge @2;
+  }
+
   deprecated :group {
     vEgo @0 :Float32;
     vEgoRaw @32 :Float32;
