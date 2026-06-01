@@ -404,7 +404,8 @@ void pandad_run(Panda *panda) {
   std::thread send_thread(can_send_thread, panda, fake_send);
 
   Params params;
-  RateKeeper rk("pandad", 100);
+  int current_loop_rate_hz = ACTIVE_LOOP_RATE_HZ;
+  RateKeeper rk("pandad", current_loop_rate_hz);
   SubMaster sm({"selfdriveState", "selfdriveStateSP"});
   PubMaster pm({"can", "pandaStates", "peripheralState"});
   PandaSafety panda_safety(panda);
@@ -425,8 +426,40 @@ void pandad_run(Panda *panda) {
 
     can_recv(panda, &pm);
 
-    // Process peripheral state at 20 Hz
-    if (rk.frame() % 5 == 0) {
+    bool screen_off = params.getBool("ScreenOff");
+    is_onroad = params.getBool("IsOnroad");
+    is_offroad_param = params.getBool("IsOffroad");
+    always_offroad = panda_safety.getOffroadMode();
+
+    bool low_power_candidate = is_offroad_param && !is_onroad && ignition_valid && !ignition && screen_off;
+    bool next_low_power_loop = low_power_candidate && !always_offroad;
+    if (next_low_power_loop && !low_power_loop) {
+      low_power_active_until = now + LOW_POWER_INITIAL_GRACE_NS;
+      low_power_next_refresh_ts = now + LOW_POWER_REFRESH_INTERVAL_NS;
+    } else if (!next_low_power_loop && low_power_loop) {
+      low_power_active_until = 0;
+      low_power_next_refresh_ts = 0;
+    }
+    low_power_loop = next_low_power_loop;
+
+    if (low_power_loop && low_power_next_refresh_ts != 0 && now >= low_power_next_refresh_ts) {
+      low_power_next_refresh_ts = now + LOW_POWER_REFRESH_INTERVAL_NS;
+      if (now >= low_power_active_until) {
+        low_power_active_until = now + LOW_POWER_REFRESH_DURATION_NS;
+      }
+    }
+
+    bool effective_low_power = low_power_loop && now >= low_power_active_until;
+    uint64_t peripheral_state_divisor = effective_low_power ? IDLE_PERIPHERAL_STATE_DIVISOR : ACTIVE_PERIPHERAL_STATE_DIVISOR;
+
+    int target_loop_rate_hz = effective_low_power ? IDLE_LOOP_RATE_HZ : ACTIVE_LOOP_RATE_HZ;
+    if (target_loop_rate_hz != current_loop_rate_hz) {
+      current_loop_rate_hz = target_loop_rate_hz;
+      rk = RateKeeper("pandad", current_loop_rate_hz);
+    }
+
+    // Process peripheral state at 20 Hz (active) or 2 Hz (low power)
+    if (rk.frame() % PERIPHERAL_DIVISOR == 0) {
       process_peripheral_state(panda, &pm, no_fan_control, is_onroad);
     }
 
