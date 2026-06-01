@@ -209,6 +209,8 @@ git remote add origin $GIT_ORIGIN
 git fetch origin $DEV_BRANCH || (git checkout -b $DEV_BRANCH && git commit --allow-empty -m "sunnypilot v$VERSION release" && git push -u origin $DEV_BRANCH)
 
 echo "[-] committing version $VERSION T=$SECONDS"
+# x86 dev tools; not built on device (larch64) and exceed GitHub size limits
+rm -f tools/cabana/_cabana tools/replay/replay tools/jotpluggler/jotpluggler
 git add -f .
 
 # include source commit hash and build date in commit
