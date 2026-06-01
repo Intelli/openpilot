@@ -21,7 +21,7 @@ index 77b3d6f780..826589a79a 100644
      {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
      // Tuning keys
      {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
-+    {"HkgSharedAutonomyMode", {PERSISTENT | BACKUP, INT, "1"}},
++    {"HkgSharedAutonomyMode", {PERSISTENT | BACKUP, INT, "0"}},
 +    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT | BACKUP, INT, "10"}},
      {"HkgTuningAngleMinTorqueReductionGain", {PERSISTENT | BACKUP, INT, "1"}},
      {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
