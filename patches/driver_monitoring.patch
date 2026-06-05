@@ -1,0 +1,40 @@
+diff --git b/selfdrive/modeld/dmonitoringmodeld.py a/selfdrive/modeld/dmonitoringmodeld.py
+index 78749b773a..2a668a10a4 100755
+--- b/selfdrive/modeld/dmonitoringmodeld.py
++++ a/selfdrive/modeld/dmonitoringmodeld.py
+@@ -83,7 +83,7 @@ def parse_model_output(model_output):
+     face_descs = model_output[f'face_descs_{ds_suffix}']
+     parsed[f'face_descs_{ds_suffix}'] = face_descs[:, :-6]
+     parsed[f'face_descs_{ds_suffix}_std'] = safe_exp(face_descs[:, -6:])
+-    for key in ['face_prob', 'eyes_visible_prob', 'eyes_closed_prob', 'using_phone_prob']:
++    for key in ['face_prob', 'left_eye_prob', 'right_eye_prob', 'left_blink_prob', 'right_blink_prob', 'sunglasses_prob', 'using_phone_prob']:
+       parsed[f'{key}_{ds_suffix}'] = sigmoid(model_output[f'{key}_{ds_suffix}'])
+   return parsed
+ 
+@@ -93,8 +93,14 @@ def fill_driver_data(msg, model_output, ds_suffix):
+   msg.facePosition = model_output[f'face_descs_{ds_suffix}'][0, 3:5].tolist()
+   msg.facePositionStd = model_output[f'face_descs_{ds_suffix}_std'][0, 3:5].tolist()
+   msg.faceProb = model_output[f'face_prob_{ds_suffix}'][0, 0].item()
+-  msg.eyesVisibleProb = model_output[f'eyes_visible_prob_{ds_suffix}'][0, 0].item()
+-  msg.eyesClosedProb = model_output[f'eyes_closed_prob_{ds_suffix}'][0, 0].item()
++  left_eye = model_output[f'left_eye_prob_{ds_suffix}'][0, 0].item()
++  right_eye = model_output[f'right_eye_prob_{ds_suffix}'][0, 0].item()
++  left_blink = model_output[f'left_blink_prob_{ds_suffix}'][0, 0].item()
++  right_blink = model_output[f'right_blink_prob_{ds_suffix}'][0, 0].item()
++  sunglasses = model_output[f'sunglasses_prob_{ds_suffix}'][0, 0].item()
++  # map per-eye outputs to aggregated fields expected by dmonitoringd
++  msg.eyesVisibleProb = min(left_eye, right_eye) * float(sunglasses < 0.9)
++  msg.eyesClosedProb = (left_blink + right_blink) * 0.5
+   msg.phoneProb = model_output[f'using_phone_prob_{ds_suffix}'][0, 0].item()
+ 
+ def get_driverstate_packet(model_output, frame_id: int, location_ts: int, exec_time: float, gpu_exec_time: float):
+diff --git b/selfdrive/modeld/models/dmonitoring_model.onnx a/selfdrive/modeld/models/dmonitoring_model.onnx
+index 628f385796..24234d4c50 100644
+--- b/selfdrive/modeld/models/dmonitoring_model.onnx
++++ a/selfdrive/modeld/models/dmonitoring_model.onnx
+@@ -1,3 +1,3 @@
+ version https://git-lfs.github.com/spec/v1
+-oid sha256:2fd471febb6e973313ac0d0c6755f6410c1937ba92230b58a433761e8c883072
+-size 7364290
++oid sha256:5e8de9dc7df306700cce9c22b992e25b95a38f894c47adaea742a9cf8ba78e1a
++size 7307246
