@@ -138,6 +138,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     // --- sunnypilot params --- //
     {"ApiCache_DriveStats", {PERSISTENT, JSON}},
+    {"HandsFreeDriveStats", {PERSISTENT, JSON}},
     {"AutoLockUsername", {PERSISTENT | BACKUP | DONT_LOG, STRING}},
     {"AutoLockPassword", {PERSISTENT | BACKUP | DONT_LOG, STRING}},
     {"AutoLockPin", {PERSISTENT | BACKUP | DONT_LOG, STRING}},
