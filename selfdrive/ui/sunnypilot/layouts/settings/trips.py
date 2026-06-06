@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import datetime
 import requests
 import threading
 import time
@@ -24,6 +25,7 @@ from openpilot.system.ui.widgets import Widget
 
 class TripsLayout(Widget):
   PARAM_KEY = "ApiCache_DriveStats"
+  HANDS_FREE_PARAM_KEY = "HandsFreeDriveStats"
   UPDATE_INTERVAL = 30  # seconds
 
   def __init__(self):
@@ -79,26 +81,20 @@ class TripsLayout(Widget):
       time.sleep(self.UPDATE_INTERVAL)
 
   def _render_stat_group(self, x, y, width, height, title, data, is_metric):
-    # Card Background
     rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, height), 0.05, 10, rl.Color(30, 30, 30, 255))
 
-    # Title
     title_font = gui_app.font(FontWeight.BOLD)
-    rl.draw_text_ex(title_font, title, rl.Vector2(x + 60, y + 30), 50 * FONT_SCALE, 0, rl.Color(200, 200, 200, 255))
-
-    # Internal content area
-    # Center the content block (Icon + Value + Unit) vertically
-    content_y = y + (height / 2) - (140 * FONT_SCALE)
+    rl.draw_text_ex(title_font, title, rl.Vector2(x + 60, y + 20), 36 * FONT_SCALE, 0, rl.Color(200, 200, 200, 255))
     col_width = width / 3
 
-    # Values
     number_font = gui_app.font(FontWeight.BOLD)
     unit_font = gui_app.font(FontWeight.NORMAL)
-    number_base_size = 92
-    unit_base_size = 55
+    number_base_size = 70
+    unit_base_size = 34
     number_size = number_base_size * FONT_SCALE
     unit_size = unit_base_size * FONT_SCALE
     color_unit = rl.Color(160, 160, 160, 255)
+    icon_scale = 0.75
 
     routes = int(data.get("routes", 0))
     distance = data.get("distance", 0)
@@ -111,23 +107,71 @@ class TripsLayout(Widget):
       col_x = x + (col_width * col_idx)
       center_x = col_x + (col_width / 2)
 
-      # Icon
-      icon_x = center_x - (icon.width / 2)
-      icon_y = content_y + 60
-      rl.draw_texture_ex(icon, rl.Vector2(icon_x, icon_y), 0.0, 1.0, rl.WHITE)
+      icon_x = center_x - (icon.width * icon_scale / 2)
+      rl.draw_texture_ex(icon, rl.Vector2(icon_x, y + 65), 0.0, icon_scale, rl.WHITE)
 
-      # Value
       val_size = measure_text_cached(number_font, value, number_base_size)
-      rl.draw_text_ex(number_font, value, rl.Vector2(center_x - val_size.x / 1.65, content_y + 145 * FONT_SCALE), number_size, 0, rl.WHITE)
+      rl.draw_text_ex(number_font, value, rl.Vector2(center_x - val_size.x / 1.65, y + 145), number_size, 0, rl.WHITE)
 
-      # Unit
       unit_size_vec = measure_text_cached(unit_font, unit, unit_base_size)
-      rl.draw_text_ex(unit_font, unit, rl.Vector2(center_x - unit_size_vec.x / 1.65, content_y + 255 * FONT_SCALE), unit_size, 0, color_unit)
+      rl.draw_text_ex(unit_font, unit, rl.Vector2(center_x - unit_size_vec.x / 1.65, y + 255), unit_size, 0, color_unit)
 
     draw_col(0, self._icon_drives, str(routes), tr("Drives"))
     draw_col(1, self._icon_distance, distance_str, dist_unit)
     draw_col(2, self._icon_hours, str(hours), tr("Hours"))
 
+    return y + height
+
+  def _render_hands_free_stats(self, x, y, width, height, is_metric):
+    stats = self._params.get(self.HANDS_FREE_PARAM_KEY) or {}
+    if not isinstance(stats, dict):
+      stats = {}
+    hands_free_meters = max(0.0, float(stats.get("handsFreeDistanceMeters", 0.0)))
+    tracked_meters = max(0.0, float(stats.get("trackedDistanceMeters", 0.0)))
+    percentage = 100.0 * hands_free_meters / tracked_meters if tracked_meters > 0.0 else 0.0
+    distance_factor = 0.001 if is_metric else 1.0 / 1609.344
+    unit = tr("KM") if is_metric else tr("Miles")
+
+    since = stats.get("since", "")
+    try:
+      since = datetime.date.fromisoformat(since).strftime("%b %d, %Y")
+    except (TypeError, ValueError):
+      since = tr("No data yet")
+
+    title = f"{tr('HANDS-FREE DRIVING SINCE')} {since}"
+    data = {
+      "routes": f"{percentage:.0f}%",
+      "distance": hands_free_meters * distance_factor,
+      "minutes": tracked_meters * distance_factor,
+    }
+
+    rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, height), 0.05, 10, rl.Color(30, 30, 30, 255))
+    title_font = gui_app.font(FontWeight.BOLD)
+    rl.draw_text_ex(title_font, title, rl.Vector2(x + 60, y + 20), 36 * FONT_SCALE, 0, rl.Color(200, 200, 200, 255))
+
+    col_width = width / 3
+    number_font = gui_app.font(FontWeight.BOLD)
+    unit_font = gui_app.font(FontWeight.NORMAL)
+    number_base_size = 70
+    unit_base_size = 34
+    color_unit = rl.Color(160, 160, 160, 255)
+    icon_scale = 0.75
+
+    def draw_col(col_idx, icon, value, label):
+      center_x = x + (col_width * col_idx) + (col_width / 2)
+      rl.draw_texture_ex(icon, rl.Vector2(center_x - icon.width * icon_scale / 2, y + 65), 0.0, icon_scale, rl.WHITE)
+
+      val_size = measure_text_cached(number_font, value, number_base_size)
+      rl.draw_text_ex(number_font, value, rl.Vector2(center_x - val_size.x / 1.65, y + 145),
+                      number_base_size * FONT_SCALE, 0, rl.WHITE)
+
+      label_size = measure_text_cached(unit_font, label, unit_base_size)
+      rl.draw_text_ex(unit_font, label, rl.Vector2(center_x - label_size.x / 1.65, y + 255),
+                      unit_base_size * FONT_SCALE, 0, color_unit)
+
+    draw_col(0, self._icon_drives, data["routes"], tr("Hands-Free"))
+    draw_col(1, self._icon_distance, f"{data['distance']:.1f}", f"{tr('Hands-Free')} {unit}")
+    draw_col(2, self._icon_distance, f"{data['minutes']:.1f}", f"{tr('Tracked')} {unit}")
     return y + height
 
   def _render(self, rect: rl.Rectangle):
@@ -136,14 +180,16 @@ class TripsLayout(Widget):
     w = rect.width
 
     spacing = 30
-    available_h = rect.height - 30
-    card_height = available_h / 2
+    available_h = rect.height - spacing * 2
+    card_height = available_h / 3
 
     is_metric = self._params.get_bool("IsMetric")
 
     all_time = self._stats.get("all", {})
     week = self._stats.get("week", {})
 
+    y = self._render_hands_free_stats(x, y, w, card_height, is_metric)
+    y += spacing
     y = self._render_stat_group(x, y, w, card_height, tr("ALL TIME"), all_time, is_metric)
     y += spacing
     y = self._render_stat_group(x, y, w, card_height, tr("PAST WEEK"), week, is_metric)
