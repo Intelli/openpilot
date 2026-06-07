@@ -7,7 +7,8 @@ from typing import Any
 
 PARAM_KEY = "HandsFreeDriveStats"
 STATS_VERSION = 1
-MAX_SAMPLE_GAP_S = 0.5
+SAMPLE_INTERVAL_S = 0.5
+MAX_SAMPLE_GAP_S = 0.75
 PERSIST_INTERVAL_S = 60.0
 
 
@@ -61,45 +62,38 @@ def load_stats(params: Any) -> HandsFreeStats:
       trackedDistanceMeters=tracked_distance,
     )
   except (TypeError, ValueError):
-    from openpilot.common.swaglog import cloudlog
-    cloudlog.exception(f"Failed to decode hands-free drive stats: {raw}")
     return HandsFreeStats()
 
 
 def persist_stats(params: Any, stats: HandsFreeStats) -> None:
-  params.put(PARAM_KEY, asdict(stats))
+  params.put_nonblocking(PARAM_KEY, asdict(stats))
 
 
-def main() -> None:
-  import cereal.messaging as messaging
+class HandsFreeStatsCollector:
+  def __init__(self, params: Any):
+    self.params = params
+    self.accumulator = HandsFreeStatsAccumulator(load_stats(params))
+    self._last_sample_time: float | None = None
+    self._last_persist_time = time.monotonic()
+    self._valid = False
+    self._dirty = False
 
-  from openpilot.common.params import Params
-  from openpilot.common.realtime import Ratekeeper
+  def update(self, sm: Any, eligible: bool, now: float | None = None) -> None:
+    now = time.monotonic() if now is None else now
+    messages_valid = eligible and all(sm.seen[s] and sm.alive[s] and sm.valid[s] for s in ("carState", "carStateSP", "selfdriveState"))
+    valid = messages_valid and sm["carStateSP"].handsOnWheelValid
 
-  params = Params()
-  accumulator = HandsFreeStatsAccumulator(load_stats(params))
-  services = ["carState", "carStateSP", "selfdriveState"]
-  sm = messaging.SubMaster(services, frequency=10)
-  rk = Ratekeeper(10, print_delay_threshold=None)
-  last_persist_time = time.monotonic()
+    # Sample at 2 Hz, but invalidate immediately to avoid counting stale data after going offroad or losing HOD data.
+    sample_due = valid and (self._last_sample_time is None or now - self._last_sample_time >= SAMPLE_INTERVAL_S)
+    invalidated = self._valid and not valid
+    if sample_due or invalidated:
+      since = self.accumulator.stats.since or datetime.datetime.now(datetime.UTC).date().isoformat()
+      self.accumulator.update(now, sm["carState"].vEgo, sm["selfdriveState"].enabled, sm["carStateSP"].handsOnWheel, valid, since)
+      self._last_sample_time = now
+      self._valid = valid
+      self._dirty = True
 
-  try:
-    while True:
-      sm.update(0)
-      now = time.monotonic()
-      messages_valid = all(sm.seen[s] and sm.valid[s] and now - sm.recv_time[s] <= MAX_SAMPLE_GAP_S for s in services)
-      valid = messages_valid and sm["carStateSP"].handsOnWheelValid
-      since = accumulator.stats.since or datetime.datetime.now(datetime.UTC).date().isoformat()
-      accumulator.update(now, sm["carState"].vEgo, sm["selfdriveState"].enabled, sm["carStateSP"].handsOnWheel,
-                         valid, since)
-
-      if now - last_persist_time >= PERSIST_INTERVAL_S:
-        persist_stats(params, accumulator.stats)
-        last_persist_time = now
-      rk.keep_time()
-  finally:
-    persist_stats(params, accumulator.stats)
-
-
-if __name__ == "__main__":
-  main()
+    if self._dirty and (invalidated or now - self._last_persist_time >= PERSIST_INTERVAL_S):
+      persist_stats(self.params, self.accumulator.stats)
+      self._last_persist_time = now
+      self._dirty = False

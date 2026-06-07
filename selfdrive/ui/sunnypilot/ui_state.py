@@ -8,6 +8,7 @@ from enum import Enum
 
 from cereal import messaging, log, car, custom
 from openpilot.common.params import Params
+from openpilot.selfdrive.hands_free_stats import HandsFreeStatsCollector
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
 from openpilot.system.ui.lib.application import gui_app
@@ -34,6 +35,7 @@ class UIStateSP:
       "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
       "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "liveDelay"
     ]
+    self.hands_free_stats = HandsFreeStatsCollector(self.params)
 
     self.sunnylink_state = SunnylinkState()
 
@@ -42,6 +44,9 @@ class UIStateSP:
     self._sp_initialized: bool = False
 
   def update(self) -> None:
+    is_ev9 = self.CP is not None and self.CP.carFingerprint == "KIA_EV9"
+    self.hands_free_stats.update(self.sm, self.started and is_ev9)
+
     if self.sunnylink_enabled:
       self.sunnylink_state.start()
     else:
