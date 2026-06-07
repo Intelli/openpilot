@@ -80,7 +80,7 @@ class HandsFreeStatsCollector:
 
   def update(self, sm: Any, eligible: bool, now: float | None = None) -> None:
     now = time.monotonic() if now is None else now
-    messages_valid = eligible and all(sm.seen[s] and sm.alive[s] and sm.valid[s] for s in ("carState", "carStateSP", "selfdriveState"))
+    messages_valid = eligible and all(sm.seen[s] and sm.alive[s] and sm.valid[s] for s in ("carState", "carStateSP", "carControl"))
     valid = messages_valid and sm["carStateSP"].handsOnWheelValid
 
     # Sample at 2 Hz, but invalidate immediately to avoid counting stale data after going offroad or losing HOD data.
@@ -88,7 +88,7 @@ class HandsFreeStatsCollector:
     invalidated = self._valid and not valid
     if sample_due or invalidated:
       since = self.accumulator.stats.since or datetime.datetime.now(datetime.UTC).date().isoformat()
-      self.accumulator.update(now, sm["carState"].vEgo, sm["selfdriveState"].enabled, sm["carStateSP"].handsOnWheel, valid, since)
+      self.accumulator.update(now, sm["carState"].vEgo, sm["carControl"].latActive, sm["carStateSP"].handsOnWheel, valid, since)
       self._last_sample_time = now
       self._valid = valid
       self._dirty = True

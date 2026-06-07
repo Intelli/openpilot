@@ -21,13 +21,13 @@ class FakeMessage:
 
 class FakeSubMaster:
   def __init__(self):
-    self.seen = dict.fromkeys(("carState", "carStateSP", "selfdriveState"), True)
-    self.alive = dict.fromkeys(("carState", "carStateSP", "selfdriveState"), True)
-    self.valid = dict.fromkeys(("carState", "carStateSP", "selfdriveState"), True)
+    self.seen = dict.fromkeys(("carState", "carStateSP", "carControl"), True)
+    self.alive = dict.fromkeys(("carState", "carStateSP", "carControl"), True)
+    self.valid = dict.fromkeys(("carState", "carStateSP", "carControl"), True)
     self.messages = {
       "carState": FakeMessage(vEgo=10.0),
       "carStateSP": FakeMessage(handsOnWheel=False, handsOnWheelValid=True),
-      "selfdriveState": FakeMessage(enabled=True),
+      "carControl": FakeMessage(latActive=True),
     }
 
   def __getitem__(self, service):
@@ -78,3 +78,16 @@ def test_collector_samples_at_two_hz_and_invalidates_immediately():
 
   assert collector.accumulator.stats.trackedDistanceMeters == pytest.approx(7.0)
   assert collector.accumulator.stats.handsFreeDistanceMeters == pytest.approx(7.0)
+
+
+def test_collector_uses_lateral_active_for_hands_free_distance():
+  collector = HandsFreeStatsCollector(FakeParams())
+  sm = FakeSubMaster()
+
+  collector.update(sm, True, now=0.0)
+  sm["carControl"].latActive = False
+  collector.update(sm, True, now=0.5)
+  collector.update(sm, True, now=1.0)
+
+  assert collector.accumulator.stats.trackedDistanceMeters == pytest.approx(10.0)
+  assert collector.accumulator.stats.handsFreeDistanceMeters == pytest.approx(5.0)
