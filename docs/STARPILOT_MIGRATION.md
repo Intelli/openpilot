@@ -75,6 +75,7 @@ are enabled. `./apply_patch.sh` skips changes already applied.
 | --- | --- |
 | `custom_defaults_starpilot.patch` | Supported StarPilot defaults, EV9 manual fingerprint, completed training `0.2.0`, four Hkg defaults |
 | `ev9_edition_starpilot.patch` | EV9 Edition branding and EV9-only control restriction; already migrated before these ports |
+| `boot_logo_ev9_edition.patch` | EV9 Edition boot JPEG and startup/theme references to the new image |
 | `settings_ui_starpilot.patch` | Shared flat settings layout and larger, clearer controls |
 | `drive_helpers_starpilot.patch` | EV9 tuning broadcast and upper-level curvature integration |
 | `customize_warnings_starpilot.patch` | EV9-specific steering warning thresholds |
@@ -159,9 +160,11 @@ cover distinct sensor angles, independent SAS updates and return from handoff.
 
 `drive_helpers_starpilot.patch` connects persistent settings to StarPilot's toggle
 broadcast and the native `EV9AngleConfig` consumer. Startup car identification
-reads current persisted values over cached broadcasts; realtime consumers do no
-parameter-file I/O. Settings publish before fingerprinting, while consumers gate
-behavior on the actual EV9 angle-steering CarParams.
+reads current persisted values over cached broadcasts, including `ForceFingerprint`
+and the selected `CarModel`. Startup overrides use a separate snapshot so they
+cannot modify the cached broadcast consumed by realtime callers, which do no
+parameter-file I/O. Vehicle consumers gate behavior on the actual EV9
+angle-steering CarParams.
 
 | Toggle attribute | Parameter | Application default / range |
 | --- | --- | --- |

@@ -22,7 +22,7 @@ exporting a new patch defaults to enabled, or accepts an explicit disabled suffi
 when you want to keep it inactive.
 
 The six migrated vehicle patches use prefixes `01_` through `06_` to preserve their
-dependency order. The eight enabled root patches contain custom defaults, EV9 Edition branding,
+dependency order. The nine enabled root patches contain custom defaults, EV9 Edition branding and boot artwork,
 settings UI, EV9 control configuration/curvature, warning policy, compact alerts,
 EV9 settings controls, and the EV9 animated path effect. Only lane centering,
 driver monitoring and power management remain `.temp-disabled` by request. The old prebuilt

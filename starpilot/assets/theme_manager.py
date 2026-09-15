@@ -201,7 +201,7 @@ class ThemeManager:
     steering_wheel_save_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(steering_wheel_image_path, steering_wheel_save_path)
 
-    default_boot_logo_path = Path(__file__).parent / "other_images/starpilot_boot_logo.jpg"
+    default_boot_logo_path = Path(__file__).parent / "other_images/starpilot_ev9_edition.jpg"
     boot_logo_save_path = THEME_SAVE_PATH / "bootlogos/starpilot.jpg"
     boot_logo_save_path.parent.mkdir(parents=True, exist_ok=True)
     if default_boot_logo_path.exists():
@@ -806,7 +806,7 @@ class ThemeManager:
 
   @staticmethod
   def update_boot_logo(image):
-    default_boot_logo = Path(__file__).parent / "other_images/starpilot_boot_logo.jpg"
+    default_boot_logo = Path(__file__).parent / "other_images/starpilot_ev9_edition.jpg"
 
     if not default_boot_logo.exists():
       return
