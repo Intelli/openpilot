@@ -29,6 +29,7 @@ _services: dict[str, tuple] = {
   "temperatureSensor": (True, 2., 200),
   "gpsNMEA": (True, 9.),
   "deviceState": (True, 2., 1),
+  "chestnutState": (True, 10., 10),
   "touch": (True, 20., 1),
   "can": (True, 100., 2053, QueueSize.BIG),  # decimation gives ~3 msgs in a full segment
   "controlsState": (True, 100., 10, QueueSize.MEDIUM),
@@ -39,8 +40,8 @@ _services: dict[str, tuple] = {
   "roadEncodeIdx": (False, 20., 1),
   "liveTracks": (True, 20.),
   "sendcan": (True, 100., 139, QueueSize.MEDIUM),
-  "logMessage": (True, 0., None, QueueSize.BIG),
-  "errorLogMessage": (True, 0., 1, QueueSize.BIG),
+  "logMessage": (True, 0.),
+  "errorLogMessage": (True, 0., 1),
   "liveCalibration": (True, 4., 4),
   "liveTorqueParameters": (True, 4., 1),
   "liveDelay": (True, 4., 1),
@@ -85,23 +86,11 @@ _services: dict[str, tuple] = {
   "rawAudioData": (False, 20.),
   "bookmarkButton": (True, 0., 1),
   "audioFeedback": (True, 0., 1),
+  "visionSpeedLimitBookmark": (False, 0., 1),
   "roadEncodeData": (False, 20., None, QueueSize.BIG),
   "driverEncodeData": (False, 20., None, QueueSize.BIG),
   "wideRoadEncodeData": (False, 20., None, QueueSize.BIG),
   "qRoadEncodeData": (False, 20., None, QueueSize.BIG),
-
-  # sunnypilot
-  "modelManagerSP": (False, 1., 1, QueueSize.BIG),
-  "backupManagerSP": (False, 1., 1, QueueSize.BIG),
-  "selfdriveStateSP": (True, 100., 10),
-  "longitudinalPlanSP": (True, 20., 10),
-  "onroadEventsSP": (True, 1., 1),
-  "carParamsSP": (True, 0.02, 1),
-  "carControlSP": (True, 100., 10),
-  "carStateSP": (True, 100., 10),
-  "liveMapDataSP": (True, 1., 1),
-  "modelDataV2SP": (True, 20., None, QueueSize.BIG),
-  "liveLocationKalman": (True, 20.),
 
   # debug
   "uiDebug": (True, 0., 1),
@@ -113,9 +102,25 @@ _services: dict[str, tuple] = {
   "livestreamWideRoadEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "livestreamRoadEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "livestreamDriverEncodeData": (False, 20., None, QueueSize.MEDIUM),
+  "customReserved9": (True, 0., 1),
+  "starpilotLateralState": (True, 100., 10),
   "customReservedRawData0": (True, 0.),
   "customReservedRawData1": (True, 0.),
   "customReservedRawData2": (True, 0.),
+
+  # StarPilot variables
+  "starpilotCarControl": (True, 100., 10),
+  "starpilotCarParams": (True, 0.02, 1),
+  "starpilotCarState": (True, 100., 10),
+  "starpilotDeviceState": (True, 2., 1),
+  "starpilotModelV2": (True, 20.),
+  "starpilotOnroadEvents": (True, 1., 1),
+  "starpilotPlan": (True, 20., 10),
+  "starpilotRadarState": (True, 20., 5),
+  "starpilotSelfdriveState": (True, 100., 10),
+  "mapdExtendedOut": (True, 1., 1, QueueSize.MEDIUM),
+  "mapdIn": (True, 1., 1, QueueSize.MEDIUM),
+  "mapdOut": (True, 20., 20, QueueSize.MEDIUM),
 }
 SERVICE_LIST = {name: Service(*vals) for
                 idx, (name, vals) in enumerate(_services.items())}

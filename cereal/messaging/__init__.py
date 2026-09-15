@@ -1,8 +1,10 @@
 # must be built with scons
-from msgq import fake_event_handle, drain_sock_raw, MultiplePublishersError, IpcError, \
-                 Context, Poller, SubSocket, PubSocket, SocketEventHandle, toggle_fake_events, \
-                 set_fake_prefix, get_fake_prefix, delete_fake_prefix, wait_for_one_event
+from msgq.ipc_pyx import Context, Poller, SubSocket, PubSocket, SocketEventHandle, toggle_fake_events, \
+                                set_fake_prefix, get_fake_prefix, delete_fake_prefix, wait_for_one_event
+from msgq.ipc_pyx import MultiplePublishersError, IpcError
+from msgq import fake_event_handle, drain_sock_raw
 import msgq
+
 import os
 import capnp
 import time
@@ -11,7 +13,7 @@ from typing import Optional, List, Union, Dict
 
 from cereal import log
 from cereal.services import SERVICE_LIST
-from openpilot.common.utils import MovingAverage
+from openpilot.common.util import MovingAverage
 
 NO_TRAVERSAL_LIMIT = 2**64-1
 
@@ -195,6 +197,10 @@ class SubMaster:
       self.data[s] = getattr(data.as_reader(), s)
       self.freq_tracker[s] = FrequencyTracker(SERVICE_LIST[s].frequency, self.update_freq, s == poll)
 
+    # StarPilot variables
+    self.addr = addr
+    self.poll = poll
+
   def __getitem__(self, s: str) -> capnp.lib.capnp._DynamicStructReader:
     return self.data[s]
 
@@ -246,10 +252,23 @@ class SubMaster:
   def all_checks(self, service_list: Optional[List[str]] = None) -> bool:
     return self.all_alive(service_list) and self.all_freq_ok(service_list) and self.all_valid(service_list)
 
+  # StarPilot variables
+  def extend(self, new_services: List[str]):
+    return SubMaster(
+      self.services + new_services,
+      poll=self.poll,
+      ignore_alive=self.ignore_alive,
+      ignore_avg_freq=self.ignore_average_freq,
+      ignore_valid=self.ignore_valid,
+      addr=self.addr,
+      frequency=None if self.poll is not None else self.update_freq,
+    )
+
 
 class PubMaster:
   def __init__(self, services: List[str]):
     self.sock = {}
+    self._zmq_readers_settled = set()
     for s in services:
       self.sock[s] = pub_sock(s)
 
@@ -259,6 +278,13 @@ class PubMaster:
     self.sock[s].send(dat)
 
   def wait_for_readers_to_update(self, s: str, timeout: int, dt: float = 0.05) -> bool:
+    if "ZMQ" in os.environ:
+      if s not in self._zmq_readers_settled:
+        time.sleep(min(timeout, 1.0))
+        self._zmq_readers_settled.add(s)
+      elif dt >= 0.05:
+        time.sleep(min(timeout, 1.0))
+      return True
     for _ in range(int(timeout*(1./dt))):
       if self.sock[s].all_readers_updated():
         return True
@@ -267,3 +293,10 @@ class PubMaster:
 
   def all_readers_updated(self, s: str) -> bool:
     return self.sock[s].all_readers_updated()  # type: ignore
+
+  # StarPilot variables
+  def extend(self, new_services: List[str]):
+    for service in new_services:
+      if service not in self.sock:
+        self.sock[service] = pub_sock(service)
+    return self

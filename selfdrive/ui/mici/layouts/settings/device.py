@@ -1,16 +1,17 @@
 import os
-import threading
 import pyray as rl
-from enum import IntEnum
+from pathlib import Path
 from collections.abc import Callable
 
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
 from openpilot.common.time_helpers import system_time_valid
+from openpilot.system.hardware import PC
+from openpilot.system.hardware.hw import Paths
 from openpilot.system.ui.widgets.scroller import NavRawScrollPanel, NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigCircleButton
-from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigConfirmationDialog
-from openpilot.selfdrive.ui.mici.widgets.pairing_dialog import PairingDialog
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigCircleButton, BigParamControl
+from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigConfirmationDialog, BigMultiOptionDialog
+from openpilot.selfdrive.ui.mici.widgets.pairing_dialog import PairingDialog, get_pairing_backend_name, get_pairing_host
 from openpilot.selfdrive.ui.mici.onroad.driver_camera_dialog import DriverCameraDialog
 from openpilot.selfdrive.ui.mici.layouts.onboarding import TrainingGuide, TermsPage
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
@@ -20,6 +21,7 @@ from openpilot.selfdrive.ui.ui_state import device, ui_state
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets.html_render import HtmlModal, HtmlRenderer
 from openpilot.system.athena.registration import UNREGISTERED_DONGLE_ID
+from openpilot.starpilot.common.connect_server import prepare_konik_server_switch
 
 
 class ReviewTermsPage(TermsPage, NavScroller):
@@ -91,6 +93,10 @@ class EngagedConfirmationButton(BigButton):
     self.set_click_callback(lambda: _engaged_confirmation_click(callback, action_text, icon, exit_on_confirm=exit_on_confirm, red=red))
 
 
+def _request_user_reboot(params: Params) -> None:
+  params.put_bool("DoUserReboot", True)
+
+
 class DeviceInfoLayoutMici(Widget):
   def __init__(self):
     super().__init__()
@@ -122,15 +128,66 @@ class DeviceInfoLayoutMici(Widget):
     self._serial_number_text_label.render()
 
 
-class UpdaterState(IntEnum):
-  IDLE = 0
-  WAITING_FOR_UPDATER = 1
-  UPDATER_RESPONDING = 2
+def _konik_toggle_path() -> Path:
+  return Path(Paths.comma_home()) / "starpilot" / "cache" / "use_konik" if PC else Path("/cache/use_konik")
+
+
+class ConnectServerBigButton(BigButton):
+  _COMMA_OPTION = "comma connect"
+  _KONIK_OPTION = "konik connect"
+
+  def __init__(self):
+    self._params = Params()
+    self._reboot_icon = gui_app.texture("icons_mici/settings/device/reboot.png", 64, 70)
+    super().__init__("connect\nserver", get_pairing_host(self._params), gui_app.texture("icons_mici/settings/comma_icon.png", 33, 60))
+
+  def _get_label_font_size(self):
+    return 52
+
+  def _selected_option(self) -> str:
+    return self._KONIK_OPTION if self._params.get_bool("UseKonikServer") else self._COMMA_OPTION
+
+  def _apply_selection(self, selection: str):
+    use_konik = selection == self._KONIK_OPTION
+    prepare_konik_server_switch(use_konik, self._params)
+
+    toggle_path = _konik_toggle_path()
+    toggle_path.parent.mkdir(parents=True, exist_ok=True)
+    if use_konik:
+      toggle_path.touch(exist_ok=True)
+    else:
+      try:
+        toggle_path.unlink(missing_ok=True)
+      except TypeError:
+        if toggle_path.exists():
+          toggle_path.unlink()
+
+    ui_state.params.put_bool("DoReboot", True)
+
+  def _handle_mouse_release(self, mouse_pos: MousePos):
+    super()._handle_mouse_release(mouse_pos)
+
+    dialog_holder: dict[str, BigMultiOptionDialog] = {}
+
+    def on_confirm():
+      selection = dialog_holder["dialog"].get_selected_option()
+      if selection == self._selected_option():
+        return
+
+      gui_app.push_widget(BigConfirmationDialog("slide to\nreboot", self._reboot_icon, lambda: self._apply_selection(selection)))
+
+    dialog = BigMultiOptionDialog(options=[self._COMMA_OPTION, self._KONIK_OPTION], default=self._selected_option(), right_btn_callback=on_confirm)
+    dialog_holder["dialog"] = dialog
+    gui_app.push_widget(dialog)
+
+  def _update_state(self):
+    super()._update_state()
+    self.set_value(get_pairing_host(self._params))
 
 
 class PairBigButton(BigButton):
   def __init__(self):
-    super().__init__("pair", "connect.comma.ai", gui_app.texture("icons_mici/settings/comma_icon.png", 33, 60))
+    super().__init__("pair", get_pairing_host(ui_state.params), gui_app.texture("icons_mici/settings/comma_icon.png", 33, 60))
 
   def _get_label_font_size(self):
     return 64
@@ -146,7 +203,7 @@ class PairBigButton(BigButton):
         self.set_value("upgrade to prime")
     else:
       self.set_text("pair")
-      self.set_value("connect.comma.ai")
+      self.set_value(get_pairing_host(ui_state.params))
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     super()._handle_mouse_release(mouse_pos)
@@ -158,131 +215,10 @@ class PairBigButton(BigButton):
     if not system_time_valid():
       dlg = BigDialog("", tr("Please connect to Wi-Fi to complete initial pairing."))
     elif UNREGISTERED_DONGLE_ID == (ui_state.params.get("DongleId") or UNREGISTERED_DONGLE_ID):
-      dlg = BigDialog("", tr("Device must be registered with the comma.ai backend to pair."))
+      dlg = BigDialog("", f"Device must be registered with the {get_pairing_backend_name(ui_state.params)} backend to pair.")
     else:
       dlg = PairingDialog()
     gui_app.push_widget(dlg)
-
-
-UPDATER_TIMEOUT = 10.0  # seconds to wait for updater to respond
-
-
-class UpdateOpenpilotBigButton(BigButton):
-  def __init__(self):
-    self._txt_update_icon = gui_app.texture("icons_mici/settings/device/update.png", 64, 75)
-    self._txt_reboot_icon = gui_app.texture("icons_mici/settings/device/reboot.png", 64, 70)
-    self._txt_up_to_date_icon = gui_app.texture("icons_mici/settings/device/up_to_date.png", 64, 64)
-    super().__init__("update sunnypilot", "", self._txt_update_icon)
-
-    self._waiting_for_updater_t: float | None = None
-    self._hide_value_t: float | None = None
-    self._state: UpdaterState = UpdaterState.IDLE
-
-    ui_state.add_offroad_transition_callback(self.offroad_transition)
-
-  def offroad_transition(self):
-    if ui_state.is_offroad():
-      self.set_enabled(True)
-
-  def _handle_mouse_release(self, mouse_pos: MousePos):
-    super()._handle_mouse_release(mouse_pos)
-
-    if not system_time_valid():
-      dlg = BigDialog("", tr("Please connect to Wi-Fi to update."))
-      gui_app.push_widget(dlg)
-      return
-
-    self.set_enabled(False)
-    self._state = UpdaterState.WAITING_FOR_UPDATER
-    self.set_icon(self._txt_update_icon)
-
-    def run():
-      if self.get_value() == "download update":
-        os.system("pkill -SIGHUP -f system.updated.updated")
-      elif self.get_value() == "update now":
-        ui_state.params.put_bool("DoReboot", True)
-      else:
-        os.system("pkill -SIGUSR1 -f system.updated.updated")
-
-    threading.Thread(target=run, daemon=True).start()
-
-  def set_value(self, value: str):
-    super().set_value(value)
-    if value:
-      self.set_text("")
-    else:
-      self.set_text("update sunnypilot")
-
-  def _update_state(self):
-    super()._update_state()
-
-    if ui_state.started:
-      self.set_enabled(False)
-      return
-
-    updater_state = ui_state.params.get("UpdaterState") or ""
-    failed_count = ui_state.params.get("UpdateFailedCount")
-    failed = False if failed_count is None else int(failed_count) > 0
-
-    if ui_state.params.get_bool("UpdateAvailable"):
-      self.set_rotate_icon(False)
-      self.set_enabled(True)
-      if self.get_value() != "update now":
-        self.set_value("update now")
-        self.set_icon(self._txt_reboot_icon)
-
-    elif self._state == UpdaterState.WAITING_FOR_UPDATER:
-      self.set_rotate_icon(True)
-      if updater_state != "idle":
-        self._state = UpdaterState.UPDATER_RESPONDING
-
-      # Recover from updater not responding (time invalid shortly after boot)
-      if self._waiting_for_updater_t is None:
-        self._waiting_for_updater_t = rl.get_time()
-
-      if self._waiting_for_updater_t is not None and rl.get_time() - self._waiting_for_updater_t > UPDATER_TIMEOUT:
-        self.set_rotate_icon(False)
-        self.set_value("updater failed\nto respond")
-        self._state = UpdaterState.IDLE
-        self._hide_value_t = rl.get_time()
-
-    elif self._state == UpdaterState.UPDATER_RESPONDING:
-      if updater_state == "idle":
-        self.set_rotate_icon(False)
-        self._state = UpdaterState.IDLE
-        self._hide_value_t = rl.get_time()
-      else:
-        if self.get_value() != updater_state:
-          self.set_value(updater_state)
-
-    elif self._state == UpdaterState.IDLE:
-      self.set_rotate_icon(False)
-      if failed:
-        if self.get_value() != "failed to update":
-          self.set_value("failed to update")
-
-      elif ui_state.params.get_bool("UpdaterFetchAvailable"):
-        self.set_enabled(True)
-        if self.get_value() != "download update":
-          self.set_value("download update")
-
-      elif self._hide_value_t is not None:
-        self.set_enabled(True)
-        if self.get_value() == "checking...":
-          self.set_value("up to date")
-          self.set_icon(self._txt_up_to_date_icon)
-
-        # Hide previous text after short amount of time (up to date or failed)
-        if rl.get_time() - self._hide_value_t > 3.0:
-          self._hide_value_t = None
-          self.set_value("")
-          self.set_icon(self._txt_update_icon)
-      else:
-        if self.get_value() != "":
-          self.set_value("")
-
-    if self._state != UpdaterState.WAITING_FOR_UPDATER:
-      self._waiting_for_updater_t = None
 
 
 class DeviceLayoutMici(NavScroller):
@@ -295,7 +231,7 @@ class DeviceLayoutMici(NavScroller):
       ui_state.params.put_bool("DoShutdown", True)
 
     def reboot_callback():
-      ui_state.params.put_bool("DoReboot", True)
+      _request_user_reboot(ui_state.params)
 
     def reset_calibration_callback():
       params = ui_state.params
@@ -306,15 +242,22 @@ class DeviceLayoutMici(NavScroller):
       params.remove("LiveDelay")
       params.put_bool("OnroadCycleRequested", True)
 
-    def uninstall_openpilot_callback():
-      ui_state.params.put_bool("DoUninstall", True)
+    def reset_driver_monitoring_callback():
+      params = ui_state.params
+      params.remove("IsRhdDetected")
+      params.remove("IsRHD")
+      params.remove("IsRHDOverride")
+      params.put_bool("OnroadCycleRequested", True)
+
+    reset_driver_monitoring_btn = EngagedConfirmationButton(
+      "reset driver\nmonitoring",
+      "reset driver monitoring",
+      gui_app.texture("icons_mici/settings/device/cameras.png", 64, 64),
+      reset_driver_monitoring_callback,
+    )
 
     reset_calibration_btn = EngagedConfirmationButton("reset calibration", "reset", gui_app.texture("icons_mici/settings/device/lkas.png", 122, 64),
                                                       reset_calibration_callback)
-
-    uninstall_openpilot_btn = EngagedConfirmationButton("uninstall sunnypilot", "uninstall",
-                                                        gui_app.texture("icons_mici/settings/device/uninstall.png", 64, 64),
-                                                        uninstall_openpilot_callback, exit_on_confirm=False)
 
     reboot_btn = EngagedConfirmationCircleButton("reboot", gui_app.texture("icons_mici/settings/device/reboot.png", 64, 70),
                                                  reboot_callback, exit_on_confirm=False)
@@ -325,6 +268,9 @@ class DeviceLayoutMici(NavScroller):
 
     regulatory_btn = BigButton("regulatory info", "", gui_app.texture("icons_mici/settings/device/info.png", 64, 64))
     regulatory_btn.set_click_callback(self._on_regulatory)
+
+    self._connect_server_btn = ConnectServerBigButton()
+    self._simple_mode_btn = BigParamControl("simple mode", "SimpleMode")
 
     driver_cam_btn = BigButton("driver\ncamera preview", "", gui_app.texture("icons_mici/settings/device/cameras.png", 64, 64))
     driver_cam_btn.set_click_callback(lambda: gui_app.push_widget(DriverCameraDialog()))
@@ -339,17 +285,26 @@ class DeviceLayoutMici(NavScroller):
 
     self._scroller.add_widgets([
       DeviceInfoLayoutMici(),
-      UpdateOpenpilotBigButton(),
+      self._connect_server_btn,
       PairBigButton(),
+      self._simple_mode_btn,
       review_training_guide_btn,
       driver_cam_btn,
+      reset_driver_monitoring_btn,
       terms_btn,
       regulatory_btn,
       reset_calibration_btn,
-      uninstall_openpilot_btn,
       reboot_btn,
       self._power_off_btn,
     ])
+
+  def show_event(self):
+    super().show_event()
+    self._simple_mode_btn.refresh()
+
+  def _update_state(self):
+    super()._update_state()
+    self._simple_mode_btn.refresh()
 
   def _on_regulatory(self):
     if not self._fcc_dialog:

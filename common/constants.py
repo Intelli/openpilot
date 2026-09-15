@@ -19,5 +19,11 @@ class CV:
   # Mass
   LB_TO_KG = 0.453592
 
+  # StarPilot variables
+  METER_TO_FOOT = 3.28084
+  FOOT_TO_METER = 1. / METER_TO_FOOT
+  CM_TO_INCH = 1. / 2.54
+  INCH_TO_CM = 1. / CM_TO_INCH
+
 
 ACCELERATION_DUE_TO_GRAVITY = 9.81  # m/s^2

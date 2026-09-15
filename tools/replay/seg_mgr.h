@@ -27,7 +27,6 @@ public:
   bool load();
   void setCurrentSegment(int seg_num);
   void setCallback(const std::function<void()> &callback) { onSegmentMergedCallback_ = callback; }
-  void setBenchmarkCallback(const std::function<void(int, const std::string&)> &callback) { onBenchmarkEvent_ = callback; }
   void setFilters(const std::vector<bool> &filters) { filters_ = filters; }
   const std::shared_ptr<EventData> getEventData() const { return std::atomic_load(&event_data_); }
   bool hasSegment(int n) const { return segments_.find(n) != segments_.end(); }
@@ -53,6 +52,5 @@ private:
   SegmentMap segments_;
   std::shared_ptr<EventData> event_data_;
   std::function<void()> onSegmentMergedCallback_ = nullptr;
-  std::function<void(int, const std::string&)> onBenchmarkEvent_ = nullptr;
   std::set<int> merged_segments_;
 };

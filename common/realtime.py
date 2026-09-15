@@ -6,7 +6,7 @@ import time
 
 from setproctitle import getproctitle
 
-from openpilot.common.utils import MovingAverage
+from openpilot.common.util import MovingAverage
 from openpilot.system.hardware import PC
 
 
@@ -22,6 +22,7 @@ class Priority:
   # - modeld = 55
   # - camerad = 54
   CTRL_LOW = 51 # plannerd & radard
+  UI = 50
 
   # CORE 3
   # - pandad = 55
@@ -30,7 +31,10 @@ class Priority:
 
 def set_core_affinity(cores: list[int]) -> None:
   if sys.platform == 'linux' and not PC:
-    os.sched_setaffinity(0, cores)
+    try:
+      os.sched_setaffinity(0, cores)
+    except OSError:
+      pass
 
 
 def config_realtime_process(cores: int | list[int], priority: int) -> None:

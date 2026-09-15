@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
+import fcntl
 import os
 import sys
 import signal
 import itertools
 import math
 import time
+from serial import Serial
 import requests
 import shutil
-from serial import Serial
+import subprocess
 import datetime
 from multiprocessing import Process, Event
 from typing import NoReturn
@@ -91,22 +93,28 @@ def try_setup_logs(diag, logs):
   return setup_logs(diag, logs)
 
 AT_PORT = "/dev/modem_at0"
+AT_LOCK = "/dev/shm/modem.lock"  # shared with modem.py and LPA
 
 @retry(attempts=5, delay=1.0)
 def at_cmd(cmd: str) -> str:
-  with Serial(AT_PORT, baudrate=115200, timeout=5) as ser:
-    ser.reset_input_buffer()
-    ser.write(f"{cmd}\r".encode())
-    lines = []
-    while True:
-      line = ser.readline()
-      if not line:
-        raise RuntimeError(f"AT command timeout: {cmd}")
-      line = line.decode('utf-8', errors='replace').strip()
-      if line in ("OK", "ERROR") or line.startswith("+CME ERROR"):
-        break
-      if line and line != cmd:
-        lines.append(line)
+  if not os.path.exists(AT_PORT):
+    return subprocess.check_output(f"mmcli -m any --timeout 30 --command='{cmd}'", shell=True, encoding='utf8')
+
+  with os.fdopen(os.open(AT_LOCK, os.O_CREAT | os.O_RDWR, 0o666), "r+") as lock:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    with Serial(AT_PORT, baudrate=115200, timeout=5) as ser:
+      ser.reset_input_buffer()
+      ser.write(f"{cmd}\r".encode())
+      lines = []
+      while True:
+        line = ser.readline()
+        if not line:
+          raise RuntimeError(f"AT command timeout: {cmd}")
+        line = line.decode('utf-8', errors='replace').strip()
+        if line in ("OK", "ERROR") or line.startswith("+CME ERROR"):
+          break
+        if line and line != cmd:
+          lines.append(line)
   return '\n'.join(lines)
 
 def gps_enabled() -> bool:
@@ -137,16 +145,19 @@ def downloader_loop(event):
   if alt_path is not None and os.path.exists(alt_path):
     shutil.copyfile(alt_path, ASSIST_DATA_FILE)
 
+  sm = messaging.SubMaster(['deviceState'])
+
   try:
     while not os.path.exists(ASSIST_DATA_FILE) and not event.is_set():
-      download_assistance()
+      sm.update(0)
+      if sm['deviceState'].networkType != log.DeviceState.NetworkType.none:
+        download_assistance()
       event.wait(timeout=10)
   except KeyboardInterrupt:
     pass
 
 @retry(attempts=5, delay=0.2, ignore_failure=True)
 def inject_assistance():
-  import subprocess
   cmd = f"mmcli -m any --timeout 30 --location-inject-assistance-data={ASSIST_DATA_FILE}"
   subprocess.check_output(cmd, stderr=subprocess.PIPE, shell=True)
   cloudlog.info("successfully loaded assistance data")
@@ -225,9 +236,6 @@ def teardown_quectel(diag):
 
 def wait_for_modem():
   cloudlog.warning("waiting for modem to come up")
-  while not os.path.exists(AT_PORT):
-    time.sleep(0.5)
-  # wait until the modem GNSS subsystem responds
   while True:
     try:
       resp = at_cmd("AT+QGPS?")
@@ -356,9 +364,6 @@ def main() -> NoReturn:
     elif log_type == LOG_GNSS_POSITION_REPORT:
       report = unpack_position(log_payload)
       if report["u_PosSource"] != 2:
-        continue
-      # uint16_t max is an invalid sentinel value from the modem
-      if report['w_GpsWeekNumber'] >= 0xFFFF:
         continue
       vNED = [report["q_FltVelEnuMps[1]"], report["q_FltVelEnuMps[0]"], -report["q_FltVelEnuMps[2]"]]
       vNEDsigma = [report["q_FltVelSigmaMps[1]"], report["q_FltVelSigmaMps[0]"], -report["q_FltVelSigmaMps[2]"]]

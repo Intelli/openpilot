@@ -6,8 +6,8 @@ from urllib.parse import urlparse
 from collections import defaultdict
 from itertools import chain
 
-from openpilot.tools.lib.auth_config import get_token
-from openpilot.tools.lib.api import APIError, CommaApi
+from openpilot.tools.lib.auth_config import KONIK_API_HOST, get_token
+from openpilot.tools.lib.api import APIError, CommaApi, route_api_hosts
 from openpilot.tools.lib.helpers import RE
 
 
@@ -23,6 +23,8 @@ class FileName:
 
 class Route:
   def __init__(self, name, data_dir=None):
+    self._api_host = None
+    self._metadata = None
     self._name = RouteName(name)
     self.files = None
     if data_dir is not None:
@@ -30,6 +32,12 @@ class Route:
     else:
       self._segments = self._get_segments_remote()
     self.max_seg_number = self._segments[-1].name.segment_num
+
+  @property
+  def metadata(self):
+    if not self._metadata:
+      self._metadata = self._get_route_metadata()
+    return self._metadata
 
   @property
   def name(self):
@@ -65,9 +73,9 @@ class Route:
 
   # TODO: refactor this, it's super repetitive
   def _get_segments_remote(self):
-    api = CommaApi(get_token())
-    route_files = api.get('v1/route/' + self.name.canonical_name + '/files')
+    route_files = self._get_route_files()
     self.files = list(chain.from_iterable(route_files.values()))
+    metadata_url = self.metadata['url']
 
     segments = {}
     for url in self.files:
@@ -82,6 +90,7 @@ class Route:
           url if fn in FileName.DCAMERA else segments[segment_name].dcamera_path,
           url if fn in FileName.ECAMERA else segments[segment_name].ecamera_path,
           url if fn in FileName.QCAMERA else segments[segment_name].qcamera_path,
+          metadata_url,
         )
       else:
         segments[segment_name] = Segment(
@@ -92,9 +101,39 @@ class Route:
           url if fn in FileName.DCAMERA else None,
           url if fn in FileName.ECAMERA else None,
           url if fn in FileName.QCAMERA else None,
+          metadata_url,
         )
 
     return sorted(segments.values(), key=lambda seg: seg.name.segment_num)
+
+  def _get_route_metadata(self):
+    try:
+      return self._get_route_endpoint('v1/route/' + self.name.canonical_name)
+    except APIError as e:
+      if self._api_host == KONIK_API_HOST and e.status_code in (400, 404):
+        return {"url": f"https://connect.konik.ai/{self.name.dongle_id}/{self.name.log_id}"}
+      raise
+
+  def _get_route_files(self):
+    return self._get_route_endpoint('v1/route/' + self.name.canonical_name + '/files')
+
+  def _get_route_endpoint(self, endpoint: str):
+    hosts = [self._api_host] if self._api_host is not None else route_api_hosts()
+    errors = {}
+
+    for host in hosts:
+      try:
+        api = CommaApi(get_token(host), host=host)
+        response = api.get(endpoint)
+        self._api_host = host
+        return response
+      except APIError as e:
+        errors[host] = e
+        if e.status_code == 404 and self._api_host is None:
+          continue
+        raise
+
+    raise APIError(f"route {self.name.canonical_name} not found on: {', '.join(errors.keys())}", 404)
 
   def _get_segments_local(self, data_dir):
     files = os.listdir(data_dir)
@@ -157,7 +196,7 @@ class Route:
       except StopIteration:
         qcamera_path = None
 
-      segments.append(Segment(segment, log_path, qlog_path, camera_path, dcamera_path, ecamera_path, qcamera_path))
+      segments.append(Segment(segment, log_path, qlog_path, camera_path, dcamera_path, ecamera_path, qcamera_path, self.metadata['url']))
 
     if len(segments) == 0:
       raise ValueError(f'Could not find segments for route {self.name.canonical_name} in data directory {data_dir}')
@@ -165,9 +204,10 @@ class Route:
 
 
 class Segment:
-  def __init__(self, name, log_path, qlog_path, camera_path, dcamera_path, ecamera_path, qcamera_path):
+  def __init__(self, name, log_path, qlog_path, camera_path, dcamera_path, ecamera_path, qcamera_path, url):
     self._events = None
     self._name = SegmentName(name)
+    self.url = f'{url}/{self._name.segment_num}'
     self.log_path = log_path
     self.qlog_path = qlog_path
     self.camera_path = camera_path
@@ -178,18 +218,6 @@ class Segment:
   @property
   def name(self):
     return self._name
-
-  @staticmethod
-  @cache
-  def _get_route_metadata(route_name: str):
-    api = CommaApi(get_token())
-    return api.get(f'v1/route/{route_name}')
-
-  @property
-  def url(self):
-    route_name = self._name.route_name.canonical_name
-    metadata = self._get_route_metadata(route_name)
-    return f'{metadata["url"]}/{self._name.segment_num}'
 
   @property
   def events(self):
@@ -307,13 +335,20 @@ class SegmentName:
 
 @cache
 def get_max_seg_number_cached(sr: 'SegmentRange') -> int:
-  try:
-    api = CommaApi(get_token())
-    max_seg_number = api.get("/v1/route/" + sr.route_name.replace("/", "|"))["maxqlog"]
-    assert isinstance(max_seg_number, int)
-    return max_seg_number
-  except Exception as e:
-    raise Exception("unable to get max_segment_number. ensure you have access to this route or the route is public.") from e
+  errors = {}
+  for host in route_api_hosts():
+    try:
+      api = CommaApi(get_token(host), host=host)
+      max_seg_number = api.get("/v1/route/" + sr.route_name.replace("/", "|"))["maxqlog"]
+      assert isinstance(max_seg_number, int)
+      return max_seg_number
+    except APIError as e:
+      errors[host] = e
+      if e.status_code == 404:
+        continue
+      raise Exception("unable to get max_segment_number. ensure you have access to this route or the route is public.") from e
+
+  raise Exception("unable to get max_segment_number. ensure you have access to this route or the route is public.") from next(iter(errors.values()), None)
 
 
 class SegmentRange:

@@ -6,8 +6,6 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.filter_simple import FirstOrderFilter
 
-from openpilot.selfdrive.ui.sunnypilot.mici.onroad.confidence_ball import ConfidenceBallSP
-
 
 def draw_circle_gradient(center_x: float, center_y: float, radius: int,
                          top: rl.Color, bottom: rl.Color) -> None:
@@ -23,10 +21,9 @@ def draw_circle_gradient(center_x: float, center_y: float, radius: int,
                20, rl.BLACK)
 
 
-class ConfidenceBall(Widget, ConfidenceBallSP):
+class ConfidenceBall(Widget):
   def __init__(self, demo: bool = False):
-    Widget.__init__(self)
-    ConfidenceBallSP.__init__(self)
+    super().__init__()
     self._demo = demo
     self._confidence_filter = FirstOrderFilter(-0.5, 0.5, 1 / gui_app.target_fps)
 
@@ -37,14 +34,45 @@ class ConfidenceBall(Widget, ConfidenceBallSP):
     if self._demo:
       return
 
+    lateral_ui_active = ui_state.status != UIStatus.DISENGAGED or ui_state.always_on_lateral_active
+
     # animate status dot in from bottom
-    if ui_state.status == UIStatus.DISENGAGED:
+    if not lateral_ui_active:
       self._confidence_filter.update(-0.5)
-    elif ui_state.status in (UIStatus.LAT_ONLY, UIStatus.LONG_ONLY):
-      self._confidence_filter.update(1 - max(self.get_animate_status_probs() or [1]))
     else:
       self._confidence_filter.update((1 - max(ui_state.sm['modelV2'].meta.disengagePredictions.brakeDisengageProbs or [1])) *
-                                                        (1 - max(ui_state.sm['modelV2'].meta.disengagePredictions.steerOverrideProbs or [1])))
+                                     (1 - max(ui_state.sm['modelV2'].meta.disengagePredictions.steerOverrideProbs or [1])))
+
+  def _dot_colors(self) -> tuple[rl.Color, rl.Color]:
+    if ui_state.status == UIStatus.ENGAGED or ui_state.always_on_lateral_active or self._demo:
+      if self._confidence_filter.x > 0.5:
+        top_dot_color = rl.Color(0, 255, 204, 255)
+        bottom_dot_color = rl.Color(0, 255, 38, 255)
+      elif self._confidence_filter.x > 0.2:
+        top_dot_color = rl.Color(255, 200, 0, 255)
+        bottom_dot_color = rl.Color(255, 115, 0, 255)
+      else:
+        top_dot_color = rl.Color(255, 0, 21, 255)
+        bottom_dot_color = rl.Color(255, 0, 89, 255)
+
+    elif ui_state.status == UIStatus.OVERRIDE:
+      top_dot_color = rl.Color(255, 255, 255, 255)
+      bottom_dot_color = rl.Color(82, 82, 82, 255)
+
+    else:
+      top_dot_color = rl.Color(50, 50, 50, 255)
+      bottom_dot_color = rl.Color(13, 13, 13, 255)
+
+    return top_dot_color, bottom_dot_color
+
+  def render_static(self, rect: rl.Rectangle, radius: int = 20) -> None:
+    self._update_state()
+    top_dot_color, bottom_dot_color = self._dot_colors()
+    draw_circle_gradient(rect.x + rect.width / 2,
+                         rect.y + rect.height / 2,
+                         radius,
+                         top_dot_color,
+                         bottom_dot_color)
 
   def _render(self, _):
     content_rect = rl.Rectangle(
@@ -58,28 +86,7 @@ class ConfidenceBall(Widget, ConfidenceBallSP):
     dot_height = (1 - self._confidence_filter.x) * (content_rect.height - 2 * status_dot_radius) + status_dot_radius
     dot_height = self._rect.y + dot_height
 
-    # confidence zones
-    if ui_state.status == UIStatus.ENGAGED or self._demo:
-      if self._confidence_filter.x > 0.5:
-        top_dot_color = rl.Color(0, 255, 204, 255)
-        bottom_dot_color = rl.Color(0, 255, 38, 255)
-      elif self._confidence_filter.x > 0.2:
-        top_dot_color = rl.Color(255, 200, 0, 255)
-        bottom_dot_color = rl.Color(255, 115, 0, 255)
-      else:
-        top_dot_color = rl.Color(255, 0, 21, 255)
-        bottom_dot_color = rl.Color(255, 0, 89, 255)
-
-    elif ui_state.status in (UIStatus.LAT_ONLY, UIStatus.LONG_ONLY):
-      top_dot_color = bottom_dot_color = self.get_lat_long_dot_color()
-
-    elif ui_state.status == UIStatus.OVERRIDE:
-      top_dot_color = rl.Color(255, 255, 255, 255)
-      bottom_dot_color = rl.Color(82, 82, 82, 255)
-
-    else:
-      top_dot_color = rl.Color(50, 50, 50, 255)
-      bottom_dot_color = rl.Color(13, 13, 13, 255)
+    top_dot_color, bottom_dot_color = self._dot_colors()
 
     draw_circle_gradient(content_rect.x + content_rect.width - status_dot_radius,
                          dot_height, status_dot_radius,

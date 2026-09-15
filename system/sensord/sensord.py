@@ -7,7 +7,7 @@ import threading
 
 import cereal.messaging as messaging
 from cereal.services import SERVICE_LIST
-from openpilot.common.utils import sudo_write
+from openpilot.common.util import sudo_write
 from openpilot.common.realtime import config_realtime_process, Ratekeeper
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.gpio import gpiochip_get_ro_value_fd, gpioevent_data
@@ -97,7 +97,7 @@ def main() -> None:
     (LSM6DS3_Gyro(I2C_BUS_IMU), "gyroscope", True),
     (LSM6DS3_Temp(I2C_BUS_IMU), "temperatureSensor", False),
   ]
-  if HARDWARE.get_device_type() == "tizi":
+  if HARDWARE.get_device_type() in ("tici", "tizi"):
     sensors_cfg.append(
       (MMC5603NJ_Magn(I2C_BUS_IMU), "magnetometer", False),
     )

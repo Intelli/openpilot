@@ -7,9 +7,11 @@ import psutil
 import shutil
 import signal
 import fcntl
+import time
 import threading
 from collections import defaultdict
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
@@ -18,7 +20,9 @@ from openpilot.common.markdown import parse_markdown
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.selfdrived.alertmanager import set_offroad_alert
 from openpilot.system.hardware import AGNOS, HARDWARE
-from openpilot.system.version import get_build_metadata, SP_BRANCH_MIGRATIONS
+from openpilot.system.version import get_build_metadata
+
+from openpilot.starpilot.common.starpilot_variables import BACKUP_PATH, get_starpilot_toggles
 
 LOCK_FILE = os.getenv("UPDATER_LOCK_FILE", "/tmp/safe_staging_overlay.lock")
 STAGING_ROOT = os.getenv("UPDATER_STAGING_ROOT", "/data/safe_staging")
@@ -31,17 +35,22 @@ FINALIZED = os.path.join(STAGING_ROOT, "finalized")
 OVERLAY_INIT = Path(os.path.join(BASEDIR, ".overlay_init"))
 
 # do not allow to engage after this many hours onroad and this many routes
-HOURS_NO_CONNECTIVITY_MAX = 27
-ROUTES_NO_CONNECTIVITY_MAX = 84
+HOURS_NO_CONNECTIVITY_MAX = 24 * 365 * 100
+ROUTES_NO_CONNECTIVITY_MAX = 9001
 # send an offroad prompt after this many hours onroad and this many routes
-HOURS_NO_CONNECTIVITY_PROMPT = 23
-ROUTES_NO_CONNECTIVITY_PROMPT = 80
+HOURS_NO_CONNECTIVITY_PROMPT = 24 * 365 * 100
+ROUTES_NO_CONNECTIVITY_PROMPT = 9001
 
 
 class UserRequest:
   NONE = 0
   CHECK = 1
   FETCH = 2
+
+
+class UpdateAborted(Exception):
+  pass
+
 
 class WaitTimeHelper:
   def __init__(self):
@@ -67,8 +76,40 @@ def write_time_to_param(params, param) -> None:
   t = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
   params.put(param, t)
 
-def run(cmd: list[str], cwd: str | None = None) -> str:
+def run(cmd: list[str], cwd: str = None) -> str:
   return subprocess.check_output(cmd, cwd=cwd, stderr=subprocess.STDOUT, encoding='utf8')
+
+
+def run_with_offroad_abort(cmd: list[str], params: Params, cwd: str = None, poll_interval: float = 0.5) -> str:
+  proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+  output: list[str] = []
+
+  try:
+    while True:
+      try:
+        stdout, _ = proc.communicate(timeout=poll_interval)
+        if stdout:
+          output.append(stdout)
+        if proc.returncode:
+          raise subprocess.CalledProcessError(proc.returncode, cmd, ''.join(output))
+        return ''.join(output)
+      except subprocess.TimeoutExpired:
+        if not params.get_bool("IsOffroad"):
+          proc.terminate()
+          try:
+            stdout, _ = proc.communicate(timeout=5)
+            if stdout:
+              output.append(stdout)
+          except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, _ = proc.communicate()
+            if stdout:
+              output.append(stdout)
+          raise UpdateAborted(f"aborted {' '.join(cmd)} because vehicle went onroad")
+  finally:
+    if proc.poll() is None:
+      proc.kill()
+      proc.communicate()
 
 
 def set_consistent_flag(consistent: bool) -> None:
@@ -82,7 +123,7 @@ def set_consistent_flag(consistent: bool) -> None:
 
 def parse_release_notes(basedir: str) -> bytes:
   try:
-    with open(os.path.join(basedir, "CHANGELOG.md"), "rb") as f:
+    with open(os.path.join(basedir, "RELEASES.md"), "rb") as f:
       r = f.read().split(b'\n\n', 1)[0]  # Slice latest release notes
     try:
       return bytes(parse_markdown(r.decode("utf-8")), encoding="utf-8")
@@ -189,6 +230,15 @@ def finalize_update() -> None:
   run(["git", "reset", "--hard"], FINALIZED)
   run(["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"], FINALIZED)
 
+  cloudlog.info("Starting git cleanup in finalized update")
+  t = time.monotonic()
+  try:
+    run(["git", "gc"], FINALIZED)
+    run(["git", "lfs", "prune"], FINALIZED)
+    cloudlog.event("Done git cleanup", duration=time.monotonic() - t)
+  except subprocess.CalledProcessError:
+    cloudlog.exception(f"Failed git cleanup, took {time.monotonic() - t:.3f} s")
+
   set_consistent_flag(True)
   cloudlog.info("done finalizing overlay")
 
@@ -232,7 +282,9 @@ class Updater:
     b: str | None = self.params.get("UpdaterTargetBranch")
     if b is None:
       b = self.get_branch(BASEDIR)
-    b = SP_BRANCH_MIGRATIONS.get((HARDWARE.get_device_type(), b), b)
+    b = {
+      ("tizi", "release3"): "release-tizi",
+    }.get((HARDWARE.get_device_type(), b), b)
     return b
 
   @property
@@ -294,7 +346,7 @@ class Updater:
       try:
         branch = self.get_branch(basedir)
         commit = self.get_commit_hash(basedir)[:7]
-        with open(os.path.join(basedir, "sunnypilot", "common", "version.h")) as f:
+        with open(os.path.join(basedir, "common", "version.h")) as f:
           version = f.read().split('"')[1]
 
         commit_unix_ts = run(["git", "show", "-s", "--format=%ct", "HEAD"], basedir).rstrip()
@@ -359,7 +411,12 @@ class Updater:
     else:
       cloudlog.info(f"up to date on {cur_branch} ({str(cur_commit)[:7]})")
 
+  def require_offroad(self, context: str) -> None:
+    if not self.params.get_bool("IsOffroad"):
+      raise UpdateAborted(f"{context} blocked because vehicle is onroad")
+
   def fetch_update(self) -> None:
+    self.require_offroad("update fetch")
     cloudlog.info("attempting git fetch inside staging overlay")
 
     self.params.put("UpdaterState", "downloading...")
@@ -373,7 +430,7 @@ class Updater:
     run(["git", "config", "--replace-all", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"], OVERLAY_MERGED)
 
     branch = self.target_branch
-    git_fetch_output = run(["git", "fetch", "origin", branch], OVERLAY_MERGED)
+    git_fetch_output = run_with_offroad_abort(["git", "fetch", "origin", branch], self.params, OVERLAY_MERGED)
     cloudlog.info("git fetch success: %s", git_fetch_output)
 
     cloudlog.info("git reset in progress")
@@ -386,25 +443,31 @@ class Updater:
       ["git", "submodule", "update", "--init", "--recursive"],
       ["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"],
     ]
-    r = [run(cmd, OVERLAY_MERGED) for cmd in cmds]
+    r = []
+    for cmd in cmds:
+      self.require_offroad("update apply")
+      r.append(run_with_offroad_abort(cmd, self.params, OVERLAY_MERGED))
     cloudlog.info("git reset success: %s", '\n'.join(r))
 
     # TODO: show agnos download progress
     if AGNOS:
+      self.require_offroad("AGNOS update")
       handle_agnos_update()
 
     # Create the finalized, ready-to-swap update
+    self.require_offroad("update finalization")
     self.params.put("UpdaterState", "finalizing update...")
     finalize_update()
     cloudlog.info("finalize success!")
 
+    # StarPilot variables
+    if os.path.isfile(BACKUP_PATH):
+      os.remove(BACKUP_PATH)
+
+    self.params.put("Updated", datetime.datetime.now().astimezone(ZoneInfo("America/Phoenix")).strftime("%B %d, %Y - %I:%M%p"))
 
 def main() -> None:
   params = Params()
-
-  if params.get_bool("DisableUpdates"):
-    cloudlog.warning("updates are disabled by the DisableUpdates param")
-    exit(0)
 
   with open(LOCK_FILE, 'w') as ov_lock_fd:
     try:
@@ -437,8 +500,20 @@ def main() -> None:
 
     # Run the update loop
     first_run = True
+
+    # StarPilot variables
+    params_memory = Params(memory=True)
+
     while True:
       wait_helper.ready_event.clear()
+
+      # StarPilot variables
+      starpilot_toggles = get_starpilot_toggles()
+      automatic_updates_enabled = getattr(starpilot_toggles, "automatic_updates", True)
+      user_requested_action = wait_helper.user_request != UserRequest.NONE
+
+      manual_update_requested = params_memory.get_bool("ManualUpdateInitiated")
+      params_memory.remove("ManualUpdateInitiated")
 
       # Attempt an update
       exception = None
@@ -456,21 +531,30 @@ def main() -> None:
 
         update_failed_count += 1
 
-        # check for update
-        params.put("UpdaterState", "checking...")
-        updater.check_for_update()
+        should_check = manual_update_requested or user_requested_action or (params.get_bool("IsOffroad") and automatic_updates_enabled)
+        if should_check:
+          # check for update
+          params.put("UpdaterState", "checking...")
+          updater.check_for_update()
 
-        # download update
-        last_fetch = params.get("UpdaterLastFetchTime")
-        timed_out = last_fetch is None or (datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - last_fetch > datetime.timedelta(days=3))
-        user_requested_fetch = wait_helper.user_request == UserRequest.FETCH
-        if params.get_bool("NetworkMetered") and not timed_out and not user_requested_fetch:
-          cloudlog.info("skipping fetch, connection metered")
-        elif wait_helper.user_request == UserRequest.CHECK:
-          cloudlog.info("skipping fetch, only checking")
+          # download update
+          last_fetch = params.get("UpdaterLastFetchTime")
+          timed_out = last_fetch is None or (datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - last_fetch > datetime.timedelta(days=3))
+          user_requested_fetch = wait_helper.user_request == UserRequest.FETCH
+          if params.get_bool("NetworkMetered") and not timed_out and not user_requested_fetch:
+            cloudlog.info("skipping fetch, connection metered")
+          elif wait_helper.user_request == UserRequest.CHECK:
+            cloudlog.info("skipping fetch, only checking")
+          elif not params.get_bool("IsOffroad"):
+            cloudlog.info("skipping fetch, vehicle went onroad")
+          else:
+            updater.fetch_update()
+            write_time_to_param(params, "UpdaterLastFetchTime")
         else:
-          updater.fetch_update()
-          write_time_to_param(params, "UpdaterLastFetchTime")
+          if not params.get_bool("IsOffroad"):
+            cloudlog.info("skipping fetch, vehicle is onroad")
+          else:
+            cloudlog.info("skipping fetch, automatic updates disabled")
         update_failed_count = 0
       except subprocess.CalledProcessError as e:
         cloudlog.event(
@@ -480,6 +564,10 @@ def main() -> None:
           returncode=e.returncode
         )
         exception = f"command failed: {e.cmd}\n{e.output}"
+        OVERLAY_INIT.unlink(missing_ok=True)
+      except UpdateAborted as e:
+        cloudlog.warning(str(e))
+        exception = str(e)
         OVERLAY_INIT.unlink(missing_ok=True)
       except Exception as e:
         cloudlog.exception("uncaught updated exception, shouldn't happen")
@@ -495,7 +583,7 @@ def main() -> None:
 
       # infrequent attempts if we successfully updated recently
       wait_helper.user_request = UserRequest.NONE
-      wait_helper.sleep(5*60 if update_failed_count > 0 else 1.5*60*60)
+      wait_helper.sleep(60*60*24*365*100)
 
 
 if __name__ == "__main__":

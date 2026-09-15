@@ -1,3 +1,4 @@
+import json
 import pyray as rl
 import numpy as np
 import time
@@ -9,23 +10,25 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.lib.prime_state import PrimeState
+from openpilot.selfdrive.ui.lib.ui_param_cache import shared_ui_params
 from openpilot.system.ui.lib.application import gui_app
+from openpilot.starpilot.common.lateral_only_experimental import lateral_only_experimental_available
 from openpilot.system.hardware import HARDWARE, PC
 
-from openpilot.selfdrive.ui.sunnypilot.ui_state import UIStateSP, DeviceSP
-
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
+
+
+def _noop_progress(_phase: str) -> None:
+  pass
 
 
 class UIStatus(Enum):
   DISENGAGED = "disengaged"
   ENGAGED = "engaged"
   OVERRIDE = "override"
-  LAT_ONLY = "lat_only"
-  LONG_ONLY = "long_only"
 
 
-class UIState(UIStateSP):
+class UIState:
   _instance: 'UIState | None' = None
 
   def __new__(cls):
@@ -35,8 +38,9 @@ class UIState(UIStateSP):
     return cls._instance
 
   def _initialize(self):
-    UIStateSP.__init__(self)
     self.params = Params()
+    self.ui_params = shared_ui_params()
+    self.params_memory = Params(memory=True)
     self.sm = messaging.SubMaster(
       [
         "modelV2",
@@ -56,11 +60,19 @@ class UIState(UIStateSP):
         "selfdriveState",
         "longitudinalPlan",
         "gpsLocationExternal",
+        "mapdOut",
         "carOutput",
         "carControl",
         "liveParameters",
         "rawAudioData",
-      ] + self.sm_services_ext
+        "starpilotCarState",
+        "starpilotPlan",
+        "starpilotRadarState",
+        "starpilotSelfdriveState",
+        "liveTracks",
+        "liveDelay",
+        "liveTorqueParameters",
+      ]
     )
 
     self.prime_state = PrimeState()
@@ -74,17 +86,42 @@ class UIState(UIStateSP):
 
     # Core state variables
     self.is_metric: bool = self.params.get_bool("IsMetric")
-    self.is_release = False  # self.params.get_bool("IsReleaseBranch")
+    self.is_release = self.params.get_bool("IsReleaseBranch")
     self.always_on_dm: bool = self.params.get_bool("AlwaysOnDM")
+    self.usbgpu: bool = False
+    self.usbgpu_compiled: bool = self.params.get_bool("UsbGpuCompiled")
+    self.usbgpu_active: bool = self.params.get_bool("UsbGpuActive")
+    self.usbgpu_loading: bool = self.params.get_bool("UsbGpuLoading")
     self.started: bool = False
     self.ignition: bool = False
     self.recording_audio: bool = False
     self.panda_type: log.PandaState.PandaType = log.PandaState.PandaType.unknown
     self.personality: log.LongitudinalPersonality = log.LongitudinalPersonality.standard
     self.has_longitudinal_control: bool = False
+    self.experimental_mode_available: bool = False
     self.CP: car.CarParams | None = None
     self.light_sensor: float = -1.0
     self._param_update_time: float = 0.0
+    self.always_on_lateral_active: bool = False
+    self.switchback_mode_enabled: bool = False
+    self.traffic_mode_enabled: bool = False
+    self.conditional_status: int = 0
+    self.starpilot_toggles: dict = {
+      "debug_mode": False,
+      "driver_camera_in_reverse": False,
+      "force_offroad": False,
+      "force_onroad": False,
+      "screen_brightness": 101,
+      "screen_brightness_onroad": 101,
+      "screen_timeout": 30,
+      "screen_timeout_onroad": 10,
+      "sidebar_color1": "#FFFFFFFF",
+      "sidebar_color2": "#FFFFFFFF",
+      "sidebar_color3": "#FFFFFFFF",
+      "simple_mode": False,
+      "standby_mode": False,
+      "tethering_config": 0,
+    }
 
     # Callbacks
     self._offroad_transition_callbacks: list[Callable[[], None]] = []
@@ -95,12 +132,22 @@ class UIState(UIStateSP):
   def add_offroad_transition_callback(self, callback: Callable[[], None]):
     self._offroad_transition_callbacks.append(callback)
 
+  def remove_offroad_transition_callback(self, callback: Callable[[], None]):
+    try:
+      self._offroad_transition_callbacks.remove(callback)
+    except ValueError:
+      pass
+
   def add_engaged_transition_callback(self, callback: Callable[[], None]):
     self._engaged_transition_callbacks.append(callback)
 
+  def _update_usbgpu_presence(self, present: bool) -> None:
+    # Keep the eGPU UI active until the offroad transition if the dock drops out onroad.
+    self.usbgpu = present or (self.usbgpu and self.started)
+
   @property
   def engaged(self) -> bool:
-    return self.started and (self.sm["selfdriveState"].enabled or self.sm["selfdriveStateSP"].mads.enabled)
+    return self.started and self.sm["selfdriveState"].enabled
 
   def is_onroad(self) -> bool:
     return self.started
@@ -108,17 +155,27 @@ class UIState(UIStateSP):
   def is_offroad(self) -> bool:
     return not self.started
 
-  def update(self) -> None:
+  def update(self, progress_hook: Callable[[str], None] | None = None) -> None:
+    mark_progress = progress_hook or _noop_progress
+
+    mark_progress("ui.update.before_prime_state")
     self.prime_state.start()  # start thread after manager forks ui
+    mark_progress("ui.update.before_submaster")
     self.sm.update(0)
-    self._update_state()
-    self._update_status()
+    mark_progress("ui.update.before_state")
+    self._update_state(mark_progress)
+    mark_progress("ui.update.before_status")
+    self._update_status(mark_progress)
+    mark_progress("ui.update.before_params")
     if time.monotonic() - self._param_update_time > 5.0:
       self.update_params()
+    mark_progress("ui.update.before_device")
     device.update()
-    UIStateSP.update(self)
+    mark_progress("ui.update.after_device")
 
-  def _update_state(self) -> None:
+  def _update_state(self, progress_hook: Callable[[str], None] | None = None) -> None:
+    mark_progress = progress_hook or _noop_progress
+
     # Handle panda states updates
     if self.sm.updated["pandaStates"]:
       panda_states = self.sm["pandaStates"]
@@ -139,16 +196,54 @@ class UIState(UIStateSP):
     elif not self.sm.alive["wideRoadCameraState"] or not self.sm.valid["wideRoadCameraState"]:
       self.light_sensor = -1
 
-    # Update started state
-    self.started = self.sm["deviceState"].started and self.ignition
+    # Trust hardwared's filtered started state; raw ignition can flap on Toyota.
+    mark_progress("ui.update.before_state_params")
+    params = self.ui_params
+    force_onroad = params.get_bool("ForceOnroad")
+    force_offroad = params.get_bool("ForceOffroad")
+    started = self.sm["deviceState"].started
+    started |= force_onroad
+    started &= not force_offroad
+    self.started = started
+    self._update_usbgpu_presence(self.sm["deviceState"].chestnutPresent)
 
     # Update recording audio state
-    self.recording_audio = self.params.get_bool("RecordAudio") and self.started
+    self.recording_audio = params.get_bool("RecordAudio") and self.started
 
-    self.is_metric = self.params.get_bool("IsMetric")
-    self.always_on_dm = self.params.get_bool("AlwaysOnDM")
+    self.is_metric = params.get_bool("IsMetric")
+    self.always_on_dm = params.get_bool("AlwaysOnDM")
+    self.usbgpu_compiled = params.get_bool("UsbGpuCompiled")
+    self.usbgpu_active = params.get_bool("UsbGpuActive")
+    self.usbgpu_loading = params.get_bool("UsbGpuLoading")
+    self.switchback_mode_enabled = self.params_memory.get_bool("SwitchbackModeEnabled") if self.started else False
+    self.conditional_status = self.params_memory.get_int("CEStatus", default=0) if self.started else 0
+    mark_progress("ui.update.after_state_params")
+    if self.sm.valid.get("starpilotCarState", False):
+      starpilot_car_state = self.sm["starpilotCarState"]
+      self.always_on_lateral_active = (not self.sm["selfdriveState"].enabled and
+                                       starpilot_car_state.alwaysOnLateralEnabled)
+      self.traffic_mode_enabled = starpilot_car_state.trafficModeEnabled
+    else:
+      self.always_on_lateral_active = False
+      self.traffic_mode_enabled = False
 
-  def _update_status(self) -> None:
+    if self.sm.updated["starpilotPlan"]:
+      plan = self.sm["starpilotPlan"]
+      toggles_str = plan.starpilotToggles
+      if toggles_str:
+        try:
+          parsed = json.loads(toggles_str)
+          if isinstance(parsed, dict):
+            self.starpilot_toggles.update(parsed)
+        except Exception as e:
+          cloudlog.warning(f"Error parsing starpilot_toggles: {e}")
+
+    self.starpilot_toggles["force_offroad"] = force_offroad
+    self.starpilot_toggles["force_onroad"] = force_onroad
+
+  def _update_status(self, progress_hook: Callable[[str], None] | None = None) -> None:
+    mark_progress = progress_hook or _noop_progress
+
     if self.started and self.sm.updated["selfdriveState"]:
       ss = self.sm["selfdriveState"]
       state = ss.state
@@ -158,12 +253,13 @@ class UIState(UIStateSP):
       else:
         self.status = UIStatus.ENGAGED if ss.enabled else UIStatus.DISENGAGED
 
-      self.status = UIStatus(UIStateSP.update_status(ss, self.sm["selfdriveStateSP"], self.sm["onroadEvents"]))
-
     # Check for engagement state changes
     if self.engaged != self._engaged_prev:
       for callback in self._engaged_transition_callbacks:
+        callback_name = getattr(callback, "__name__", type(callback).__name__)
+        mark_progress(f"ui.update.before_engaged_callback.{callback_name}")
         callback()
+        mark_progress(f"ui.update.after_engaged_callback.{callback_name}")
       self._engaged_prev = self.engaged
 
     # Handle onroad/offroad transition
@@ -174,7 +270,10 @@ class UIState(UIStateSP):
         self.started_time = time.monotonic()
 
       for callback in self._offroad_transition_callbacks:
+        callback_name = getattr(callback, "__name__", type(callback).__name__)
+        mark_progress(f"ui.update.before_offroad_callback.{callback_name}")
         callback()
+        mark_progress(f"ui.update.after_offroad_callback.{callback_name}")
 
       self._started_prev = self.started
 
@@ -188,19 +287,36 @@ class UIState(UIStateSP):
         self.has_longitudinal_control = self.params.get_bool("AlphaLongitudinalEnabled")
       else:
         self.has_longitudinal_control = self.CP.openpilotLongitudinalControl
-    UIStateSP.update_params(self)
+      self.experimental_mode_available = (
+        self.has_longitudinal_control or
+        lateral_only_experimental_available(self.CP)
+      )
+    else:
+      self.experimental_mode_available = False
     self._param_update_time = time.monotonic()
 
 
-class Device(DeviceSP):
+class Device:
+  SCREEN_SETTINGS_REFRESH_INTERVAL = 1.0
+
   def __init__(self):
-    DeviceSP.__init__(self)
     self._ignition = False
     self._interaction_time: float = -1
     self._override_interactive_timeout: int | None = None
     self._interactive_timeout_callbacks: list[Callable] = []
     self._prev_timed_out = False
     self._awake: bool = True
+    self._params = ui_state.ui_params
+
+    self._screen_settings_refresh_time: float = 0.0
+    self._screen_management = False
+    self._screen_brightness = 101
+    self._screen_brightness_onroad = 101
+    self._screen_timeout = 30
+    self._screen_timeout_onroad = 30
+    self._standby_mode = False
+    self._last_status = ui_state.status
+    self._refresh_screen_settings(force=True)
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
     self._last_brightness: int = 0
@@ -221,25 +337,74 @@ class Device(DeviceSP):
     if self._override_interactive_timeout is not None:
       return self._override_interactive_timeout
 
-    if gui_app.sunnypilot_ui() and ui_state.custom_interactive_timeout != 0:
-      return ui_state.custom_interactive_timeout
+    timeout_onroad = self._screen_timeout_onroad
+    timeout_offroad = self._screen_timeout
 
-    ignition_timeout = 10 if gui_app.big_ui() else 5
-    return ignition_timeout if ui_state.ignition else 30
+    if timeout_onroad <= 0:
+      timeout_onroad = 10 if gui_app.big_ui() else 5
+    if timeout_offroad <= 0:
+      timeout_offroad = 30
+
+    return int(timeout_onroad if ui_state.ignition else timeout_offroad)
 
   def _reset_interactive_timeout(self) -> None:
     self._interaction_time = time.monotonic() + self.interactive_timeout
+
+  def reset_interactive_timeout(self) -> None:
+    self._reset_interactive_timeout()
 
   def add_interactive_timeout_callback(self, callback: Callable):
     self._interactive_timeout_callbacks.append(callback)
 
   def update(self):
+    self._refresh_screen_settings()
+
     # do initial reset
     if self._interaction_time <= 0:
       self._reset_interactive_timeout()
 
-    self._update_brightness()
     self._update_wakefulness()
+    self._update_brightness()
+
+  def _refresh_screen_settings(self, force: bool = False) -> None:
+    now = time.monotonic()
+    if not force and now - self._screen_settings_refresh_time < self.SCREEN_SETTINGS_REFRESH_INTERVAL:
+      return
+
+    previous = (
+      self._screen_management,
+      self._screen_brightness,
+      self._screen_brightness_onroad,
+      self._screen_timeout,
+      self._screen_timeout_onroad,
+      self._standby_mode,
+    )
+
+    self._screen_management = self._params.get_bool("ScreenManagement")
+    if self._screen_management:
+      self._screen_brightness = min(max(self._params.get_int("ScreenBrightness", return_default=True), 0), 101)
+      self._screen_brightness_onroad = min(max(self._params.get_int("ScreenBrightnessOnroad", return_default=True), 0), 101)
+      self._screen_timeout = self._params.get_int("ScreenTimeout", return_default=True)
+      self._screen_timeout_onroad = self._params.get_int("ScreenTimeoutOnroad", return_default=True)
+      self._standby_mode = self._params.get_bool("StandbyMode")
+    else:
+      self._screen_brightness = 101
+      self._screen_brightness_onroad = 101
+      self._screen_timeout = 30
+      self._screen_timeout_onroad = 30
+      self._standby_mode = False
+
+    self._screen_settings_refresh_time = now
+    current = (
+      self._screen_management,
+      self._screen_brightness,
+      self._screen_brightness_onroad,
+      self._screen_timeout,
+      self._screen_timeout_onroad,
+      self._standby_mode,
+    )
+    if previous != current and self._interaction_time > 0:
+      self._reset_interactive_timeout()
 
   def set_offroad_brightness(self, brightness: int | None):
     if brightness is None:
@@ -247,6 +412,15 @@ class Device(DeviceSP):
     self._offroad_brightness = min(max(brightness, 0), 100)
 
   def _update_brightness(self):
+    brightness = self._calculate_brightness()
+
+    if brightness != self._last_brightness:
+      if self._brightness_thread is None or not self._brightness_thread.is_alive():
+        self._brightness_thread = threading.Thread(target=HARDWARE.set_screen_brightness, args=(brightness,))
+        self._brightness_thread.start()
+        self._last_brightness = brightness
+
+  def _calculate_brightness(self) -> int:
     clipped_brightness = self._offroad_brightness
 
     if ui_state.started and ui_state.light_sensor >= 0:
@@ -258,35 +432,31 @@ class Device(DeviceSP):
       else:
         clipped_brightness = ((clipped_brightness + 16.0) / 116.0) ** 3.0
 
-      min_brightness = 30
-      if gui_app.sunnypilot_ui():
-        min_brightness = DeviceSP.set_min_onroad_brightness(ui_state, min_brightness)
-
-      clipped_brightness = float(np.interp(clipped_brightness, [0, 1], [min_brightness, 100]))
+      clipped_brightness = float(np.interp(clipped_brightness, [0, 1], [30, 100]))
 
     brightness = round(self._brightness_filter.update(clipped_brightness))
-
-    if gui_app.sunnypilot_ui():
-      brightness = DeviceSP.set_onroad_brightness(ui_state, self._awake, brightness)
-
     if not self._awake:
       brightness = 0
+    elif ui_state.started and self._standby_mode and time.monotonic() > self._interaction_time:
+      brightness = 0
+    elif ui_state.started and self._screen_brightness_onroad != 101:
+      brightness = max(5, self._screen_brightness_onroad) if time.monotonic() <= self._interaction_time else self._screen_brightness_onroad
+    elif not ui_state.started and self._screen_brightness != 101:
+      brightness = self._screen_brightness
 
-    if brightness != self._last_brightness:
-      if self._brightness_thread is None or not self._brightness_thread.is_alive():
-        self._brightness_thread = threading.Thread(target=HARDWARE.set_screen_brightness, args=(brightness,))
-        self._brightness_thread.start()
-        self._last_brightness = brightness
+    return brightness
 
   def _update_wakefulness(self):
     # Handle interactive timeout
-    ignition_just_turned_off = not ui_state.ignition and self._ignition
+    ignition_state_changed = ui_state.ignition != self._ignition
     self._ignition = ui_state.ignition
 
-    if ignition_just_turned_off or any(ev.left_down for ev in gui_app.mouse_events):
-      if gui_app.sunnypilot_ui():
-        DeviceSP.wake_from_dimmed_onroad_brightness(ui_state, gui_app.mouse_events)
+    status_changed = ui_state.status != self._last_status and ui_state.status != UIStatus.OVERRIDE
+    self._last_status = ui_state.status
+    wake_for_onroad_event = (ui_state.started and self._standby_mode and self._screen_brightness_onroad != 0 and
+                             (status_changed or self._visible_onroad_alert()))
 
+    if ignition_state_changed or any(ev.left_down for ev in gui_app.mouse_events) or wake_for_onroad_event:
       self._reset_interactive_timeout()
 
     interaction_timeout = time.monotonic() > self._interaction_time
@@ -295,15 +465,37 @@ class Device(DeviceSP):
         callback()
     self._prev_timed_out = interaction_timeout
 
-    self._set_awake(ui_state.ignition or not interaction_timeout or PC)
+    standby_active = ui_state.started and self._standby_mode
+    keep_display_awake = not interaction_timeout or PC
+    keep_display_awake |= ui_state.ignition and not standby_active
+    self._set_awake(keep_display_awake)
+
+  @staticmethod
+  def _visible_onroad_alert() -> bool:
+    if not ui_state.started:
+      return False
+
+    sm = ui_state.sm
+    try:
+      selfdrive_state = sm["selfdriveState"]
+      if selfdrive_state.alertSize != log.SelfdriveState.AlertSize.none:
+        return True
+      if selfdrive_state.alertStatus != log.SelfdriveState.AlertStatus.normal:
+        return True
+    except Exception:
+      pass
+
+    try:
+      starpilot_state = sm["starpilotSelfdriveState"]
+      return getattr(starpilot_state.alertSize, "raw", 0) != 0
+    except Exception:
+      return False
 
   def _set_awake(self, on: bool):
     if on != self._awake:
-      DeviceSP._set_awake(on, ui_state)
       self._awake = on
       cloudlog.debug(f"setting display power {int(on)}")
       HARDWARE.set_display_power(on)
-      ui_state.params.put_bool_nonblocking("ScreenOff", not on)
       gui_app.set_should_render(on)
 
 

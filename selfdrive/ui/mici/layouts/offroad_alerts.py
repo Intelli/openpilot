@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from openpilot.common.params import Params
 from openpilot.selfdrive.selfdrived.alertmanager import OFFROAD_ALERTS
+from openpilot.selfdrive.ui.lib.starpilot_version import STARPILOT_DISPLAY_VERSION
 from openpilot.system.hardware import HARDWARE
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
@@ -13,6 +14,7 @@ from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
 
 REFRESH_INTERVAL = 5.0  # seconds
+EXCESSIVE_ACTUATION_ALERT_KEY = "Offroad_ExcessiveActuation"
 
 
 class AlertSize(IntEnum):
@@ -211,6 +213,10 @@ class MiciOffroadAlerts(Scroller):
   def scrolling(self):
     return self._scroller.scroll_panel.is_touch_valid()
 
+  def _acknowledge_excessive_actuation(self):
+    self.params.remove(EXCESSIVE_ACTUATION_ALERT_KEY)
+    self.refresh()
+
   def _build_alerts(self):
     """Build sorted list of alerts from OFFROAD_ALERTS."""
     self.sorted_alerts = []
@@ -231,6 +237,8 @@ class MiciOffroadAlerts(Scroller):
 
       # Create alert item widget
       alert_item = AlertItem(alert_data)
+      if key == EXCESSIVE_ACTUATION_ALERT_KEY:
+        alert_item.set_click_callback(self._acknowledge_excessive_actuation)
       self.alert_items.append(alert_item)
       self._scroller.add_widget(alert_item)
 
@@ -252,8 +260,9 @@ class MiciOffroadAlerts(Scroller):
           # format: "version / branch / commit / date"
           parts = new_desc.split(" / ")
           if len(parts) > 3:
-            version, date = parts[0], parts[3]
-            version_string = f"\nsunnypilot {version}, {date}\n"
+            date = parts[3]
+            version = STARPILOT_DISPLAY_VERSION
+            version_string = f"\nopenpilot {version}, {date}\n"
 
         update_alert_data.text = f"Update available {version_string}. Click to update. Read the release notes at blog.comma.ai."
         update_alert_data.visible = True
@@ -272,6 +281,8 @@ class MiciOffroadAlerts(Scroller):
 
       if alert_json:
         text = alert_json.get("text", "").replace("%1", alert_json.get("extra", ""))
+        if alert_data.key == EXCESSIVE_ACTUATION_ALERT_KEY:
+          text = f"{text} {tr('Tap to acknowledge.')}"
 
       alert_data.text = text
       alert_data.visible = bool(text)

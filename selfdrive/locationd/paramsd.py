@@ -12,6 +12,8 @@ from openpilot.selfdrive.locationd.models.constants import GENERATED_DIR
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.common.swaglog import cloudlog
 
+from openpilot.starpilot.common.starpilot_variables import get_starpilot_toggles
+
 MAX_ANGLE_OFFSET_DELTA = 20 * DT_MDL  # Max 20 deg/s
 ROLL_MAX_DELTA = np.radians(20.0) * DT_MDL  # 20deg in 1 second is well within curvature limits
 ROLL_MIN, ROLL_MAX = np.radians(-10), np.radians(10)
@@ -22,6 +24,14 @@ OFFSET_MAX = 10.0
 OFFSET_LOWERED_MAX = 8.0
 MIN_ACTIVE_SPEED = 1.0
 LOW_ACTIVE_SPEED = 10.0
+
+
+def resolve_vehicle_model_params(learned_steer_ratio: float, learned_stiffness: float, starpilot_toggles) -> tuple[float, float]:
+  if getattr(starpilot_toggles, "force_auto_tune_off", False):
+    return float(starpilot_toggles.steerRatio), 1.0
+
+  steer_ratio = starpilot_toggles.steerRatio if getattr(starpilot_toggles, "use_custom_steerRatio", False) else learned_steer_ratio
+  return float(steer_ratio), float(learned_stiffness)
 
 
 class VehicleParamsLearner:
@@ -57,6 +67,8 @@ class VehicleParamsLearner:
 
     self.reset(None)
 
+    self.CP = CP
+
   def reset(self, t: float | None):
     self.kf.init_state(self.x_initial, covs=self.P_initial, filter_time=t)
 
@@ -65,7 +77,6 @@ class VehicleParamsLearner:
 
   def handle_log(self, t: float, which: str, msg: capnp._DynamicStructReader):
     if which == 'livePose':
-      t = msg.timestamp * 1e-9
       device_pose = Pose.from_live_pose(msg)
       calibrated_pose = self.calibrator.build_calibrated_pose(device_pose)
 
@@ -128,8 +139,8 @@ class VehicleParamsLearner:
 
     if not self.active:
       # Reset time when stopped so uncertainty doesn't grow
-      self.kf.filter.set_filter_time(t)
-      self.kf.filter.reset_rewind()
+      self.kf.filter.set_filter_time(t)  # type: ignore
+      self.kf.filter.reset_rewind()      # type: ignore
 
   def get_msg(self, valid: bool, debug: bool = False) -> capnp._DynamicStructBuilder:
     x = self.kf.x
@@ -162,8 +173,11 @@ class VehicleParamsLearner:
     liveParameters = msg.liveParameters
     liveParameters.posenetValid = True
     liveParameters.sensorValid = sensors_valid
-    liveParameters.steerRatio = float(x[States.STEER_RATIO].item())
-    liveParameters.stiffnessFactor = float(x[States.STIFFNESS].item())
+    liveParameters.steerRatio, liveParameters.stiffnessFactor = resolve_vehicle_model_params(
+      float(x[States.STEER_RATIO].item()),
+      float(x[States.STIFFNESS].item()),
+      self.starpilot_toggles,
+    )
     liveParameters.roll = float(self.roll)
     liveParameters.angleOffsetAverageDeg = float(self.avg_angle_offset)
     liveParameters.angleOffsetDeg = float(self.angle_offset)
@@ -187,6 +201,9 @@ class VehicleParamsLearner:
       liveParameters.debugFilterState = log.LiveParametersData.FilterState.new_message()
       liveParameters.debugFilterState.value = x.tolist()
       liveParameters.debugFilterState.std = P.tolist()
+
+    if self.CP.carFingerprint == "RAM_HD":
+      liveParameters.valid = True
 
     return msg
 
@@ -277,6 +294,10 @@ def main():
   steer_ratio, stiffness_factor, angle_offset_deg, pInitial = retrieve_initial_vehicle_params(params, CP, REPLAY, DEBUG)
   learner = VehicleParamsLearner(CP, steer_ratio, stiffness_factor, np.radians(angle_offset_deg), pInitial)
 
+  sm = sm.extend(['starpilotPlan'])
+
+  learner.starpilot_toggles = get_starpilot_toggles()
+
   while True:
     sm.update()
     if sm.all_checks():
@@ -293,6 +314,8 @@ def main():
         params.put_nonblocking("LiveParametersV2", msg_dat)
 
       pm.send('liveParameters', msg_dat)
+
+    learner.starpilot_toggles = get_starpilot_toggles(sm)
 
 
 if __name__ == "__main__":

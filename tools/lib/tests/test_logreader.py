@@ -7,7 +7,7 @@ import os
 import pytest
 import requests
 
-from openpilot.common.parameterized import parameterized
+from parameterized import parameterized
 
 from cereal import log as capnp_log
 from openpilot.tools.lib.logreader import LogsUnavailable, LogIterable, LogReader, parse_indirect, ReadMode
@@ -90,13 +90,24 @@ class TestLogReader:
     sr = SegmentRange(identifier)
     assert str(sr) == expected
 
+  @parameterized.expand([
+    (f"{TEST_ROUTE}/13/14", f"{TEST_ROUTE}/0:1"),
+    (f"{TEST_ROUTE}/13/14/a", f"{TEST_ROUTE}/0:1/a"),
+    (f"https://connect.comma.ai/{TEST_ROUTE}/13/14", f"{TEST_ROUTE}/0:1"),
+    (f"https://connect.comma.ai/{TEST_ROUTE}/13/14/a", f"{TEST_ROUTE}/0:1/a"),
+    (f"https://connect.konik.ai/{TEST_ROUTE}/13/14", f"{TEST_ROUTE}/0:1"),
+    (f"https://stable.konik.ai/{TEST_ROUTE}/13/14/a", f"{TEST_ROUTE}/0:1/a"),
+  ])
+  def test_parse_indirect_accepts_second_window_route_style(self, identifier, expected):
+    assert parse_indirect(identifier) == expected
+
+  def test_parse_indirect_accepts_konik_useradmin(self):
+    assert parse_indirect(f"https://useradmin.konik.ai/?onebox={TEST_ROUTE}") == TEST_ROUTE
+
   @pytest.mark.parametrize("cache_enabled", [True, False])
   def test_direct_parsing(self, mocker, cache_enabled):
     file_exists_mock = mocker.patch("openpilot.tools.lib.filereader.file_exists")
-    if cache_enabled:
-      os.environ.pop("DISABLE_FILEREADER_CACHE", None)
-    else:
-      os.environ["DISABLE_FILEREADER_CACHE"] = "1"
+    os.environ["FILEREADER_CACHE"] = "1" if cache_enabled else "0"
     qlog = tempfile.NamedTemporaryFile(mode='wb', delete=False)
 
     with requests.get(QLOG_FILE, stream=True) as r:
@@ -184,10 +195,7 @@ class TestLogReader:
   @parameterized.expand([(True,), (False,)])
   @pytest.mark.slow
   def test_run_across_segments(self, cache_enabled):
-    if cache_enabled:
-      os.environ.pop("DISABLE_FILEREADER_CACHE", None)
-    else:
-      os.environ["DISABLE_FILEREADER_CACHE"] = "1"
+    os.environ["FILEREADER_CACHE"] = "1" if cache_enabled else "0"
     lr = LogReader(f"{TEST_ROUTE}/0:4")
     assert len(lr.run_across_segments(4, noop)) == len(list(lr))
 

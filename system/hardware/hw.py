@@ -17,12 +17,12 @@ class Paths:
       return os.environ['LOG_ROOT']
     elif PC:
       return str(Path(Paths.comma_home()) / "media" / "0" / "realdata")
+    elif Path("/cache/use_HD").is_file():
+      return '/data/media/0/realdata_HD/'
+    elif Path("/cache/use_konik").is_file():
+      return '/data/media/0/realdata_konik/'
     else:
       return '/data/media/0/realdata/'
-
-  @staticmethod
-  def log_root_external() -> str:
-    return '/mnt/external_realdata/'
 
   @staticmethod
   def swaglog_root() -> str:
@@ -56,13 +56,6 @@ class Paths:
       return "/data/stats/"
 
   @staticmethod
-  def stats_sp_root() -> str:
-    if PC:
-      return str(Path(Paths.comma_home()) / "stats")
-    else:
-      return "/data/stats_sp/"
-
-  @staticmethod
   def config_root() -> str:
     if PC:
       return Paths.comma_home()
@@ -70,28 +63,19 @@ class Paths:
       return "/tmp/.comma"
 
   @staticmethod
+  def params_cache_root() -> str:
+    if PC:
+      return str(Path(Paths.comma_home()) / "cache" / "starpilot" / "params")
+    return "/cache/starpilot/params"
+
+  @staticmethod
+  def legacy_params_cache_root() -> str:
+    if PC:
+      return str(Path(Paths.comma_home()) / "cache" / "params")
+    return "/cache/params"
+
+  @staticmethod
   def shm_path() -> str:
     if PC and platform.system() == "Darwin":
       return "/tmp"  # This is not really shared memory on macOS, but it's the closest we can get
     return "/dev/shm"
-
-  @staticmethod
-  def model_root() -> str:
-    if PC:
-      return str(Path(Paths.comma_home()) / "media" / "0" / "models")
-    else:
-      return "/data/media/0/models"
-
-  @staticmethod
-  def crash_log_root() -> str:
-    if PC:
-      return str(Path(Paths.comma_home()) / "community" / "crashes")
-    else:
-      return "/data/community/crashes"
-
-  @staticmethod
-  def mapd_root() -> str:
-    if PC:
-      return str(Path(Paths.comma_home()) / "media" / "0" / "osm")
-    else:
-      return "/data/media/0/osm"

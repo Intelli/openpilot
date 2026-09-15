@@ -12,14 +12,17 @@ from openpilot.common.basedir import BASEDIR
 
 
 DIRS = ['cereal', 'openpilot']
-EXTS = ['.png', '.py', '.ttf', '.capnp', '.json', '.fnt', '.mo', '.po']
-EXCLUDE = ['selfdrive/assets/training', 'third_party/raylib/raylib_repo/examples']
+EXTS = ['.png', '.py', '.ttf', '.capnp', '.json', '.fnt', '.mo']
 INTERPRETER = '/usr/bin/env python3'
 
 
 def copy(src, dest):
-  if any(src.endswith(ext) for ext in EXTS) and not any(exc in src for exc in EXCLUDE):
+  if any(src.endswith(ext) for ext in EXTS):
     shutil.copy2(src, dest, follow_symlinks=True)
+
+
+def ignore_broken_symlinks(src, names):
+  return [name for name in names if Path(src, name).is_symlink() and not Path(src, name).exists()]
 
 
 if __name__ == '__main__':
@@ -28,8 +31,6 @@ if __name__ == '__main__':
   parser.add_argument('-o', '--output', help='output file')
   parser.add_argument('module', help="the module to target, e.g. 'openpilot.system.ui.spinner'")
   args = parser.parse_args()
-
-  print('WARNING: copying all files! make sure to run scons and git tree is clean')
 
   if not args.output:
     args.output = args.module
@@ -46,7 +47,8 @@ if __name__ == '__main__':
 
   with tempfile.TemporaryDirectory() as tmp:
     for directory in DIRS:
-      shutil.copytree(BASEDIR + '/' + directory, tmp + '/' + directory, symlinks=False, dirs_exist_ok=True, copy_function=copy)
+      shutil.copytree(BASEDIR + '/' + directory, tmp + '/' + directory, symlinks=False, ignore=ignore_broken_symlinks,
+                      dirs_exist_ok=True, copy_function=copy)
     entry = f'{args.module}:{args.entrypoint}'
     zipapp.create_archive(tmp, target=args.output, interpreter=INTERPRETER, main=entry)
 

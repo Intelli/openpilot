@@ -1,0 +1,186 @@
+{
+  "repository": "https://github.com/Intelli/openpilot",
+  "commit": "5928a37ad18783068ee26b187f6a7ddb9ff9c3d3",
+  "files": [
+    {
+      "original_path": "apply_patch.sh",
+      "preserved_path": "apply_patch.sh",
+      "sha256": "5a5cc231a0e4c724f48b2e44b9b6f3aa8015d0d3dd155839576666f398696441"
+    },
+    {
+      "original_path": "apply_patch_conflicts.sh",
+      "preserved_path": "apply_patch_conflicts.sh",
+      "sha256": "190dbc85f31895c572b8e76c8e2db981ed9ecbaca81b19b3d33865fe0a2ac946"
+    },
+    {
+      "original_path": "fix_patch.sh",
+      "preserved_path": "fix_patch.sh",
+      "sha256": "154d1f99e19cccbb757971d456d8d3374936ae81bd830fc460d10bf8cda4c50b"
+    },
+    {
+      "original_path": "create_patch.sh",
+      "preserved_path": "create_patch.sh",
+      "sha256": "5bca2636a579944720d049cae45b9ec502ae9114b4af8e5cd65dc033ec9dbb8b"
+    },
+    {
+      "original_path": "create_patch_manual.sh",
+      "preserved_path": "create_patch_manual.sh",
+      "sha256": "8f4af842e26d45e5991b1a54eec028b3ad23e36527f225e21bfde33f8ca6d1e7"
+    },
+    {
+      "original_path": "update_patch.sh",
+      "preserved_path": "update_patch.sh",
+      "sha256": "e410219be01dff6dba919a687c55c2fec43a7e079a8be77ce51af06594b87a9e"
+    },
+    {
+      "original_path": "patches/alerts.patch",
+      "preserved_path": "patches/alerts.patch",
+      "sha256": "2aa8fd3464d9802150df01de74ec3853e441721444b8c835a11c503e724cccc4"
+    },
+    {
+      "original_path": "patches/auto_lock.patch.disabled",
+      "preserved_path": "patches/auto_lock.patch.disabled",
+      "sha256": "7fba6df8e26a7a5ddd628723efb941cf5ba73b1c69170b8c820ace53502aab5b"
+    },
+    {
+      "original_path": "patches/custom_audio.patch.disabled",
+      "preserved_path": "patches/custom_audio.patch.disabled",
+      "sha256": "6fe790c36f9cc81746db50bdba651436b49a8df8883c1ddac7611fc107fde34c"
+    },
+    {
+      "original_path": "patches/custom_defaults.patch",
+      "preserved_path": "patches/custom_defaults.patch",
+      "sha256": "2b371553a13f24bec832cdd6d6967a616f4dda353f61869292de63816502d1fc"
+    },
+    {
+      "original_path": "patches/custom_model_ui.patch",
+      "preserved_path": "patches/custom_model_ui.patch",
+      "sha256": "7187b4c3946a3035d0efea94b043747a67c6973e3852ee32e2a0a0ae431a82d4"
+    },
+    {
+      "original_path": "patches/customize_warnings.patch",
+      "preserved_path": "patches/customize_warnings.patch",
+      "sha256": "105e4db426bce3d6dd84d46f49a7b97b939bb05b973424ef11f5c1c0094a1708"
+    },
+    {
+      "original_path": "patches/drive_helpers.patch",
+      "preserved_path": "patches/drive_helpers.patch",
+      "sha256": "07eb67278fc499ada3c98c8c677454b5e57312283193acc9efbd20384e7a459d"
+    },
+    {
+      "original_path": "patches/driver_monitoring.patch",
+      "preserved_path": "patches/driver_monitoring.patch",
+      "sha256": "da37953ceda7d73fb7cac0f972a977c7e808a965d0bd0f153459f37b098aa3e8"
+    },
+    {
+      "original_path": "patches/ev9_edition.patch",
+      "preserved_path": "patches/ev9_edition.patch",
+      "sha256": "28454069aa709704de44596d6d5249403b0041d1be75630f3369179d9782c195"
+    },
+    {
+      "original_path": "patches/icbm_fixes.patch.OUTDATED.disabled",
+      "preserved_path": "patches/icbm_fixes.patch.OUTDATED.disabled",
+      "sha256": "334356ff4e8e145dea23867dc382a842dd74ca7495a4acd9eecb326085847080"
+    },
+    {
+      "original_path": "patches/lane_centering.patch",
+      "preserved_path": "patches/lane_centering.patch",
+      "sha256": "2f6b37359d80b9a966a10531587f29d39629f76049f27d35fe0c6bba378af8ee"
+    },
+    {
+      "original_path": "patches/power_management.patch",
+      "preserved_path": "patches/power_management.patch",
+      "sha256": "8198d82adbb3e52ec22aa85c041373c569d4a27fa79aa75851daad7e1e6a767c"
+    },
+    {
+      "original_path": "patches/prebuilt.patch",
+      "preserved_path": "patches/prebuilt.patch",
+      "sha256": "afbecc873ff00581a8070b01a955d8ec52f31877876b45923d370e7217370cc0"
+    },
+    {
+      "original_path": "patches/quickboot.patch.OUTDATED.disabled",
+      "preserved_path": "patches/quickboot.patch.OUTDATED.disabled",
+      "sha256": "7010997a98655ed371d0e669636ecfffa0b985668ffd808a1ee7d488e1cd525c"
+    },
+    {
+      "original_path": "patches/tap_detection_debug.patch.disabled",
+      "preserved_path": "patches/tap_detection_debug.patch.disabled",
+      "sha256": "58d5cc7158fcb7bc9ad9ef38aeffbc2a951aed2e4cee4ae08730ab2883cffd7f"
+    },
+    {
+      "original_path": "patches/ui_options.patch",
+      "preserved_path": "patches/ui_options.patch",
+      "sha256": "db646d0728fa13680a6f516688f2d2fc7135d9ad2009da04b3f1b6bc5b18d35c"
+    },
+    {
+      "original_path": "AGENTS.md",
+      "preserved_path": "patches/legacy-openpilot-tooling/AGENTS.md",
+      "sha256": "c82927144562e3b50a3c2e6b84cefbb5c807fc270b430ecd20bc179266f051a9"
+    },
+    {
+      "original_path": "sync-upstream.sh",
+      "preserved_path": "patches/legacy-openpilot-tooling/sync-upstream.sh",
+      "sha256": "381db24596c9ee016333020d2a3341042fe7a737748658cec5bb8644487cff59"
+    },
+    {
+      "original_path": "update.sh",
+      "preserved_path": "patches/legacy-openpilot-tooling/update.sh",
+      "sha256": "ee93c94e3c21934467336833e66c19ee5ba6a8963f620f07610f77667f19c29e"
+    },
+    {
+      "original_path": "tools/car_porting/examples/hkg_canfd_angle_steering.ipynb",
+      "preserved_path": "patches/legacy-openpilot-tooling/tools/car_porting/examples/hkg_canfd_angle_steering.ipynb",
+      "sha256": "8c5ed31bee3467268755a2d647d2a3b1df456c317180ae83ee217fe028332c8e"
+    },
+    {
+      "original_path": "tools/car_porting/examples/hyundai_angle_steering.ipynb",
+      "preserved_path": "patches/legacy-openpilot-tooling/tools/car_porting/examples/hyundai_angle_steering.ipynb",
+      "sha256": "db3bace2399247f10864a2b8472f0b40635c9bbb21d942d39d964d3cba6c93b4"
+    },
+    {
+      "original_path": "tools/plotjuggler/layouts/analyzing-panda-block-angle-hkg.xml",
+      "preserved_path": "patches/legacy-openpilot-tooling/tools/plotjuggler/layouts/analyzing-panda-block-angle-hkg.xml",
+      "sha256": "d6c18878b7dd317818f7c7766dfe53bfc6e8f66622aae2494eff1e3a6d75c91a"
+    },
+    {
+      "original_path": "tools/plotjuggler/layouts/analyzing-torque-angle-hkg.xml",
+      "preserved_path": "patches/legacy-openpilot-tooling/tools/plotjuggler/layouts/analyzing-torque-angle-hkg.xml",
+      "sha256": "4c71a8bef0bf3c31f991f1f5a93c3c0842311a4b7724c5fd94eea1ae7a0f4504"
+    },
+    {
+      "original_path": "tools/plotjuggler/layouts/hkg_angle_control.xml",
+      "preserved_path": "patches/legacy-openpilot-tooling/tools/plotjuggler/layouts/hkg_angle_control.xml",
+      "sha256": "f5ac6485a43b68630bb84fe285b1d00783fd286fa84926e46e8a8dd797c37740"
+    },
+    {
+      "original_path": "tools/plotjuggler/layouts/safety-limits-angle-kkg.xml",
+      "preserved_path": "patches/legacy-openpilot-tooling/tools/plotjuggler/layouts/safety-limits-angle-kkg.xml",
+      "sha256": "20bd176b690d4fce7051a539ddd69c8149206dd02bb63947c175b8e9390343f9"
+    },
+    {
+      "original_path": "scripts/manage-powersave.py",
+      "preserved_path": "patches/legacy-openpilot-tooling/scripts/manage-powersave.py",
+      "sha256": "ecb5768e5976d56197ef2d931670005a7fc5a36ce79ac336dd5a2267ba2387ec"
+    },
+    {
+      "original_path": "auto-lock/lock-closed-white.svg",
+      "preserved_path": "patches/assets/openpilot/auto-lock/lock-closed-white.svg",
+      "sha256": "655bb045c370d3eb6236440912e26fae9bda6f5bbc33f56142e56046a9af03d9"
+    },
+    {
+      "original_path": "auto-lock/lock-closed-white.png",
+      "preserved_path": "patches/assets/openpilot/auto-lock/lock-closed-white.png",
+      "sha256": "31dd5b0e05574556f9a5da1fff9180598a5a1b43f3bedf065554425a44f9f988"
+    },
+    {
+      "original_path": "selfdrive/assets/sounds/engage_tizi_custom.wav",
+      "preserved_path": "patches/assets/openpilot/selfdrive/assets/sounds/engage_tizi_custom.wav",
+      "sha256": "f5ba06fa290713890c383e24176af86acd8f889ddee2108fcf8efa1d7544ab8a"
+    },
+    {
+      "original_path": "selfdrive/assets/sounds/disengage_tizi_custom.wav",
+      "preserved_path": "patches/assets/openpilot/selfdrive/assets/sounds/disengage_tizi_custom.wav",
+      "sha256": "ba49e66443cba8eed522e9bc3ae4ce6892d7edfd2958ba4d40e89b8ac043bce7"
+    }
+  ]
+}

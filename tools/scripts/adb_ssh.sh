@@ -2,9 +2,7 @@
 set -euo pipefail
 
 # Forward all openpilot service ports
-while IFS=' ' read -r name port; do
-  adb forward "tcp:${port}" "tcp:${port}" > /dev/null
-done < <(python3 - <<'PY'
+mapfile -t SERVICE_PORTS < <(python3 - <<'PY'
 from cereal.services import SERVICE_LIST
 
 FNV_PRIME = 0x100000001b3
@@ -31,12 +29,14 @@ for name, port in sorted(ports):
 PY
 )
 
-# Forward SSH port, finding a free local port if 2222 is taken.
-SSH_PORT=2222
-while ss -tln | grep -q ":${SSH_PORT} "; do
-  SSH_PORT=$((SSH_PORT + 1))
+for entry in "${SERVICE_PORTS[@]}"; do
+  name="${entry% *}"
+  port="${entry##* }"
+  adb forward "tcp:${port}" "tcp:${port}" > /dev/null
 done
-adb forward tcp:${SSH_PORT} tcp:22
+
+# Forward SSH port first for interactive shell access.
+adb forward tcp:2222 tcp:22
 
 # SSH!
-ssh comma@localhost -p ${SSH_PORT} "$@"
+ssh comma@localhost -p 2222 "$@"

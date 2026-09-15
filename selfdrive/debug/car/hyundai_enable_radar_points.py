@@ -71,13 +71,6 @@ SUPPORTED_FW_VERSIONS = {
   b"DLhe SCC FHCUP      1.00 1.02 99110-L7000 \x01 \x102    ": ConfigValues(
     default_config=b"\x00\x00\x00\x01\x00\x00",
     tracks_enabled=b"\x00\x00\x00\x01\x00\x01"),
-  # 2022 Niro EV
-  b"DEev SCC F-CUP      1.00 1.00 99110-Q4600\x01\x42      ": ConfigValues(
-    default_config=b"\x00\x00\x00\x01\x00\x00",
-    tracks_enabled=b"\x00\x00\x00\x01\x00\x01"),
-  b"DEev SCC F-CUP      1.00 1.00 99110-Q4600 \x07\x03\t%      ": ConfigValues(
-    default_config=b"\x00\x00\x00\x01\x00\x00",
-    tracks_enabled=b"\x00\x00\x00\x01\x00\x01"),
 }
 
 if __name__ == "__main__":
@@ -108,11 +101,11 @@ if __name__ == "__main__":
   uds_client = UdsClient(panda, 0x7D0, bus=args.bus)
 
   print("\n[START DIAGNOSTIC SESSION]")
-  session_type : SESSION_TYPE = 0x07
+  session_type : SESSION_TYPE = 0x07 # type: ignore
   uds_client.diagnostic_session_control(session_type)
 
   print("[HARDWARE/SOFTWARE VERSION]")
-  fw_version_data_id : DATA_IDENTIFIER_TYPE = 0xf100
+  fw_version_data_id : DATA_IDENTIFIER_TYPE = 0xf100 # type: ignore
   fw_version = uds_client.read_data_by_identifier(fw_version_data_id)
   print(fw_version)
   if fw_version not in SUPPORTED_FW_VERSIONS.keys():
@@ -120,7 +113,7 @@ if __name__ == "__main__":
     sys.exit(1)
 
   print("[GET CONFIGURATION]")
-  config_data_id : DATA_IDENTIFIER_TYPE = 0x0142
+  config_data_id : DATA_IDENTIFIER_TYPE = 0x0142 # type: ignore
   current_config = uds_client.read_data_by_identifier(config_data_id)
   config_values = SUPPORTED_FW_VERSIONS[fw_version]
   new_config = config_values.default_config if args.default else config_values.tracks_enabled

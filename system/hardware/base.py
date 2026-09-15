@@ -5,7 +5,6 @@ from dataclasses import dataclass, fields
 from cereal import log
 
 NetworkType = log.DeviceState.NetworkType
-NetworkStrength = log.DeviceState.NetworkStrength
 
 class LPAError(RuntimeError):
   pass
@@ -68,6 +67,10 @@ class ThermalConfig:
 
 class LPABase(ABC):
   @abstractmethod
+  def bootstrap(self) -> None:
+    pass
+
+  @abstractmethod
   def list_profiles(self) -> list[Profile]:
     pass
 
@@ -91,10 +94,8 @@ class LPABase(ABC):
   def switch_profile(self, iccid: str) -> None:
     pass
 
-  def process_notifications(self) -> None:
-    pass
-
-  def is_comma_profile(self, iccid: str) -> bool:
+  @staticmethod
+  def is_comma_profile(iccid: str) -> bool:
     return any(iccid.startswith(prefix) for prefix in ('8985235',))
 
 class HardwareBase(ABC):
@@ -115,57 +116,68 @@ class HardwareBase(ABC):
   def booted(self) -> bool:
     return True
 
+  @abstractmethod
   def reboot(self, reason=None):
-    print("REBOOT!")
+    pass
 
+  @abstractmethod
   def uninstall(self):
-    print("uninstall")
+    pass
 
+  @abstractmethod
   def get_os_version(self):
-    return None
+    pass
 
   @abstractmethod
   def get_device_type(self):
     pass
 
+  @abstractmethod
   def get_imei(self, slot) -> str:
-    return ""
+    pass
 
+  @abstractmethod
   def get_serial(self):
-    return ""
+    pass
 
+  @abstractmethod
   def get_network_info(self):
-    return None
+    pass
 
+  @abstractmethod
   def get_network_type(self):
-    return NetworkType.none
+    pass
 
+  @abstractmethod
   def get_sim_info(self):
-    return {
-      'sim_id': '',
-      'mcc_mnc': None,
-      'network_type': ["Unknown"],
-      'sim_state': ["ABSENT"],
-      'data_connected': False
-    }
+    pass
 
+  @abstractmethod
   def get_sim_lpa(self) -> LPABase:
-    raise NotImplementedError("SIM LPA not available")
+    pass
 
+  @abstractmethod
   def get_network_strength(self, network_type):
-    return NetworkStrength.unknown
+    pass
 
   def get_network_metered(self, network_type) -> bool:
     return network_type not in (NetworkType.none, NetworkType.wifi, NetworkType.ethernet)
 
+  @staticmethod
+  def set_bandwidth_limit(upload_speed_kbps: int, download_speed_kbps: int) -> None:
+    pass
+
+  @abstractmethod
   def get_current_power_draw(self):
-    return 0
+    pass
 
+  @abstractmethod
   def get_som_power_draw(self):
-    return 0
+    pass
 
+  @abstractmethod
   def shutdown(self):
-    print("SHUTDOWN!")
+    pass
 
   def get_thermal_config(self):
     return ThermalConfig()
@@ -173,24 +185,31 @@ class HardwareBase(ABC):
   def set_display_power(self, on: bool):
     pass
 
+  @abstractmethod
   def set_screen_brightness(self, percentage):
     pass
 
+  @abstractmethod
   def get_screen_brightness(self):
-    return 0
+    pass
 
+  @abstractmethod
   def set_power_save(self, powersave_enabled):
     pass
 
+  @abstractmethod
   def get_gpu_usage_percent(self):
-    return 0
+    pass
 
   def get_modem_version(self):
     return None
 
+  @abstractmethod
   def get_modem_temperatures(self):
-    return []
+    pass
 
+
+  @abstractmethod
   def initialize_hardware(self):
     pass
 
@@ -200,8 +219,9 @@ class HardwareBase(ABC):
   def reboot_modem(self):
     pass
 
+  @abstractmethod
   def get_networks(self):
-    return None
+    pass
 
   def has_internal_panda(self) -> bool:
     return False

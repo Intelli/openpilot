@@ -1,104 +1,94 @@
 import os
 import operator
 import platform
+import sys
 
-from cereal import car, custom
+from types import SimpleNamespace
+
+from cereal import car
 from openpilot.common.params import Params
-from openpilot.system.hardware import PC, TICI
+from opendbc.car.gps import car_gps_available
+from openpilot.system.hardware import HARDWARE, PC, TICI
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
-from openpilot.system.hardware.hw import Paths
-
-from openpilot.sunnypilot.mapd.mapd_manager import MAPD_PATH
-
-from openpilot.sunnypilot.models.helpers import get_active_model_runner
-from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnylink_ready, use_sunnylink_uploader
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
+UI_WATCHDOG_MAX_DT = int(os.getenv("UI_WATCHDOG_MAX_DT", "10"))
+CAMERAD_WATCHDOG_MAX_DT = int(os.getenv("CAMERAD_WATCHDOG_MAX_DT", "5"))
 
-def driverview(started: bool, params: Params, CP: car.CarParams) -> bool:
+def driverview(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started or params.get_bool("IsDriverViewEnabled")
 
-def notcar(started: bool, params: Params, CP: car.CarParams) -> bool:
+def notcar(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started and CP.notCar
 
-def iscar(started: bool, params: Params, CP: car.CarParams) -> bool:
+def iscar(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started and not CP.notCar
 
-def logging(started: bool, params: Params, CP: car.CarParams) -> bool:
+def logging(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   run = (not CP.notCar) or not params.get_bool("DisableLogging")
   return started and run
 
 def ublox_available() -> bool:
   return os.path.exists('/dev/ttyHS0') and not os.path.exists('/persist/comma/use-quectel-gps')
 
-def ublox(started: bool, params: Params, CP: car.CarParams) -> bool:
+
+def update_car_gps_param(params: Params) -> bool | None:
+  car_params = params.get("CarParams")
+  if car_params is None:
+    return None
+
+  with car.CarParams.from_bytes(car_params) as CP:
+    available = car_gps_available(CP)
+  if available != params.get_bool("CarGpsAvailable"):
+    params.put_bool("CarGpsAvailable", available)
+  return available
+
+def ublox(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  car_gps = update_car_gps_param(params)
   use_ublox = ublox_available()
   if use_ublox != params.get_bool("UbloxAvailable"):
     params.put_bool("UbloxAvailable", use_ublox)
-  return started and use_ublox
+  return started and use_ublox and car_gps is False
 
-def joystick(started: bool, params: Params, CP: car.CarParams) -> bool:
+def joystick(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started and params.get_bool("JoystickDebugMode")
 
-def not_joystick(started: bool, params: Params, CP: car.CarParams) -> bool:
+def not_joystick(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started and not params.get_bool("JoystickDebugMode")
 
-def long_maneuver(started: bool, params: Params, CP: car.CarParams) -> bool:
-  return started and params.get_bool("LongitudinalManeuverMode")
+def long_maneuver(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return started and params.get_bool("LongitudinalManeuverMode") and not params.get_bool("LateralManeuverMode")
 
-def lat_maneuver(started: bool, params: Params, CP: car.CarParams) -> bool:
-  return started and params.get_bool("LateralManeuverMode")
+def lat_maneuver(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return started and params.get_bool("LateralManeuverMode") and not params.get_bool("LongitudinalManeuverMode")
 
-def not_long_maneuver(started: bool, params: Params, CP: car.CarParams) -> bool:
+def not_long_maneuver(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started and not params.get_bool("LongitudinalManeuverMode")
 
-def qcomgps(started: bool, params: Params, CP: car.CarParams) -> bool:
+def qcomgps(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  update_car_gps_param(params)
   return started and not ublox_available()
 
-def always_run(started: bool, params: Params, CP: car.CarParams) -> bool:
+def always_run(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return True
 
-def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
+def only_onroad(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started
 
-def only_offroad(started: bool, params: Params, CP: car.CarParams) -> bool:
+def only_offroad(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return not started
 
-def use_github_runner(started, params, CP: car.CarParams) -> bool:
-  return not PC and params.get_bool("EnableGithubRunner") and (
-    not params.get_bool("NetworkMetered") and not params.get_bool("GithubRunnerSufficientVoltage"))
+def sentry_mode(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return not started and params.get_bool("SentryModeEnabled")
 
-def use_copyparty(started, params, CP: car.CarParams) -> bool:
-  return bool(params.get_bool("EnableCopyparty"))
+def sensord_run(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return started or params.get_bool("SentryModeEnabled")
 
-def sunnylink_ready_shim(started, params, CP: car.CarParams) -> bool:
-  """Shim for sunnylink_ready to match the process manager signature."""
-  return sunnylink_ready(params)
+def camera_run(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return driverview(started, params, CP, starpilot_toggles) or (not started and params.get_bool("SentryModeCapture"))
 
-def sunnylink_need_register_shim(started, params, CP: car.CarParams) -> bool:
-  """Shim for sunnylink_need_register to match the process manager signature."""
-  return sunnylink_need_register(params)
-
-def use_sunnylink_uploader_shim(started, params, CP: car.CarParams) -> bool:
-  """Shim for use_sunnylink_uploader to match the process manager signature."""
-  return use_sunnylink_uploader(params)
-
-def is_tinygrad_model(started, params, CP: car.CarParams) -> bool:
-  """Check if the active model runner is SNPE."""
-  return bool(get_active_model_runner(params, not started) == custom.ModelManagerSP.Runner.tinygrad)
-
-def is_stock_model(started, params, CP: car.CarParams) -> bool:
-  """Check if the active model runner is stock."""
-  return bool(get_active_model_runner(params, not started) == custom.ModelManagerSP.Runner.stock)
-
-def mapd_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
-  return bool(os.path.exists(Paths.mapd_root()))
-
-def uploader_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
-  if not params.get_bool("OnroadUploads"):
-    return only_offroad(started, params, CP)
-
-  return always_run(started, params, CP)
+def livestream(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return params.get_bool("IsLiveStreaming")
 
 def or_(*fns):
   return lambda *args: operator.or_(*(fn(*args) for fn in fns))
@@ -106,27 +96,83 @@ def or_(*fns):
 def and_(*fns):
   return lambda *args: operator.and_(*(fn(*args) for fn in fns))
 
+def not_(*fns):
+  return lambda *args: operator.not_(*(fn(*args) for fn in fns))
+
+# StarPilot variables
+def allow_logging(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return not starpilot_toggles.no_logging
+
+def allow_uploads(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return (params.get_bool("AlwaysAllowUploads") or not starpilot_toggles.no_uploads or
+          (starpilot_toggles.no_onroad_uploads and not started))
+
+def run_speed_limit_filler(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return starpilot_toggles.speed_limit_filler
+
+def run_speed_limit_vision(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return starpilot_toggles.vision_speed_limit_detection
+
+def run_navigationd(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return started and params.get("NavDestination") is not None
+
+
+def run_mapd(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  if started:
+    return True
+
+  memory_params = Params(memory=True)
+  return memory_params.get_bool("DownloadMaps") or memory_params.get_bool("CancelDownloadMaps")
+
+
+def bluetooth_enabled(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return params.get_bool("BluetoothEnabled")
+
+
+def soundd_run(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return driverview(started, params, CP, starpilot_toggles) or params.get_bool("BluetoothAudioTestActive")
+
+
+def wheel_controls_enabled(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return params.get_bool("WheelControlsEnabled")
+
+
+def run_v_asm(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  return started and getattr(starpilot_toggles, "v_asm_enabled", False)
+
+
+def big_device_ui_process() -> NativeProcess:
+  return NativeProcess(
+    "ui",
+    ".",
+    ["/usr/bin/env", "BIG=1", sys.executable, "-m", "openpilot.selfdrive.ui.ui"],
+    always_run,
+    watchdog_max_dt=UI_WATCHDOG_MAX_DT,
+  )
+
+
 procs = [
   DaemonProcess("manage_athenad", "system.athena.manage_athenad", "AthenadPid"),
 
-  NativeProcess("loggerd", "system/loggerd", ["./loggerd"], logging),
-  NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),
-  NativeProcess("stream_encoderd", "system/loggerd", ["./encoderd", "--stream"], notcar),
+  NativeProcess("loggerd", "system/loggerd", ["./loggerd"], and_(allow_logging, logging)),
+  NativeProcess("encoderd", "system/loggerd", ["./encoderd"], and_(allow_logging, only_onroad)),
+  NativeProcess("stream_encoderd", "system/loggerd", ["./encoderd", "--stream"], or_(and_(livestream, not_(iscar)), notcar)),
   PythonProcess("logmessaged", "system.logmessaged", always_run),
 
-  NativeProcess("camerad", "system/camerad", ["./camerad"], driverview, enabled=not WEBCAM),
+  NativeProcess("camerad", "system/camerad", ["./camerad"], or_(camera_run, livestream), enabled=not WEBCAM,
+                watchdog_max_dt=CAMERAD_WATCHDOG_MAX_DT),
   PythonProcess("webcamerad", "tools.webcam.camerad", driverview, enabled=WEBCAM),
-  PythonProcess("proclogd", "system.proclogd", only_onroad, enabled=platform.system() != "Darwin"),
-  PythonProcess("journald", "system.journald", only_onroad, platform.system() != "Darwin"),
+  PythonProcess("proclogd", "system.proclogd", and_(allow_logging, only_onroad), enabled=platform.system() != "Darwin"),
+  PythonProcess("journald", "system.journald", and_(allow_logging, only_onroad), platform.system() != "Darwin"),
   PythonProcess("micd", "system.micd", iscar),
   PythonProcess("timed", "system.timed", always_run, enabled=not PC),
 
-  PythonProcess("modeld", "selfdrive.modeld.modeld", and_(only_onroad, is_stock_model)),
+  PythonProcess("modeld", "selfdrive.modeld.modeld", only_onroad),
   PythonProcess("dmonitoringmodeld", "selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not PC)),
 
-  PythonProcess("sensord", "system.sensord.sensord", only_onroad, enabled=not PC),
-  PythonProcess("ui", "selfdrive.ui.ui", always_run, restart_if_crash=True),
-  PythonProcess("soundd", "selfdrive.ui.soundd", driverview),
+  PythonProcess("sensord", "system.sensord.sensord", sensord_run, enabled=not PC),
+  PythonProcess("sentryd", "system.sentryd.sentryd", sentry_mode, enabled=not PC),
+  PythonProcess("soundd", "selfdrive.ui.soundd", soundd_run),
   PythonProcess("locationd", "selfdrive.locationd.locationd", only_onroad),
   NativeProcess("_pandad", "selfdrive/pandad", ["./pandad"], always_run, enabled=False),
   PythonProcess("calibrationd", "selfdrive.locationd.calibrationd", only_onroad),
@@ -149,55 +195,40 @@ procs = [
   PythonProcess("radard", "selfdrive.controls.radard", only_onroad),
   PythonProcess("hardwared", "system.hardware.hardwared", always_run),
   PythonProcess("tombstoned", "system.tombstoned", always_run, enabled=not PC),
-  PythonProcess("updated", "system.updated.updated", only_offroad, enabled=not PC),
-  PythonProcess("uploader", "system.loggerd.uploader", uploader_ready),
+  PythonProcess("updated", "system.updated.updated", always_run, enabled=not PC),
+  PythonProcess("uploader", "system.loggerd.uploader", allow_uploads, nice=19),
   PythonProcess("statsd", "system.statsd", always_run),
   PythonProcess("feedbackd", "selfdrive.ui.feedback.feedbackd", only_onroad),
 
   # debug procs
   NativeProcess("bridge", "cereal/messaging", ["./bridge"], notcar),
-  PythonProcess("webrtcd", "system.webrtc.webrtcd", notcar),
+  PythonProcess("webrtcd", "system.webrtc.webrtcd", or_(and_(livestream, not_(iscar)), notcar)),
   PythonProcess("webjoystick", "tools.bodyteleop.web", notcar),
   PythonProcess("joystick", "tools.joystick.joystick_control", and_(joystick, iscar)),
-
-  # sunnylink <3
-  DaemonProcess("manage_sunnylinkd", "sunnypilot.sunnylink.athena.manage_sunnylinkd", "SunnylinkdPid"),
-  PythonProcess("sunnylink_registration_manager", "sunnypilot.sunnylink.registration_manager", sunnylink_need_register_shim),
-  PythonProcess("statsd_sp", "sunnypilot.sunnylink.statsd", and_(always_run, sunnylink_ready_shim)),
 ]
 
-# sunnypilot
+# StarPilot variables
 procs += [
-  # Models
-  PythonProcess("models_manager", "sunnypilot.models.manager", only_offroad),
-  NativeProcess("modeld_tinygrad", "sunnypilot/modeld_v2", ["./modeld"], and_(only_onroad, is_tinygrad_model)),
-
-  # Backup
-  PythonProcess("backup_manager", "sunnypilot.sunnylink.backups.manager", and_(only_offroad, sunnylink_ready_shim)),
-
-  # mapd
-  NativeProcess("mapd", Paths.mapd_root(), ["bash", "-c", f"{MAPD_PATH} > /dev/null 2>&1"], mapd_ready),
-  PythonProcess("mapd_manager", "sunnypilot.mapd.mapd_manager", always_run),
-
-  # locationd
-  NativeProcess("locationd_llk", "sunnypilot/selfdrive/locationd", ["./locationd"], only_onroad),
+  PythonProcess("bluetooth_managerd", "starpilot.system.bluetooth.daemon", bluetooth_enabled, enabled=TICI),
+  PythonProcess("wheel_controlsd", "starpilot.system.wheel_controls.wheel_controlsd", wheel_controls_enabled, enabled=TICI, nice=19),
+  PythonProcess("the_galaxy", "starpilot.system.the_galaxy.the_galaxy", always_run, nice=10),
+  PythonProcess("galaxy", "starpilot.system.galaxy.galaxy", always_run, nice=10),
 ]
 
-if os.path.exists("./github_runner.sh"):
-  procs += [NativeProcess("github_runner_start", "system/manager", ["./github_runner.sh", "start"], and_(only_offroad, use_github_runner), sigkill=False)]
+device_type = HARDWARE.get_device_type()
+if device_type in ("tici", "tizi"):
+  procs.append(big_device_ui_process())
+else:
+  procs.append(PythonProcess("ui", "selfdrive.ui.ui", always_run, watchdog_max_dt=UI_WATCHDOG_MAX_DT))
 
-if os.path.exists("../../sunnypilot/sunnylink/uploader.py"):
-  procs += [PythonProcess("sunnylink_uploader", "sunnypilot.sunnylink.uploader", use_sunnylink_uploader_shim)]
-
-if os.path.exists("../../third_party/copyparty/copyparty-sfx.py"):
-  sunnypilot_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-  copyparty_args = [f"-v{Paths.crash_log_root()}:/swaglogs:r"]
-  copyparty_args += [f"-v{Paths.log_root()}:/routes:r"]
-  copyparty_args += [f"-v{Paths.model_root()}:/models:rw"]
-  copyparty_args += [f"-v{sunnypilot_root}:/sunnypilot:rw"]
-  copyparty_args += ["-p8080"]
-  copyparty_args += ["-z"]
-  copyparty_args += ["-q"]
-  procs += [NativeProcess("copyparty-sfx", "third_party/copyparty", ["./copyparty-sfx.py", *copyparty_args], and_(only_offroad, use_copyparty))]
+procs += [
+  PythonProcess("device_syncd", "starpilot.system.device_syncd", always_run),
+  PythonProcess("starpilot_process", "starpilot.starpilot_process", always_run),
+  PythonProcess("mapd", "starpilot.navigation.mapd_wrapper", run_mapd, nice=19),
+  PythonProcess("navigationd", "starpilot.navigation.navigationd", run_navigationd, nice=19),
+  PythonProcess("speed_limit_filler", "starpilot.system.speed_limit_filler", run_speed_limit_filler, nice=19),
+  PythonProcess("speed_limit_vision", "starpilot.system.speed_limit_vision", run_speed_limit_vision, nice=19),
+  PythonProcess("adj_spot_monitor_vision", "starpilot.system.adj_spot_monitor_vision", run_v_asm, nice=19),
+]
 
 managed_processes = {p.name: p for p in procs}

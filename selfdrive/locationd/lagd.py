@@ -12,7 +12,9 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose, fft_next_good_size, parabolic_peak_interp
-from openpilot.sunnypilot.livedelay.lagd_toggle import LagdToggle
+
+from openpilot.starpilot.common.lateral_delay import full_lateral_delay
+from openpilot.starpilot.common.starpilot_variables import get_starpilot_toggles
 
 BLOCK_SIZE = 100
 BLOCK_NUM = 50
@@ -24,8 +26,7 @@ MIN_VEGO = 15.0
 MIN_ABS_YAW_RATE = 0.0
 MAX_YAW_RATE_SANITY_CHECK = 1.0
 MIN_NCC = 0.95
-MAX_LAG = 1.0
-MIN_LAG = 0.15
+MAX_LAG = 0.65
 MAX_LAG_STD = 0.1
 MAX_LAT_ACCEL = 2.0
 MAX_LAT_ACCEL_DIFF = 0.6
@@ -48,6 +49,7 @@ def masked_symmetric_moving_average(x: np.ndarray, mask: np.ndarray, k: int, sig
   num = np.convolve(xp, w, mode="valid")
   den = np.convolve(mp, w, mode="valid")
   return np.divide(num, den, out=np.full_like(num, np.nan, dtype=np.float64), where=den != 0)
+
 
 def masked_normalized_cross_correlation(expected_sig: np.ndarray, actual_sig: np.ndarray, mask: np.ndarray, n: int):
   """
@@ -179,7 +181,7 @@ class LateralLagEstimator:
     self.window_sec = window_sec
     self.okay_window_sec = okay_window_sec
     self.min_recovery_buffer_sec = min_recovery_buffer_sec
-    self.initial_lag = CP.steerActuatorDelay + 0.2
+    self.initial_lag = full_lateral_delay(CP.steerActuatorDelay)
     self.block_size = block_size
     self.block_count = block_count
     self.min_valid_block_count = min_valid_block_count
@@ -231,8 +233,10 @@ class LateralLagEstimator:
     else:
       liveDelay.status = log.LiveDelayData.Status.unestimated
 
-    if liveDelay.status == log.LiveDelayData.Status.estimated:
-      liveDelay.lateralDelay = min(MAX_LAG, max(MIN_LAG, valid_mean_lag))
+    if self.starpilot_toggles.use_custom_steerActuatorDelay:
+      liveDelay.lateralDelay = self.starpilot_toggles.steerActuatorDelay
+    elif liveDelay.status == log.LiveDelayData.Status.estimated:
+      liveDelay.lateralDelay = valid_mean_lag
     else:
       liveDelay.lateralDelay = self.initial_lag
 
@@ -318,7 +322,7 @@ class LateralLagEstimator:
     desired = masked_symmetric_moving_average(desired, okay, SMOOTH_K, SMOOTH_SIGMA)
     actual = masked_symmetric_moving_average(actual, okay, SMOOTH_K, SMOOTH_SIGMA)
 
-    delay, corr, confidence = self.actuator_delay(desired, actual, okay, self.dt, MIN_LAG, MAX_LAG)
+    delay, corr, confidence = self.actuator_delay(desired, actual, okay, self.dt, MAX_LAG)
     if corr < self.min_ncc or confidence < self.min_confidence or not is_valid:
       return
 
@@ -326,23 +330,25 @@ class LateralLagEstimator:
     self.last_estimate_t = self.t
 
   @staticmethod
-  def actuator_delay(expected_sig: np.ndarray, actual_sig: np.ndarray, mask: np.ndarray,
-                     dt: float, min_lag: float, max_lag: float) -> tuple[float, float, float]:
+  def actuator_delay(expected_sig: np.ndarray, actual_sig: np.ndarray, mask: np.ndarray, dt: float, max_lag: float) -> tuple[float, float, float]:
     assert len(expected_sig) == len(actual_sig)
-    min_lag_samples, max_lag_samples, one_sec_samples = int(round(min_lag / dt)), int(round(max_lag / dt)), int(round(1.0 / dt))
+    max_lag_samples = int(round(max_lag / dt))
+    one_sec_samples = int(round(1.0 / dt))
     padded_size = fft_next_good_size(len(expected_sig) + max(max_lag_samples, one_sec_samples))
 
     ncc = masked_normalized_cross_correlation(expected_sig, actual_sig, mask, padded_size)
 
-    # only consider lags from ranges:
-    roi = np.s_[len(expected_sig) - 1 + min_lag_samples: len(expected_sig) - 1 + max_lag_samples] # min_lag - max_lag range
-    threshold_roi = np.s_[len(expected_sig) - 1: len(expected_sig) - 1 + one_sec_samples] # 0 - 1 second range
-    confidence_roi = np.s_[threshold_roi.start - CORR_BORDER_OFFSET: threshold_roi.stop + CORR_BORDER_OFFSET] # threshold range +/- border
-    roi_ncc, confidence_roi_ncc, threshold_roi_ncc = ncc[roi], ncc[confidence_roi], ncc[threshold_roi]
+    # only consider lags from 0 to max_lag
+    roi = np.s_[len(expected_sig) - 1: len(expected_sig) - 1 + max_lag_samples]
+    threshold_roi = np.s_[len(expected_sig) - 1: len(expected_sig) - 1 + one_sec_samples]
+    confidence_roi = np.s_[threshold_roi.start - CORR_BORDER_OFFSET: threshold_roi.stop + CORR_BORDER_OFFSET]
+    roi_ncc = ncc[roi]
+    confidence_roi_ncc = ncc[confidence_roi]
+    threshold_roi_ncc = ncc[threshold_roi]
 
     max_corr_index = np.argmax(roi_ncc)
     corr = roi_ncc[max_corr_index]
-    lag = parabolic_peak_interp(roi_ncc, max_corr_index) * dt + min_lag
+    lag = parabolic_peak_interp(roi_ncc, max_corr_index) * dt
 
     # to estimate lag confidence, gather all high-correlation candidates and see how spread they are
     # if e.g. 0.8 and 0.4 are both viable, this is an ambiguous case
@@ -395,7 +401,9 @@ def main():
     lag, valid_blocks = initial_lag_params
     lag_learner.reset(lag, valid_blocks)
 
-  lagd_toggle = LagdToggle(CP)
+  sm = sm.extend(['starpilotPlan'])
+
+  lag_learner.starpilot_toggles = get_starpilot_toggles()
 
   while True:
     sm.update()
@@ -416,5 +424,4 @@ def main():
       if sm.frame % 1200 == 0: # cache every 60 seconds
         params.put_nonblocking("LiveDelay", lag_msg_dat)
 
-      if sm.frame % 60 == 0:  # read from and write to params every 3 seconds
-        lagd_toggle.update(lag_msg)
+    lag_learner.starpilot_toggles = get_starpilot_toggles(sm)

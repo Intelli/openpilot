@@ -4,7 +4,6 @@ import time
 import copy
 import heapq
 import signal
-import numpy as np
 from collections import Counter
 from dataclasses import dataclass, field
 from itertools import islice
@@ -24,9 +23,7 @@ from openpilot.common.params import Params
 from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.common.timeout import Timeout
 from openpilot.common.realtime import DT_CTRL
-from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 from openpilot.system.manager.process_config import managed_processes
-from openpilot.selfdrive.car.card import convert_to_capnp
 from openpilot.selfdrive.test.process_replay.vision_meta import meta_from_camera_state, available_streams
 from openpilot.selfdrive.test.process_replay.migration import migrate_all
 from openpilot.selfdrive.test.process_replay.capture import ProcessOutputCapture
@@ -146,7 +143,6 @@ class ProcessContainer:
     self.cfg = copy.deepcopy(cfg)
     self.process = copy.deepcopy(managed_processes[cfg.proc_name])
     self.msg_queue: list[capnp._DynamicStructReader] = []
-    self.last_input_log_mono_time: int = -1
     self.cnt = 0
     self.pm: messaging.PubMaster | None = None
     self.sockets: list[messaging.SubSocket] | None = None
@@ -207,8 +203,7 @@ class ProcessContainer:
       if meta.camera_state in self.cfg.vision_pubs:
         assert frs[meta.camera_state].pix_fmt == 'nv12'
         frame_size = (frs[meta.camera_state].w, frs[meta.camera_state].h)
-        stride, y_height, _, yuv_size = get_nv12_info(frame_size[0], frame_size[1])
-        vipc_server.create_buffers_with_sizes(meta.stream, 2, frame_size[0], frame_size[1], yuv_size, stride, stride * y_height)
+        vipc_server.create_buffers(meta.stream, 2, *frame_size)
     vipc_server.start_listener()
 
     self.vipc_server = vipc_server
@@ -269,7 +264,6 @@ class ProcessContainer:
       ms = messaging.drain_sock(socket)
       for m in ms:
         m = m.as_builder()
-        assert start_time > 0, "start_time must be positive"
         m.logMonoTime = start_time + int(self.cfg.processing_time * 1e9)
         output_msgs.append(m.as_reader())
     return output_msgs
@@ -296,28 +290,17 @@ class ProcessContainer:
           trigger_empty_recv = any(m.which() == self.cfg.main_pub for m in self.msg_queue)
 
         # get output msgs from previous inputs
-        output_msgs = self.get_output_msgs(self.last_input_log_mono_time)
+        output_msgs = self.get_output_msgs(msg.logMonoTime)
 
         for m in self.msg_queue:
           self.pm.send(m.which(), m.as_builder())
-          self.last_input_log_mono_time = max(self.last_input_log_mono_time, m.logMonoTime)
           # send frames if needed
           if self.vipc_server is not None and m.which() in self.cfg.vision_pubs:
             camera_state = getattr(m, m.which())
             camera_meta = meta_from_camera_state(m.which())
             assert frs is not None
             img = frs[m.which()].get(camera_state.frameId)
-
-            h, w = frs[m.which()].h, frs[m.which()].w
-            stride, y_height, _, yuv_size = get_nv12_info(w, h)
-            uv_offset = stride * y_height
-            padded_img = np.zeros(((uv_offset //stride) + (h // 2), stride))
-            padded_img[:h, :w] = img[:h * w].reshape((-1, w))
-            padded_img[uv_offset // stride:uv_offset // stride + h // 2, :w] = img[h * w:].reshape((-1, w))
-            img_bytes = np.zeros((yuv_size,), dtype=np.uint8)
-            img_bytes[:padded_img.size] = padded_img.flatten()
-
-            self.vipc_server.send(camera_meta.stream, img_bytes.tobytes(),
+            self.vipc_server.send(camera_meta.stream, img.flatten().tobytes(),
                                   camera_state.frameId, camera_state.timestampSof, camera_state.timestampEof)
         self.msg_queue = []
 
@@ -356,7 +339,6 @@ def get_car_params_callback(rc, pm, msgs, fingerprint):
   if fingerprint:
     CarInterface = interfaces[fingerprint]
     CP = CarInterface.get_non_essential_params(fingerprint)
-    CP_SP = CarInterface.get_non_essential_params_sp(CP, fingerprint)
   else:
     can_msgs = ([CanData(can.address, can.dat, can.src) for can in m.can] for m in msgs if m.which() == "can")
     cached_params_raw = params.get("CarParamsCache")
@@ -372,11 +354,9 @@ def get_car_params_callback(rc, pm, msgs, fingerprint):
       with car.CarParams.from_bytes(cached_params_raw) as _cached_params:
         cached_params = _cached_params
 
-    _CI = get_car(can_recv, lambda _msgs: None, lambda obd: None, params.get_bool("AlphaLongitudinalEnabled"), False, cached_params=cached_params)
-    CP, CP_SP = _CI.CP, _CI.CP_SP
+    CP = get_car(can_recv, lambda _msgs: None, lambda obd: None, params.get_bool("AlphaLongitudinalEnabled"), False, cached_params=cached_params).CP
 
   params.put("CarParams", CP.to_bytes())
-  params.put("CarParamsSP", convert_to_capnp(CP_SP).to_bytes())
 
 
 def card_rcv_callback(msg, cfg, frame):
@@ -439,6 +419,7 @@ CONFIGS = [
     pubs=[
       "carState", "deviceState", "pandaStates", "peripheralState", "liveCalibration", "driverMonitoringState",
       "longitudinalPlan", "livePose", "liveDelay", "liveParameters", "radarState", "modelV2",
+      "lateralManeuverPlan",
       "driverCameraState", "roadCameraState", "wideRoadCameraState", "managerState", "liveTorqueParameters",
       "accelerometer", "gyroscope", "carOutput", "gpsLocationExternal", "gpsLocation", "controlsState",
       "carControl", "driverAssistance", "alertDebug", "audioFeedback",
@@ -454,7 +435,7 @@ CONFIGS = [
   ProcessConfig(
     proc_name="controlsd",
     pubs=["liveParameters", "liveTorqueParameters", "modelV2", "selfdriveState",
-          "liveCalibration", "livePose", "longitudinalPlan", "carState", "carOutput",
+          "liveCalibration", "livePose", "longitudinalPlan", "lateralManeuverPlan", "carState", "carOutput",
           "driverMonitoringState", "onroadEvents", "driverAssistance"],
     subs=["carControl", "controlsState"],
     ignore=["logMonoTime", ],
@@ -484,7 +465,8 @@ CONFIGS = [
   ),
   ProcessConfig(
     proc_name="plannerd",
-    pubs=["modelV2", "carControl", "carState", "controlsState", "liveParameters", "radarState", "selfdriveState"],
+    pubs=["modelV2", "carControl", "carState", "controlsState", "liveParameters", "radarState", "selfdriveState",
+          "starpilotCarState", "starpilotPlan"],
     subs=["longitudinalPlan", "driverAssistance"],
     ignore=["logMonoTime", "longitudinalPlan.processingDelay", "longitudinalPlan.solverExecutionTime"],
     init_callback=get_car_params_callback,
@@ -512,7 +494,7 @@ CONFIGS = [
     pubs=[
       "cameraOdometry", "accelerometer", "gyroscope", "liveCalibration", "carState"
     ],
-    subs=["liveLocationKalman", "livePose"],
+    subs=["livePose"],
     ignore=["logMonoTime"],
     should_recv_callback=MessageBasedRcvCallback("cameraOdometry"),
     tolerance=NUMPY_TOLERANCE,
@@ -631,9 +613,9 @@ def replay_process_with_name(name: str | Iterable[str], lr: LogIterable, *args, 
 
 
 def replay_process(
-  cfg: ProcessConfig | Iterable[ProcessConfig], lr: LogIterable, frs: dict[str, FrameReader] | None = None,
-  fingerprint: str | None = None, return_all_logs: bool = False, custom_params: dict[str, Any] | None = None,
-  captured_output_store: dict[str, dict[str, str]] | None = None, disable_progress: bool = False
+  cfg: ProcessConfig | Iterable[ProcessConfig], lr: LogIterable, frs: dict[str, FrameReader] = None,
+  fingerprint: str = None, return_all_logs: bool = False, custom_params: dict[str, Any] = None,
+  captured_output_store: dict[str, dict[str, str]] = None, disable_progress: bool = False
 ) -> list[capnp._DynamicStructReader]:
   if isinstance(cfg, Iterable):
     cfgs = list(cfg)
@@ -720,7 +702,7 @@ def _replay_multi_process(
 
     # flush last set of messages from each process
     for container in containers:
-      last_time = container.last_input_log_mono_time if container.last_input_log_mono_time > 0 else int(time.monotonic() * 1e9)
+      last_time = log_msgs[-1].logMonoTime if len(log_msgs) > 0 else int(time.monotonic() * 1e9)
       log_msgs.extend(container.get_output_msgs(last_time))
   finally:
     for container in containers:

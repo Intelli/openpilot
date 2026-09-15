@@ -1,6 +1,6 @@
 {% set footnote_tag = '[<sup>{}</sup>](#footnotes)' %}
 {% set star_icon = '[![star](assets/icon-star-{}.svg)](##)' %}
-{% set video_icon = '<a href="{}" target="_blank"><img height="18px" src="assets/icon-youtube.svg" /></a>' %}
+{% set video_icon = '<a href="{}" target="_blank"><img height="18px" src="assets/icon-youtube.svg"></img></a>' %}
 {# Force hardware column wider by using a blank image with max width. #}
 {% set width_tag = '<a href="##"><img width=2000></a>%s<br>&nbsp;' %}
 {% set hardware_col_name = 'Hardware Needed' %}
@@ -21,13 +21,23 @@ A supported vehicle is one that just works when you install a comma device. All 
 
 {% endfor %}
 
+## StarPilot Community Cars
+
+These additional vehicle ports are maintained by StarPilot rather than upstream openpilot.
+
+# {{starpilot_community_car_docs | length}} Community Cars
+
+|{{Column | map(attribute='value') | join('|') | replace(hardware_col_name, wide_hardware_col_name)}}|
+|---|---|---|{% for _ in range((Column | length) - 3) %}{{':---:|'}}{% endfor +%}
+{% for car_docs in starpilot_community_car_docs %}
+|{% for column in Column %}{{car_docs.get_column(column, star_icon, video_icon, footnote_tag)}}|{% endfor %}
+
+{% endfor %}
+
 ### Footnotes
 {% for footnote in footnotes %}
 <sup>{{loop.index}}</sup>{{footnote | replace('</br>', '')}} <br />
 {% endfor %}
-
-## Community Maintained Cars
-Although they're not upstream, the community has openpilot running on other makes and models. See the 'Community Supported Models' section of each make [on our wiki](https://wiki.comma.ai/).
 
 # Don't see your car here?
 
@@ -71,4 +81,3 @@ openpilot does not yet support these Toyota models due to a new message authenti
 * Lexus NX 2022+
 * Toyota bZ4x 2023+
 * Subaru Solterra 2023+
-

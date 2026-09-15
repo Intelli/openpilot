@@ -5,6 +5,7 @@
 #include <cassert>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <tuple>
 
 #include "media/cam_defs.h"
 #include "media/cam_isp.h"
@@ -12,13 +13,32 @@
 #include "media/cam_isp_ife.h"
 #include "media/cam_sensor_cmn_header.h"
 #include "media/cam_sync.h"
+#include "third_party/linux/include/msm_media_info.h"
 
 #include "common/util.h"
 #include "common/swaglog.h"
 #include "system/camerad/cameras/ife.h"
-#include "system/camerad/cameras/nv12_info.h"
 #include "system/camerad/cameras/spectra.h"
 #include "system/camerad/cameras/bps_blobs.h"
+
+
+// Returns NV12 aligned (stride, y_height, uv_height, buffer_size) for the given frame dimensions.
+static std::tuple<uint32_t, uint32_t, uint32_t, uint32_t> get_nv12_info(int width, int height) {
+  const uint32_t stride = VENUS_Y_STRIDE(COLOR_FMT_NV12, width);
+  const uint32_t y_height = VENUS_Y_SCANLINES(COLOR_FMT_NV12, height);
+  const uint32_t uv_height = VENUS_UV_SCANLINES(COLOR_FMT_NV12, height);
+  const uint32_t size = VENUS_BUFFER_SIZE(COLOR_FMT_NV12, width, height);
+
+  assert(stride == VENUS_UV_STRIDE(COLOR_FMT_NV12, width));
+  assert(y_height / 2 == uv_height);
+  assert((stride * y_height) % 0x1000 == 0);
+
+  return {stride, y_height, uv_height, size};
+}
+
+static bool uses_legacy_bps_config(const SensorInfo *sensor) {
+  return sensor->image_sensor == cereal::FrameData::ImageSensor::AR0231;
+}
 
 
 // ************** low level camera helpers ****************
@@ -234,8 +254,9 @@ void SpectraMaster::init() {
 
 SpectraCamera::SpectraCamera(SpectraMaster *master, const CameraConfig &config)
   : m(master),
-    enabled(config.enabled),
     cc(config) {
+  enabled = camera_enabled_at_runtime(config.camera_num);
+
   ife_buf_depth = VIPC_BUFFER_COUNT;
   assert(ife_buf_depth < MAX_IFE_BUFS);
 }
@@ -255,7 +276,9 @@ int SpectraCamera::clear_req_queue() {
       .flush_type = CAM_FLUSH_TYPE_ALL,
     };
     int err = do_cam_control(m->icp_fd, CAM_FLUSH_REQ, &cmd, sizeof(cmd));
-    assert(err == 0);
+    if (err != 0) {
+      LOGE("failed to flush BPS requests: %d", err);
+    }
     LOGD("flushed bps: %d", err);
   }
 
@@ -274,20 +297,34 @@ int SpectraCamera::clear_req_queue() {
   return ret;
 }
 
-void SpectraCamera::camera_open(VisionIpcServer *v) {
+void SpectraCamera::camera_open(VisionIpcServer *v, cl_device_id device_id, cl_context ctx) {
   if (!openSensor()) {
     return;
   }
 
-  if (!enabled) return;
+  if (!enabled) {
+    // Disabled or failed cameras still run through sensor setup, but they
+    // should not keep an idle session around for the rest of camerad's life.
+    camera_close();
+    return;
+  }
 
   buf.out_img_width = sensor->frame_width / sensor->out_scale;
   buf.out_img_height = (sensor->hdr_offset > 0 ? (sensor->frame_height - sensor->hdr_offset) / 2 : sensor->frame_height) / sensor->out_scale;
 
   // size is driven by all the HW that handles frames,
   // the video encoder has certain alignment requirements in this case
-  std::tie(stride, y_height, uv_height, yuv_size) = get_nv12_info(buf.out_img_width, buf.out_img_height);
-  uv_offset = stride * y_height;
+  stride = VENUS_Y_STRIDE(COLOR_FMT_NV12, buf.out_img_width);
+  y_height = VENUS_Y_SCANLINES(COLOR_FMT_NV12, buf.out_img_height);
+  uv_height = VENUS_UV_SCANLINES(COLOR_FMT_NV12, buf.out_img_height);
+  uv_offset = stride*y_height;
+  yuv_size = uv_offset + stride*uv_height;
+  if (cc.output_type != ISP_RAW_OUTPUT) {
+    uv_offset = ALIGNED_SIZE(uv_offset, 0x1000);
+    yuv_size = uv_offset + ALIGNED_SIZE(stride*uv_height, 0x1000);
+  }
+  assert(stride == VENUS_UV_STRIDE(COLOR_FMT_NV12, buf.out_img_width));
+  assert(y_height/2 == uv_height);
 
   open = true;
   configISP();
@@ -296,7 +333,7 @@ void SpectraCamera::camera_open(VisionIpcServer *v) {
   linkDevices();
 
   LOGD("camera init %d", cc.camera_num);
-  buf.init(this, v, ife_buf_depth, cc.stream_type);
+  buf.init(device_id, ctx, this, v, ife_buf_depth, cc.stream_type);
   camera_map_bufs();
   clearAndRequeue(1);
 }
@@ -466,8 +503,12 @@ void SpectraCamera::config_bps(int idx, int request_id) {
     * BPS = Bayer Processing Segment
   */
 
-  int size = sizeof(struct cam_packet) + sizeof(struct cam_cmd_buf_desc)*2 + sizeof(struct cam_buf_io_cfg)*2;
-  size += sizeof(struct cam_patch_desc)*9;
+  const bool legacy_bps = uses_legacy_bps_config(sensor.get());
+  bool needs_downscale = !legacy_bps && sensor->out_scale > 1;
+  int num_io_cfgs = needs_downscale ? 3 : 2;
+  int num_patches = legacy_bps ? 9 : (needs_downscale ? 14 : 12);
+  int size = sizeof(struct cam_packet) + sizeof(struct cam_cmd_buf_desc)*2 + sizeof(struct cam_buf_io_cfg)*num_io_cfgs;
+  size += sizeof(struct cam_patch_desc)*num_patches;
 
   uint32_t cam_packet_handle = 0;
   auto pkt = m->mem_mgr.alloc<struct cam_packet>(size, &cam_packet_handle);
@@ -545,8 +586,21 @@ void SpectraCamera::config_bps(int idx, int request_id) {
     int cdm_len = 0;
 
     if (bps_lin_reg.size() == 0) {
-      for (int i = 0; i < 4; i++) {
-        bps_lin_reg.push_back(((sensor->linearization_pts[i] & 0xffff) << 0x10) | (sensor->linearization_pts[i] >> 0x10));
+      if (legacy_bps) {
+        for (int i = 0; i < 4; i++) {
+          bps_lin_reg.push_back(((sensor->linearization_pts[i] & 0xffff) << 0x10) | (sensor->linearization_pts[i] >> 0x10));
+        }
+      } else {
+        // set first knee pt to do BLC
+        uint32_t new_knee[8];
+        new_knee[0] = sensor->black_level << (14 - sensor->bits_per_pixel);
+        for (int i = 0; i < 7; i++) {
+          uint32_t pts = sensor->linearization_pts[i / 2];
+          new_knee[i + 1] = (i % 2 == 0) ? (pts >> 16) : (pts & 0xffff);
+        }
+        for (int i = 0; i < 4; i++) {
+          bps_lin_reg.push_back((new_knee[2*i + 1] << 16) | new_knee[2*i]);
+        }
       }
     }
 
@@ -569,19 +623,27 @@ void SpectraCamera::config_bps(int idx, int request_id) {
       0x00000080,
       0x00800066,
     });
-    // linearization, EN=0
+    // linearization
     cdm_len += write_cont((unsigned char *)bps_cdm_program_array.ptr + cdm_len, 0x1868, bps_lin_reg);
     cdm_len += write_cont((unsigned char *)bps_cdm_program_array.ptr + cdm_len, 0x1878, bps_lin_reg);
     cdm_len += write_cont((unsigned char *)bps_cdm_program_array.ptr + cdm_len, 0x1888, bps_lin_reg);
     cdm_len += write_cont((unsigned char *)bps_cdm_program_array.ptr + cdm_len, 0x1898, bps_lin_reg);
-    /*
-    uint8_t *start = (unsigned char *)bps_cdm_program_array.ptr + cdm_len;
     uint64_t addr;
-    cdm_len += write_dmi((unsigned char *)bps_cdm_program_array.ptr + cdm_len, &addr, sensor->linearization_lut.size()*sizeof(uint32_t), 0x1808, 1);
-    patches.push_back(addr - (uint64_t)start);
-    */
+    if (!legacy_bps) {
+      cdm_len += write_dmi((unsigned char *)bps_cdm_program_array.ptr + cdm_len, &addr, sensor->linearization_lut.size()*sizeof(uint32_t), 0x1808, 1, CAM_CDM_CMD_DMI);
+      patches.push_back(addr - (uint64_t)bps_cdm_program_array.ptr);
+    }
+
     // color correction
     cdm_len += write_cont((unsigned char *)bps_cdm_program_array.ptr + cdm_len, 0x2e68, bps_ccm_reg);
+
+    // gamma
+    if (!legacy_bps) {
+      for (uint8_t ch = 1; ch <= 3; ch++) {
+        cdm_len += write_dmi((unsigned char *)bps_cdm_program_array.ptr + cdm_len, &addr, sensor->gamma_lut_rgb.size()*sizeof(uint32_t), 0x3208, ch, CAM_CDM_CMD_DMI);
+        patches.push_back(addr - (uint64_t)bps_cdm_program_array.ptr);
+      }
+    }
 
     cdm_len += build_common_ife_bps((unsigned char *)bps_cdm_program_array.ptr + cdm_len, cc, sensor.get(), patches, false);
 
@@ -596,7 +658,7 @@ void SpectraCamera::config_bps(int idx, int request_id) {
     tmp.header = CAM_ICP_CMD_GENERIC_BLOB_CLK;
     tmp.header |= (sizeof(cam_icp_clk_bw_request)) << 8;
     tmp.clk.budget_ns = 0x1fca058;
-    tmp.clk.frame_cycles = 2329024; // comes from the striping lib
+    tmp.clk.frame_cycles = legacy_bps ? 2329024 : sensor->frame_width * sensor->frame_height; // matches striping lib pixelCount
     tmp.clk.rt_flag = 0x0;
     tmp.clk.uncompressed_bw = 0x38512180;
     tmp.clk.compressed_bw = 0x38512180;
@@ -611,7 +673,7 @@ void SpectraCamera::config_bps(int idx, int request_id) {
   }
 
   // *** io config ***
-  pkt->num_io_configs = 2;
+  pkt->num_io_configs = num_io_cfgs;
   pkt->io_configs_offset = sizeof(struct cam_cmd_buf_desc)*pkt->num_cmd_buf;
   struct cam_buf_io_cfg *io_cfg = (struct cam_buf_io_cfg *)((char*)&pkt->payload + pkt->io_configs_offset);
   {
@@ -655,28 +717,77 @@ void SpectraCamera::config_bps(int idx, int request_id) {
 
     io_cfg[1].format = CAM_FORMAT_NV12;  // TODO: why is this 21 in the dump? should be 12
     io_cfg[1].color_space = CAM_COLOR_SPACE_BT601_FULL;
-    io_cfg[1].resource_type = CAM_ICP_BPS_OUTPUT_IMAGE_FULL;
+    io_cfg[1].resource_type = needs_downscale ? CAM_ICP_BPS_OUTPUT_IMAGE_REG1 : CAM_ICP_BPS_OUTPUT_IMAGE_FULL;
     io_cfg[1].fence = sync_objs_bps[idx];
     io_cfg[1].direction = CAM_BUF_OUTPUT;
     io_cfg[1].subsample_pattern = 0x1;
     io_cfg[1].framedrop_pattern = 0x1;
+
+    if (needs_downscale) {
+      // downscaling needs a full res placeholder
+      uint32_t full_stride, full_y_h, full_uv_h, full_yuv_size;
+      std::tie(full_stride, full_y_h, full_uv_h, full_yuv_size) = get_nv12_info(sensor->frame_width, sensor->frame_height);
+      io_cfg[2].mem_handle[0] = bps_fullres_dummy.handle;
+      io_cfg[2].mem_handle[1] = bps_fullres_dummy.handle;
+      io_cfg[2].planes[0] = (struct cam_plane_cfg){
+        .width = sensor->frame_width,
+        .height = sensor->frame_height,
+        .plane_stride = full_stride,
+        .slice_height = full_y_h,
+      };
+      io_cfg[2].planes[1] = (struct cam_plane_cfg){
+        .width = sensor->frame_width,
+        .height = sensor->frame_height / 2,
+        .plane_stride = full_stride,
+        .slice_height = full_uv_h,
+      };
+      io_cfg[2].offsets[1] = ALIGNED_SIZE(full_stride * full_y_h, 0x1000);
+      io_cfg[2].format = CAM_FORMAT_NV12;
+      io_cfg[2].color_space = CAM_COLOR_SPACE_BT601_FULL;
+      io_cfg[2].resource_type = CAM_ICP_BPS_OUTPUT_IMAGE_FULL;
+      io_cfg[2].fence = sync_objs_bps[idx];
+      io_cfg[2].direction = CAM_BUF_OUTPUT;
+      io_cfg[2].subsample_pattern = 0x1;
+      io_cfg[2].framedrop_pattern = 0x1;
+    }
   }
 
   // *** patches ***
   {
-    assert(patches.size() == 0 | patches.size() == 1);
+    if (legacy_bps) {
+      assert(patches.size() == 0 || patches.size() == 1);
+    } else {
+      assert(patches.size() == 0 || patches.size() == 4);
+    }
     pkt->patch_offset = sizeof(struct cam_cmd_buf_desc)*pkt->num_cmd_buf + sizeof(struct cam_buf_io_cfg)*pkt->num_io_configs;
 
     if (patches.size() > 0) {
-      add_patch(pkt.get(), bps_cmd.handle, patches[0], bps_linearization_lut.handle, 0);
+      if (legacy_bps) {
+        add_patch(pkt.get(), bps_cmd.handle, patches[0], bps_linearization_lut.handle, 0);
+      } else {
+        // linearization LUT
+        add_patch(pkt.get(), bps_cdm_program_array.handle, patches[0], bps_linearization_lut.handle, 0);
+        // gamma LUTs
+        for (int i = 0; i < 3; i++) {
+          add_patch(pkt.get(), bps_cdm_program_array.handle, patches[i+1], bps_gamma_lut.handle, 0);
+        }
+      }
     }
 
     // input frame
     add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, frames[0].ptr[0]), buf_handle_raw[idx], 0);
 
-    // output frame
-    add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, frames[1].ptr[0]), buf_handle_yuv[idx], 0);
-    add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, frames[1].ptr[1]), buf_handle_yuv[idx], io_cfg[1].offsets[1]);
+    if (needs_downscale) {
+      add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, frames[1].ptr[0]), bps_fullres_dummy.handle, 0);
+      add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, frames[1].ptr[1]), bps_fullres_dummy.handle, io_cfg[2].offsets[1]);
+      // output frame at REG1
+      add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, frames[7].ptr[0]), buf_handle_yuv[idx], 0);
+      add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, frames[7].ptr[1]), buf_handle_yuv[idx], io_cfg[1].offsets[1]);
+    } else {
+      // output frame at FULL
+      add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, frames[1].ptr[0]), buf_handle_yuv[idx], 0);
+      add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, frames[1].ptr[1]), buf_handle_yuv[idx], io_cfg[1].offsets[1]);
+    }
 
     // rest of buffers
     add_patch(pkt.get(), bps_cmd.handle, buf_desc[0].offset + offsetof(bps_tmp, settings_addr), bps_iq.handle, 0);
@@ -903,7 +1014,7 @@ void SpectraCamera::enqueue_frame(uint64_t request_id) {
   }
 
   if (icp_dev_handle > 0) {
-    ret = do_cam_control(m->cam_sync_fd, CAM_SYNC_CREATE, &sync_create, sizeof(sync_create));
+    ret = do_sync_control(m->cam_sync_fd, CAM_SYNC_CREATE, &sync_create, sizeof(sync_create));
     if (ret != 0) {
       LOGE("failed to create fence: %d %d", ret, sync_create.sync_obj);
     } else {
@@ -987,16 +1098,14 @@ bool SpectraCamera::openSensor() {
   LOGD("-- Probing sensor %d", cc.camera_num);
 
   auto init_sensor_lambda = [this](SensorInfo *s) {
-    if (s->image_sensor == cereal::FrameData::ImageSensor::OS04C10 && cc.output_type == ISP_IFE_PROCESSED) {
-      ((OS04C10*)s)->ife_downscale_configure();
-    }
     sensor.reset(s);
     return (sensors_init() == 0);
   };
 
   // Figure out which sensor we have
-  if (!init_sensor_lambda(new OS04C10) &&
-      !init_sensor_lambda(new OX03C10)) {
+  if (!init_sensor_lambda(new AR0231) &&
+      !init_sensor_lambda(new OX03C10) &&
+      !init_sensor_lambda(new OS04C10)) {
     LOGE("** sensor %d FAILED bringup, disabling", cc.camera_num);
     enabled = false;
     return false;
@@ -1115,6 +1224,7 @@ void SpectraCamera::configICP() {
   */
 
   int cfg_handle;
+  const bool legacy_bps = uses_legacy_bps_config(sensor.get());
 
   uint32_t cfg_size = sizeof(bps_cfg[0]) / sizeof(bps_cfg[0][0]);
   void *cfg = alloc_w_mmu_hdl(m->video0_fd, cfg_size, (uint32_t*)&cfg_handle, 0x1,
@@ -1161,19 +1271,49 @@ void SpectraCamera::configICP() {
   bps_cdm_program_array.init(m, 0x1000, 0x20, true, m->icp_device_iommu);
 
   // striping lib output
-  uint32_t striping_size = sizeof(bps_striping_output[0]) / sizeof(bps_striping_output[0][0]);
+  uint32_t striping_size = legacy_bps ? 0x9a0 : sizeof(bps_striping_output[0]) / sizeof(bps_striping_output[0][0]);
   bps_striping.init(m, striping_size, 0x20, true, m->icp_device_iommu);
   memcpy(bps_striping.ptr, bps_striping_output[sensor->num()], striping_size);
 
   // used internally by the BPS, we just allocate it.
   // size comes from the BPSStripingLib
-  bps_cdm_striping_bl.init(m, 0xa100, 0x20, true, m->icp_device_iommu);
+  bps_cdm_striping_bl.init(m, legacy_bps ? 0xa100 : 0xcfe0, 0x20, true, m->icp_device_iommu);
+
+  if (!legacy_bps && sensor->out_scale > 1) {
+    uint32_t full_stride, full_y_h, full_uv_h, full_yuv_size;
+    std::tie(full_stride, full_y_h, full_uv_h, full_yuv_size) = get_nv12_info(sensor->frame_width, sensor->frame_height);
+    bps_fullres_dummy.init(m, full_yuv_size, 0x1000, true, m->icp_device_iommu);
+  }
 
   // LUTs
-  /*
+  if (legacy_bps) {
+    return;
+  }
+
+  assert(sensor->linearization_lut.size() == 36);
   bps_linearization_lut.init(m, sensor->linearization_lut.size()*sizeof(uint32_t), 0x20, true, m->icp_device_iommu);
-  memcpy(bps_linearization_lut.ptr, sensor->linearization_lut.data(), bps_linearization_lut.size);
-  */
+
+  // bit shift linearization_lut to bps specs, also compensate for black level here
+  uint32_t bl = sensor->black_level << (14 - sensor->bits_per_pixel);
+  uint32_t* bps_lut = (uint32_t*)bps_linearization_lut.ptr;
+  for (size_t i = 0; i < sensor->linearization_lut.size(); i++) {
+    size_t seg = i / 4;
+    size_t ch = i % 4;
+    if (seg == 0) {
+      bps_lut[i] = 0;
+      continue;
+    }
+    uint32_t e = sensor->linearization_lut[(seg - 1) * 4 + ch];
+    uint32_t base = e & 0x3fff;
+    uint32_t slope_q11 = (e >> 14) & 0x3fff;
+    uint32_t slope_q12 = std::min<uint32_t>(slope_q11 << 1, 0x3fff);
+    base = (base > bl) ? (base - bl) : 0;
+    bps_lut[i] = base | (slope_q12 << 14);
+  }
+
+  assert(sensor->gamma_lut_rgb.size() == 64);
+  bps_gamma_lut.init(m, sensor->gamma_lut_rgb.size()*sizeof(uint32_t), 0x20, true, m->icp_device_iommu);
+  memcpy(bps_gamma_lut.ptr, sensor->gamma_lut_rgb.data(), bps_gamma_lut.size);
 }
 
 void SpectraCamera::configCSIPHY() {
@@ -1436,7 +1576,7 @@ bool SpectraCamera::waitForFrameReady(uint64_t request_id) {
 }
 
 bool SpectraCamera::processFrame(int buf_idx, uint64_t request_id, uint64_t frame_id_raw, uint64_t timestamp) {
-  if (!syncFirstFrame(cc.camera_num, request_id, frame_id_raw, timestamp, cc.staggered_sof)) {
+  if (!syncFirstFrame(cc.camera_num, request_id, frame_id_raw, timestamp)) {
     return false;
   }
 
@@ -1455,31 +1595,23 @@ bool SpectraCamera::processFrame(int buf_idx, uint64_t request_id, uint64_t fram
   return true;
 }
 
-bool SpectraCamera::syncFirstFrame(int camera_id, uint64_t request_id, uint64_t raw_id, uint64_t timestamp, bool staggered) {
+bool SpectraCamera::syncFirstFrame(int camera_id, uint64_t request_id, uint64_t raw_id, uint64_t timestamp) {
   if (first_frame_synced) return true;
 
   // Store the frame data for this camera
-  camera_sync_data[camera_id] = SyncData{timestamp, raw_id + 1, staggered};
+  camera_sync_data[camera_id] = SyncData{timestamp, raw_id + 1};
 
   // Ensure all cameras are up
   int enabled_camera_count = std::count_if(std::begin(ALL_CAMERA_CONFIGS), std::end(ALL_CAMERA_CONFIGS),
-                                           [](const auto &config) { return config.enabled; });
+                                           [](const auto &config) { return camera_enabled_at_runtime(config.camera_num); });
   bool all_cams_up = camera_sync_data.size() == enabled_camera_count;
 
-  // Check that camera timestamps are properly aligned:
-  // - non-staggered cameras should be within 0.2ms of each other
-  // - staggered cameras should be within 0.2ms of a 25ms offset from non-staggered cameras
-  const uint64_t half_period_ns = 25 * 1000000ULL;  // 25ms
-  const uint64_t tolerance_ns = 200000ULL;           // 0.2ms
+  // Wait until the timestamps line up
   bool all_cams_synced = true;
-  for (const auto &[cam, sync_data] : camera_sync_data) {
-    if (cam == camera_id) continue;
+  for (const auto &[_, sync_data] : camera_sync_data) {
     uint64_t diff = std::max(timestamp, sync_data.timestamp) -
                     std::min(timestamp, sync_data.timestamp);
-    bool pair_staggered = staggered != sync_data.staggered;
-    uint64_t expected_offset = pair_staggered ? half_period_ns : 0;
-    uint64_t error = (diff > expected_offset) ? diff - expected_offset : expected_offset - diff;
-    if (error > tolerance_ns) {
+    if (diff > 0.2*1e6) { // milliseconds
       all_cams_synced = false;
     }
   }

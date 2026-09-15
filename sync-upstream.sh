@@ -1,255 +1,155 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Import the stable StarPilot tree, retaining local maintenance tools only.
 set -euo pipefail
 
-DEFAULT_REF="upstream/hkg-angle-steering-2025"
-
-# Files/dirs we always keep from our pre-sync state (local tooling, patches, etc.)
-# NOTE: Do NOT exclude .gitmodules or any submodule paths if you want submodules to always follow upstream.
-EXCLUDES=(
-  'AGENTS.md'
-  'sync-upstream.sh'
-  'tools/ci/sync_ev9_branch.sh'
-  'update.sh'
-  'apply_patch.sh'
-  'apply_patch_conflicts.sh'
-  'fix_patch.sh'
-  'create_patch.sh'
-  'create_patch_manual.sh'
-  'update_patch.sh'
-  '.gitmodules'
-  'opendbc_repo'
-  'patches'
-  'auto-lock/lock-closed-white.png'
-  'auto-lock/lock-closed-white.svg'
-  'selfdrive/assets/sounds/engage_tizi_custom.wav'
-  'selfdrive/assets/sounds/disengage_tizi_custom.wav'
-)
-
-usage() {
-  echo "Usage: $0 [--allow] [commit|ref]" >&2
-  return 1 2>/dev/null
-  exit 1
-}
-
-is_excluded() {
-  local p="$1"
-  local e
-  for e in "${EXCLUDES[@]}"; do
-    if [[ "$p" == "$e" || "$p" == "$e/"* ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-# Resolve a conflicted path in favor of the upstream tree ($TARGET_REF),
-# including submodules (gitlinks) without needing the submodule commit objects locally.
-take_upstream_path() {
-  local path="$1"
-
-  # What does upstream have at this path?
-  # For a submodule, ls-tree returns one line with mode 160000 and a SHA.
-  # For a file, it returns mode 100xxx and a blob SHA.
-  # If upstream deleted it, output is empty.
-  local entry mode sha
-  entry="$(git ls-tree "${TARGET_REF}" -- "${path}" 2>/dev/null | head -n1 || true)"
-
-  if [[ -z "${entry}" ]]; then
-    # Upstream deleted it -> accept deletion
-    git rm -f --cached -- "${path}" >/dev/null 2>&1 || true
-    rm -rf -- "${path}" >/dev/null 2>&1 || true
-    return 0
-  fi
-
-  mode="$(echo "${entry}" | awk '{print $1}')"
-  sha="$(echo "${entry}" | awk '{print $3}')"
-
-  if [[ "${mode}" == "160000" ]]; then
-    # Submodule gitlink: set index directly to upstream SHA (no worktree touch).
-    git update-index --cacheinfo 160000 "${sha}" "${path}"
-  else
-    # Regular file: take upstream content
-    git restore --source="${TARGET_REF}" --staged --worktree --no-overlay -- "${path}"
-  fi
-}
-
-# Resolve a conflicted path in favor of our pre-sync tree ($PRE_SYNC_REF)
-take_ours_path() {
-  local path="$1"
-  local entry mode sha
-
-  entry="$(git ls-tree "${PRE_SYNC_REF}" -- "${path}" 2>/dev/null | head -n1 || true)"
-  if [[ -z "${entry}" ]]; then
-    # Didn't exist pre-sync -> remove it
-    git rm -f --cached -- "${path}" >/dev/null 2>&1 || true
-    rm -rf -- "${path}" >/dev/null 2>&1 || true
-    return 0
-  fi
-
-  mode="$(echo "${entry}" | awk '{print $1}')"
-  sha="$(echo "${entry}" | awk '{print $3}')"
-
-  if [[ "${mode}" == "160000" ]]; then
-    # Submodule gitlink: restore index directly to pre-sync SHA.
-    git update-index --cacheinfo 160000 "${sha}" "${path}"
-    return 0
-  fi
-
-  if git cat-file -e "${PRE_SYNC_REF}:${path}" >/dev/null 2>&1; then
-    git restore --source="${PRE_SYNC_REF}" --staged --worktree --no-overlay -- "${path}"
-  else
-    # Didn't exist pre-sync -> remove it
-    git rm -f --cached -- "${path}" >/dev/null 2>&1 || true
-    rm -rf -- "${path}" >/dev/null 2>&1 || true
-  fi
-}
-
-ALLOW_UPSTREAM=0
-POSITIONAL_ARGS=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --allow)
-      ALLOW_UPSTREAM=1
-      shift
-      ;;
-    -*)
-      echo "Unknown option: $1" >&2
-      usage
-      ;;
-    *)
-      POSITIONAL_ARGS+=("$1")
-      shift
-      ;;
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+REMOTE=starpilot
+UPSTREAM_URL=https://github.com/firestar5683/StarPilot.git
+UPSTREAM_BRANCH=StarPilot
+ALLOW=0
+CHECK=0
+for arg in "$@"; do
+  case "$arg" in
+    --allow) ALLOW=1 ;;
+    --check) CHECK=1 ;;
+    --help|-h)
+      echo "Usage: $0 [--check | --allow]"
+      echo "Fetch stable StarPilot; --check previews changes, --allow stages the upstream snapshot."
+      exit 0 ;;
+    *) echo "Unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
 
-if [[ ${#POSITIONAL_ARGS[@]} -gt 1 ]]; then
-  usage
+# These are maintenance files, not custom vehicle/application behavior.
+# Do not preserve .gitmodules or opendbc_repo: StarPilot vendors its dependencies.
+PRESERVE=(
+  AGENTS.md sync-upstream.sh update.sh
+  apply_patch.sh apply_patch_conflicts.sh fix_patch.sh
+  create_patch.sh create_patch_manual.sh update_patch.sh
+  patches tools/opendbc-patches
+  tools/ci/sync_ev9_branch.sh tools/ci/tests
+  .github/workflows release/ci/publish.sh
+  docs/STARPILOT_MIGRATION.md starpilot-upstream.json
+)
+PATHS=(.)
+for path in "${PRESERVE[@]}"; do
+  PATHS+=(":(top,exclude)$path")
+done
+
+if git rev-parse --verify MERGE_HEAD >/dev/null 2>&1 ||
+   [[ -d "$(git rev-parse --git-path rebase-merge)" || -d "$(git rev-parse --git-path rebase-apply)" ]]; then
+  echo 'Finish the current merge/rebase before syncing.' >&2
+  exit 1
 fi
-
-if [[ ${#POSITIONAL_ARGS[@]} -gt 0 ]]; then
-  TARGET_REF="${POSITIONAL_ARGS[0]}"
-else
-  TARGET_REF="$DEFAULT_REF"
-fi
-
-# Fetch upstream branch so TARGET_REF resolves (default case).
-git fetch upstream hkg-angle-steering-2025 --prune
-
-if ! git rev-parse --verify "${TARGET_REF}^{commit}" >/dev/null 2>&1; then
-  echo "Unable to resolve '${TARGET_REF}' to a commit. Did you fetch the right branch?" >&2
-  return 1 2>/dev/null
+if [[ $CHECK -eq 0 ]] && { ! git diff --quiet -- "${PATHS[@]}" || ! git diff --cached --quiet -- "${PATHS[@]}"; }; then
+  echo 'Commit or stash application changes first. Only preserved maintenance files may be dirty.' >&2
   exit 1
 fi
 
-# Save our current HEAD for restoring excluded paths later.
-PRE_SYNC_REF="$(git rev-parse --verify HEAD)"
+if git remote get-url "$REMOTE" >/dev/null 2>&1; then
+  [[ "$(git config --get "remote.$REMOTE.url")" == "$UPSTREAM_URL" ]] || {
+    echo "Remote $REMOTE must point to $UPSTREAM_URL" >&2; exit 1;
+  }
+else
+  git remote add "$REMOTE" "$UPSTREAM_URL"
+fi
+# Fetch just the stable snapshot, including shipped binaries, not years of binary history.
+git fetch --no-tags --depth=1 "$REMOTE" "+refs/heads/$UPSTREAM_BRANCH:refs/remotes/$REMOTE/$UPSTREAM_BRANCH"
+TARGET="$(git rev-parse "refs/remotes/$REMOTE/$UPSTREAM_BRANCH")"
+TREE="$(git rev-parse "$TARGET^{tree}")"
+echo "Stable StarPilot: $TARGET"
 
-# Safety check: upstream contains commits not present in HEAD (unless --allow).
-if ! git merge-base --is-ancestor "${TARGET_REF}" HEAD; then
-  if [[ ${ALLOW_UPSTREAM} -ne 1 ]]; then
-    echo "Upstream '${TARGET_REF}' contains commits not present in HEAD. Re-run with --allow to continue." >&2
-    return 1 2>/dev/null
-    exit 1
-  fi
+if [[ $CHECK -eq 1 ]]; then
+  git diff --stat HEAD "$TARGET" -- "${PATHS[@]}"
+  exit 0
 fi
 
-# Merge (prefer upstream content on overlap). We will auto-resolve:
-# - ALL submodule conflicts by taking upstream gitlinks
-# - ALL other conflicts by taking upstream, except EXCLUDES which keep ours
-if ! git -c submodule.recurse=false merge --no-edit -X theirs "${TARGET_REF}"; then
-  merge_resolved=0
-
-  if git rev-parse --verify MERGE_HEAD >/dev/null 2>&1; then
-    merge_conflicts=()
-    while IFS= read -r conflict_path; do
-      [[ -z "${conflict_path}" ]] && continue
-      merge_conflicts+=("${conflict_path}")
-    done < <(git diff --name-only --diff-filter=U)
-
-    for path in "${merge_conflicts[@]}"; do
-      if is_excluded "${path}"; then
-        echo "Keeping ours for excluded path '${path}'." >&2
-        take_ours_path "${path}"
-      else
-        echo "Taking upstream for '${path}'." >&2
-        take_upstream_path "${path}"
-      fi
-    done
-
-    if ! git diff --name-only --diff-filter=U | grep -q .; then
-      if GIT_MERGE_AUTOEDIT=no git merge --continue >/dev/null 2>&1; then
-        merge_resolved=1
-      fi
-    fi
-  fi
-
-  if [[ ${merge_resolved} -ne 1 ]]; then
-    echo "Merge with '${TARGET_REF}' failed. Aborting merge; please resolve issues manually." >&2
-    git merge --abort >/dev/null 2>&1 || true
-    return 1 2>/dev/null
-    exit 1
-  fi
+PREVIOUS=""
+if [[ -f starpilot-upstream.json ]]; then
+  PREVIOUS="$(python3 -c 'import json; print(json.load(open("starpilot-upstream.json"))["commit"])')"
+fi
+if [[ $ALLOW -ne 1 && "$TARGET" != "$PREVIOUS" ]]; then
+  echo 'New upstream snapshot available. Use --allow to import it, or --check to preview.' >&2
+  exit 1
 fi
 
-# Force working tree to match upstream for everything except EXCLUDES.
-restore_args=(
-  "--source=${TARGET_REF}"
-  --staged
-  --worktree
-  --no-overlay
-  --
-  .
-)
+# git restore can overwrite untracked and ignored files. Check file/directory
+# collisions first; old gitlink contents will be moved intact into the backup.
+python3 - "$TARGET" "${PRESERVE[@]}" <<'PY'
+import subprocess
+import sys
 
-for path in "${EXCLUDES[@]}"; do
-  restore_args+=(":(top,exclude)${path}")
+target, *preserved = sys.argv[1:]
+
+def git_paths(*args):
+  return subprocess.check_output(['git', *args]).decode('utf-8', 'surrogateescape').split('\0')[:-1]
+
+def under(path, root):
+  return path == root or path.startswith(root + '/')
+
+gitlinks = [entry.split('\t', 1)[1] for entry in git_paths('ls-files', '--stage', '-z') if entry.startswith('160000 ')]
+incoming = {p for p in git_paths('ls-tree', '-r', '--name-only', '-z', target) if not any(under(p, root) for root in preserved)}
+incoming_dirs = {p[:i] for p in incoming for i, char in enumerate(p) if char == '/'}
+conflicts = []
+for path in git_paths('ls-files', '--others', '-z'):
+  path = path.rstrip('/')  # Git reports untracked nested repositories as directories.
+  if any(under(path, root) for root in preserved + gitlinks):
+    continue
+  ancestors = [path[:i] for i, char in enumerate(path) if char == '/']
+  if path in incoming or path in incoming_dirs or any(parent in incoming for parent in ancestors):
+    conflicts.append(path)
+if conflicts:
+  sys.exit('Untracked or ignored files would be overwritten; move them before syncing:\n' + '\n'.join(conflicts))
+PY
+
+# Move old submodules aside before their gitlinks become ordinary files.
+# Keep the files and Git metadata recoverable; never delete the standalone repo.
+BACKUP="$(git rev-parse --absolute-git-dir)/starpilot-backups/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+SUBMODULES=()
+SUBMODULE_COUNT=0
+while IFS= read -r path; do
+  if [[ -n "$path" ]]; then
+    SUBMODULES+=("$path")
+    SUBMODULE_COUNT=$((SUBMODULE_COUNT + 1))
+  fi
+done < <(git ls-files --stage | awk '$1 == "160000" {sub(/^[^\t]*\t/, ""); print}')
+for path in "${SUBMODULES[@]-}"; do
+  [[ -n "$path" ]] || continue
+  if [[ -e "$path/.git" ]] && [[ -n "$(git -C "$path" status --porcelain)" ]]; then
+    echo "Submodule $path has local changes; save them before syncing." >&2
+    exit 1
+  fi
 done
-
-git restore "${restore_args[@]}"
-
-# Restore excluded paths back to our pre-sync versions.
-if [[ ${#EXCLUDES[@]} -gt 0 ]]; then
-  git restore --source="${PRE_SYNC_REF}" --staged --worktree -- "${EXCLUDES[@]}" || true
-fi
-
-# git restore above can miss submodule gitlinks in some merge/no-conflict flows.
-# Force excluded submodule pointers back to their pre-sync SHAs.
-if [[ ${#EXCLUDES[@]} -gt 0 ]]; then
-  for path in "${EXCLUDES[@]}"; do
-    entry="$(git ls-tree "${PRE_SYNC_REF}" -- "${path}" 2>/dev/null | head -n1 || true)"
-    [[ -z "${entry}" ]] && continue
-
-    mode="$(echo "${entry}" | awk '{print $1}')"
-    sha="$(echo "${entry}" | awk '{print $3}')"
-    if [[ "${mode}" == "160000" ]]; then
-      git update-index --cacheinfo 160000 "${sha}" "${path}"
+if [[ $SUBMODULE_COUNT -gt 0 ]]; then
+  mkdir -p "$BACKUP"
+  git rev-parse HEAD > "$BACKUP/previous-head"
+  for path in "${SUBMODULES[@]}"; do
+    if [[ -e "$path" ]]; then
+      mkdir -p "$BACKUP/$(dirname "$path")"
+      mv "$path" "$BACKUP/$path"
+      printf '%s\n' "$path" >> "$BACKUP/submodule-paths"
     fi
   done
+  echo "Previous submodule checkouts saved in $BACKUP"
 fi
 
-# Align submodules to the SHAs recorded in the (now-upstream) superproject.
-submodules=()
-if [[ -f .gitmodules ]]; then
-  while IFS= read -r submodule_path; do
-    [[ -z "${submodule_path}" ]] && continue
-    submodules+=("${submodule_path}")
-  done < <(python3 - <<'PY_SUBMODULES'
-import configparser
-cfg = configparser.RawConfigParser()
-cfg.read('.gitmodules')
-for section in cfg.sections():
-    path = cfg.get(section, 'path', fallback='').strip()
-    if path:
-        print(path)
-PY_SUBMODULES
-)
-fi
+# Import stored bytes directly, without the previous fork's LFS filters/hooks.
+RAW_GIT=(git -c filter.lfs.process= -c filter.lfs.smudge= -c filter.lfs.clean=
+  -c filter.lfs.required=false -c core.hooksPath=/dev/null)
+"${RAW_GIT[@]}" -c submodule.recurse=false restore --source="$TARGET" --staged --worktree --no-overlay -- "${PATHS[@]}"
+python3 - "$TARGET" "$TREE" <<'PY'
+import json
+from pathlib import Path
+import sys
 
-if [[ ${#submodules[@]} -gt 0 ]]; then
-  git submodule sync --recursive -- "${submodules[@]}"
-  git submodule update --init --recursive --checkout -- "${submodules[@]}"
-fi
-
-# Uncomment if you want the script to auto-commit:
-# git commit -m "Sync upstream"
+Path('starpilot-upstream.json').write_text(json.dumps({
+  'repository': 'https://github.com/firestar5683/StarPilot',
+  'branch': 'StarPilot',
+  'commit': sys.argv[1],
+  'tree': sys.argv[2],
+  'legacy_patches_applied': False,
+}, indent=2) + '\n')
+PY
+"${RAW_GIT[@]}" add starpilot-upstream.json
+echo 'Stable StarPilot staged. No legacy patches applied and no commits or pushes made.'

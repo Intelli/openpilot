@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 from cereal import car, messaging
 from opendbc.car import ACCELERATION_DUE_TO_GRAVITY
@@ -33,6 +35,7 @@ def generate_inputs(torque_tune, la_err_std, input_noise_std=None):
 
 def get_warmed_up_estimator(steer_torques, lat_accels):
   est = TorqueEstimator(car.CarParams())
+  est.starpilot_toggles = SimpleNamespace(use_custom_latAccelFactor=False, use_custom_friction=False)
   for steer_torque, lat_accel in zip(steer_torques, lat_accels, strict=True):
     est.filtered_points.add_point(steer_torque, lat_accel)
   return est
@@ -50,10 +53,8 @@ def simulate_straight_road_msgs(est):
   lat_accels = TORQUE_TUNE.latAccelFactor * steer_torques
   for t, steer_torque, lat_accel in zip(ts, steer_torques, lat_accels, strict=True):
     carOutput.actuatorsOutput.torque = float(-steer_torque)
-    livePose.orientationNED = {'x': float(np.deg2rad(ROLL_BIAS_DEG)), 'valid': True}
-    livePose.angularVelocityDevice = {'z': float(lat_accel / V_EGO), 'valid': True}
-    livePose.inputsOK, livePose.sensorsOK, livePose.posenetOK = True, True, True
-    livePose.timestamp = int(t * 1e9)
+    livePose.orientationNED.x = float(np.deg2rad(ROLL_BIAS_DEG))
+    livePose.angularVelocityDevice.z = float(lat_accel / V_EGO)
     for which, msg in (('carControl', carControl), ('carOutput', carOutput), ('carState', carState), ('livePose', livePose)):
       est.handle_log(t, which, msg)
 
