@@ -66,6 +66,14 @@ def test_long_gap_resets_pending_warning():
   assert not sample(state, 101)
 
 
+def test_recent_driver_input_does_not_arm_warning_hysteresis():
+  state = EV9SteeringWarning()
+  for frame in range(200):
+    assert not sample(state, frame, recent_steer_pressed=True, controller_saturated=True)
+  assert not sample(state, 200, requested=88, measured=86, controller_saturated=True)
+  assert sample(state, 201, controller_saturated=True)
+
+
 class SM(dict):
   frame = 0
 
@@ -99,7 +107,7 @@ def test_controller_saturation_uses_existing_timer_and_legacy_gates(source, gate
     _, _, angle_log = controller.update(True, cs, vm, SimpleNamespace(roll=0, angleOffsetDeg=0),
                                        source == 'clipping', desired_curvature, source == 'curvature', 0, None, None, SimpleNamespace())
     controls.lateralControlState.angleState = angle_log
-    d.sm.frame = frame
+    d.sm.frame = 300 + frame
     d.events.clear()
     d.update_steering_saturation_events(cs)
     return log.OnroadEvent.EventName.steerSaturated in d.events.names
@@ -144,7 +152,7 @@ def test_slow_turn_generates_visible_audible_event_respects_driver_contact(sign,
   output.actuatorsOutput.manualSteeringOverride = manual_override
   d.sm = SM(controlsState=controls, carOutput=output)
   d.sm.valid = {"controlsState": healthy, "carOutput": healthy}
-  for frame in range(100, 140):
+  for frame in range(300, 340):
     d.sm.frame = frame
     d.events.clear()
     d.update_steering_saturation_events(cs)

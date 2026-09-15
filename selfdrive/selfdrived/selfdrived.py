@@ -28,7 +28,7 @@ from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 from openpilot.selfdrive.selfdrived.alert_sound import filter_forcing_stop_alert_sound
-from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning, ev9_angle_warnings_enabled, ev9_warning_hands_on
+from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning, ev9_angle_warnings_enabled
 
 from openpilot.system.version import get_build_metadata
 from openpilot.system.hardware import HARDWARE
@@ -859,7 +859,8 @@ class SelfdriveD:
         now=self.sm.frame * DT_CTRL, active=lac.active and not CS.standstill and warning_inputs_valid,
         speed=CS.vEgo, requested=getattr(lac, "steeringAngleDesiredDeg", float("nan")), measured=CS.steeringAngleDeg,
         output=output, threshold_kph=getattr(self.starpilot_toggles, "hkg_tuning_ev9_alerts_speed_kph", 50),
-        controller_saturated=controller_saturated, manual_following=manual_following, hands_on=self.ev9_warning_hands_on(CS),
+        controller_saturated=controller_saturated, manual_following=manual_following,
+        steering_pressed=CS.steeringPressed, recent_steer_pressed=recent_steer_pressed,
       )
       if warning:
         self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
@@ -875,11 +876,9 @@ class SelfdriveD:
       if undershooting and turning and (lac.saturated or commanded_torque_at_max):
         self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
 
-  def ev9_warning_hands_on(self, CS):
-    if not ev9_angle_warnings_enabled(self.CP):
-      return False
-    now_nanos = self.sm.logMonoTime['controlsState'] if REPLAY else time.monotonic_ns()
-    return ev9_warning_hands_on(CS, now_nanos)
+  def ev9_warning_suppressed_by_driver(self, CS):
+    return ev9_angle_warnings_enabled(self.CP) and (
+      CS.steeringPressed or (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0)
 
   def add_steering_saturation_event(self, switchback_mode_enabled=False, switchback_mode_cooldown=0.0):
     now = time.monotonic()
@@ -951,8 +950,8 @@ class SelfdriveD:
     alerts = self.events.create_alerts(self.state_machine.current_alert_types, [self.CP, CS, self.sm, self.is_metric,
                                                                                 self.state_machine.soft_disable_timer, pers,
                                                                                 self.starpilot_toggles])
-    hands_on = self.ev9_warning_hands_on(CS)
-    if hands_on:
+    driver_override = self.ev9_warning_suppressed_by_driver(CS)
+    if driver_override:
       # A two-second cached warning must disappear immediately when the driver takes the wheel.
       alerts = [alert for alert in alerts if alert.alert_type != "steerSaturated/warning"]
       self.AM.alerts.pop("steerSaturated/warning", None)
@@ -965,7 +964,7 @@ class SelfdriveD:
     starpilot_alerts = self.starpilot_events.create_alerts(starpilot_alert_types, [self.CP, CS, self.sm, self.is_metric,
                                                                                                     self.state_machine.soft_disable_timer, pers,
                                                                                                     self.starpilot_toggles])
-    if hands_on:
+    if driver_override:
       starpilot_alerts = [alert for alert in starpilot_alerts if alert.alert_type != "goatSteerSaturated/warning"]
       self.starpilot_AM.alerts.pop("goatSteerSaturated/warning", None)
     self.starpilot_AM.add_many(self.sm.frame, starpilot_alerts)
