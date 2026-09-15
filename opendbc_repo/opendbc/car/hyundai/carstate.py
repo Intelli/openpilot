@@ -97,6 +97,7 @@ class CarState(CarStateBase):
     self.lda_button = 0
     self.hands_on_steering_grip = 0
     self.hands_on_steering_ts_nanos = 0
+    self.mdps_steering_angle = 0.0
     self.sonata_hybrid_lkas_source = None
     self.sonata_hybrid_lkas_sources = {
       "bcm": 0,
@@ -519,6 +520,7 @@ class CarState(CarStateBase):
     if self.CP.carFingerprint == CAR.KIA_EV9:
       self.hands_on_steering_grip = cp.vl["HOD_FD_01_100ms"]["HOD_Dir_Status"]
       self.hands_on_steering_ts_nanos = cp.ts_nanos["HOD_FD_01_100ms"]["HOD_Dir_Status"]
+      self.mdps_steering_angle = cp.vl["MDPS"]["STEERING_ANGLE"]
 
     ret.steeringRateDeg = cp.vl["STEERING_SENSORS"]["STEERING_RATE"]
     ret.steeringAngleDeg = cp.vl["STEERING_SENSORS"]["STEERING_ANGLE"]

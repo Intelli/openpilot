@@ -2,7 +2,7 @@
 
 import pytest
 
-from opendbc.can import CANParser
+from opendbc.can import CANPacker, CANParser
 from opendbc.car import Bus, gen_empty_fingerprint, structs
 from opendbc.car.hyundai.carcontroller import CarController
 from opendbc.car.hyundai.carstate import CarState
@@ -19,7 +19,8 @@ def setup_controller(direct):
   cp.flags = int(cp.flags | HyundaiFlags.CANFD_LKA_STEERING | HyundaiFlags.CANFD_LKA_STEERING_ALT)
   c = CarController(DBC[CAR.KIA_EV9], cp)
   c.long_active_ecu = direct
-  cs = CarState(cp, None)
+  fpcp = CarInterface.get_starpilot_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], cp, get_test_toggles())
+  cs = CarState(cp, fpcp)
   cs.out = structs.CarState.new_message()
   cs.out.gearShifter = structs.CarState.GearShifter.drive
   cs.out.vEgoRaw = cs.out.vEgo = 5
@@ -39,7 +40,7 @@ def test_actual_outgoing_handoff_native_safety(direct, manual, angle, expected_a
   c, cs, cc, toggles = setup_controller(direct)
   toggles.hkg_shared_autonomy_mode = int(manual)
   cs.out.vEgoRaw = cs.out.vEgo = 2
-  cs.out.steeringAngleDeg = cs.angle_steering_angle = angle
+  cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = angle
   cs.out.steeringTorque = 200 if manual else 0
   cs.out.steeringPressed = manual
   cs.hands_on_steering_grip = 3
@@ -165,3 +166,58 @@ def test_saturated_gate_drop_resets_then_recovers(direct, gate, configured_speed
   assert c.apply_angle_last == 0
   _, msgs = c.update(cc.as_reader(), cs, 1_010_000_000, toggles)
   assert_steering_payloads(c, msgs, True)
+
+
+@pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_divergent_sensor_manual_handoff_and_recovery(direct, sign):
+  c, cs, cc, toggles = setup_controller(direct)
+  toggles.hkg_shared_autonomy_mode = 1
+  parsers = cs.get_can_parsers(c.CP)
+  parser = parsers[Bus.pt]
+  packer = CANPacker(DBC[CAR.KIA_EV9][Bus.pt])
+  cs.update_canfd(parsers)
+  mdps = packer.make_can_msg("MDPS", parser.bus, {"STEERING_ANGLE": 10 * sign, "STEERING_ANGLE_2": 20 * sign})
+  parser.update([(1_000_000_000, [mdps])])
+  expected_angle = (20 if direct else 10) * sign
+  c.apply_angle_last = c.angle_filter.x = expected_angle
+  cc.actuators.steeringAngleDeg = expected_angle
+
+  safety = test_hyundai_canfd.TestHyundaiCanfdLKASteeringAltAngleLongEV(methodName="test_lateral_accel_limit")
+  safety.SAFETY_PARAM |= HyundaiSafetyFlags.CANFD_EV9 | HyundaiSafetyFlags.CCNC
+  if not direct:
+    safety.SAFETY_PARAM &= ~HyundaiSafetyFlags.LONG
+  safety.setUp()
+  safety._reset_speed_measurement(round(2 * 3.6 / 0.03125))
+  for _ in range(6):
+    safety._rx(safety.packer.make_can_msg_safety("MDPS", safety.PT_BUS, {"STEERING_ANGLE": 10 * sign, "STEERING_ANGLE_2": 20 * sign}))
+  assert safety.safety.get_angle_meas_min() == round(expected_angle * 10)
+  safety.safety.set_desired_angle_last(round(expected_angle * 10))
+  safety.safety.set_controls_allowed(True)
+
+  # SAS changes independently; neither controller nor Panda receives another MDPS sample.
+  for frame, (sas, hands_on) in enumerate([(30, True), (40, True), (40, False)]):
+    now = 1_000_000_000 + frame * 10_000_000
+    parser.update([(now, [packer.make_can_msg("STEERING_SENSORS", parser.bus, {"STEERING_ANGLE": sas * sign})])])
+    cs.out, _ = cs.update_canfd(parsers)
+    assert cs.out.steeringAngleDeg == pytest.approx(sas * sign)
+    cs.out.gearShifter = structs.CarState.GearShifter.drive
+    cs.out.vEgoRaw = cs.out.vEgo = 2
+    cs.out.standstill = False
+    cs.out.steeringTorque = 200 if hands_on else 0
+    cs.out.steeringPressed = hands_on
+    cs.hands_on_steering_grip = 3 if hands_on else 0
+    cs.hands_on_steering_ts_nanos = now
+    cs.stock_lkas_msg = {"ADAS_StrAnglReqVal": -45.0, "ADAS_ACIAnglTqRedcGainVal": 0.8}
+    cs.lfa_block_msg = {f"BYTE{i}": 0 for i in range(3, 32) if i != 7}
+    cs.lfa_block_msg["COUNTER"] = 0
+    safety.safety.set_timer(frame * 10_000)
+    _, msgs = c.update(cc.as_reader(), cs, now, toggles)
+    assert_steering_payloads(c, msgs, not hands_on)
+    assert c.apply_angle_last == pytest.approx(expected_angle)
+    assert c._ev9_manual.manual_latched == hands_on
+    selected = [m for m in msgs if m[0] == (0xCB if direct else 0x110)]
+    assert len(selected) == 1
+    addr, data, bus = selected[0]
+    assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))
+    assert safety.safety.get_controls_allowed()

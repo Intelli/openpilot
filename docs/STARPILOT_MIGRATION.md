@@ -149,6 +149,11 @@ legacy torque hysteresis, entry-only speed gate, one-second low-demand release,
 two-second reentry guard, 0.1-second grip dwell and 90°/15° high-angle hysteresis
 are preserved. High-angle hold respects gear, fault and angle/rate checks. The
 request state reaches both LKAS_ALT and direct `0xCB` steering messages.
+EV9 controller measurements match Panda's selected MDPS signal: `STEERING_ANGLE`
+for LKAS control with stock longitudinal, and `STEERING_ANGLE_2` for direct angle
+control. The public CarState angle continues to use `STEERING_SENSORS`; its offset
+or timing differences must not enter inactive handoff commands. Regression tests
+cover distinct sensor angles, independent SAS updates and return from handoff.
 
 ### EV9 application integration
 
