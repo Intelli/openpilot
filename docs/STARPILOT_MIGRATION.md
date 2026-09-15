@@ -158,7 +158,21 @@ retaining event timing, priority and sounds. This changes presentation only; dri
 monitoring logic remains unchanged. Normal EV9 banners use 50% black opacity in
 both device renderers. Steering-limit warnings remain visible with Hide Alerts
 enabled. Other vehicles retain their original presentation.
-Settings UI is a subsequent migration.
+`ui_options_starpilot.patch` adds four controls directly under Steering → EV9
+Steering: Improved Manual Control, Steering Override Effort, EV9 Limits Speed
+and EV9 Alert Speed. The controls use the ranges/defaults above and fixed km/h
+units for both speed thresholds. Legacy handoff mode 2 displays as enabled;
+toggling on writes canonical mode 1. Actual EV9 angle CarParams are required,
+with selected-EV9 fallback before initial identification while offroad. Writes
+are blocked while onroad, including if a slider was opened before starting.
+Cached UI parameter writes use StarPilot's existing broadcast notification.
+
+This patch also owns the Steering page's previously migrated flat layout;
+its hunks were moved out of `settings_ui_starpilot.patch` so both patches can
+independently recognize already-applied changes. The previous layout remains.
+The legacy lane-turn range change and EV9 path-color label are intentionally
+omitted: StarPilot has its own lane-change/turn controls, and custom path colors
+are deferred.
 
 Regression tests live in `opendbc_repo/opendbc/car/hyundai/tests/test_ev9.py` and
 `opendbc_repo/opendbc/safety/tests/test_hyundai_ev9*.py`, with corresponding updates

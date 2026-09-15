@@ -109,7 +109,7 @@
     },
     {
       "original_path": "patches/ui_options.patch",
-      "preserved_path": "patches/ui_options.patch.temp-disabled",
+      "preserved_path": "patches/ui_options.patch.migrated",
       "sha256": "db646d0728fa13680a6f516688f2d2fc7135d9ad2009da04b3f1b6bc5b18d35c"
     },
     {

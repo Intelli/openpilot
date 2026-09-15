@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from openpilot.system.hardware import HARDWARE
+from openpilot.starpilot.common.ev9_tuning import read_ev9_tuning
+from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_alert_speed_kph
+from openpilot.selfdrive.ui.layouts.settings.starpilot.ev9_settings import ev9_settings_visible, ev9_settings_editable
 from openpilot.selfdrive.ui.lib.starpilot_state import starpilot_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr, tr_noop
@@ -316,6 +319,7 @@ class StarPilotLateralLayout(_SettingsPage):
                      get_state=pt_lane_changes.get_state, set_state=pt_lane_changes.set_state),
         ]),
         SettingSection("", self._lane_change_rows, visible=lc_on),
+        SettingSection(tr("EV9 Steering"), self._ev9_rows(), visible=self._ev9_visible),
         SettingSection(tr("Advanced"), [
           SettingRow("advanced", "value", tr_noop("Advanced Lateral Tuning"),
                      subtitle=tr_noop("Adjust steering response and feedforward controllers."),
@@ -335,6 +339,61 @@ class StarPilotLateralLayout(_SettingsPage):
       panel_style=PANEL_STYLE,
     )
     self._wire_sub_panels()
+
+  def _ev9_visible(self):
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    return ev9_settings_visible(ui_state.CP, ui_state.started, self._params.get("CarModel"))
+
+  def _ev9_editable(self):
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    return ev9_settings_editable(ui_state.CP, ui_state.started, self._params.get("CarModel"))
+
+  def _ev9_value(self, key):
+    if key == "HkgTuningEv9AlertsSpeedKph":
+      return int(ev9_alert_speed_kph(self._params.get(key)))
+    attributes = {
+      "HkgSharedAutonomyMode": "hkg_shared_autonomy_mode",
+      "HkgTuningAngleOverrideEffortPercent": "hkg_tuning_angle_override_effort_percent",
+      "HkgTuningAngleCustomLimitMaxSpeedKph": "hkg_tuning_angle_custom_limit_max_speed_kph",
+    }
+    return read_ev9_tuning(self._params)[attributes[key]]
+
+  def _ev9_set_manual(self, enabled):
+    if self._ev9_editable():
+      self._params.put_int("HkgSharedAutonomyMode", 1 if enabled else 0)
+
+  def _ev9_slider(self, key, title, maximum, step, unit):
+    if not self._ev9_editable():
+      return
+    def confirmed(result, value):
+      if result == DialogResult.CONFIRM and self._ev9_editable():
+        self._params.put_int(key, int(max(10, min(maximum, value))))
+    gui_app.push_widget(AetherSliderDialog(tr(title), 10, maximum, step, self._ev9_value(key), confirmed,
+                                          unit=unit, color=self.SLIDER_COLOR))
+
+  def _ev9_rows(self):
+    rows = [SettingRow(
+      "HkgSharedAutonomyMode", "toggle", tr_noop("Improved Manual Control"),
+      subtitle=tr_noop("Hands-on steering input hands control to you at or below the EV9 limits speed. " +
+                       "Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off."),
+      get_state=lambda: self._ev9_value("HkgSharedAutonomyMode") != 0, set_state=self._ev9_set_manual,
+      enabled=self._ev9_editable, disabled_label=tr_noop("Turn vehicle off to adjust."),
+    )]
+    for key, title, description, maximum, step, unit in (
+      ("HkgTuningAngleOverrideEffortPercent", "Steering Override Effort",
+       "Lower values ease manual steering override. 100% applies no additional effort reduction.", 100, 10, "%"),
+      ("HkgTuningAngleCustomLimitMaxSpeedKph", "EV9 Limits Speed",
+       "Higher steering limits and manual-control entry apply at or below this speed.", 40, 1, " km/h"),
+      ("HkgTuningEv9AlertsSpeedKph", "EV9 Alert Speed",
+       "Warn about steering saturation above this speed. Desired steering angles of 90° or more can still warn below it.", 50, 1, " km/h"),
+    ):
+      rows.append(SettingRow(
+        key, "value", tr_noop(title), subtitle=tr_noop(description),
+        get_value=lambda k=key, u=unit: f"{self._ev9_value(k)}{u}",
+        on_click=lambda k=key, t=title, m=maximum, st=step, u=unit: self._ev9_slider(k, t, m, st, u),
+        enabled=self._ev9_editable, disabled_label=tr_noop("Turn vehicle off to adjust."),
+      ))
+    return rows
 
   def _on_pause_lateral_speed_clicked(self):
     def on_speed_close(res, val):

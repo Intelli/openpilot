@@ -1,0 +1,302 @@
+diff --git a/selfdrive/ui/layouts/settings/starpilot/ev9_settings.py b/selfdrive/ui/layouts/settings/starpilot/ev9_settings.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..69d4b5562a32dcf919d05a3c6949f75bd96a1784
+--- /dev/null
++++ b/selfdrive/ui/layouts/settings/starpilot/ev9_settings.py
+@@ -0,0 +1,14 @@
++"""Vehicle and offroad guards for EV9 steering settings."""
++from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_angle_warnings_enabled
++
++
++def ev9_settings_visible(cp, started, selected_model):
++  if cp is not None and getattr(cp, "carFingerprint", "MOCK") not in ("", "MOCK"):
++    return ev9_angle_warnings_enabled(cp)
++  if isinstance(selected_model, bytes):
++    selected_model = selected_model.decode("utf-8", errors="replace")
++  return not started and selected_model == "KIA_EV9"
++
++
++def ev9_settings_editable(cp, started, selected_model):
++  return not started and ev9_settings_visible(cp, started, selected_model)
+diff --git a/selfdrive/ui/layouts/settings/starpilot/lateral.py b/selfdrive/ui/layouts/settings/starpilot/lateral.py
+index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..8f15215f4f7bace8fd165d1a96020ef98f045f6b 100644
+--- a/selfdrive/ui/layouts/settings/starpilot/lateral.py
++++ b/selfdrive/ui/layouts/settings/starpilot/lateral.py
+@@ -1,6 +1,9 @@
+ from __future__ import annotations
+ 
+ from openpilot.system.hardware import HARDWARE
++from openpilot.starpilot.common.ev9_tuning import read_ev9_tuning
++from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_alert_speed_kph
++from openpilot.selfdrive.ui.layouts.settings.starpilot.ev9_settings import ev9_settings_visible, ev9_settings_editable
+ from openpilot.selfdrive.ui.lib.starpilot_state import starpilot_state
+ from openpilot.system.ui.lib.application import gui_app
+ from openpilot.system.ui.lib.multilang import tr, tr_noop
+@@ -10,7 +13,6 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import _SettingsPag
+ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
+   DEFAULT_PANEL_STYLE,
+   AetherSettingsView,
+-  CardHubManagerView,
+   ParentToggle,
+   SettingRow,
+   SettingSection,
+@@ -43,38 +45,6 @@ def _sync_parent(params, parent_key, child_keys):
+       params.put_bool(parent_key, False)
+ 
+ 
+-# ═══════════════════════════════════════════════════════════════
+-# SteeringManagerView — 3-card category hub
+-# ═══════════════════════════════════════════════════════════════
+-
+-class SteeringManagerView(CardHubManagerView):
+-  def __init__(self, controller, **kwargs):
+-    super().__init__(controller, [], **kwargs)
+-
+-  def _build_cards(self):
+-    cards = [
+-      {
+-        "title": tr("Steering Behavior"),
+-        "desc": tr("Configure Always On Lateral (AOL), pause speed thresholds, and turn signal behaviors."),
+-        "icon": "steering",
+-        "on_click": lambda: self._controller._navigate_to("behavior"),
+-      },
+-      {
+-        "title": tr("Lane Changes"),
+-        "desc": tr("Configure automatic lane changes, speed/width thresholds, and smoothing parameters."),
+-        "icon": "road",
+-        "on_click": lambda: self._controller._navigate_to("lane_changes"),
+-      },
+-      {
+-        "title": tr("Advanced Lateral Tuning"),
+-        "desc": tr("Adjust actuator delay, steer ratio, Kp, friction, and neural network feedforward controllers."),
+-        "icon": "system",
+-        "on_click": lambda: self._controller._navigate_to("advanced"),
+-      },
+-    ]
+-    return cards
+-
+-
+ # ═══════════════════════════════════════════════════════════════
+ # StarPilotLateralLayout — controller
+ # ═══════════════════════════════════════════════════════════════
+@@ -322,12 +292,6 @@ class StarPilotLateralLayout(_SettingsPage):
+       ),
+     ]
+ 
+-    self._manager_view = SteeringManagerView(
+-      self,
+-      header_title=tr_noop("Steering"),
+-      header_subtitle=tr_noop("Configure steering behavior and lane changes."),
+-    )
+-
+     p = self._params
+     pt_behavior = ParentToggle(
+       label="Always On Lateral",
+@@ -340,23 +304,32 @@ class StarPilotLateralLayout(_SettingsPage):
+     pt_advanced = self._make_parent("AdvancedLateralTune", "Advanced Lateral Tuning",
+       "Fine-tune steering response and auto-tuning.")
+ 
+-    # Register subpanels for Level 2 slide transitions
+-    self._sub_panels["behavior"] = AetherSettingsView(
+-      self,
+-      [SettingSection(title="", rows=self._behavior_rows)],
+-      header_title=tr_noop("Steering Behavior"),
+-      header_subtitle=tr_noop("Configure Always On Lateral (AOL), pause speed thresholds, and turn signal behaviors."),
+-      parent_toggle=pt_behavior,
+-      panel_style=PANEL_STYLE,
+-    )
+-    self._sub_panels["lane_changes"] = AetherSettingsView(
++    self._manager_view = AetherSettingsView(
+       self,
+-      [SettingSection(title="", rows=self._lane_change_rows)],
+-      header_title=tr_noop("Lane Changes"),
+-      header_subtitle=tr_noop("Configure automatic lane changes, speed/width thresholds, and smoothing parameters."),
+-      parent_toggle=pt_lane_changes,
++      [
++        SettingSection(tr("Steering Behavior"), [
++          SettingRow("AlwaysOnLateral", "toggle", tr_noop("Always On Lateral"),
++                     subtitle=tr_noop("Steering stays active when ACC is off."),
++                     get_state=pt_behavior.get_state, set_state=pt_behavior.set_state),
++        ]),
++        SettingSection("", self._behavior_rows),
++        SettingSection(tr("Lane Changes"), [
++          SettingRow("LaneChanges", "toggle", tr_noop("Lane Changes"),
++                     subtitle=tr_noop("Allow openpilot to change lanes."),
++                     get_state=pt_lane_changes.get_state, set_state=pt_lane_changes.set_state),
++        ]),
++        SettingSection("", self._lane_change_rows, visible=lc_on),
++        SettingSection(tr("EV9 Steering"), self._ev9_rows(), visible=self._ev9_visible),
++        SettingSection(tr("Advanced"), [
++          SettingRow("advanced", "value", tr_noop("Advanced Lateral Tuning"),
++                     subtitle=tr_noop("Adjust steering response and feedforward controllers."),
++                     on_click=lambda: self._navigate_to("advanced")),
++        ]),
++      ],
++      header_title=tr_noop("Steering"),
+       panel_style=PANEL_STYLE,
+     )
++
+     self._sub_panels["advanced"] = AetherSettingsView(
+       self,
+       [SettingSection(title="", rows=self._advanced_rows)],
+@@ -367,6 +340,61 @@ class StarPilotLateralLayout(_SettingsPage):
+     )
+     self._wire_sub_panels()
+ 
++  def _ev9_visible(self):
++    from openpilot.selfdrive.ui.ui_state import ui_state
++    return ev9_settings_visible(ui_state.CP, ui_state.started, self._params.get("CarModel"))
++
++  def _ev9_editable(self):
++    from openpilot.selfdrive.ui.ui_state import ui_state
++    return ev9_settings_editable(ui_state.CP, ui_state.started, self._params.get("CarModel"))
++
++  def _ev9_value(self, key):
++    if key == "HkgTuningEv9AlertsSpeedKph":
++      return int(ev9_alert_speed_kph(self._params.get(key)))
++    attributes = {
++      "HkgSharedAutonomyMode": "hkg_shared_autonomy_mode",
++      "HkgTuningAngleOverrideEffortPercent": "hkg_tuning_angle_override_effort_percent",
++      "HkgTuningAngleCustomLimitMaxSpeedKph": "hkg_tuning_angle_custom_limit_max_speed_kph",
++    }
++    return read_ev9_tuning(self._params)[attributes[key]]
++
++  def _ev9_set_manual(self, enabled):
++    if self._ev9_editable():
++      self._params.put_int("HkgSharedAutonomyMode", 1 if enabled else 0)
++
++  def _ev9_slider(self, key, title, maximum, step, unit):
++    if not self._ev9_editable():
++      return
++    def confirmed(result, value):
++      if result == DialogResult.CONFIRM and self._ev9_editable():
++        self._params.put_int(key, int(max(10, min(maximum, value))))
++    gui_app.push_widget(AetherSliderDialog(tr(title), 10, maximum, step, self._ev9_value(key), confirmed,
++                                          unit=unit, color=self.SLIDER_COLOR))
++
++  def _ev9_rows(self):
++    rows = [SettingRow(
++      "HkgSharedAutonomyMode", "toggle", tr_noop("Improved Manual Control"),
++      subtitle=tr_noop("Hands-on steering input hands control to you at or below the EV9 limits speed. " +
++                       "Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off."),
++      get_state=lambda: self._ev9_value("HkgSharedAutonomyMode") != 0, set_state=self._ev9_set_manual,
++      enabled=self._ev9_editable, disabled_label=tr_noop("Turn vehicle off to adjust."),
++    )]
++    for key, title, description, maximum, step, unit in (
++      ("HkgTuningAngleOverrideEffortPercent", "Steering Override Effort",
++       "Lower values ease manual steering override. 100% applies no additional effort reduction.", 100, 10, "%"),
++      ("HkgTuningAngleCustomLimitMaxSpeedKph", "EV9 Limits Speed",
++       "Higher steering limits and manual-control entry apply at or below this speed.", 40, 1, " km/h"),
++      ("HkgTuningEv9AlertsSpeedKph", "EV9 Alert Speed",
++       "Warn about steering saturation above this speed. Desired steering angles of 90° or more can still warn below it.", 50, 1, " km/h"),
++    ):
++      rows.append(SettingRow(
++        key, "value", tr_noop(title), subtitle=tr_noop(description),
++        get_value=lambda k=key, u=unit: f"{self._ev9_value(k)}{u}",
++        on_click=lambda k=key, t=title, m=maximum, st=step, u=unit: self._ev9_slider(k, t, m, st, u),
++        enabled=self._ev9_editable, disabled_label=tr_noop("Turn vehicle off to adjust."),
++      ))
++    return rows
++
+   def _on_pause_lateral_speed_clicked(self):
+     def on_speed_close(res, val):
+       if res == DialogResult.CONFIRM:
+diff --git a/selfdrive/ui/tests/test_ev9_settings.py b/selfdrive/ui/tests/test_ev9_settings.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..223c26176d1a7f68e9ed0358c46632865cd194bf
+--- /dev/null
++++ b/selfdrive/ui/tests/test_ev9_settings.py
+@@ -0,0 +1,93 @@
++from types import SimpleNamespace
++
++import pytest
++
++from opendbc.car import structs
++from opendbc.car.hyundai.values import HyundaiFlags
++from openpilot.selfdrive.ui.layouts.settings.starpilot.ev9_settings import ev9_settings_editable, ev9_settings_visible
++
++
++def cp(model="KIA_EV9", flags=int(HyundaiFlags.CANFD_ANGLE_STEERING), angle=True):
++  return SimpleNamespace(carFingerprint=model, flags=flags,
++                         steerControlType=structs.CarParams.SteerControlType.angle if angle else structs.CarParams.SteerControlType.torque)
++
++
++@pytest.mark.parametrize("car,started,selected,visible,editable", [
++  (cp(), False, "MOCK", True, True), (cp(), True, "KIA_EV9", True, False),
++  (None, False, b"KIA_EV9", True, True), (cp("MOCK"), False, "KIA_EV9", True, True),
++  (None, True, "KIA_EV9", False, False), (cp("OTHER"), False, "KIA_EV9", False, False),
++  (cp(flags=0), False, "KIA_EV9", False, False), (cp(angle=False), False, "KIA_EV9", False, False),
++  (None, False, "OTHER", False, False),
++])
++def test_vehicle_and_offroad_scope(car, started, selected, visible, editable):
++  assert ev9_settings_visible(car, started, selected) == visible
++  assert ev9_settings_editable(car, started, selected) == editable
++
++
++@pytest.fixture
++def lateral_module(monkeypatch):
++  # Load the real layout with display/state dependencies replaced by inert widgets.
++  import importlib.util
++  import sys
++  from pathlib import Path
++
++  class Row:
++    def __init__(self, *args, **kwargs):
++      self.__dict__.update(kwargs)
++
++  stubs = {
++    "openpilot.selfdrive.ui.lib.starpilot_state": SimpleNamespace(starpilot_state=SimpleNamespace()),
++    "openpilot.system.ui.lib.application": SimpleNamespace(gui_app=SimpleNamespace(push_widget=lambda widget: None)),
++    "openpilot.system.ui.lib.multilang": SimpleNamespace(tr=lambda text: text, tr_noop=lambda text: text),
++    "openpilot.system.ui.widgets": SimpleNamespace(DialogResult=SimpleNamespace(CONFIRM=1)),
++    "openpilot.selfdrive.ui.layouts.settings.starpilot.panel": SimpleNamespace(_SettingsPage=type("Page", (), {"SLIDER_COLOR": None})),
++    "openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid": SimpleNamespace(
++      DEFAULT_PANEL_STYLE=None, AetherSettingsView=Row, ParentToggle=Row, SettingRow=Row, SettingSection=Row, AetherSliderDialog=Row),
++  }
++  for name, module in stubs.items():
++    monkeypatch.setitem(sys.modules, name, module)
++  path = Path(__file__).parents[1] / "layouts/settings/starpilot/lateral.py"
++  spec = importlib.util.spec_from_file_location("ev9_test_lateral", path)
++  module = importlib.util.module_from_spec(spec)
++  spec.loader.exec_module(module)
++  return module
++
++
++def test_slider_rechecks_eligibility_before_write(monkeypatch, lateral_module):
++  lateral = lateral_module
++
++  layout = lateral.StarPilotLateralLayout.__new__(lateral.StarPilotLateralLayout)
++  writes = []
++  layout._params = SimpleNamespace(get=lambda key: None, put_int=lambda key, value: writes.append((key, value)))
++  allowed = [True]
++  monkeypatch.setattr(layout, "_ev9_editable", lambda: allowed[0])
++  dialogs = []
++  monkeypatch.setattr(lateral, "AetherSliderDialog", lambda *args, **kwargs: (args, kwargs))
++  monkeypatch.setattr(lateral.gui_app, "push_widget", dialogs.append)
++  key = "HkgTuningAngleCustomLimitMaxSpeedKph"
++  layout._ev9_slider(key, "EV9 Limits Speed", 40, 1, " km/h")
++  args, _ = dialogs[0]
++  assert args[1:5] == (10, 40, 1, 40)
++  allowed[0] = False
++  args[5](lateral.DialogResult.CONFIRM, 20)
++  layout._ev9_set_manual(True)
++  layout._ev9_slider(key, "EV9 Limits Speed", 40, 1, " km/h")
++  assert writes == [] and len(dialogs) == 1
++  allowed[0] = True
++  args[5](lateral.DialogResult.CONFIRM, 20)
++  assert writes == [(key, 20)]
++
++
++def test_rows_defaults_and_legacy_manual_mode(monkeypatch, lateral_module):
++  lateral = lateral_module
++
++  layout = lateral.StarPilotLateralLayout.__new__(lateral.StarPilotLateralLayout)
++  values = {}
++  layout._params = SimpleNamespace(get=lambda key: values.get(key))
++  monkeypatch.setattr(layout, "_ev9_editable", lambda: True)
++  rows = layout._ev9_rows()
++  assert len(rows) == 4
++  assert not rows[0].get_state()
++  assert [row.get_value() for row in rows[1:]] == ["10%", "40 km/h", "50 km/h"]
++  values["HkgSharedAutonomyMode"] = "2"
++  assert rows[0].get_state()
