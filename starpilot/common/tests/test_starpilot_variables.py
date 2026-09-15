@@ -62,7 +62,7 @@ def test_get_starpilot_toggles_uses_last_non_empty_broadcast(monkeypatch):
 
 
 def test_get_starpilot_toggles_uses_persisted_force_torque_request(monkeypatch):
-  params = SimpleNamespace(get_bool=lambda key: key == "ForceTorqueController")
+  params = SimpleNamespace(get_bool=lambda key: key == "ForceTorqueController", get=lambda _key: None)
   monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
 
   payload = '{"force_torque_controller": false}'
@@ -90,7 +90,7 @@ def test_get_starpilot_toggles_realtime_path_does_not_read_persisted_force_param
 
 
 def test_get_starpilot_toggles_uses_live_rivian_angle_request(monkeypatch):
-  params = SimpleNamespace(get_bool=lambda key: key == "RivianAngleControl")
+  params = SimpleNamespace(get_bool=lambda key: key == "RivianAngleControl", get=lambda _key: None)
   monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
 
   payload = '{"rivian_angle_control": false}'

@@ -104,7 +104,8 @@ Panda identifies EV9 using safety bit 256 together with EV-gas and angle-steerin
 flags. Bit 256 retains its FCEV meaning outside that context and is removed before
 common gas decoding on EV9. This avoids consuming StarPilot's existing AOL flag.
 
-The controller's higher limits default to speeds at or below 32 km/h. Panda's
+The application's higher-limit threshold defaults to 40 km/h (10–40 km/h range).
+The native consumer retains a 32 km/h fallback for absent broadcasts. Panda's
 independent gate retains the original calculation: `max(measured_speed - 1, 1)`
 at or below `42 / 3.6 + 0.1` m/s, approximately 45.96 km/h measured speed. This is
 a step, not the 50 km/h gate assumed by the old test patch. Above the applicable
@@ -119,26 +120,31 @@ two-second reentry guard, 0.1-second grip dwell and 90°/15° high-angle hystere
 are preserved. High-angle hold respects gear, fault and angle/rate checks. The
 request state reaches both LKAS_ALT and direct `0xCB` steering messages.
 
-### Remaining openpilot integration
+### EV9 application integration
 
-`opendbc.car.hyundai.ev9.EV9AngleConfig` consumes StarPilot's existing toggle
-namespace (or a mapping). The opendbc implementation and defaults are complete;
-the application parameter registry, settings UI and toggle producer are the next
-migration step. No new Params reads or Sunnypilot-only schema fields are required
-inside opendbc.
+`drive_helpers_starpilot.patch` connects persistent settings to StarPilot's toggle
+broadcast and the native `EV9AngleConfig` consumer. Startup car identification
+reads current persisted values over cached broadcasts; realtime consumers do no
+parameter-file I/O. Settings publish before fingerprinting, while consumers gate
+behavior on the actual EV9 angle-steering CarParams.
 
-| Toggle attribute to broadcast | Former parameter | Default / range |
+| Toggle attribute | Parameter | Application default / range |
 | --- | --- | --- |
-| `hkg_tuning_angle_custom_limit_max_speed_kph` | `HkgTuningAngleCustomLimitMaxSpeedKph` | 32 km/h; nonpositive or malformed values use the default |
-| `hkg_tuning_angle_override_effort_percent` | `HkgTuningAngleOverrideEffortPercent` | 10%; clamped to 10–100% |
-| `hkg_shared_autonomy_mode` | `HkgSharedAutonomyMode` | 0; modes 1 and legacy 2 enable improved manual handoff |
+| `hkg_tuning_angle_custom_limit_max_speed_kph` | `HkgTuningAngleCustomLimitMaxSpeedKph` | 40 km/h; 10–40 |
+| `hkg_tuning_angle_override_effort_percent` | `HkgTuningAngleOverrideEffortPercent` | 10%; 10–100 |
+| `hkg_shared_autonomy_mode` | `HkgSharedAutonomyMode` | 0/off; 1 and legacy 2 enable handoff |
 
-The former PascalCase parameter names and lower-camel schema names are also
-accepted. If mode is absent, the old `HkgSharedAutonomyEnabled` boolean aliases
-are supported. With no producer fields, 32 km/h and 10% override effort work now;
-improved manual handoff remains off (mode 0). Existing saved Hkg Params will not
-affect this consumer until the application publishes them. Higher-level openpilot
-curvature/planner changes are still separate work.
+Registry defaults belong to `custom_defaults_starpilot.patch`. Existing saved
+values take precedence, with malformed values falling back and values clamped to
+the supported UI ranges. The legacy aliases and conservative missing-broadcast
+fallback remain supported inside opendbc.
+
+Below the configured threshold, upper-level EV9 curvature limiting uses the same
+symmetric 4.2 m/s² envelope as the controller, without roll compensation or the
+generic curvature cap. Existing lane-change comfort shaping remains active.
+Above it, and on other cars or torque control, StarPilot behavior is unchanged.
+The downstream controller/Panda intersection still limits actual steering.
+Settings UI and steering-warning integration are subsequent migrations.
 
 Regression tests live in `opendbc_repo/opendbc/car/hyundai/tests/test_ev9.py` and
 `opendbc_repo/opendbc/safety/tests/test_hyundai_ev9*.py`, with corresponding updates

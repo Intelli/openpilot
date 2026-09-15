@@ -1,4 +1,5 @@
 import numpy as np
+from opendbc.car.hyundai.ev9 import EV9_HIGH_LATERAL_LIMIT
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.realtime import DT_CTRL, DT_MDL
 
@@ -22,7 +23,8 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
   alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
   return alpha * val + (1 - alpha) * prev_val
 
-def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0, lat_accel_factor=1.0) -> tuple[float, bool]:
+def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0, lat_accel_factor=1.0,
+                   *, ev9_angle_limit_speed_mps: float | None = None) -> tuple[float, bool]:
   # This function respects ISO lateral jerk and acceleration limits + a max curvature
   v_ego = max(v_ego, MIN_SPEED)
   max_curvature_rate = (MAX_LATERAL_JERK * jerk_factor) / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
@@ -30,8 +32,10 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0, 
                           prev_curvature - max_curvature_rate * DT_CTRL,
                           prev_curvature + max_curvature_rate * DT_CTRL)
 
-  effective_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL * lat_accel_factor
-  roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
+  ev9_low_speed = ev9_angle_limit_speed_mps is not None and v_ego <= ev9_angle_limit_speed_mps
+  base_lat_accel = EV9_HIGH_LATERAL_LIMIT if ev9_low_speed else MAX_LATERAL_ACCEL_NO_ROLL
+  effective_lat_accel = base_lat_accel * lat_accel_factor
+  roll_compensation = 0.0 if ev9_low_speed else roll * ACCELERATION_DUE_TO_GRAVITY
   min_curvature = (-effective_lat_accel + roll_compensation) / v_ego ** 2
   max_curvature = (effective_lat_accel + roll_compensation) / v_ego ** 2
   if lat_accel_factor < 1.0:
@@ -39,15 +43,18 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0, 
     # (e.g. lane change on a curve); it only limits further growth.
     min_curvature = min(min_curvature, prev_curvature)
     max_curvature = max(max_curvature, prev_curvature)
-  # Saturation is reported against the stock envelope only: riding an intentionally
+  # Saturation is reported against the unshaped vehicle envelope only: riding an intentionally
   # tightened lane-change ceiling is comfort shaping, not steering saturation, and
   # must not trip the "Turn Exceeds Steering Limit" alert.
-  stock_min_curvature = (-MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation) / v_ego ** 2
-  stock_max_curvature = (MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation) / v_ego ** 2
+  stock_min_curvature = (-base_lat_accel + roll_compensation) / v_ego ** 2
+  stock_max_curvature = (base_lat_accel + roll_compensation) / v_ego ** 2
   limited_accel = bool(new_curvature < stock_min_curvature or new_curvature > stock_max_curvature)
   new_curvature, _ = clamp(new_curvature, min_curvature, max_curvature)
 
-  new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+  # EV9 tight turns retain downstream vehicle-model and Panda limits.
+  limited_max_curv = False
+  if not ev9_low_speed:
+    new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
   return float(new_curvature), limited_accel or limited_max_curv
 
 
