@@ -215,6 +215,11 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_torque,
         # EV9 manual handoff must send the measured wheel angle passed by the controller.
         preserve_stock_angle = lkas_base_values and CP.carFingerprint != CAR.KIA_EV9
         lkas_values["ADAS_StrAnglReqVal"] = lkas_base_values.get("ADAS_StrAnglReqVal", apply_angle) if preserve_stock_angle else apply_angle
+        if CP.carFingerprint == CAR.KIA_EV9:
+          # Match the historical EV9 continuous inactive stream without requesting a steering sound.
+          lkas_values["LKA_StrSnd"] = 0
+          lkas_values["Damping_Gain"] = 100
+          lkas_values["DAMP_FACTOR"] = 100
 
   ret = []
   if CP.flags & HyundaiFlags.CANFD_LKA_STEERING:

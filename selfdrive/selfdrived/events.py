@@ -276,6 +276,29 @@ def brake_hold_alert(CP, *_args) -> Alert:
     Priority.LOW, VisualAlert.none, AudibleAlert.none, .2)
 
 
+def cruise_disengagement_alert(CP, CS, sm, metric=False, soft_disable_time=0, personality=None, starpilot_toggles=None) -> Alert:
+  # The brake ends normal cruise engagement even when AOL keeps steering.
+  # Only describe steering as active when its current request and guards agree.
+  steering_continues = (CS.brakePressed or CS.regenBraking) and not CS.steerFaultTemporary and not CS.steerFaultPermanent
+  steering_continues = steering_continues and CS.canValid and not CS.canTimeout
+  steering_continues = steering_continues and CS.gearShifter not in (
+    car.CarState.GearShifter.park, car.CarState.GearShifter.reverse, car.CarState.GearShifter.neutral, car.CarState.GearShifter.unknown,
+  )
+  steering_continues = steering_continues and sm.all_checks(['carControl', 'starpilotCarState', 'starpilotPlan', 'liveCalibration'])
+  steering_continues = steering_continues and sm['starpilotCarState'].alwaysOnLateralEnabled
+  steering_continues = steering_continues and not sm['starpilotCarState'].pauseLateral
+  steering_continues = steering_continues and sm['carControl'].latActive and sm['starpilotPlan'].lateralCheck
+  steering_continues = steering_continues and sm['liveCalibration'].calStatus == log.LiveCalibrationData.Status.calibrated
+  standstill = CS.standstill or abs(CS.vEgo) <= max(CP.minSteerSpeed, 0.3)
+  steering_continues = steering_continues and (not standstill or CP.steerAtStandstill)
+  brake_pause_speed = getattr(starpilot_toggles, 'always_on_lateral_pause_speed', 0.0)
+  steering_continues = steering_continues and not (CS.brakePressed and CS.vEgo < brake_pause_speed and not CS.standstill)
+  if steering_continues:
+    return Alert("Cruise off", "Steering remains active", AlertStatus.normal, AlertSize.mid,
+                 Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .2)
+  return EngagementAlert(AudibleAlert.disengage)
+
+
 def speed_limit_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   return Alert(
     "Speed limit changed",
@@ -804,7 +827,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.pcmDisable: {
-    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
+    ET.USER_DISABLE: cruise_disengagement_alert,
   },
 
   EventName.buttonCancel: {
@@ -822,7 +845,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.pedalPressed: {
-    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
+    ET.USER_DISABLE: cruise_disengagement_alert,
     ET.NO_ENTRY: NoEntryAlert("Pedal Pressed",
                               visual_alert=VisualAlert.brakePressed),
   },

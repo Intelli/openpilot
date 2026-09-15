@@ -219,36 +219,72 @@ of renaming the native Rainbow Path control.
 
 ### Steering and AOL follow-up fixes
 
-The existing enabled patches also record the route-driven steering and AOL fixes:
+Use [the recent-drive review workflow](RECENT_DRIVE_REVIEW.md) to find the latest
+uploaded route, verify the build that ran, and separate sampled log evidence
+from native reproductions and confirmed vehicle behavior.
+
+The existing enabled patches record the steering and AOL fixes:
 
 - `drive_helpers_starpilot.patch` refreshes command-limit feedback whenever lateral
   control is active, including AOL-only operation, and clears it when inactive.
-  It also clears AOL state when the live setting is disabled, requires a new
-  request after re-enabling, and prevents a delayed stock-cruise engagement from
-  undoing a main-button off request.
-- `customize_warnings_starpilot.patch` additionally detects sustained EV9 tracking
-  error above 2.5° at requested angles of at least 90°. The existing saturation
-  timer, speed, driver-input, turning-demand and undershoot checks remain required;
-  deactivation clears the timer. This detects EPS undertracking even when the
-  transmitted command itself is not clipped.
+  AOL requires healthy, completed, valid calibration. Rejected requests and loss
+  of calibration discard the old AOL session. The EV9 also checks calibration at
+  the final lateral-control decision and keeps a refused main-button request
+  paused until a fresh accepted activation. Delayed stock-cruise engagement
+  cannot undo an explicit main-button OFF. Disabling the live AOL setting clears
+  its session; re-enabling the setting requires a new request.
+- `customize_warnings_starpilot.patch` gives the EV9 a separate insufficient-
+  steering warning: a requested angle of at least 90 degrees, or speed above the
+  configured EV9 alert threshold, plus directional tracking error/command
+  clipping above 2.5 degrees for 0.3 seconds. It clears with angle/error hysteresis
+  (85 degrees / 1 degree), inactive steering, standstill, unhealthy inputs or
+  actual manual handoff. Detected driver assistance no longer suppresses the
+  warning. Switchback cooldown and selected alert sound still apply. This is a
+  warning policy, not a new universal 90-degree command cap; numeric steering
+  envelopes remain authoritative.
+- `alerts_starpilot.patch` retains the compact EV9 steering-limit banner and
+  audible prompt. Braking that ends normal engagement while AOL steering remains
+  active produces a brief “Cruise off / Steering remains active” prompt instead
+  of the full disengagement sound. Both pedal and simultaneous PCM-disable events
+  use this distinction. Faults, paused/inactive steering and full disengagement
+  retain their original alerts.
 - `custom_defaults_starpilot.patch` registers `PauseAOLOnBrake` as an integer speed.
   Its UI value is mph and its runtime value is converted to m/s; zero preserves
   AOL while braking. A one-time EV9 migration assigns main/cruise to AOL toggle
   only when AOL is enabled, LKAS is already assigned to AOL and main/cruise has no
   assigned action. Existing explicit main-button assignments are preserved.
 - Vehicle patch `05_steering_and_ev9_limits_starpilot.patch` restores assistance
-  gradually after override reduction, requires ten consecutive safe samples
-  before manual-handoff reentry after an invalid angle/rate sample, and sends an
-  inactive measured-angle command to initialize each angle transport before first
-  activation or resuming after stock forwarding. Vehicle patch `06` records the
-  controller, button-permission and native safety regressions.
+  gradually after override reduction and requires ten consecutive safe samples
+  before manual-handoff reentry after an invalid angle/rate sample. EV9 stock-LKAS
+  transport sends a continuous stream, using measured-angle, zero-gain inactive
+  messages when steering is off, refused, stationary or outside Drive. The first
+  command initializes angle history before activation. Inactive sound/damping
+  fields match the former Sunnypilot protocol. Factory cruise traffic is retained.
+  The appended `CarControl.Actuators.manualSteeringOverride` log field reports
+  actual controller handoff, so a matching requested/output angle at a real limit
+  is not mistaken for intentional manual control.
+- Vehicle patch `03_modify_baseline_starpilot.patch` removes CAN-FD EV9 alias bits before common flag
+  decoding so LKAS_ALT cannot accidentally enable the main-button LKAS latch.
+  With stock cruise, received SCC main availability supplies main permission;
+  button presses do not briefly invert it between SCC messages. This preserves
+  rearming after calibration refusal without requiring actual cruise engagement.
+- Vehicle patch `04_panda_safety_limits_starpilot.patch` owns the EV9 stock-LKAS
+  forwarding contract independently of the AOL permission latch. It blocks the
+  duplicate factory steering stream while allowing the valid inactive software
+  stream; active commands still require existing permissions, motion, Drive and
+  numeric envelope checks.
+- Vehicle patch `06_ev9_tests_starpilot.patch` records controller/native-safety
+  regressions, including continuous inactive traffic through refused calibration,
+  button OFF, braking, standstill and gear changes, and unauthorized active-command
+  rejection. Root patches include calibration, partial-disengagement and warning
+  pipeline regressions.
 
-These changes retain the existing numeric steering envelopes and StarPilot's
-longitudinal acceleration limits. Focused native-host validation passed 442 tests:
-105 warning/control, 122 AOL/application, 176 EV9, two button-permission, and 37
-Hyundai/icon tests. All 15 enabled patches replay from the recorded baseline and
-reproduce the 67 affected source paths exactly. These checks do not replace the
-GitHub device build or on-vehicle validation.
+These changes retain the numeric steering envelopes and StarPilot's longitudinal
+acceleration limits. Host checks exercise current Python plus freshly compiled
+native safety code; device binaries are not replaced with host builds. Enabled
+patches must replay from the recorded baseline and reproduce the affected source
+paths exactly. These checks do not replace the GitHub device build (including
+Panda/schema rebuilds) or on-vehicle validation.
 
 ### EV9 path appearance
 

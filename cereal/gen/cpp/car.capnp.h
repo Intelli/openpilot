@@ -2111,6 +2111,8 @@ public:
 
   inline  ::cereal::CarControl::Actuators::LateralControlMode getLateralControlMode() const;
 
+  inline bool getManualSteeringOverride() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -2168,6 +2170,9 @@ public:
 
   inline  ::cereal::CarControl::Actuators::LateralControlMode getLateralControlMode();
   inline void setLateralControlMode( ::cereal::CarControl::Actuators::LateralControlMode value);
+
+  inline bool getManualSteeringOverride();
+  inline void setManualSteeringOverride(bool value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -6335,6 +6340,20 @@ inline  ::cereal::CarControl::Actuators::LateralControlMode CarControl::Actuator
 inline void CarControl::Actuators::Builder::setLateralControlMode( ::cereal::CarControl::Actuators::LateralControlMode value) {
   _builder.setDataField< ::cereal::CarControl::Actuators::LateralControlMode>(
       ::capnp::bounded<11>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool CarControl::Actuators::Reader::getManualSteeringOverride() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<288>() * ::capnp::ELEMENTS);
+}
+
+inline bool CarControl::Actuators::Builder::getManualSteeringOverride() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<288>() * ::capnp::ELEMENTS);
+}
+inline void CarControl::Actuators::Builder::setManualSteeringOverride(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<288>() * ::capnp::ELEMENTS, value);
 }
 
 inline bool CarControl::CruiseControl::Reader::getCancel() const {

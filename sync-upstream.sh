@@ -30,7 +30,7 @@ PRESERVE=(
   patches tools/opendbc-patches tools/patches
   tools/ci/sync_ev9_branch.sh tools/ci/tests
   .github/workflows release/ci/publish.sh
-  docs/STARPILOT_MIGRATION.md starpilot-upstream.json
+  docs/STARPILOT_MIGRATION.md docs/RECENT_DRIVE_REVIEW.md starpilot-upstream.json
 )
 PATHS=(.)
 for path in "${PRESERVE[@]}"; do

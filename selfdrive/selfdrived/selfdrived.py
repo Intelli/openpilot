@@ -28,7 +28,7 @@ from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 from openpilot.selfdrive.selfdrived.alert_sound import filter_forcing_stop_alert_sound
-from openpilot.selfdrive.controls.lib.ev9_warnings import steering_saturation_warning_allowed
+from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning, ev9_angle_warnings_enabled, steering_saturation_warning_allowed
 
 from openpilot.system.version import get_build_metadata
 from openpilot.system.hardware import HARDWARE
@@ -838,6 +838,23 @@ class SelfdriveD:
     recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
     controlstate = self.sm['controlsState']
     lac = getattr(controlstate.lateralControlState, controlstate.lateralControlState.which())
+    if ev9_angle_warnings_enabled(self.CP) and not self.CP.notCar:
+      if not hasattr(self, "ev9_steering_warning"):
+        self.ev9_steering_warning = EV9SteeringWarning()
+      output = self.sm['carOutput'].actuatorsOutput.steeringAngleDeg
+      warning_inputs_valid = all(getattr(self.sm, check, {}).get(service, True)
+                                 for check in ("valid", "alive", "freq_ok") for service in ("controlsState", "carOutput"))
+      # The controller reports actual manual handoff; numerical angle agreement also occurs at real EPS limits.
+      manual_following = getattr(self.sm['carOutput'].actuatorsOutput, "manualSteeringOverride", False)
+      warning = self.ev9_steering_warning.update(
+        now=self.sm.frame * DT_CTRL, active=lac.active and not CS.standstill and warning_inputs_valid,
+        speed=CS.vEgo, requested=getattr(lac, "steeringAngleDesiredDeg", float("nan")), measured=CS.steeringAngleDeg,
+        output=output, threshold_kph=getattr(self.starpilot_toggles, "hkg_tuning_ev9_alerts_speed_kph", 50),
+        manual_following=manual_following,
+      )
+      if warning:
+        self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
+      return
     if lac.active and not recent_steer_pressed and not self.CP.notCar:
       clipped_speed = max(CS.vEgo, 0.3)
       actual_lateral_accel = controlstate.curvature * (clipped_speed**2)
@@ -848,16 +865,19 @@ class SelfdriveD:
       # TODO: lac.saturated includes speed and other checks, should be pulled out
       if (undershooting and turning and (lac.saturated or commanded_torque_at_max) and
           steering_saturation_warning_allowed(self.CP, lac, CS.vEgo, self.starpilot_toggles)):
-        now = time.monotonic()
-        cooldown_active = switchback_mode_enabled and switchback_mode_cooldown > 0.0
-        if not cooldown_active or (now - self.last_steer_saturated_alert_time) >= switchback_mode_cooldown:
-          if switchback_mode_enabled:
-            self.last_steer_saturated_alert_time = now
+        self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
 
-          if self.starpilot_toggles.goat_scream_alert:
-            self.starpilot_events.add(StarPilotEventName.goatSteerSaturated)
-          else:
-            self.events.add(EventName.steerSaturated)
+  def add_steering_saturation_event(self, switchback_mode_enabled=False, switchback_mode_cooldown=0.0):
+    now = time.monotonic()
+    cooldown_active = switchback_mode_enabled and switchback_mode_cooldown > 0.0
+    if not cooldown_active or (now - self.last_steer_saturated_alert_time) >= switchback_mode_cooldown:
+      if switchback_mode_enabled:
+        self.last_steer_saturated_alert_time = now
+
+      if getattr(self.starpilot_toggles, "goat_scream_alert", False):
+        self.starpilot_events.add(StarPilotEventName.goatSteerSaturated)
+      else:
+        self.events.add(EventName.steerSaturated)
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)

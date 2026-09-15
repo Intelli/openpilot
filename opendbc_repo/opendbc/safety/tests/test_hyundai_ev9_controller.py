@@ -73,19 +73,20 @@ def test_first_transmitted_angle_seeds_panda_history(direct, angle, initially_ac
     assert safety.safety.get_desired_angle_last() == round(angle * 10)
 
 
-def test_stock_forwarding_does_not_initialize_unsent_angle():
+def test_disengaged_ev9_initializes_continuous_inactive_angle():
   c, cs, cc, toggles = setup_controller(False, initialized=False)
   cc.latActive = cc.enabled = False
   _, msgs = c.update(cc.as_reader(), cs, 1_000_000_000, toggles)
-  assert not any(m[0] == 0x110 for m in msgs)
-  assert not c._ev9_initialized_angle_transports
+  assert_steering_payloads(c, msgs, False)
+  assert any(m[0] == 0x110 for m in msgs)
+  assert c._ev9_initialized_angle_transports == {0x110}
   cc.latActive = cc.enabled = True
   _, msgs = c.update(cc.as_reader(), cs, 1_010_000_000, toggles)
-  assert_steering_payloads(c, msgs, False)
+  assert_steering_payloads(c, msgs, True)
   assert c._ev9_initialized_angle_transports == {0x110}
 
 
-def test_resuming_after_stock_forwarding_reinitializes_angle():
+def test_inactive_stream_tracks_wheel_before_reengagement():
   c, cs, cc, toggles = setup_controller(False, initialized=False)
   cs.out.vEgoRaw = cs.out.vEgo = 11.71
   safety = test_hyundai_canfd.TestHyundaiCanfdLKASteeringAltAngleLongEV(methodName="test_lateral_accel_limit")
@@ -93,7 +94,7 @@ def test_resuming_after_stock_forwarding_reinitializes_angle():
   safety.setUp()
   safety._reset_speed_measurement(round(11.71 * 3.6 / 0.03125))
   for frame, (angle, enabled, active) in enumerate([(-4.5, True, False), (-4.5, True, True),
-                                                   (20.0, False, False), (20.0, True, False), (20.0, True, True)]):
+                                                   (20.0, False, False), (20.0, True, True), (20.0, True, True)]):
     cs.mdps_steering_angle = cs.angle_steering_angle = cs.out.steeringAngleDeg = angle
     cc.actuators.steeringAngleDeg = angle
     cc.enabled = cc.latActive = enabled
@@ -102,19 +103,86 @@ def test_resuming_after_stock_forwarding_reinitializes_angle():
     for _ in range(6):
       safety._rx(safety.packer.make_can_msg_safety("MDPS", safety.PT_BUS, {"STEERING_ANGLE": angle, "STEERING_ANGLE_2": angle}))
     if frame == 3:
-      assert safety.safety.get_desired_angle_last() == -45
-      assert not safety._tx(safety._angle_cmd_msg(angle, True, increment_timer=False))
-      safety.safety.set_desired_angle_last(-45)
+      assert safety.safety.get_desired_angle_last() == 200
     _, msgs = c.update(cc.as_reader(), cs, 1_000_000_000 + frame * 10_000_000, toggles)
     selected = [m for m in msgs if m[0] == 0x110]
-    if not enabled:
-      assert not selected
-      assert not c._ev9_initialized_angle_transports
-      continue
     assert_steering_payloads(c, msgs, active)
     assert len(selected) == 1
     addr, data, bus = selected[0]
     assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))
+
+
+def test_ev9_steering_stream_ownership_across_application_and_vehicle_states():
+  c, cs, cc, toggles = setup_controller(False, initialized=False)
+  safety = test_hyundai_canfd.TestHyundaiCanfdLKASteeringAltAngleLongEV(methodName="test_lateral_accel_limit")
+  safety.SAFETY_PARAM = 3473  # Actual EV9 stock-cruise runtime configuration, including AOL-on-engage.
+  safety.setUp()
+  safety.safety.set_alternative_experience(32)
+  safety.safety.set_controls_allowed(False)
+  parser = CANParser(DBC[CAR.KIA_EV9][Bus.pt], [("LKAS_ALT", 0)], c.CAN.ACAN)
+  drive, park, reverse = structs.CarState.GearShifter.drive, structs.CarState.GearShifter.park, structs.CarState.GearShifter.reverse
+  # Button press/release rows model both calibration refusal and explicit OFF with stock main still available.
+  phases = [
+    ("cold", False, False, 0, 0, 5, drive, 5, False),
+    ("main_on_refused", False, False, 1, 1, 5, drive, 5, False),
+    ("calibration_wait", False, False, 0, 1, 5, drive, 5, False),
+    ("aol", False, True, 0, 1, 5, drive, 5, False),
+    ("main_off", False, False, 1, 1, 5, drive, 5, False),
+    ("off_release", False, False, 0, 1, 5, drive, 5, False),
+    ("aol_setting_off", False, False, 0, 1, 5, drive, 5, False),
+    ("brake_pause", False, False, 0, 1, 5, drive, 5, True),
+    ("stopped", True, True, 0, 1, 0, drive, 5, True),
+    ("park", True, True, 0, 1, 0, park, 0, False),
+    ("reverse", True, True, 0, 1, 2, reverse, 7, False),
+    ("resume", False, True, 0, 1, 5, drive, 5, False),
+  ]
+  frame = 0
+  for name, enabled, lat_active, main_pressed, main_available, speed, gear, raw_gear, brake in phases:
+    for tick in range(25):
+      now = 1_000_000_000 + frame * 10_000_000
+      safety.safety.set_timer(frame * 10_000)
+      safety._rx(safety._gear_msg(raw_gear))
+      safety._reset_speed_measurement(round(speed * 3.6 / 0.03125))
+      safety._rx(safety._button_msg(0, main_button=main_pressed if tick == 0 else 0))
+      safety._rx(safety.packer.make_can_msg_safety("SCC_CONTROL", 1, {"ACCMode": 0, "MainMode_ACC": main_available}))
+      safety._rx(safety.packer.make_can_msg_safety("TCS", 1, {"DriverBraking": int(brake)}))
+      angle = 4.5
+      for _ in range(6):
+        safety._rx(safety.packer.make_can_msg_safety("MDPS", 1, {"STEERING_ANGLE": angle, "STEERING_ANGLE_2": angle}))
+      cs.out.gearShifter = gear
+      cs.out.vEgoRaw = cs.out.vEgo = speed
+      cs.out.standstill = speed == 0
+      cs.out.brakePressed = brake
+      cs.mdps_steering_angle = cs.angle_steering_angle = cs.out.steeringAngleDeg = angle
+      cc.enabled, cc.latActive = enabled, lat_active
+      cc.actuators.steeringAngleDeg = angle
+      actuators, msgs = c.update(cc.as_reader(), cs, now, toggles)
+      selected = [m for m in msgs if m[0] == 0x110]
+      assert len(selected) == 1, name
+      active = lat_active and gear == drive and speed > 0 and frame > 0
+      assert_steering_payloads(c, msgs, active)
+      addr, data, bus = selected[0]
+      assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data)), (name, tick)
+      assert safety.safety.safety_fwd_hook(2, 0x110) == -1, name
+      assert safety.safety.safety_fwd_hook(2, 0x362) == -1, name
+      assert safety.safety.safety_fwd_hook(2, 0x1A0) == 0, name  # Factory SCC routing is unchanged.
+      if frame % 5 == 0:
+        suppression = [m for m in msgs if m[0] == 0x362]
+        assert len(suppression) == 1
+        addr2, data2, bus2 = suppression[0]
+        assert safety._tx(libsafety_py.make_CANPacket(addr2, bus2, data2))
+      parser.update([(now, [selected[0]])])
+      values = parser.vl["LKAS_ALT"]
+      assert values["COUNTER"] == frame % 256
+      checksum = parser.dbc.addr_to_msg[addr].sigs["CHECKSUM"]
+      assert values["CHECKSUM"] == checksum.calc_checksum(addr, checksum, bytearray(data))
+      assert values["LKA_StrSnd"] == 0
+      assert values["Damping_Gain"] == 100
+      assert actuators.steeringAngleDeg == pytest.approx(angle)
+      if not active:
+        assert values["ADAS_ACIAnglTqRedcGainVal"] == 0
+        assert values["ADAS_StrAnglReqVal"] == pytest.approx(angle)
+      frame += 1
 
 
 def check_controller_sequence(direct, samples, manual):
@@ -356,7 +424,8 @@ def test_divergent_sensor_manual_handoff_and_recovery(direct, sign):
     cs.lfa_block_msg = {f"BYTE{i}": 0 for i in range(3, 32) if i != 7}
     cs.lfa_block_msg["COUNTER"] = 0
     safety.safety.set_timer(frame * 10_000)
-    _, msgs = c.update(cc.as_reader(), cs, now, toggles)
+    actuators, msgs = c.update(cc.as_reader(), cs, now, toggles)
+    assert actuators.manualSteeringOverride == hands_on
     assert_steering_payloads(c, msgs, not hands_on)
     assert c.apply_angle_last == pytest.approx(expected_angle)
     assert c._ev9_manual.manual_latched == hands_on
@@ -365,3 +434,9 @@ def test_divergent_sensor_manual_handoff_and_recovery(direct, sign):
     addr, data, bus = selected[0]
     assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))
     assert safety.safety.get_controls_allowed()
+
+  # Even a stale true input must not survive an inactive update.
+  cc.actuators.manualSteeringOverride = True
+  cc.latActive = False
+  actuators, _ = c.update(cc.as_reader(), cs, now + 10_000_000, toggles)
+  assert not actuators.manualSteeringOverride
