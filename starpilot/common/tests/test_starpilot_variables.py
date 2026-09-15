@@ -441,9 +441,55 @@ def test_big_ui_exposes_developer_toggles_without_persisting_developer_ui(monkey
 
 
 def test_device_shutdown_hours_convert_directly_to_seconds():
+  assert spv.device_shutdown_seconds(1) == 60 * 60
   assert spv.device_shutdown_seconds(6) == 6 * 60 * 60
   assert spv.device_shutdown_seconds(0) == 60 * 60
   assert spv.device_shutdown_seconds(31) == 30 * 60 * 60
+
+
+def test_compiled_terms_and_shutdown_defaults_preserve_saved_preferences(tmp_path):
+  from openpilot.system.version import terms_version
+
+  params = spv.Params(str(tmp_path), return_defaults=True)
+  raw_params = spv.Params(str(tmp_path))
+  assert raw_params.get("HasAcceptedTerms") is None
+  assert raw_params.get("DeviceShutdown") is None
+  assert params.get("HasAcceptedTerms") == terms_version == "2"
+  assert params.get_int("DeviceShutdown") == spv.DEVICE_SHUTDOWN_DEFAULT_HOURS == 1
+  assert spv.device_shutdown_seconds(params.get_int("DeviceShutdown")) == 3600
+
+  raw_params.put("HasAcceptedTerms", "0")
+  raw_params.put_int("DeviceShutdown", 6)
+  assert params.get("HasAcceptedTerms") == "0"
+  assert spv.device_shutdown_seconds(params.get_int("DeviceShutdown")) == 6 * 3600
+
+
+@pytest.mark.parametrize("metric", [False, True])
+@pytest.mark.parametrize("saved_speed", [None, 25])
+def test_lane_change_threshold_stays_in_mph_when_display_units_change(monkeypatch, tmp_path, metric, saved_speed):
+  from openpilot.common.constants import CV
+
+  params_cls = spv.Params
+
+  def isolated_params(_path=None, memory=False, return_defaults=False):
+    return params_cls(str(tmp_path / ("memory" if memory else "params")), return_defaults=return_defaults)
+
+  monkeypatch.setattr(spv, "Params", isolated_params)
+  monkeypatch.setattr(spv, "HD_PATH", tmp_path / "use_HD")
+  monkeypatch.setattr(spv, "KONIK_PATH", tmp_path / "use_konik")
+  params = isolated_params()
+  params.put_bool("IsMetric", metric)
+  params.put_bool("LaneChanges", True)
+  if saved_speed is not None:
+    params.put_float("MinimumLaneChangeSpeed", saved_speed)
+  variables = spv.StarPilotVariables()
+
+  for display_metric in (metric, not metric, metric):
+    params.put_bool("IsMetric", display_metric)
+    variables.update()
+    assert variables.starpilot_toggles.is_metric is display_metric
+    assert variables.starpilot_toggles.minimum_lane_change_speed == pytest.approx((saved_speed or 20) * CV.MPH_TO_MS)
+    assert variables.starpilot_toggles.device_shutdown_time == 3600
 
 
 def test_favorite_button_flags_map_to_three_slots():

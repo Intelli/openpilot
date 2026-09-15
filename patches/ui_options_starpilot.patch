@@ -300,3 +300,51 @@ index 0000000000000000000000000000000000000000..223c26176d1a7f68e9ed0358c4663286
 +  assert [row.get_value() for row in rows[1:]] == ["10%", "40 km/h", "50 km/h"]
 +  values["HkgSharedAutonomyMode"] = "2"
 +  assert rows[0].get_state()
+diff --git a/starpilot/common/assets/device_settings_layout.json b/starpilot/common/assets/device_settings_layout.json
+index 0ee696c875649466664f9ee2f05eb9029f09d4f2..3237ee3c00b1ffb8ce457618f29e45fed76bd8bd 100644
+--- a/starpilot/common/assets/device_settings_layout.json
++++ b/starpilot/common/assets/device_settings_layout.json
+@@ -195,14 +195,13 @@
+       {
+         "key": "MinimumLaneChangeSpeed",
+         "label": "Minimum Lane Change Speed",
+-        "description": "Lowest speed at which openpilot will change lanes.",
++        "description": "Lowest speed at which openpilot will change lanes. Always specified in mph, regardless of display units.",
+         "data_type": "int",
+         "ui_type": "numeric",
+         "min": 0.0,
+         "max": 99.0,
+         "step": 1.0,
+-        "unit_type": "vehicle_speed",
+-        "metric_max": 150.0,
++        "unit": " mph",
+         "parent_key": "LaneChanges",
+         "settings_tier": "simple"
+       },
+diff --git a/starpilot/system/the_galaxy/tests/test_device_settings_layout.py b/starpilot/system/the_galaxy/tests/test_device_settings_layout.py
+index e5753b877d9abd493af74b7539de7ee6d553811e..15ebd5f458ea51ac2a5bb93ad2b5c84168fff76c 100644
+--- a/starpilot/system/the_galaxy/tests/test_device_settings_layout.py
++++ b/starpilot/system/the_galaxy/tests/test_device_settings_layout.py
+@@ -155,7 +155,7 @@ def test_ford_lateral_controls_are_ford_only_and_galaxy_only():
+ def test_device_shutdown_uses_literal_hours():
+   device_shutdown = _params_by_section(_layout())["Device & Data"]["DeviceShutdown"]
+ 
+-  assert _declared_default("DeviceShutdown") == "6"
++  assert _declared_default("DeviceShutdown") == "1"
+   assert device_shutdown["min"] == 1
+   assert device_shutdown["max"] == 30
+   assert device_shutdown["step"] == 1
+@@ -163,8 +163,12 @@ def test_device_shutdown_uses_literal_hours():
+ 
+ def test_speed_settings_follow_vehicle_units_with_one_unit_steps():
+   sections = _params_by_section(_layout())
++  threshold = next(section["MinimumLaneChangeSpeed"] for section in sections.values() if "MinimumLaneChangeSpeed" in section)
++  assert _declared_default("MinimumLaneChangeSpeed") == "20.0"
++  assert threshold["unit"] == " mph"
++  assert "unit_type" not in threshold
+   speed_keys = {
+-    "MinimumLaneChangeSpeed", "PauseLateralSpeed",
++    "PauseLateralSpeed",
+     "CESpeed", "CESpeedLead", "CESignalSpeed",
+     "CustomCruise", "CustomCruiseLong", "SetSpeedOffset", "PulseGlideSpeedDelta",
+     "Offset1", "Offset2", "Offset3", "Offset4", "Offset5", "Offset6", "Offset7",
