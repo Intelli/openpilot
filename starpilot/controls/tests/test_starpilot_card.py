@@ -279,6 +279,100 @@ def make_wrapped_button_event(button_type, pressed):
   return SimpleNamespace(type=SimpleNamespace(raw=int(button_type)), pressed=pressed)
 
 
+@pytest.mark.parametrize("main_managed", [False, True])
+def test_aol_live_disable_clears_session_and_requires_fresh_enable(monkeypatch, tmp_path, main_managed):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  card = spc.StarPilotCard(
+    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
+    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
+  )
+  sm = make_sm()
+  cs = make_car_state(available=True)
+  out = SimpleNamespace(distancePressed=False)
+  on = make_toggles(always_on_lateral=True, always_on_lateral_lkas=not main_managed,
+                    always_on_lateral_main=main_managed)
+  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)] if not main_managed else []
+  assert card.update(cs, out, sm, on).alwaysOnLateralEnabled
+  card.pause_lateral = True
+  cs.buttonEvents = []
+  off = make_toggles()
+  result = card.update(cs, out, sm, off)
+  assert not result.alwaysOnLateralAllowed
+  assert not result.alwaysOnLateralEnabled
+  assert not result.pauseLateral
+  assert card.always_on_lateral_set  # Startup safety permission is not rewritten.
+
+  # A live switch back on cannot restore the discarded request from cruise main.
+  assert not card.update(cs, out, sm, on).alwaysOnLateralEnabled
+  if main_managed:
+    cs.cruiseState.available = False
+    card.update(cs, out, sm, on)
+    cs.cruiseState.available = True
+  else:
+    cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)]
+  assert card.update(cs, out, sm, on).alwaysOnLateralEnabled
+
+
+def test_aol_live_enable_cannot_bypass_startup_safety_permission(monkeypatch, tmp_path):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
+                           SimpleNamespace(alternativeExperience=0))
+  cs = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
+  result = card.update(cs, SimpleNamespace(distancePressed=False), make_sm(),
+                       make_toggles(always_on_lateral=True, always_on_lateral_lkas=True))
+  assert not result.alwaysOnLateralEnabled
+
+
+@pytest.mark.parametrize(("threshold", "speed", "expected"), [(0.0, 0.5, True), (10 * 0.44704, 4.0, False), (10 * 0.44704, 5.0, True)])
+def test_aol_brake_pause_uses_speed_threshold_without_clearing_session(monkeypatch, tmp_path, threshold, speed, expected):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
+                           SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
+  cs = make_car_state(brake_pressed=True, button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
+  cs.vEgo = speed
+  result = card.update(cs, SimpleNamespace(distancePressed=False), make_sm(),
+                       make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, always_on_lateral_pause_speed=threshold))
+  assert result.alwaysOnLateralAllowed
+  assert result.alwaysOnLateralEnabled is expected
+
+
+def test_ev9_main_aol_off_wins_over_delayed_stock_cruise_engagement(monkeypatch, tmp_path):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  card = spc.StarPilotCard(
+    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9),
+    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
+  )
+  sm = make_sm()
+  out = SimpleNamespace(distancePressed=False)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, main_cruise_aol_toggle=True)
+  cs = make_car_state(available=True, brake_pressed=True, button_events=[SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)])
+  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
+  cs.buttonEvents = []
+  cs.brakePressed = True
+  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
+
+  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
+  result = card.update(cs, out, sm, toggles)
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+  cs.buttonEvents = []
+  cs.cruiseState.enabled = True
+  sm["selfdriveState"].active = True
+  result = card.update(cs, out, sm, toggles)
+  assert not result.alwaysOnLateralAllowed
+  assert not result.alwaysOnLateralEnabled
+  assert result.pauseLateral
+
+  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
+  result = card.update(cs, out, sm, toggles)
+  assert result.alwaysOnLateralAllowed
+  assert not result.pauseLateral
+
+
 @pytest.mark.parametrize(
   ("car_fingerprint", "expect_normalized_release"),
   (
@@ -329,7 +423,7 @@ def test_honda_lkas_button_can_toggle_always_on_lateral(monkeypatch, tmp_path):
   car_state = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
   starpilot_car_state = SimpleNamespace(distancePressed=False)
   sm = make_sm()
-  toggles = make_toggles(always_on_lateral_lkas=True, lkas_allowed_for_aol=True)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, lkas_allowed_for_aol=True)
 
   ret = card.update(car_state, starpilot_car_state, sm, toggles)
 
@@ -870,7 +964,7 @@ def test_honda_lkas_button_pauses_lateral_when_cruise_is_active(monkeypatch, tmp
   starpilot_car_state = SimpleNamespace(distancePressed=False)
   sm = make_sm()
   sm["selfdriveState"].active = True
-  toggles = make_toggles(always_on_lateral_lkas=True, lkas_allowed_for_aol=True)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, lkas_allowed_for_aol=True)
   card.prev_active = True
 
   ret = card.update(car_state, starpilot_car_state, sm, toggles)
@@ -1089,7 +1183,7 @@ def test_honda_main_aol_follows_cruise_main_without_manual_aol_button_mapping(mo
     SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
   )
 
-  toggles = make_toggles(always_on_lateral_main=True, lkas_allowed_for_aol=True)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_main=True, lkas_allowed_for_aol=True)
   ret = card.update(make_car_state(available=True), SimpleNamespace(distancePressed=False), make_sm(), toggles)
 
   assert ret.alwaysOnLateralAllowed is True
@@ -1106,7 +1200,7 @@ def test_hyundai_main_aol_persists_after_brake_disengage_without_manual_aol_butt
   )
 
   sm = make_sm()
-  toggles = make_toggles(always_on_lateral_main=True)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_main=True)
   starpilot_car_state = SimpleNamespace(distancePressed=False)
 
   sm["selfdriveState"].active = True
@@ -1136,7 +1230,7 @@ def test_aol_persists_through_longitudinal_speed_too_low_disable(monkeypatch, tm
 
   ret = card.update(
     make_car_state(available=True), SimpleNamespace(distancePressed=False), sm,
-    make_toggles(always_on_lateral_main=True),
+    make_toggles(always_on_lateral=True, always_on_lateral_main=True),
   )
 
   assert ret.alwaysOnLateralAllowed is True
@@ -1156,7 +1250,7 @@ def test_aol_still_stops_for_other_immediate_disables(monkeypatch, tmp_path):
 
   ret = card.update(
     make_car_state(available=True), SimpleNamespace(distancePressed=False), sm,
-    make_toggles(always_on_lateral_main=True),
+    make_toggles(always_on_lateral=True, always_on_lateral_main=True),
   )
 
   assert ret.alwaysOnLateralAllowed is True
@@ -1172,7 +1266,7 @@ def test_non_button_aol_platform_keeps_main_aol_when_main_cruise_is_mapped(monke
     SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
   )
 
-  toggles = make_toggles(always_on_lateral_main=True, main_cruise_aol_toggle=True)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_main=True, main_cruise_aol_toggle=True)
   ret = card.update(make_car_state(available=True), SimpleNamespace(distancePressed=False), make_sm(), toggles)
 
   assert ret.alwaysOnLateralAllowed is True
@@ -1187,7 +1281,7 @@ def test_main_aol_still_follows_cruise_main_for_other_platforms(monkeypatch, tmp
                            SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
 
   ret = card.update(make_car_state(available=True), SimpleNamespace(distancePressed=False), make_sm(),
-                    make_toggles(always_on_lateral_main=True))
+                    make_toggles(always_on_lateral=True, always_on_lateral_main=True))
 
   assert ret.alwaysOnLateralAllowed is True
   assert ret.alwaysOnLateralEnabled is True
@@ -1203,7 +1297,7 @@ def test_pacifica_hybrid_main_aol_waits_for_set_press(monkeypatch, tmp_path):
   )
 
   sm = make_sm()
-  toggles = make_toggles(always_on_lateral_main=True)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_main=True)
   starpilot_car_state = SimpleNamespace(distancePressed=False)
   car_state = make_car_state(available=True, enabled=False)
 

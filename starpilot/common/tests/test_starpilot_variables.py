@@ -282,6 +282,24 @@ def test_ford_lkas_default_migrates_from_experimental_to_aol_toggle():
   assert params.get_int("LKASButtonControl") == spv.BUTTON_FUNCTIONS["EXPERIMENTAL_MODE"]
 
 
+def test_ev9_main_aol_migration_is_once_only():
+  params = _FakeParams(ints={"LKASButtonControl": 9, "MainCruiseButtonControl": 0}, bools={"AlwaysOnLateral": True})
+  assert spv.migrate_ev9_main_cruise_aol(spv.HYUNDAI_CAR.KIA_EV9, params)
+  assert params.get_int("MainCruiseButtonControl") == 9
+  params.put_int("MainCruiseButtonControl", 0)
+  assert not spv.migrate_ev9_main_cruise_aol(spv.HYUNDAI_CAR.KIA_EV9, params)
+  assert params.get_int("MainCruiseButtonControl") == 0
+
+
+@pytest.mark.parametrize(("model", "aol", "lkas", "main"), [
+  ("OTHER_CAR", True, 9, 0), ("KIA_EV9", False, 9, 0), ("KIA_EV9", True, 5, 0), ("KIA_EV9", True, 9, 10),
+])
+def test_ev9_main_aol_migration_preserves_other_choices(model, aol, lkas, main):
+  params = _FakeParams(ints={"LKASButtonControl": lkas, "MainCruiseButtonControl": main}, bools={"AlwaysOnLateral": aol})
+  spv.migrate_ev9_main_cruise_aol(model, params)
+  assert params.get_int("MainCruiseButtonControl") == main
+
+
 def test_ford_lkas_default_migration_preserves_custom_mapping():
   params = _FakeParams(ints={"LKASButtonControl": spv.BUTTON_FUNCTIONS["BOOKMARK"]})
 
@@ -392,6 +410,23 @@ def test_missing_bounded_value_uses_explicit_default():
   value = variables.get_value("LaneChangeCloseGapSeconds", cast=float, default=1.0, min=0.5, max=3.0)
 
   assert value == 1.0
+
+
+@pytest.mark.parametrize("speed_mph", [0, 10, 100])
+def test_aol_brake_slider_value_round_trips_and_converts_to_mps(monkeypatch, tmp_path, speed_mph):
+  params_cls = spv.Params
+
+  def isolated_params(_path=None, memory=False, return_defaults=False):
+    return params_cls(str(tmp_path / ("memory" if memory else "params")), return_defaults=return_defaults)
+
+  monkeypatch.setattr(spv, "Params", isolated_params)
+  params = isolated_params()
+  params.put_bool("AlwaysOnLateral", True)
+  params.put_int("PauseAOLOnBrake", speed_mph)
+  assert params.get_int("PauseAOLOnBrake") == speed_mph
+
+  variables = spv.StarPilotVariables()
+  assert variables.starpilot_toggles.always_on_lateral_pause_speed == pytest.approx(speed_mph * spv.CV.MPH_TO_MS)
 
 
 def test_disabled_conditional_experimental_toggles_are_off(monkeypatch, tmp_path):

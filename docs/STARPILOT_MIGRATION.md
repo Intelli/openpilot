@@ -217,6 +217,39 @@ The legacy separate lane-turn range control is omitted; StarPilot's shared
 threshold preserves the old effective cutoff. Path styling uses a separate EV9 Path toggle instead
 of renaming the native Rainbow Path control.
 
+### Steering and AOL follow-up fixes
+
+The existing enabled patches also record the route-driven steering and AOL fixes:
+
+- `drive_helpers_starpilot.patch` refreshes command-limit feedback whenever lateral
+  control is active, including AOL-only operation, and clears it when inactive.
+  It also clears AOL state when the live setting is disabled, requires a new
+  request after re-enabling, and prevents a delayed stock-cruise engagement from
+  undoing a main-button off request.
+- `customize_warnings_starpilot.patch` additionally detects sustained EV9 tracking
+  error above 2.5° at requested angles of at least 90°. The existing saturation
+  timer, speed, driver-input, turning-demand and undershoot checks remain required;
+  deactivation clears the timer. This detects EPS undertracking even when the
+  transmitted command itself is not clipped.
+- `custom_defaults_starpilot.patch` registers `PauseAOLOnBrake` as an integer speed.
+  Its UI value is mph and its runtime value is converted to m/s; zero preserves
+  AOL while braking. A one-time EV9 migration assigns main/cruise to AOL toggle
+  only when AOL is enabled, LKAS is already assigned to AOL and main/cruise has no
+  assigned action. Existing explicit main-button assignments are preserved.
+- Vehicle patch `05_steering_and_ev9_limits_starpilot.patch` restores assistance
+  gradually after override reduction, requires ten consecutive safe samples
+  before manual-handoff reentry after an invalid angle/rate sample, and sends an
+  inactive measured-angle command to initialize each angle transport before first
+  activation or resuming after stock forwarding. Vehicle patch `06` records the
+  controller, button-permission and native safety regressions.
+
+These changes retain the existing numeric steering envelopes and StarPilot's
+longitudinal acceleration limits. Focused native-host validation passed 442 tests:
+105 warning/control, 122 AOL/application, 176 EV9, two button-permission, and 37
+Hyundai/icon tests. All 15 enabled patches replay from the recorded baseline and
+reproduce the 67 affected source paths exactly. These checks do not replace the
+GitHub device build or on-vehicle validation.
+
 ### EV9 path appearance
 
 `custom_model_ui_starpilot.patch` adds one shared gradient provider used by both

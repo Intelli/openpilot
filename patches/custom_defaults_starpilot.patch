@@ -1,5 +1,5 @@
 diff --git a/common/params_keys.h b/common/params_keys.h
-index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b39922e88041 100644
+index 7e6ecc9f288f61650b50852d50caf2ef86d09800..9716373d53e278fbc9d16517a294269242df0294 100644
 --- a/common/params_keys.h
 +++ b/common/params_keys.h
 @@ -29,7 +29,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -29,7 +29,15 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"IsOffroad", {CLEAR_ON_MANAGER_START, BOOL}},
      {"IsOnroad", {PERSISTENT, BOOL}},
      {"IsRHD", {PERSISTENT, BOOL, std::nullopt, std::nullopt, 0, SETTINGS_SIMPLE}},
-@@ -224,9 +224,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -200,6 +200,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"AllowImpossibleAcceleration", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"AlwaysOnLateral", {PERSISTENT, BOOL, "1", "0", 0, SETTINGS_SIMPLE}},
+     {"AlwaysOnLateralLKAS", {PERSISTENT, BOOL, "1", "0", 2}},
++    {"EV9MainCruiseAOLMigrated", {PERSISTENT, BOOL, "0", "0"}},
+     {"ApiCache_DriveStats", {PERSISTENT, JSON, "{}", "{}"}},
+     {"AutomaticallyDownloadModels", {PERSISTENT, BOOL, "1", "0", 1}},
+     {"AutomaticUpdates", {PERSISTENT, BOOL, "1", "1", 0}},
+@@ -224,9 +225,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"DisableWideRoad", {PERSISTENT, BOOL, "0", "0", 3}},
      {"CancelModelDownload", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
      {"CancelThemeDownload", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
@@ -42,7 +50,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"CECurves", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
      {"CECurvesLead", {PERSISTENT, BOOL, "0", "0", 1}},
      {"CELead", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
-@@ -322,7 +322,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -322,7 +323,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"GalaxyMobileDefault", {PERSISTENT | DONT_LOG, BOOL, "1", "1", 0, SETTINGS_SIMPLE}},
      {"DeveloperWidgets", {PERSISTENT, BOOL, "1", "0", 3}},
      {"DeviceManagement", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
@@ -51,7 +59,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"DisableOnroadUploads", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"DisableOpenpilotLongitudinal", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},
      {"DiscordUsername", {PERSISTENT, STRING, "", "", 0}},
-@@ -382,7 +382,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -382,7 +383,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"NAPRadarOffset", {PERSISTENT, FLOAT, "0.0", "0.0", 0, SETTINGS_SIMPLE}},
      {"ForceAutoTune", {PERSISTENT, BOOL, "0", "0", 3}},
      {"ForceAutoTuneOff", {PERSISTENT, BOOL, "1", "0", 2}},
@@ -60,7 +68,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"ForceOffroad", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
      {"ForceOnroad", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
      {"ForceStops", {PERSISTENT, BOOL, "1", "0", 2, SETTINGS_SIMPLE}},
-@@ -419,7 +419,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -419,7 +420,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"StarPilotTogglesUpdated", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
      {"GoatScream", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
      {"GoatScreamCriticalAlerts", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
@@ -69,7 +77,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"HideAlerts", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"HideChangingLanesBanner", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"HideDistanceProfileBanner", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
-@@ -458,7 +458,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -458,7 +459,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"LaneChangeCloseGap", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
      {"LaneChangeCloseGapSeconds", {PERSISTENT, FLOAT, "0.6", "0.6", 1, SETTINGS_SIMPLE}},
      {"LaneChangeSmoothing", {PERSISTENT, INT, "5", "10", 1, SETTINGS_SIMPLE}},
@@ -78,7 +86,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"LaneDetectionWidth", {PERSISTENT, FLOAT, "0.0", "0.0", 1, SETTINGS_SIMPLE}},
      {"LaneLinesColor", {PERSISTENT, STRING, "", "", 2, SETTINGS_SIMPLE}},
      {"LaneLinesWidth", {PERSISTENT, FLOAT, "4.0", "2.0", 2, SETTINGS_SIMPLE}},
-@@ -466,7 +466,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -466,7 +467,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"MapsDownloadProgress", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
      {"MapsDownloadSizeCache", {PERSISTENT, STRING, "{}", "{}"}},
      {"LateralTune", {PERSISTENT, BOOL, "1", "0", 1}},
@@ -87,7 +95,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"LeadDetectionThreshold", {PERSISTENT, INT, "35", "50", 3}},
      {"LeadIndicator", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"LeadInfo", {PERSISTENT, BOOL, "0", "0", 3}},
-@@ -545,7 +545,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -545,7 +546,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"NNFFModelName", {CLEAR_ON_MANAGER_START, STRING, "", "", 0}},
      {"NoLogging", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"NoUploads", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
@@ -96,7 +104,16 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"NudgelessLaneChangeOnlyWhenEngaged", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
      {"NumericalTemp", {PERSISTENT, BOOL, "0", "0", 3}},
      {"Offset1", {PERSISTENT, FLOAT, "5.0", "0.0", 0}},
-@@ -595,7 +595,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -573,7 +574,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"PathEdgesColor", {PERSISTENT, STRING, "", "", 2, SETTINGS_SIMPLE}},
+     {"PathEdgeWidth", {PERSISTENT, FLOAT, "20.0", "0.0", 2, SETTINGS_SIMPLE}},
+     {"PathWidth", {PERSISTENT, FLOAT, "6.1", "5.9", 2, SETTINGS_SIMPLE}},
+-    {"PauseAOLOnBrake", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
++    {"PauseAOLOnBrake", {PERSISTENT, INT, "0", "0", 1, SETTINGS_SIMPLE}},
+     {"PauseLateralOnSignal", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
+     {"PauseLateralSpeed", {PERSISTENT, FLOAT, "0.0", "0.0", 1, SETTINGS_SIMPLE}},
+     {"LateralResumeDelay", {PERSISTENT, FLOAT, "0.0", "0.0", 1, SETTINGS_SIMPLE}},
+@@ -595,7 +596,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"QOLVisuals", {PERSISTENT, BOOL, "1", "0", 0, SETTINGS_SIMPLE}},
      {"RadarTakeoffs", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"RadarTracksUI", {PERSISTENT, BOOL, "0", "0", 3}},
@@ -105,7 +122,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"RandomEvents", {PERSISTENT, BOOL, "0", "0", 1}},
      {"RandomThemes", {PERSISTENT, BOOL, "0", "0", 1}},
      {"RandomThemesHolidays", {PERSISTENT, BOOL, "0", "0", 1}},
-@@ -654,7 +654,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -654,7 +655,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"SidebarMetrics", {PERSISTENT, BOOL, "0", "0", 3}},
      {"SidebarOpen", {PERSISTENT, BOOL, "0", "0", 0}},
      {"SignalAnimation", {PERSISTENT, STRING, "stock", "stock", 0}},
@@ -114,7 +131,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"SignalToDownload", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
      {"SimpleMode", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},
      {"SLCAbbreviatedSources", {PERSISTENT, BOOL, "0", "0", 3}},
-@@ -719,7 +719,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -719,7 +720,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"StockDongleId", {PERSISTENT, STRING, "", ""}},
      {"StopAccel", {PERSISTENT, FLOAT, "0.0", "0.0", 3}},
      {"StopAccelStock", {PERSISTENT, FLOAT, "0.0", "0.0", 3}},
@@ -123,7 +140,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"StoppingDecelRate", {PERSISTENT, FLOAT, "0.0", "0.0", 3}},
      {"StoppingDecelRateStock", {PERSISTENT, FLOAT, "0.0", "0.0", 3}},
      {"StarButtonControl", {PERSISTENT, INT, "0", "0", 2, SETTINGS_SIMPLE}},
-@@ -748,7 +748,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -748,7 +749,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"TruckTuning", {PERSISTENT, BOOL, "0", "0", 3}},
      {"TuningLevel", {PERSISTENT, INT, "0", "0", 0}},
      {"TuningLevelConfirmed", {PERSISTENT, BOOL, "0", "0", 0}},
@@ -132,7 +149,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b399
      {"TurnSteeringLimitMuteSpeed", {PERSISTENT, INT, "0", "0", 0}},
      {"UnlockDoors", {PERSISTENT, BOOL, "1", "0", 0}},
      {"Updated", {PERSISTENT, STRING, "0", "0"}},
-@@ -793,4 +793,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -793,4 +794,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"WheelIcon", {PERSISTENT, STRING, "stock", "stock", 0}},
      {"WheelSpeed", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"WheelToDownload", {CLEAR_ON_MANAGER_START, STRING, "", ""}},

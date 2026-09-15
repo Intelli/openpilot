@@ -3,7 +3,7 @@ import math
 from cereal import log
 from opendbc.car.subaru.values import CAR as SUBARU_CAR
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
-from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_angle_warnings_enabled
+from openpilot.selfdrive.controls.lib.ev9_warnings import EV9_HIGH_ANGLE_WARNING_DEG, ev9_angle_warnings_enabled
 from openpilot.selfdrive.controls.lib.steering_saturation import STEER_ANGLE_SATURATION_THRESHOLD
 
 _ASCENT_ANGLE_TRACKING_GAIN = 0.25
@@ -52,12 +52,14 @@ def _ascent_low_speed_angle_target(target_angle: float, previous_target: float,
 class LatControlAngle(LatControl):
   def __init__(self, CP, CI, dt):
     super().__init__(CP, CI, dt)
-    self.sat_check_min_speed = 2.5 / 3.6 if ev9_angle_warnings_enabled(CP) else 5.
+    self.is_ev9 = ev9_angle_warnings_enabled(CP)
+    self.sat_check_min_speed = 2.5 / 3.6 if self.is_ev9 else 5.
     self.use_steer_limited_by_safety = CP.brand in ("tesla", "hyundai")
     self.is_ascent = CP.carFingerprint == SUBARU_CAR.SUBARU_ASCENT_2023
     self.ascent_angle_target = None
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay, calibrated_pose, model_data, starpilot_toggles):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited,
+             lat_delay, calibrated_pose, model_data, starpilot_toggles):
     angle_log = log.ControlsState.LateralAngleState.new_message()
 
     if not active:
@@ -89,12 +91,19 @@ class LatControlAngle(LatControl):
     if self.use_steer_limited_by_safety:
       # these cars' carcontrollers calculate max lateral accel and jerk, so we can rely on carOutput for saturation
       angle_control_saturated = steer_limited_by_safety
+      if self.is_ev9 and abs(angle_steers_des) >= EV9_HIGH_ANGLE_WARNING_DEG:
+        # The EPS can stop following a high-angle request even when the transmitted command is not clipped.
+        angle_control_saturated |= abs(angle_steers_des - CS.steeringAngleDeg) > STEER_ANGLE_SATURATION_THRESHOLD
     else:
       # for cars which use a method of limiting torque such as a torque signal (Nissan and Toyota)
       # or relying on EPS (Ford Q3), carOutput does not capture maxing out torque  # TODO: this can be improved
       angle_error = angle_steers_des - CS.steeringAngleDeg
       angle_control_saturated = abs(angle_error) > STEER_ANGLE_SATURATION_THRESHOLD
-    angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited))
+    if active:
+      angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited))
+    else:
+      self.reset()
+      angle_log.saturated = False
     angle_log.steeringAngleDeg = float(CS.steeringAngleDeg)
     angle_log.steeringAngleDesiredDeg = angle_steers_des
     return 0, float(angle_steers_des), angle_log

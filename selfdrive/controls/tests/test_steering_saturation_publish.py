@@ -1,3 +1,4 @@
+import math
 from types import SimpleNamespace
 
 import cereal.messaging as messaging
@@ -6,8 +7,15 @@ import pytest
 from cereal import car, custom, log
 from opendbc.car.tesla.interface import CarInterface
 from opendbc.car.tesla.values import CAR, TeslaSafetyFlags
+from opendbc.car.hyundai.interface import CarInterface as HyundaiInterface
+from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
 from openpilot.selfdrive.controls import controlsd
 from openpilot.selfdrive.controls.controlsd import Controls
+from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
+from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
+from openpilot.selfdrive.selfdrived.events import Events
+from openpilot.selfdrive.selfdrived.selfdrived import SelfdriveD
+from openpilot.selfdrive.selfdrived.state import StateMachine
 
 
 REQUESTED_ANGLE = -14.5
@@ -160,3 +168,108 @@ def test_replay_genuine_limiter_error_remains_visible(monkeypatch):
   controls = run_publish(monkeypatch, True, FRESH_TIME_NANOS, real_limit_error=3.0)
 
   assert controls.steer_limited_by_safety
+
+
+@pytest.mark.parametrize("normal_active", [False, True])
+@pytest.mark.parametrize("angle_control", [False, True])
+def test_lateral_inactive_clears_previous_limit_feedback(normal_active, angle_control):
+  controls = make_controls(make_car_output(), make_starpilot_car_control(), FRESH_TIME_NANOS)
+  cp = controls.CP.as_builder()
+  if not angle_control:
+    cp.steerControlType = car.CarParams.SteerControlType.torque
+    cp.lateralTuning.init("torque")
+  controls.CP = cp.as_reader()
+  state = log.SelfdriveState.new_message()
+  state.active = normal_active
+  controls.sm.messages["selfdriveState"] = state.as_reader()
+  controls.steer_limited_by_safety = True
+  cc = car.CarControl.new_message()
+  cc.enabled = normal_active
+  cc.latActive = False
+  cc.actuators.steeringAngleDeg = REQUESTED_ANGLE
+  lac_log = (log.ControlsState.LateralAngleState if angle_control else log.ControlsState.LateralTorqueState).new_message()
+
+  controls.publish(cc, lac_log)
+
+  assert not controls.steer_limited_by_safety
+
+
+@pytest.mark.parametrize("sign", [-1, 1])
+@pytest.mark.parametrize("requested,output,measured,pressed,speed,active,expected", [
+  (120, 90, 90, False, 10, True, True),  # Controller command clipping during AOL.
+  (120, 120, 90, False, 10, True, True),  # EPS undertracking without command clipping.
+  (120, 120, 120, False, 10, True, False),
+  (89, 89, 45, False, 10, True, False),
+  (120, 90, 90, True, 10, True, False),
+  (120, 90, 90, False, 0.5, True, False),
+  (120, 90, 90, False, 10, False, False),
+])
+def test_ev9_aol_feedback_reaches_visible_audible_alert(sign, requested, output, measured, pressed, speed, active, expected):
+  cp = HyundaiInterface.get_non_essential_params(HYUNDAI_CAR.KIA_EV9)
+  car_output = make_car_output()
+  car_output.actuatorsOutput.steeringAngleDeg = sign * output
+  controls = make_controls(car_output, make_starpilot_car_control(), FRESH_TIME_NANOS)
+  controls.CP = cp.as_reader()
+  controls.sm.messages["selfdriveState"] = log.SelfdriveState.new_message().as_reader()
+  cs = car.CarState.new_message()
+  cs.canValid = True
+  cs.vEgo = speed
+  cs.steeringAngleDeg = sign * measured
+  cs.steeringPressed = pressed
+  controls.sm.messages["carState"] = cs.as_reader()
+  controls.LaC = LatControlAngle(cp, None, 0.01)
+  controls.curvature = sign * 0.015
+  controls.starpilot_toggles = SimpleNamespace(goat_scream_alert=False)
+  model = log.ModelDataV2.new_message()
+  model.action.desiredCurvature = sign * 0.04
+  controls.sm.messages["modelV2"] = model.as_reader()
+  cc = car.CarControl.new_message()
+  cc.enabled = False
+  cc.latActive = active
+  cc.actuators.steeringAngleDeg = sign * requested
+
+  selfdrive = SelfdriveD.__new__(SelfdriveD)
+  selfdrive.CP = cp.as_reader()
+  selfdrive.sm = controls.sm
+  selfdrive.starpilot_toggles = controls.starpilot_toggles
+  selfdrive.events = Events()
+  selfdrive.starpilot_events = Events(starpilot=True)
+  selfdrive.state_machine = StateMachine()
+  selfdrive.AM = AlertManager()
+  selfdrive.starpilot_AM = AlertManager()
+  selfdrive.personality = log.LongitudinalPersonality.standard
+  selfdrive.is_metric = True
+  selfdrive.last_steering_pressed_frame = 0
+  selfdrive.last_steer_saturated_alert_time = 0.0
+  vm = SimpleNamespace(get_steer_from_curvature=lambda *args: math.radians(sign * requested))
+
+  for frame in range(300, 400):
+    controls.sm.frame = frame
+    _, _, lac_log = controls.LaC.update(active, cs, vm, SimpleNamespace(roll=0.0, angleOffsetDeg=0.0),
+                                      controls.steer_limited_by_safety, 0.04, False, 0, None, model, controls.starpilot_toggles)
+    controls.publish(cc, lac_log)
+    controls.sm.messages["controlsState"] = controls.pm.sent["controlsState"].controlsState.as_reader()
+    selfdrive.events.clear()
+    selfdrive.starpilot_events.clear()
+    selfdrive.update_steering_saturation_events(cs)
+    selfdrive.enabled, selfdrive.active = selfdrive.state_machine.update(selfdrive.events, selfdrive.starpilot_events, active)
+    selfdrive.update_alerts(cs)
+
+  assert not selfdrive.enabled and not selfdrive.active
+  assert not controls.sm["selfdriveState"].active
+  assert (log.OnroadEvent.EventName.steerSaturated in selfdrive.events.names) is expected
+  if expected:
+    assert selfdrive.AM.current_alert.alert_text_1 == "Turn Exceeds Steering Limit"
+    assert selfdrive.AM.current_alert.audible_alert == log.SelfdriveState.AudibleAlert.promptRepeat
+  else:
+    assert selfdrive.AM.current_alert.alert_text_1 == ""
+    assert selfdrive.AM.current_alert.audible_alert == log.SelfdriveState.AudibleAlert.none
+
+  # Deactivation clears both the feedback and its timer, rather than carrying an old warning into the next session.
+  cc.latActive = False
+  _, _, lac_log = controls.LaC.update(False, cs, vm, SimpleNamespace(roll=0.0, angleOffsetDeg=0.0),
+                                    True, 0.04, True, 0, None, model, controls.starpilot_toggles)
+  controls.publish(cc, lac_log)
+  assert not controls.steer_limited_by_safety
+  assert not lac_log.saturated
+  assert controls.LaC.sat_time == 0

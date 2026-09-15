@@ -63,6 +63,11 @@ def apply_override_gain(base_gain: float, override_active: bool, effort_scale: f
   return min(1.0, max(0.10, round(base_gain * scale / 0.004) * 0.004))
 
 
+def limit_gain_recovery(gain: float, previous_gain: float) -> float:
+  """Reduce assistance immediately; restore it at the normal gain ramp above the EPS floor."""
+  return min(gain, max(0.10, previous_gain + 0.004))
+
+
 @dataclass(frozen=True)
 class EV9ManualControlOutput:
   override_active: bool = False
@@ -79,6 +84,8 @@ class EV9ManualControlState:
   reentry_guard_timer: float = 0.0
   grip_dwell_timer: float = 0.0
   keep_active_latched: bool = False
+  envelope_reentry_pending: bool = False
+  envelope_safe_frames: int = 0
 
   def reset(self):
     self.override_active = False
@@ -88,6 +95,26 @@ class EV9ManualControlState:
     self.reentry_guard_timer = 0.0
     self.grip_dwell_timer = 0.0
     self.keep_active_latched = False
+    self.envelope_reentry_pending = False
+    self.envelope_safe_frames = 0
+
+  def allow_manual_request(self, eligible: bool, within_bounds: bool) -> bool:
+    """After a rejected wheel sample, require 100 ms of safe samples before reentry."""
+    if not eligible:
+      self.envelope_reentry_pending = False
+      self.envelope_safe_frames = 0
+      return False
+    if not within_bounds:
+      self.envelope_reentry_pending = True
+      self.envelope_safe_frames = 0
+      return False
+    if self.envelope_reentry_pending:
+      self.envelope_safe_frames += 1
+      if self.envelope_safe_frames < 10:
+        return False
+      self.envelope_reentry_pending = False
+      self.envelope_safe_frames = 0
+    return True
 
   def update(self, config: EV9AngleConfig, *, lat_active, steering_torque, steering_pressed, hands_on,
              v_ego, desired_angle, measured_angle, steer_threshold) -> EV9ManualControlOutput:
