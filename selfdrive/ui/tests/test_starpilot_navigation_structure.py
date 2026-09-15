@@ -164,9 +164,9 @@ def test_root_driving_model_opens_directly_and_sub_panel_depth_is_additive(monke
 def test_breadcrumb_path_has_no_intermediate_folders(monkeypatch):
   layout, _ = _make_layout(monkeypatch)
   monkeypatch.setattr(gui_app, "_nav_stack", [layout], raising=False)
-  assert BreadcrumbController.build_path() == [("StarPilot", "action:home")]
+  assert BreadcrumbController.build_path() == [("Vehicle", "action:home")]
   _click_title(layout, "Map Data")
-  assert BreadcrumbController.build_path() == [("StarPilot", "action:home"), ("Map Data", "action:panel")]
+  assert BreadcrumbController.build_path() == [("Vehicle", "action:home"), ("Map Data", "action:panel")]
 
 
 def test_home_breadcrumb_clears_hub_path_panel_stack_and_active_panel(monkeypatch):
@@ -186,7 +186,7 @@ def test_home_breadcrumb_clears_hub_path_panel_stack_and_active_panel(monkeypatc
   assert layout._panel_stack == []
   assert layout._current_panel == StarPilotPanelType.MAIN
   assert maps_panel.hide_count == 1
-  assert BreadcrumbController.build_path() == [("StarPilot", "action:home")]
+  assert BreadcrumbController.build_path() == [("Vehicle", "action:home")]
 
 
 def test_navigation_start_is_the_summary_action_not_a_duplicate_rail_target():
