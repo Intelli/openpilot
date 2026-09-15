@@ -79,7 +79,7 @@ def _lock_doors_timer_labels():
 
 
 SECTION_GAP = AETHER_LIST_METRICS.section_gap
-ROW_HEIGHT = 125.0
+ROW_HEIGHT = float(AETHER_LIST_METRICS.row_height)
 PANEL_STYLE = DEFAULT_PANEL_STYLE
 
 
@@ -100,7 +100,7 @@ class VehicleSettingsManagerView(PanelManagerView):
 
   @property
   def vertical_scrolling_disabled(self) -> bool:
-    return True
+    return False
 
   def show_event(self):
     super().show_event()
@@ -199,9 +199,9 @@ class VehicleSettingsManagerView(PanelManagerView):
       subtitle_size = 26
       value_size = 28
     else:
-      title_size = 36
-      subtitle_size = 28
-      value_size = 30
+      title_size = 50
+      subtitle_size = 36
+      value_size = 40
 
     if row.type == "value" or row.id.startswith("combo:"):
       value_text = row.get_value() if row.get_value else ""
@@ -268,8 +268,7 @@ class VehicleSettingsManagerView(PanelManagerView):
       y += SECTION_GAP
 
       if self._toggle_grid.tiles:
-        if not PANEL_STYLE.toggle_row_mode:
-          self._toggle_grid._columns = 3
+        self._toggle_grid._columns = 1
         avail = width - 24
         th = self.measure_page_grid_height(self._toggle_grid, avail)
         group_h = th + 24 + GROUP_TOP_INSET + GROUP_HEADER_TOTAL_HEIGHT
@@ -291,7 +290,7 @@ class VehicleSettingsManagerView(PanelManagerView):
         col_w = self._column_width(width)
         tiles_h = self.measure_page_grid_height(self._toggle_grid, col_w - 24)
       else:
-        self._toggle_grid._columns = 2
+        self._toggle_grid._columns = 1
         tiles_h = self.measure_page_grid_height(self._toggle_grid, width - 24)
 
     if self._uses_two_columns(width):
@@ -313,11 +312,12 @@ class VehicleSettingsManagerView(PanelManagerView):
       self._container_h = total_h
       return total_h
 
+    self._left_row_height = ROW_HEIGHT
     identity_natural_h = GROUP_HEADER_TOTAL_HEIGHT + GROUP_TOP_INSET + len(identity_rows) * ROW_HEIGHT
     steering_natural_h = GROUP_HEADER_TOTAL_HEIGHT + GROUP_TOP_INSET + len(steering_rows) * ROW_HEIGHT
     left_natural_h = identity_natural_h + SECTION_GAP + steering_natural_h
     tiles_overhead = GROUP_TOP_INSET + GROUP_HEADER_TOTAL_HEIGHT + 24 if tiles_h else 0
-    return left_natural_h + tiles_h + tiles_overhead
+    return left_natural_h + SECTION_GAP + tiles_h + tiles_overhead
 
   def _build_driving_toggles(self) -> list[dict]:
     cs = starpilot_state.car_state

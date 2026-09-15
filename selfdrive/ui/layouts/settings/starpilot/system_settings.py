@@ -117,7 +117,7 @@ class SystemSettingsManagerView(PanelManagerView):
 
   @property
   def vertical_scrolling_disabled(self) -> bool:
-    return True
+    return False
 
   @property
   def _hit_rect(self) -> rl.Rectangle:
@@ -489,6 +489,8 @@ class SystemSettingsManagerView(PanelManagerView):
     draw_custom_icon("first_aid", icon_x, icon_y, s, icon_color)
 
   def _measure_content_height(self, width: float) -> float:
+    for key in self._display_slider_keys + self._power_slider_keys:
+      self._adjustor_rows[key].custom_row_height = None
     display_h = self._slider_section_height(self._display_slider_keys, width) + GROUP_TOP_INSET + GROUP_HEADER_TOTAL_HEIGHT
     power_h = self._slider_section_height(self._power_slider_keys, width) + GROUP_TOP_INSET + GROUP_HEADER_TOTAL_HEIGHT
 

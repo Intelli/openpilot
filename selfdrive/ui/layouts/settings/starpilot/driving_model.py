@@ -62,10 +62,10 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   SECTION_GAP,
   SECTION_HEADER_HEIGHT,
   SECTION_HEADER_GAP,
-  ROW_HEIGHT,
 )
+ROW_HEIGHT = 200.0
 ROW_RADIUS = AETHER_LIST_METRICS.row_radius
-ACTION_WIDTH = AETHER_LIST_METRICS.action_width
+ACTION_WIDTH = 300
 BUTTON_HEIGHT = AETHER_LIST_METRICS.header_button_height
 FADE_HEIGHT = AETHER_LIST_METRICS.fade_height
 DRIVING_MODEL_METRICS = replace(AETHER_LIST_METRICS, header_height=0)
@@ -76,8 +76,8 @@ BANNER_HEIGHT = 128.0
 BANNER_GAP = 14.0
 HEADER_BUTTON_HEIGHT = 80.0
 HEADER_BUTTON_GAP_Y = 14.0
-MANAGEMENT_STRIP_HEIGHT = 64.0
-MANAGEMENT_PILL_HEIGHT = 44.0
+MANAGEMENT_STRIP_HEIGHT = 88.0
+MANAGEMENT_PILL_HEIGHT = 72.0
 EMPTY_STATE_HEIGHT = 240.0
 _SORT_MODES = ("alphabetical", "date", "date_oldest", "favorites", "community_picks")
 _SORT_LABELS = {
@@ -152,7 +152,7 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
         lambda: self._controller.random_model_button_label(),
         self._controller.toggle_model_randomizer,
         emphasized=False,
-        font_size=28,
+        font_size=36,
       )
     )
     self._primary_header_button.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
@@ -377,13 +377,13 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
       draw_action_pill(bl_pill, bl_label,
                        with_alpha(AetherListColors.PRIMARY, 18),
                        with_alpha(AetherListColors.PRIMARY, 50),
-                       AetherListColors.HEADER, font_size=28, roundness=0.35)
+                       AetherListColors.HEADER, font_size=36, roundness=0.35)
       self._interactive_rects["mgmt:blacklist"] = bl_pill
       rt_pill = rl.Rectangle(left + bl_w + gap, pill_y, rt_w, pill_h)
       draw_action_pill(rt_pill, tr("Ratings"),
                        with_alpha(AetherListColors.PRIMARY, 18),
                        with_alpha(AetherListColors.PRIMARY, 50),
-                       AetherListColors.HEADER, font_size=28, roundness=0.35)
+                       AetherListColors.HEADER, font_size=36, roundness=0.35)
       self._interactive_rects["mgmt:ratings"] = rt_pill
       return
 
@@ -410,7 +410,7 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
       else:
         fill = rl.Color(255, 255, 255, 8)
       border = with_alpha(AetherListColors.PRIMARY, 80) if is_active else rl.Color(255, 255, 255, 24)
-      draw_action_pill(seg_rect, label, fill, border, AetherListColors.HEADER, font_size=28, roundness=0.3)
+      draw_action_pill(seg_rect, label, fill, border, AetherListColors.HEADER, font_size=36, roundness=0.3)
       self._interactive_rects[f"sortopt:{mode}"] = seg_rect
 
   def _get_sections(self) -> list[tuple[str, list[ModelCatalogEntry]]]:
@@ -548,8 +548,8 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
         self._draw_download_action(action_rect)
 
   def _draw_model_info(self, rect: rl.Rectangle, entry: ModelCatalogEntry, current: bool):
-    title_size = 36
-    meta_size = 26
+    title_size = 50
+    meta_size = 36
     inter_gap = 6
     total_h = title_size + meta_size + inter_gap
     start_y = rect.y + (rect.height - total_h) / 2
@@ -595,9 +595,9 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
     center_y = rect.y + 42
     draw_download_icon(rl.Vector2(center_x, center_y), AetherListColors.HEADER)
     gui_label(
-      rl.Rectangle(rect.x + 16, rect.y + 72, rect.width - 32, 32),
+      rl.Rectangle(rect.x + 16, rect.y + 72, rect.width - 32, 44),
       tr("Download"),
-      26,
+      36,
       AetherListColors.SUBTEXT,
       FontWeight.MEDIUM,
       alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
@@ -610,9 +610,9 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
 
     label = progress_text if progress_text else tr("Downloading")
     gui_label(
-      rl.Rectangle(rect.x + 12, rect.y + 72, rect.width - 24, 32),
+      rl.Rectangle(rect.x + 12, rect.y + 72, rect.width - 24, 44),
       label,
-      24,
+      36,
       AetherListColors.SUBTEXT,
       FontWeight.MEDIUM,
       alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
@@ -624,15 +624,15 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
       center_y = rect.y + 42
       draw_overflow_dots(rl.Vector2(center_x, center_y), rl.Color(AetherListColors.HEADER.r, AetherListColors.HEADER.g, AetherListColors.HEADER.b, min(AetherListColors.HEADER.a, 200)))
       gui_label(
-        rl.Rectangle(rect.x + 16, rect.y + 72, rect.width - 32, 32),
+        rl.Rectangle(rect.x + 16, rect.y + 72, rect.width - 32, 44),
         tr("Options"),
-        26,
+        36,
         AetherListColors.SUBTEXT,
         FontWeight.MEDIUM,
         alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
       )
     else:
-      btn_h = 48
+      btn_h = 72
       gap = 8
       total_h = btn_h * 2 + gap
       start_y = rect.y + (rect.height - total_h) / 2
@@ -650,7 +650,7 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
         AetherListColors.DANGER_SOFT,
         rl.Color(AetherListColors.DANGER.r, AetherListColors.DANGER.g, AetherListColors.DANGER.b, min(AetherListColors.DANGER.a, 70)),
         AetherListColors.DANGER,
-        font_size=24,
+        font_size=36,
       )
 
       is_fav = entry.user_favorite
@@ -658,19 +658,19 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
       fav_border = rl.Color((210 if is_fav else PANEL_STYLE.accent.r), (100 if is_fav else PANEL_STYLE.accent.g), (130 if is_fav else PANEL_STYLE.accent.b), min((255 if is_fav else PANEL_STYLE.accent.a), 70))
       fav_text_color = rl.Color(210, 100, 130, 255) if is_fav else PANEL_STYLE.accent
       fav_label = tr("Unfavorite") if is_fav else tr("Favorite")
-      draw_action_pill(fav_rect, fav_label, fav_fill, fav_border, fav_text_color, font_size=24)
+      draw_action_pill(fav_rect, fav_label, fav_fill, fav_border, fav_text_color, font_size=36)
 
   def _draw_current_action(self, rect: rl.Rectangle):
-    chip_h = 52
+    chip_h = 72
     chip_w = rect.width - 56
     chip_rect = rl.Rectangle(rect.x + 28, rect.y + (rect.height - chip_h) / 2, chip_w, chip_h)
-    AetherChip(tr("Current"), PANEL_STYLE.current_fill, PANEL_STYLE.current_border, AetherListColors.HEADER, font_size=26).render(chip_rect)
+    AetherChip(tr("Current"), PANEL_STYLE.current_fill, PANEL_STYLE.current_border, AetherListColors.HEADER, font_size=36).render(chip_rect)
 
   def _draw_protected_action(self, rect: rl.Rectangle):
-    chip_h = 52
+    chip_h = 72
     chip_w = rect.width - 56
     chip_rect = rl.Rectangle(rect.x + 28, rect.y + (rect.height - chip_h) / 2, chip_w, chip_h)
-    AetherChip(tr("Protected"), rl.Color(255, 255, 255, 10), AetherListColors.MUTED, AetherListColors.SUBTEXT, font_size=26).render(chip_rect)
+    AetherChip(tr("Protected"), rl.Color(255, 255, 255, 10), AetherListColors.MUTED, AetherListColors.SUBTEXT, font_size=36).render(chip_rect)
 
   def _draw_scrollbar(self, rect: rl.Rectangle):
     self._scrollbar.render(rect, self._content_height, self._scroll_offset)

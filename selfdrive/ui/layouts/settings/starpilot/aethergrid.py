@@ -21,8 +21,8 @@ PLATE_TAU = 0.060
 SLIDER_BUTTON_SIZE = 87
 TILE_RADIUS_PX = 18.0
 MIN_TILE_WIDTH = 300
-TOGGLE_ROW_HEIGHT = 128
-TOGGLE_MIN_HEIGHT = 80
+TOGGLE_ROW_HEIGHT = 170
+TOGGLE_MIN_HEIGHT = 170
 
 _HUD_BG_ON = rl.Color(12, 10, 18, 230)
 _HUD_BG_DISABLED = rl.Color(6, 5, 10, 235)
@@ -250,9 +250,9 @@ def truncate_text_ellipsis(
 
 
 class AetherListColors:
-  PANEL_BG = rl.Color(8, 8, 10, 255)
+  PANEL_BG = rl.Color(0, 0, 0, 255)
   PANEL_BORDER = rl.Color(255, 255, 255, 22)
-  PANEL_GLOW = rl.Color(92, 116, 151, 34)
+  PANEL_GLOW = rl.Color(0, 0, 0, 0)
   HEADER = rl.Color(236, 242, 250, 255)
   SUBTEXT = rl.Color(200, 210, 225, 255)
   MUTED = rl.Color(160, 170, 185, 255)
@@ -260,11 +260,11 @@ class AetherListColors:
   ROW_BORDER = rl.Color(255, 255, 255, 0)
   ROW_SEPARATOR = rl.Color(255, 255, 255, 16)
   ROW_HOVER = rl.Color(255, 255, 255, 8)
-  CURRENT_BG = rl.Color(139, 92, 246, 18)
-  CURRENT_BORDER = rl.Color(139, 92, 246, 44)
+  CURRENT_BG = rl.Color(51, 171, 76, 60)
+  CURRENT_BORDER = rl.Color(51, 171, 76, 255)
   ACTION_BG = rl.Color(255, 255, 255, 0)
   ACTION_SEPARATOR = rl.Color(255, 255, 255, 18)
-  PRIMARY = hex_to_color("#8B5CF6")
+  PRIMARY = rl.Color(51, 171, 76, 255)
   PRIMARY_SOFT = rl.Color(89, 116, 151, 48)
   DANGER = rl.Color(173, 78, 90, 255)
   DANGER_SOFT = rl.Color(173, 78, 90, 44)
@@ -287,19 +287,19 @@ class AetherListMetrics:
   section_gap: int = 24
   section_header_height: int = 44
   section_header_gap: int = 10
-  row_height: int = 128
-  utility_row_height: int = 128
+  row_height: int = 170
+  utility_row_height: int = 170
   row_radius: float = 0.12
   action_width: int = 235
   header_button_height: int = 84
   header_button_gap: int = 14  # noqa: used implicitly by driving_model
   fade_height: int = 24
   content_right_gutter: int = 0
-  toggle_width: int = 113
-  toggle_height: int = 61
-  toggle_right_inset: int = 49
-  adjustor_row_height: int = 136
-  adjustor_row_active_height: int = 223
+  toggle_width: int = 160
+  toggle_height: int = 80
+  toggle_right_inset: int = 24
+  adjustor_row_height: int = 170
+  adjustor_row_active_height: int = 265
   adjustor_preset_height: int = 64
   adjustor_preset_gap: int = 14
   adjustor_scrubber_height: int = 75
@@ -447,35 +447,12 @@ def init_list_panel(rect: rl.Rectangle, style: PanelStyle | None = None, metrics
   return frame, scroll_rect, content_width
 
 
-def draw_hud_background(rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0, *, radius_px: float = 100, bg_color: rl.Color | None = None) -> tuple[rl.Rectangle, rl.Color]:
-  snapped = snap_rect(rect)
-  rx, ry, rw, rh = int(snapped.x), int(snapped.y), int(snapped.width), int(snapped.height)
-  face = rl.Rectangle(rx, ry, rw, rh)
-
-  off_border = _HUD_BORDER_OFF
-
-  for i in range(4, 0, -1):
-    if glow < 0.1 and i == 4:
-      off = 6.0
-      a = 6
-    else:
-      off = i * 2.5 * glow
-      a = int(25 * (1.0 - i / 5) * glow)
-    gr = rl.Rectangle(rx - off, ry - off, rw + off * 2, rh + off * 2)
-    draw_rounded_fill(gr, rl.Color(accent.r, accent.g, accent.b, max(0, min(255, a))), radius_px=radius_px)
-
-  draw_rounded_fill(face, bg_color if bg_color is not None else _HUD_BG_ON, radius_px=radius_px)
-
-  gl = max(glow, 0.18)
-  bc = rl.Color(
-    max(0, min(255, int(off_border.r + (accent.r - off_border.r) * gl))),
-    max(0, min(255, int(off_border.g + (accent.g - off_border.g) * gl))),
-    max(0, min(255, int(off_border.b + (accent.b - off_border.b) * gl))),
-    255)
-  draw_rounded_stroke(face, bc, radius_px=radius_px)
-
+def draw_hud_background(rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0, *,
+                        radius_px: float = 100, bg_color: rl.Color | None = None) -> tuple[rl.Rectangle, rl.Color]:
+  face = snap_rect(rect)
+  draw_rounded_fill(face, bg_color if bg_color is not None else rl.Color(35, 35, 35, 255), radius_px=18)
+  draw_rounded_stroke(face, accent if glow > 0.5 else rl.Color(75, 75, 75, 255), radius_px=18)
   return face, accent
-
 
 def draw_interactive_rect(target_id: str, rect: rl.Rectangle, interactive_rects: dict[str, rl.Rectangle],
                            pressed_target: str | None, scroll_rect: rl.Rectangle | None = None,
@@ -690,7 +667,7 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
   # ── shared layout helpers ─────────────────────────────────
 
   def _uses_two_columns(self, width: float) -> bool:
-    return width >= self.TWO_COLUMN_BREAKPOINT
+    return False
 
   def _column_width(self, width: float) -> float:
     return (width - self.COLUMN_GAP) / 2 if self._uses_two_columns(width) else width
@@ -784,8 +761,10 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
 
   def _set_toggle_pages(self, pages: list[list]) -> None:
+    # Settings use one vertical list, including controls formerly split into swipe pages.
+    pages = [[definition for page in pages for definition in page]]
     self._toggle_pages = pages
-    self._page_count = max(1, len(pages))
+    self._page_count = 1
     self._current_page = 0
     self._max_page_size = max(len(p) for p in pages) if self._page_count > 1 else 0
     if self._page_grid is not None and self._page_count <= 1:
@@ -1063,7 +1042,7 @@ class AdjustorTogglesPanelView(PanelManagerView):
 
     @property
     def vertical_scrolling_disabled(self) -> bool:
-        return True
+        return False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1253,185 +1232,37 @@ class BreadcrumbController:
 
     return path
 
-  def draw(self, rect: rl.Rectangle, *, bg_color: rl.Color = rl.Color(12, 10, 18, 255)) -> None:
+  def draw(self, rect: rl.Rectangle, *, bg_color: rl.Color = rl.BLACK) -> None:
     self._rects.clear()
     self._bounds = rect
     path = self.build_path()
     if not path:
       return
+    # Keep a stable home / parent / current location at a readable size.
+    if len(path) > 3:
+      path = [path[0], *path[-2:]]
+    rl.draw_rectangle_rec(rect, bg_color)
+    x = rect.x + 24
+    gap = 40
+    remaining = rect.width - 48 - gap * (len(path) - 1)
+    font = gui_app.font(FontWeight.MEDIUM)
+    for index, (label, action) in enumerate(path):
+      last = index == len(path) - 1
+      budget = remaining / (len(path) - index)
+      text = truncate_text_ellipsis(font, label, budget, 40)
+      width = measure_text_cached(font, text, 40).x
+      color = AetherListColors.HEADER if last else AetherListColors.SUBTEXT
+      if not last:
+        self._rects[action] = rl.Rectangle(x, rect.y, width, rect.height)
+      if self._pressed == action:
+        color = rl.WHITE
+      rl.draw_text_ex(font, text, rl.Vector2(x, rect.y + (rect.height - 40) / 2), 40, 0, color)
+      remaining -= width
+      x += width
+      if not last:
+        draw_chevron_icon(rl.Rectangle(x + 8, rect.y + (rect.height - 24) / 2, 24, 24), AetherListColors.MUTED)
+        x += gap
 
-    now = time.monotonic()
-
-    if self._expanded and now - self._last_interact > self.EXPAND_DURATION:
-      self._expanded = False
-
-    ANIM_LERP = 0.2
-    target = 1.0 if self._expanded else 0.0
-    self._expand_alpha += (target - self._expand_alpha) * ANIM_LERP
-
-    ACTIVE_SIZE = 34
-    PAST_SIZE = 28
-    MIN_ACTIVE_SIZE = 26
-    CHEVRON_SIZE = 20
-    CHEVRON_W = 12
-    GAP = 12
-    LEFT_INSET = 34
-    CAPSULE_W = 64
-    CAPSULE_H = 34
-
-    center_y = rect.y + rect.height / 2
-    color_sep = rl.Color(140, 150, 175, 220)
-    active_normal = AetherListColors.HEADER
-    past_normal = AetherListColors.SUBTEXT
-    past_hover = AetherListColors.HEADER
-    past_pressed = rl.Color(190, 185, 215, 255)
-
-    mouse_pos = gui_app.last_mouse_event.pos
-
-    sep = GAP + CHEVRON_W + GAP
-    capsule_need = CAPSULE_W + sep
-    available_w = rect.width - LEFT_INSET - 24
-
-    med_font = gui_app.font(FontWeight.MEDIUM)
-    semi_font = gui_app.font(FontWeight.SEMI_BOLD)
-
-    k = len(path)
-    if self._expanded:
-      display_path = [(item[0], item[1], ACTIVE_SIZE if i == k - 1 else PAST_SIZE, False) for i, item in enumerate(path)]
-      overflow_alpha = max(0.0, 1.0 - self._expand_alpha)
-    elif k == 1:
-      display_path = [(path[0][0], path[0][1], ACTIVE_SIZE, False)]
-      overflow_alpha = 0.0
-    else:
-      past_w_sum = sum(measure_text_cached(med_font, item[0], PAST_SIZE).x for item in path[:-1]) + (k - 1) * sep
-      active_text, active_action = path[-1]
-      direct_fit = False
-      active_size = ACTIVE_SIZE
-
-      for f in (34, 32, 30, 28, 26):
-        w_active = measure_text_cached(semi_font, active_text, f).x
-        if past_w_sum + w_active <= available_w:
-          active_size = f
-          direct_fit = True
-          break
-
-      if direct_fit:
-        display_path = [(item[0], item[1], PAST_SIZE, False) for item in path[:-1]] + [(active_text, active_action, active_size, False)]
-        overflow_alpha = 0.0
-      else:
-        active_size = MIN_ACTIVE_SIZE
-        w_active = measure_text_cached(semi_font, active_text, active_size).x
-        w_active_max = available_w - capsule_need
-
-        if w_active > w_active_max and w_active_max > 60:
-          active_text = truncate_text_ellipsis(semi_font, active_text, w_active_max, active_size)
-          w_active = measure_text_cached(semi_font, active_text, active_size).x
-          display_path = [("...", "action:breadcrumb_history", PAST_SIZE, True), (active_text, active_action, active_size, False)]
-        else:
-          ancestor_budget = available_w - w_active - capsule_need
-          ancestors = []
-          for i in range(k - 2, -1, -1):
-            item_text, item_action = path[i]
-            item_w = measure_text_cached(med_font, item_text, PAST_SIZE).x
-            slot_needed = item_w + sep
-            if slot_needed <= ancestor_budget:
-              ancestors.insert(0, (item_text, item_action, PAST_SIZE, False))
-              ancestor_budget -= slot_needed
-            else:
-              slot = ancestor_budget - sep
-              if slot > 30:
-                trunc = truncate_text_ellipsis(med_font, item_text, slot, PAST_SIZE)
-                visible = trunc.removesuffix("...").rstrip()
-                if len(visible) >= 3:
-                  ancestors.insert(0, (trunc, item_action, PAST_SIZE, False))
-              break
-
-          display_path = [("...", "action:breadcrumb_history", PAST_SIZE, True)] + ancestors + [(active_text, active_action, active_size, False)]
-        overflow_alpha = max(0.0, 1.0 - self._expand_alpha)
-
-    current_x = rect.x + LEFT_INSET
-
-    aether_begin_scissor_mode(int(rect.x), int(rect.y), int(rect.width), int(rect.height))
-
-    for i, (text, action, font_size, is_capsule) in enumerate(display_path):
-      is_last = (i == len(display_path) - 1)
-      pressed = (self._pressed == action)
-
-      if is_capsule:
-        if overflow_alpha <= 0.01:
-          current_x += GAP
-          continue
-
-        cap_rect = rl.Rectangle(current_x, center_y - CAPSULE_H / 2, CAPSULE_W, CAPSULE_H)
-        touch_hit = rl.Rectangle(current_x - GAP / 2, rect.y, CAPSULE_W + GAP, rect.height)
-        hovered = bool(point_hits(mouse_pos, touch_hit, rect, pad_x=0, pad_y=0))
-
-        if cap_rect.x < rect.x + rect.width:
-          self._rects[action] = touch_hit
-
-        oa = overflow_alpha
-        if pressed:
-          fill = rl.Color(45, 38, 62, int(230 * oa))
-          outline = rl.Color(167, 152, 210, int(180 * oa))
-          glow = rl.Color(167, 152, 210, int(90 * oa))
-          dots_c = rl.Color(255, 255, 255, int(255 * oa))
-        elif hovered:
-          fill = rl.Color(38, 34, 54, int(200 * oa))
-          outline = rl.Color(148, 142, 168, int(120 * oa))
-          glow = rl.Color(148, 142, 168, int(60 * oa))
-          dots_c = rl.Color(255, 255, 255, int(255 * oa))
-        else:
-          fill = rl.Color(24, 20, 36, int(180 * oa))
-          outline = rl.Color(120, 115, 160, int(70 * oa))
-          glow = rl.Color(120, 115, 160, int(25 * oa))
-          dots_c = rl.Color(200, 210, 225, int(200 * oa))
-
-        if oa > 0.05:
-          rl.draw_rectangle_rounded_lines_ex(
-            rl.Rectangle(cap_rect.x - 2, cap_rect.y - 2, cap_rect.width + 4, cap_rect.height + 4),
-            1.0, 16, 1.5, glow)
-          rl.draw_rectangle_rounded(cap_rect, 1.0, 16, fill)
-          rl.draw_rectangle_rounded_lines_ex(cap_rect, 1.0, 16, 1.0, outline)
-
-          font_dots = gui_app.font(FontWeight.SEMI_BOLD)
-          dots_ts = measure_text_cached(font_dots, "...", 24)
-          rl.draw_text_ex(font_dots, "...",
-            rl.Vector2(cap_rect.x + (cap_rect.width - dots_ts.x) / 2, center_y - dots_ts.y / 2),
-            24, 0, dots_c)
-        current_x += CAPSULE_W + GAP
-
-      else:
-        font = semi_font if is_last else med_font
-        ts = measure_text_cached(font, text, font_size)
-        touch_hit = rl.Rectangle(current_x - GAP / 2, rect.y, ts.x + GAP, rect.height)
-        hovered = bool(point_hits(mouse_pos, touch_hit, rect, pad_x=0, pad_y=0))
-
-        if not is_last and touch_hit.x < rect.x + rect.width:
-          self._rects[action] = touch_hit
-
-        color = past_pressed if pressed else (past_hover if hovered else (active_normal if is_last else past_normal))
-
-        if hovered and not is_last:
-          highlight_h = 44
-          highlight_rect = rl.Rectangle(current_x - 6, center_y - highlight_h / 2, ts.x + 12, highlight_h)
-          rl.draw_rectangle_rounded(highlight_rect, 0.35, 10, rl.Color(255, 255, 255, 14))
-
-        text_y = center_y - ts.y / 2
-        rl.draw_text_ex(font, text, rl.Vector2(current_x, text_y), font_size, 0, color)
-        current_x += ts.x + GAP
-
-      if i < len(display_path) - 1:
-        chev_rect = rl.Rectangle(current_x, center_y - CHEVRON_SIZE / 2, CHEVRON_W, CHEVRON_SIZE)
-        draw_breadcrumb_chevron(chev_rect, color_sep, thickness=3.0)
-        current_x += CHEVRON_W + GAP
-
-    if current_x > rect.x + rect.width - 20:
-      fade_w = 48
-      fade_x = rect.x + rect.width - fade_w
-      transparent_bg = rl.Color(bg_color.r, bg_color.g, bg_color.b, 0)
-      rl.draw_rectangle_gradient_h(int(fade_x), int(rect.y), int(fade_w), int(rect.height), transparent_bg, bg_color)
-
-    aether_end_scissor_mode()
 PANEL_HEADER_TITLE_Y: int = 34
 PANEL_HEADER_SUBTITLE_Y: int = 78
 PANEL_HEADER_TITLE_FONT_SIZE: int = 30
@@ -1590,7 +1421,7 @@ def draw_standard_toggle_row(
     pressed=pressed,
     is_last=is_last,
     show_chevron=False,
-    title_size=36, subtitle_size=26,
+    title_size=50, subtitle_size=36,
     style=style,
   )
 
@@ -1722,48 +1553,16 @@ def draw_toggle_switch(
   bg_color: rl.Color | None = None,
 ):
   toggle_rect = rl.Rectangle(rect.x + rect.width - width - right_inset, rect.y + (rect.height - height) / 2, width, height)
-
-  if knob_progress is None:
-    knob_progress = 1.0 if enabled else 0.0
-
+  progress = float(enabled) if knob_progress is None else max(0.0, min(1.0, knob_progress))
+  track = rl.Color(51, 171, 76, 255) if enabled else rl.Color(57, 57, 57, 255)
   if not is_enabled:
-    knob_color = with_alpha(knob_color, 132)
-
-  knob_x = toggle_rect.x + knob_offset + knob_progress * (toggle_rect.width - 2 * knob_offset)
-  knob_y = toggle_rect.y + toggle_rect.height / 2
-
-  # Delegate to draw_hud_background — same layered bloom, fill, and lerped border as tiles
-  draw_hud_background(toggle_rect, track_color if is_enabled else with_alpha(track_color, 80), knob_progress, radius_px=radius_px, bg_color=bg_color)
-
-  if seed_id and enabled:
-    nodes, vecs = _get_or_create_toggle_constellation(seed_id)
-    glow = knob_progress
-    draw_constellation_nodes(nodes, vecs, toggle_rect, track_color, glow, scale=0.45)
-
-    # Gravity tethers during slide — drawn after stars so they appear under knob
-    if 0.0 < knob_progress < 1.0:
-      tether_alpha = int(60 * math.sin(knob_progress * math.pi))
-      tether_col = rl.Color(track_color.r, track_color.g, track_color.b, tether_alpha)
-      for node in nodes:
-        nx = toggle_rect.x + node['x'] * toggle_rect.width
-        ny = toggle_rect.y + node['y'] * toggle_rect.height
-        rl.draw_line_ex(rl.Vector2(nx, ny), rl.Vector2(knob_x, knob_y), 1.2, tether_col)
-
-  # Nearly-square slider thumb — physical button sliding across the starfield
-  knob_w = 44.0
-  knob_h = toggle_rect.height - 8.0  # 4px inset top + bottom = 34px
-  knob_roundness = 0.65              # ≈10px corner radius on 30px width — rect, not pill
-  knob_segments = 8
-  knob_rect = snap_rect(rl.Rectangle(
-    knob_x - knob_w / 2, knob_y - knob_h / 2, knob_w, knob_h
-  ))
-  # Base fill
-  rl.draw_rectangle_rounded(knob_rect, knob_roundness, knob_segments, knob_color)
-  # Glass highlight — top ~40% of knob at low opacity, simulates light catching the face
-  highlight_rect = rl.Rectangle(knob_rect.x + 2, knob_rect.y + 2, knob_rect.width - 4, knob_rect.height * 0.40)
-  rl.draw_rectangle_rounded(highlight_rect, knob_roundness, knob_segments, with_alpha(rl.WHITE, 38))
-  # Thin border for depth
-  rl.draw_rectangle_rounded_lines_ex(knob_rect, knob_roundness, knob_segments, 1.0, with_alpha(rl.WHITE, 50))
+    track = rl.Color(27, 91, 40, 255) if enabled else rl.Color(40, 40, 40, 255)
+    knob_color = rl.Color(150, 150, 150, 255)
+  track_rect = rl.Rectangle(toggle_rect.x, toggle_rect.y + height / 8, width, height * 0.75)
+  rl.draw_rectangle_rounded(track_rect, 1.0, 20, track)
+  radius = height / 2
+  center = rl.Vector2(toggle_rect.x + radius + progress * (width - height), toggle_rect.y + radius)
+  rl.draw_circle_v(center, radius, knob_color)
 
 
 def draw_action_pill(
@@ -2004,8 +1803,8 @@ def draw_section_header(
   title: str = "",
   *,
   trailing_text: str = "",
-  title_size: int = 30,
-  trailing_size: int = 26,
+  title_size: int = 40,
+  trailing_size: int = 36,
   title_color: rl.Color | None = None,
   trailing_color: rl.Color | None = None,
   style: PanelStyle = DEFAULT_PANEL_STYLE,
@@ -2087,214 +1886,100 @@ def draw_list_group_shell(
   draw_soft_card(rect, fill if fill is not None else style.surface_fill, border if border is not None else style.surface_border, radius=radius, segments=segments)
 
 
+def settings_text_lines(text: str, width: float, size: int, weight: FontWeight = FontWeight.NORMAL) -> list[str]:
+  font = gui_app.font(weight)
+  lines = []
+  for paragraph in text.splitlines():
+    line = ""
+    for word in paragraph.split():
+      candidate = f"{line} {word}" if line else word
+      if line and measure_text_cached(font, candidate, size).x > width:
+        lines.append(line)
+        line = word
+      else:
+        line = candidate
+    lines.append(line)
+  return lines
+
+
+def _settings_text_width(width: float, toggle: bool, value: str, chevron: bool) -> float:
+  reserve = AETHER_LIST_METRICS.toggle_width + 24 if toggle else (52 if chevron else 0)
+  if value:
+    reserve += min(440.0, width * 0.36) + 24
+  return max(100.0, width - 48 - reserve)
+
+
+def settings_row_height(width: float, title: str, subtitle: str = "", *, toggle: bool = False, value: str = "",
+                        chevron: bool = True, minimum: float = AETHER_LIST_METRICS.row_height) -> float:
+  text_width = _settings_text_width(width, toggle, value, chevron)
+  title_height = len(settings_text_lines(title, text_width, 50, FontWeight.SEMI_BOLD)) * 54
+  subtitle_height = len(settings_text_lines(subtitle, text_width, 36)) * 40 + 8 if subtitle else 0
+  value_height = len(settings_text_lines(value, min(440.0, width * 0.36), 40, FontWeight.MEDIUM)) * 44 if value else 0
+  return max(minimum, max(title_height + subtitle_height, value_height) + 32)
+
+
+def _draw_settings_text(rect: rl.Rectangle, title: str, subtitle: str, title_color: rl.Color, subtitle_color: rl.Color,
+                        title_size: int = 50, subtitle_size: int = 36):
+  title_lines = settings_text_lines(title, rect.width, title_size, FontWeight.SEMI_BOLD)
+  subtitle_lines = settings_text_lines(subtitle, rect.width, subtitle_size)
+  title_step, subtitle_step = title_size + 4, subtitle_size + 4
+  # Fixed-height specialized browser rows elide overflow; ordinary settings rows grow to fit.
+  max_title = max(1, int((rect.height - (subtitle_step + 8 if subtitle else 0)) // title_step))
+  if len(title_lines) > max_title:
+    title_lines = title_lines[:max_title]
+    title_lines[-1] += "…"
+  remaining = max(0.0, rect.height - len(title_lines) * title_step - 8)
+  max_subtitle = int(remaining // subtitle_step)
+  if len(subtitle_lines) > max_subtitle and max_subtitle > 0:
+    subtitle_lines = subtitle_lines[:max_subtitle]
+    subtitle_lines[-1] += "…"
+  else:
+    subtitle_lines = subtitle_lines[:max_subtitle]
+  total = len(title_lines) * title_step + (8 + len(subtitle_lines) * subtitle_step if subtitle_lines else 0)
+  y = rect.y + (rect.height - total) / 2
+  for lines, size, step, weight, color in ((title_lines, title_size, title_step, FontWeight.SEMI_BOLD, title_color),
+                                          (subtitle_lines, subtitle_size, subtitle_step, FontWeight.NORMAL, subtitle_color)):
+    for line in lines:
+      line = truncate_text_ellipsis(gui_app.font(weight), line, rect.width, size)
+      rl.draw_text_ex(gui_app.font(weight), line, rl.Vector2(rect.x, y), size, 0, color)
+      y += step
+    y += 8
+
+
 def draw_settings_list_row(
-  rect: rl.Rectangle,
-  *,
-  title: str,
-  subtitle: str = "",
-  value: str = "",
-  toggle_value: bool | None = None,
-  enabled: bool = True,
-  hovered: bool = False,
-  pressed: bool = False,
-  is_last: bool = False,
-  show_chevron: bool = True,
-  title_size: int = 36,
-  subtitle_size: int = 26,
-  value_size: int = 28,
-  separator_inset: int = 24,
-  title_color: rl.Color | None = None,
-  subtitle_color: rl.Color | None = None,
-  value_color: rl.Color | None = None,
+  rect: rl.Rectangle, *, title: str, subtitle: str = "", value: str = "", toggle_value: bool | None = None,
+  enabled: bool = True, hovered: bool = False, pressed: bool = False, is_last: bool = False, show_chevron: bool = True,
+  title_size: int = 50, subtitle_size: int = 36, value_size: int = 40, separator_inset: int = 24,
+  title_color: rl.Color | None = None, subtitle_color: rl.Color | None = None, value_color: rl.Color | None = None,
   style: PanelStyle = DEFAULT_PANEL_STYLE,
 ):
-  draw_rect = snap_rect(rect)
-  resolved_title_color = title_color or (style.title_color if enabled else style.muted_color)
-  resolved_subtitle_color = subtitle_color or (style.subtitle_color if enabled else style.muted_color)
-  resolved_value_color = value_color or (style.title_color if enabled else style.muted_color)
-
-  is_narrow = draw_rect.width < 1000
-  chevron_right_inset = 28 if is_narrow else AETHER_LIST_METRICS.utility_chevron_right
-  chevron_y = draw_rect.y + (draw_rect.height - 26) / 2
-  chevron_rect = rl.Rectangle(draw_rect.x + draw_rect.width - chevron_right_inset, chevron_y, 26, 26)
-
-  draw_list_row_shell(
-    draw_rect,
-    hovered=hovered and enabled,
-    pressed=pressed and enabled,
-    is_last=is_last,
-    row_bg=rl.Color(255, 255, 255, 0),
-    row_border=rl.Color(255, 255, 255, 0),
-    row_separator=style.divider_color,
-    current_bg=rl.Color(255, 255, 255, 0),
-    current_border=rl.Color(255, 255, 255, 0),
-    separator_inset=separator_inset,
-  )
-
-  text_left = draw_rect.x + 24
-
+  rect = snap_rect(rect)
+  title_color = title_color or (style.title_color if enabled else style.muted_color)
+  subtitle_color = subtitle_color or (style.subtitle_color if enabled else style.muted_color)
+  value_color = value_color or title_color
+  draw_list_row_shell(rect, hovered=hovered and enabled, pressed=pressed and enabled, is_last=is_last,
+                      row_separator=style.divider_color, separator_inset=separator_inset)
+  text_width = _settings_text_width(rect.width, toggle_value is not None, value, show_chevron)
+  text_rect = rl.Rectangle(rect.x + 24, rect.y + 16, text_width, max(0.0, rect.height - 32))
+  _draw_settings_text(text_rect, title, subtitle, title_color, subtitle_color, title_size, subtitle_size)
   if toggle_value is not None:
-    toggle_right_inset = 28 if is_narrow else AETHER_LIST_METRICS.toggle_right_inset
-    text_right = draw_rect.x + draw_rect.width - AETHER_LIST_METRICS.toggle_width - toggle_right_inset - 12
-    text_width = max(100.0, text_right - text_left)
-
-    if subtitle:
-      eff_title_size = min(36, title_size)
-      eff_sub_size = min(26, subtitle_size)
-      total_h = eff_title_size + eff_sub_size + 4
-      start_y = draw_rect.y + (draw_rect.height - total_h) / 2
-
-      draw_text_fit_common(
-        gui_app.font(FontWeight.SEMI_BOLD), title,
-        rl.Vector2(text_left, start_y),
-        text_width, eff_title_size,
-        color=resolved_title_color,
-      )
-      draw_text_fit_common(
-        gui_app.font(FontWeight.NORMAL), subtitle,
-        rl.Vector2(text_left, start_y + eff_title_size + 4),
-        text_width, eff_sub_size,
-        color=resolved_subtitle_color,
-      )
-    else:
-      eff_title_size = min(36, title_size)
-      title_y = draw_rect.y + (draw_rect.height - eff_title_size) / 2
-      draw_text_fit_common(
-        gui_app.font(FontWeight.SEMI_BOLD), title,
-        rl.Vector2(text_left, title_y),
-        text_width, eff_title_size,
-        color=resolved_title_color,
-      )
-
-    target = 1.0 if toggle_value else 0.0
-    current_progress = _KNOB_ANIMATION_STATES.get(title, target)
-    dt = rl.get_frame_time()
-    current_progress += (target - current_progress) * 12.0 * dt
-    if abs(current_progress - target) < 0.001:
-      current_progress = target
-    _KNOB_ANIMATION_STATES[title] = current_progress
-
-    draw_toggle_switch(
-      draw_rect, 
-      bool(toggle_value), 
-      knob_progress=current_progress,
-      is_enabled=enabled, 
-      track_color=style.accent,
-      seed_id=title,
-      right_inset=toggle_right_inset,
-    )
-    return
-
-  if value:
-    if is_narrow and draw_rect.height >= 86 and not subtitle:
-      # Adaptive Two-Line Stacked Layout: Title on top, Value spanning full width below
-      eff_title_size = min(34, title_size)
-      eff_value_size = min(28, value_size)
-      available_w = max(100.0, draw_rect.width - 48 - (32 if show_chevron else 0))
-
-      total_h = eff_title_size + eff_value_size + 6
-      start_y = draw_rect.y + (draw_rect.height - total_h) / 2
-
-      draw_text_fit_common(
-        gui_app.font(FontWeight.SEMI_BOLD), title,
-        rl.Vector2(text_left, start_y),
-        available_w, eff_title_size,
-        color=resolved_title_color,
-      )
-      draw_text_fit_common(
-        gui_app.font(FontWeight.MEDIUM), value,
-        rl.Vector2(text_left, start_y + eff_title_size + 6),
-        available_w, eff_value_size,
-        color=resolved_subtitle_color if resolved_value_color == resolved_title_color else resolved_value_color,
-      )
-    else:
-      # Proportional Side-by-Side
-      if is_narrow:
-        content_w = max(100.0, draw_rect.width - 48 - (32 if show_chevron else 0))
-        t_width = content_w * 0.46
-        v_width = content_w * 0.52
-        v_right = draw_rect.x + 24 + content_w
-      else:
-        v_width = max(100.0, float(AETHER_LIST_METRICS.utility_value_right - (AETHER_LIST_METRICS.utility_chevron_right if show_chevron else 24) - 16))
-        t_width = max(100.0, draw_rect.width - 48 - v_width - (32 if show_chevron else 0))
-        v_right = chevron_rect.x - 16 if show_chevron else draw_rect.x + draw_rect.width - 24
-
-      eff_value_size = min(28, value_size) if is_narrow else min(32, value_size)
-      value_y = draw_rect.y + (draw_rect.height - eff_value_size) / 2
-
-      if subtitle:
-        eff_title_size = min(34, title_size)
-        eff_sub_size = min(26, subtitle_size)
-        total_h = eff_title_size + eff_sub_size + 4
-        start_y = draw_rect.y + (draw_rect.height - total_h) / 2
-
-        draw_text_fit_common(
-          gui_app.font(FontWeight.SEMI_BOLD), title,
-          rl.Vector2(text_left, start_y),
-          t_width, eff_title_size,
-          color=resolved_title_color,
-        )
-        draw_text_fit_common(
-          gui_app.font(FontWeight.NORMAL), subtitle,
-          rl.Vector2(text_left, start_y + eff_title_size + 4),
-          t_width, eff_sub_size,
-          color=resolved_subtitle_color,
-        )
-      else:
-        eff_title_size = min(36, title_size) if is_narrow else title_size
-        title_y = draw_rect.y + (draw_rect.height - eff_title_size) / 2
-
-        draw_text_fit_common(
-          gui_app.font(FontWeight.SEMI_BOLD), title,
-          rl.Vector2(text_left, title_y),
-          t_width, eff_title_size,
-          color=resolved_title_color,
-        )
-
-      draw_text_fit_common(
-        gui_app.font(FontWeight.MEDIUM), value,
-        rl.Vector2(v_right - v_width, value_y),
-        v_width, eff_value_size,
-        align_right=True,
-        color=resolved_value_color,
-      )
-
-    if show_chevron:
-      draw_chevron_icon(chevron_rect, style.muted_color)
-    return
-
-  # Generic row without value or toggle
-  text_right = chevron_rect.x - 12 if show_chevron else draw_rect.x + draw_rect.width - 24
-  text_width = max(100.0, text_right - text_left)
-  if subtitle:
-    eff_title_size = min(36, title_size)
-    eff_sub_size = min(26, subtitle_size)
-    total_h = eff_title_size + eff_sub_size + 4
-    start_y = draw_rect.y + (draw_rect.height - total_h) / 2
-    draw_text_fit_common(
-      gui_app.font(FontWeight.SEMI_BOLD), title,
-      rl.Vector2(text_left, start_y),
-      text_width, eff_title_size,
-      color=resolved_title_color,
-    )
-    draw_text_fit_common(
-      gui_app.font(FontWeight.NORMAL), subtitle,
-      rl.Vector2(text_left, start_y + eff_title_size + 4),
-      text_width, eff_sub_size,
-      color=resolved_subtitle_color,
-    )
+    draw_toggle_switch(rect, toggle_value, is_enabled=enabled)
   else:
-    eff_title_size = min(36, title_size)
-    title_y = draw_rect.y + (draw_rect.height - eff_title_size) / 2
-    draw_text_fit_common(
-      gui_app.font(FontWeight.SEMI_BOLD), title,
-      rl.Vector2(text_left, title_y),
-      text_width, eff_title_size,
-      color=resolved_title_color,
-    )
-
-  if show_chevron:
-    draw_chevron_icon(chevron_rect, style.muted_color)
+    if value:
+      width = min(440.0, rect.width * 0.36)
+      right = rect.x + rect.width - 24 - (52 if show_chevron else 0)
+      lines = settings_text_lines(value, width, value_size, FontWeight.MEDIUM)
+      step = value_size + 4
+      lines = lines[:max(1, int((rect.height - 32) // step))]
+      y = rect.y + (rect.height - len(lines) * step) / 2
+      font = gui_app.font(FontWeight.MEDIUM)
+      for line in lines:
+        line = truncate_text_ellipsis(font, line, width, value_size)
+        x = right - measure_text_cached(font, line, value_size).x
+        rl.draw_text_ex(font, line, rl.Vector2(x, y), value_size, 0, value_color)
+        y += step
+    if show_chevron:
+      draw_chevron_icon(rl.Rectangle(rect.x + rect.width - 52, rect.y + (rect.height - 32) / 2, 32, 32), style.muted_color)
 
 
 def draw_selectable_chip(rect: rl.Rectangle, text: str, *,
@@ -2554,9 +2239,9 @@ class AetherInlineRangeControl(Widget):
     draw_text_fit_common(
       self._font,
       label,
-      rl.Vector2(rect.x + 10, rect.y + (rect.height - 22) / 2),
+      rl.Vector2(rect.x + 10, rect.y + (rect.height - 40) / 2),
       max(1.0, rect.width - 20),
-      22,  # font_size in draw_button
+      40,  # font_size in draw_button
       align_center=True,
       color=AetherListColors.HEADER,
     )
@@ -2569,7 +2254,7 @@ class AetherInlineRangeControl(Widget):
     thumb_target = 1.0 if self._is_dragging or self._pending_drag else 0.0
     self._thumb_focus += (thumb_target - self._thumb_focus) * (1 - math.exp(-dt / 0.070))
 
-    button_size = min(rect.height, 64)
+    button_size = min(rect.height, 80)
     button_y = rect.y + (rect.height - button_size) / 2
     self._minus_rect = snap_rect(rl.Rectangle(rect.x, button_y, button_size, button_size))
     self._plus_rect = snap_rect(rl.Rectangle(rect.x + rect.width - button_size, button_y, button_size, button_size))
@@ -2714,14 +2399,16 @@ class AetherAdjustorRow(Widget):
   def formatted_value(self) -> str:
     return format_adjustor_value(self._current_value(), step=self._step, unit=self._unit, labels=self._labels)
 
+  def _header_height(self, width: float) -> float:
+    return settings_row_height(width, self._title, self._subtitle, value=self.formatted_value())
+
   def measure_height(self, width: float) -> float:
-    del width
-    if getattr(self, "custom_row_height", None) is not None:
-      return float(self.custom_row_height)
-    if not self._active():
-      return float(AETHER_LIST_METRICS.adjustor_row_height)
-    preset_height = AETHER_LIST_METRICS.adjustor_preset_height + AETHER_LIST_METRICS.adjustor_preset_gap if self._presets else 0
-    return float(AETHER_LIST_METRICS.adjustor_row_active_height + preset_height)
+    height = self._header_height(width)
+    if self._active():
+      height += 20 + AETHER_LIST_METRICS.adjustor_scrubber_height
+      if self._presets:
+        height += AETHER_LIST_METRICS.adjustor_preset_height + AETHER_LIST_METRICS.adjustor_preset_gap
+    return height
 
   def _set_active_state(self, active: bool) -> None:
     if self._set_active is not None:
@@ -2791,9 +2478,9 @@ class AetherAdjustorRow(Widget):
     draw_text_fit_common(
       gui_app.font(FontWeight.MEDIUM),
       text,
-      rl.Vector2(rect.x + 10, rect.y + 7),
+      rl.Vector2(rect.x + 10, rect.y + (rect.height - 36) / 2),
       max(1.0, rect.width - 20),
-      16,
+      36,
       align_center=True,
       color=text_color,
     )
@@ -2825,49 +2512,15 @@ class AetherAdjustorRow(Widget):
       current_border=current_border,
     )
 
-    bar_h = max(74, min(94, int(rect.height * 0.87)))
-    title_fs = max(38, int(bar_h * 0.53))
-    value_fs = max(28, int(bar_h * 0.38))
-
     content_left = rect.x + 24
-    bar_width = max(120.0, rect.width - 48)
-    bar_y = rect.y + (rect.height - bar_h) / 2
-    bar_rect = snap_rect(rl.Rectangle(content_left, bar_y, bar_width, bar_h))
-    self._progress_bar_rect = bar_rect
-    self._header_rect = bar_rect
-
-    draw_rounded_fill(bar_rect, rl.Color(255, 255, 255, 8), radius_px=bar_h // 2)
-    draw_rounded_stroke(bar_rect, rl.Color(255, 255, 255, 14), radius_px=bar_h // 2)
-
-    fill_frac = self._scrubber._value_fraction(self._current_value())
-    if fill_frac > 0:
-      fill_rect = snap_rect(rl.Rectangle(bar_rect.x, bar_rect.y, max(1.0, bar_rect.width * fill_frac), bar_h))
-      fill_alpha = 200 if self._pressed_zone == "header" else (180 if active else 140)
-      draw_rounded_fill(fill_rect, with_alpha(self._color, fill_alpha), radius_px=bar_h // 2)
-
-    inset = 18
-    title_y = bar_rect.y + (bar_h - title_fs) / 2
-    rl.draw_text_ex(self._font_title, self._title,
-                    rl.Vector2(bar_rect.x + inset, title_y),
-                    title_fs, 0, self._style.title_color)
-
-    value_str = self.formatted_value()
-    value_w = measure_text_cached(self._font_value, value_str, value_fs).x
-    rl.draw_text_ex(self._font_value, value_str,
-                    rl.Vector2(bar_rect.x + bar_rect.width - inset - value_w,
-                               bar_rect.y + (bar_h - value_fs) / 2),
-                    value_fs, 0, self._style.title_color)
-
-    if self._subtitle:
-      sub_fs = 26
-      sub_y = bar_rect.y - sub_fs - 4
-      gui_label(rl.Rectangle(content_left, sub_y, bar_width, sub_fs),
-                self._subtitle, sub_fs, self._style.subtitle_color, FontWeight.NORMAL)
+    self._header_rect = rl.Rectangle(rect.x, rect.y, rect.width, self._header_height(rect.width))
+    self._progress_bar_rect = self._header_rect
+    draw_settings_list_row(self._header_rect, title=self._title, subtitle=self._subtitle, value=self.formatted_value(),
+                           pressed=self._pressed_zone == "header", is_last=True, style=self._style)
 
     if not active:
       return
 
-    tray_alpha = max(0, min(255, int(255 * self._focus_progress)))
     tray_top = self._progress_bar_rect.y + self._progress_bar_rect.height + 10
     current_y = tray_top
     self._preset_rects.clear()
@@ -2908,10 +2561,10 @@ def draw_selection_list_row(
   action_width: int = AETHER_LIST_METRICS.action_width,
   action_chip: bool = False,
   action_pill: bool = False,
-  title_size: int = 36,
-  subtitle_size: int = 26,
-  action_text_size: int = 26,
-  action_pill_height: int = 64,
+  title_size: int = 50,
+  subtitle_size: int = 36,
+  action_text_size: int = 36,
+  action_pill_height: int = 80,
   action_pill_width: float | None = None,
   title_color: rl.Color = AetherListColors.HEADER,
   subtitle_color: rl.Color = AetherListColors.SUBTEXT,
@@ -2947,39 +2600,14 @@ def draw_selection_list_row(
   info_gap = 36 if action_pill else 42
   info_rect = rl.Rectangle(draw_rect.x + 24, draw_rect.y + 16, max(0.0, draw_rect.width - action_width - info_gap), draw_rect.height - 32)
   title_font = gui_app.font(FontWeight.SEMI_BOLD)
-  subtitle_font = gui_app.font(FontWeight.NORMAL)
-
-  if subtitle:
-    text_height = title_size + subtitle_size + 8
-    title_y = info_rect.y + (info_rect.height - text_height) / 2
-    subtitle_y = title_y + title_size + 8
-  else:
-    title_y = info_rect.y + (info_rect.height - title_size) / 2
-    subtitle_y = title_y
-
-  draw_text_fit_common(
-    title_font,
-    title,
-    rl.Vector2(info_rect.x, title_y),
-    info_rect.width,
-    title_size,
-    color=with_alpha(title_color, alpha),
-  )
-
-  if subtitle:
-    draw_text_fit_common(
-      subtitle_font,
-      subtitle,
-      rl.Vector2(info_rect.x, subtitle_y),
-      info_rect.width,
-      subtitle_size,
-      color=with_alpha(subtitle_color, alpha),
-    )
+  _draw_settings_text(info_rect, title, subtitle, with_alpha(title_color, alpha),
+                      with_alpha(subtitle_color, alpha), title_size, subtitle_size)
 
   if action_text:
     if action_pill:
       available_w = max(96.0, action_rect.width - 28)
-      chip_w = min(available_w, action_pill_width) if action_pill_width is not None else min(available_w, max(96.0, 42 + len(action_text) * 9))
+      desired_w = action_pill_width if action_pill_width is not None else max(96.0, 32 + measure_text_cached(title_font, action_text, action_text_size).x)
+      chip_w = min(available_w, desired_w)
       chip_h = min(float(action_pill_height), max(36.0, action_rect.height - 28))
       chip_rect = rl.Rectangle(action_rect.x + action_rect.width - chip_w - 18, action_rect.y + (action_rect.height - chip_h) / 2, chip_w, chip_h)
       draw_action_pill(
@@ -3006,7 +2634,7 @@ def draw_selection_list_row(
       draw_text_fit_common(
         title_font,
         action_text,
-        rl.Vector2(action_rect.x + 16, action_rect.y + (action_rect.height - 18) / 2),
+        rl.Vector2(action_rect.x + 16, action_rect.y + (action_rect.height - action_text_size) / 2),
         max(1.0, action_rect.width - 32),
         action_text_size,
         align_center=True,
@@ -3293,29 +2921,9 @@ class AetherSettingsView(PanelManagerView):
   def _compute_header_height(self, content_width: float) -> float:
     if not self._has_header:
       return 0.0
-    if self._parent_toggle:
-      h = max(float(AETHER_LIST_METRICS.toggle_height), 54.0)  # toggle vs title(46px + 8px gap)
-      subtitle_text = tr(self._parent_toggle.subtitle) if self._parent_toggle.subtitle else ""
-      if self._header_subtitle:
-        subtitle_text = tr(self._header_subtitle)
-      if subtitle_text:
-        toggle_take = AETHER_LIST_METRICS.toggle_width + AETHER_LIST_METRICS.toggle_right_inset + 16
-        col_w = max(100.0, content_width + AETHER_LIST_METRICS.content_right_gutter - toggle_take)
-        desc_font = gui_app.font(FontWeight.NORMAL)
-        desc_lines = wrap_text(desc_font, subtitle_text, col_w, 29, max_lines=4)
-        h += len(desc_lines) * PANEL_HEADER_SUBTITLE_LINE_HEIGHT + 12.0
-      h += SECTION_GAP
-      return h
-    h = 54.0  # title (46px) + inner gap (8px)
-    if self._header_subtitle:
-      subtitle_text = tr(self._header_subtitle)
-      if subtitle_text:
-        desc_font = gui_app.font(FontWeight.NORMAL)
-        col_w = (content_width - self.COLUMN_GAP) / 2 if self._uses_two_columns(content_width) else content_width
-        desc_lines = wrap_text(desc_font, subtitle_text, col_w, 29, max_lines=4)
-        h += len(desc_lines) * PANEL_HEADER_SUBTITLE_LINE_HEIGHT + 12.0
-    h += SECTION_GAP
-    return h
+    title = self._header_title or (self._parent_toggle.label if self._parent_toggle else "")
+    subtitle = self._header_subtitle or (self._parent_toggle.subtitle if self._parent_toggle else "")
+    return settings_row_height(content_width, tr(title), tr(subtitle), toggle=bool(self._parent_toggle), chevron=False) + SECTION_GAP
 
   def _render(self, rect: rl.Rectangle):
     self.set_rect(rect)
@@ -3357,39 +2965,18 @@ class AetherSettingsView(PanelManagerView):
                              AetherListColors.PANEL_BG, fade_height=self._fade_height)
 
   def _draw_header(self, rect: rl.Rectangle):
-    title = tr(self._header_title) if self._header_title else ""
-    subtitle = tr(self._header_subtitle) if self._header_subtitle else ""
-
+    title = self._header_title or (self._parent_toggle.label if self._parent_toggle else "")
+    subtitle = self._header_subtitle or (self._parent_toggle.subtitle if self._parent_toggle else "")
+    draw_settings_list_row(rect, title=tr(title), subtitle=tr(subtitle),
+                           toggle_value=self._parent_toggle.get_state() if self._parent_toggle else None,
+                           show_chevron=False, is_last=True, style=self._panel_style)
     if self._parent_toggle:
-      toggle = self._parent_toggle
+      # Keep the existing explicit switch target and callback for parent toggles.
+      self._interactive_rects[f"parent_toggle:{self._parent_toggle.label}"] = rl.Rectangle(
+        rect.x + rect.width - AETHER_LIST_METRICS.toggle_width - AETHER_LIST_METRICS.toggle_right_inset,
+        rect.y + (rect.height - AETHER_LIST_METRICS.toggle_height) / 2,
+        AETHER_LIST_METRICS.toggle_width, AETHER_LIST_METRICS.toggle_height)
 
-      display_title = title if title else tr(toggle.label)
-      subtitle_text = subtitle if subtitle else (tr(toggle.subtitle) if toggle.subtitle else "")
-
-      toggle_take = AETHER_LIST_METRICS.toggle_width + AETHER_LIST_METRICS.toggle_right_inset + 16
-      text_rect = rl.Rectangle(rect.x, rect.y, max(100.0, rect.width - toggle_take), rect.height)
-      draw_settings_panel_header(text_rect, display_title, subtitle_text, title_size=30, subtitle_size=26, max_subtitle_width=1.0)
-
-      toggle_id = f"parent_toggle:{toggle.label}"
-      tw = AETHER_LIST_METRICS.toggle_width
-      th = AETHER_LIST_METRICS.toggle_height
-      ri = AETHER_LIST_METRICS.toggle_right_inset
-      toggle_rect = rl.Rectangle(rect.x + rect.width - tw - ri, rect.y, tw, th)
-      self._interactive_rects[toggle_id] = toggle_rect
-
-      toggle_value = toggle.get_state()
-
-      draw_toggle_switch(
-        rl.Rectangle(rect.x, rect.y, rect.width, th),
-        toggle_value,
-        knob_progress=1.0 if toggle_value else 0.0,
-        track_color=self._panel_style.accent,
-        seed_id=toggle_id,
-        radius_px=100,
-        bg_color=rl.Color(12, 10, 18, 255),
-      )
-    else:
-      draw_settings_panel_header(rect, title, subtitle, title_size=30, subtitle_size=26)
 
   def _active_sections(self) -> list[SettingSection]:
     if self._tab_defs and self._active_tab_key:
@@ -3401,32 +2988,24 @@ class AetherSettingsView(PanelManagerView):
       return []
     return [row for row in section.rows if row.visible is None or row.visible()]
 
+  def _row_height(self, width: float, section: SettingSection, row: SettingRow) -> float:
+    enabled = row.enabled() if row.enabled is not None else True
+    subtitle = row.disabled_label if not enabled and row.disabled_label else row.subtitle
+    value = row.get_value() if row.get_value else ""
+    if row.type == "action":
+      width -= self._metrics.action_width
+    return settings_row_height(width, tr(row.title), tr(subtitle), toggle=row.type == "toggle", value=value,
+                               chevron=bool(row.on_click or row.navigate_to), minimum=section.row_height)
+
   def _measure_content_height(self, width: float) -> float:
-    total = 0.0
-    if self._tab_defs:
-      total += self.TAB_HEIGHT + self.TAB_BOTTOM_GAP
-    active = self._active_sections()
-    i = 0
-    while i < len(active):
-      section = active[i]
-      visible_rows = self._visible_rows(section)
-      if not visible_rows:
-        i += 1
-        continue
-      row_h = len(visible_rows) * section.row_height
-      if section.column_pair and i + 1 < len(active) and active[i + 1].column_pair == section.column_pair and self._uses_two_columns(width):
-        right_rows = self._visible_rows(active[i + 1])
-        row_h = max(row_h, len(right_rows) * active[i + 1].row_height)
-        i += 2
-        total += SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
-        total += row_h
-        total += SECTION_GAP
-      else:
-        i += 1
-        total += SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP if section.title else 0.0
-        total += row_h
-        total += SECTION_GAP
-    return max(0.0, total - SECTION_GAP) if total > 0 else 0.0
+    heights = []
+    for section in self._active_sections():
+      rows = self._visible_rows(section)
+      if rows:
+        header = SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP if section.title else 0
+        heights.append(header + sum(self._row_height(width, section, row) for row in rows))
+    tabs = self.TAB_HEIGHT + self.TAB_BOTTOM_GAP if self._tab_defs else 0
+    return tabs + sum(heights) + max(0, len(heights) - 1) * SECTION_GAP
 
   def _draw_tabs(self, y: float, x: float, width: float) -> float:
     return draw_tab_bar(
@@ -3436,7 +3015,7 @@ class AetherSettingsView(PanelManagerView):
     )
 
   def _uses_two_columns(self, width: float) -> bool:
-    return width >= self.TWO_COLUMN_BREAKPOINT
+    return False
 
   def _has_subsequent_visible(self, start_idx: int, sections: list[SettingSection]) -> bool:
     for j in range(start_idx, len(sections)):
@@ -3467,67 +3046,22 @@ class AetherSettingsView(PanelManagerView):
           style=self._panel_style,
         )
       return
-    i = 0
-    while i < len(active):
-      section = active[i]
-      visible_rows = self._visible_rows(section)
-      if not visible_rows:
-        i += 1
-        continue
-      if section.column_pair and i + 1 < len(active) and active[i + 1].column_pair == section.column_pair and self._uses_two_columns(width):
-        right_section = active[i + 1]
-        right_rows = self._visible_rows(right_section)
-        col_w = (width - self.COLUMN_GAP) / 2
-        section_h = len(visible_rows) * section.row_height
-        right_h = len(right_rows) * right_section.row_height
-        group_h = max(section_h, right_h)
-
-        draw_section_header(
-          rl.Rectangle(rect.x, y, col_w, SECTION_HEADER_HEIGHT),
-          tr(section.title), style=self._panel_style,
-        )
-        draw_section_header(
-          rl.Rectangle(rect.x + col_w + self.COLUMN_GAP, y, col_w, SECTION_HEADER_HEIGHT),
-          tr(right_section.title), style=self._panel_style,
-        )
-        y += SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
-
-        left_group = rl.Rectangle(rect.x, y, col_w, section_h)
-        right_group = rl.Rectangle(rect.x + col_w + self.COLUMN_GAP, y, col_w, right_h)
-        draw_list_group_shell(left_group, style=self._panel_style)
-        draw_list_group_shell(right_group, style=self._panel_style)
-
-        for j, row in enumerate(visible_rows):
-          row_rect = rl.Rectangle(rect.x, y + j * section.row_height, col_w, section.row_height)
-          self._draw_row(row_rect, row, is_last=(j == len(visible_rows) - 1))
-        for j, row in enumerate(right_rows):
-          row_rect = rl.Rectangle(rect.x + col_w + self.COLUMN_GAP, y + j * right_section.row_height, col_w, right_section.row_height)
-          self._draw_row(row_rect, row, is_last=(j == len(right_rows) - 1))
-        y += max(section_h, right_h) + SECTION_GAP
-        i += 2
-      else:
-        y = self._draw_section(y, rect.x, width, section, visible_rows)
-        y += SECTION_GAP
-        i += 1
+    for section in active:
+      rows = self._visible_rows(section)
+      if rows:
+        y = self._draw_section(y, rect.x, width, section, rows) + SECTION_GAP
 
   def _draw_section(self, y: float, x: float, width: float,
                     section: SettingSection, rows: list[SettingRow]) -> float:
     if section.title:
-      draw_section_header(
-        rl.Rectangle(x, y, width, SECTION_HEADER_HEIGHT),
-        tr(section.title),
-        style=self._panel_style,
-      )
+      draw_section_header(rl.Rectangle(x, y, width, SECTION_HEADER_HEIGHT), tr(section.title), style=self._panel_style)
       y += SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
-
-    group_rect = rl.Rectangle(x, y, width, len(rows) * section.row_height)
-    draw_list_group_shell(group_rect, style=self._panel_style)
-
-    for i, row in enumerate(rows):
-      row_rect = rl.Rectangle(x, y + i * section.row_height, width, section.row_height)
-      self._draw_row(row_rect, row, is_last=(i == len(rows) - 1))
-
-    return y + group_rect.height
+    heights = [self._row_height(width, section, row) for row in rows]
+    draw_list_group_shell(rl.Rectangle(x, y, width, sum(heights)), style=self._panel_style)
+    for index, (row, height) in enumerate(zip(rows, heights, strict=True)):
+      self._draw_row(rl.Rectangle(x, y, width, height), row, is_last=index == len(rows) - 1)
+      y += height
+    return y
 
   def _draw_row(self, rect: rl.Rectangle, row: SettingRow, is_last: bool):
     target_id = f"{row.type}:{row.id}"
@@ -3554,8 +3088,8 @@ class AetherSettingsView(PanelManagerView):
         hovered=hovered,
         pressed=pressed,
         is_last=is_last,
-        show_chevron=row.on_click is not None,
-        title_size=36, subtitle_size=26, value_size=30,
+        show_chevron=bool(row.on_click or row.navigate_to),
+        title_size=50, subtitle_size=36, value_size=40,
         style=self._panel_style,
       )
     elif row.type == "action":
@@ -3571,8 +3105,8 @@ class AetherSettingsView(PanelManagerView):
         pressed=pressed,
         is_last=is_last,
         action_pill=True,
-        title_size=36, subtitle_size=26,
-        action_pill_height=AETHER_LIST_METRICS.toggle_height, action_text_size=26,
+        title_size=50, subtitle_size=36,
+        action_pill_height=AETHER_LIST_METRICS.toggle_height, action_text_size=36,
         action_text_color=action_text_color,
         action_fill=action_fill,
         action_border=action_border,
@@ -3585,51 +3119,17 @@ class AetherSettingsView(PanelManagerView):
 # ═══════════════════════════════════════════════════════════════
 
 class CardHubManagerView(AetherSettingsView):
-    """AetherSettingsView that renders a TileGrid of HubTile navigation cards.
+  """Scrollable category rows using the existing panel navigation callbacks."""
 
-    Subclasses override ``_build_cards()`` to return a list of card dicts
-    with keys ``title``, ``desc``, ``icon``, ``on_click``.
-    """
+  def __init__(self, controller, sections, *, columns=3, padding=SPACING.tile_gap, **kwargs):
+    super().__init__(controller, sections, **kwargs)
+    self._sections = [SettingSection("", [
+      SettingRow(str(index), "value", card["title"], subtitle=card.get("desc", ""), on_click=card["on_click"])
+      for index, card in enumerate(self._build_cards())
+    ])]
 
-    @property
-    def vertical_scrolling_disabled(self) -> bool:
-        return True
-
-    def __init__(self, controller, sections, *, columns=3, padding=SPACING.tile_gap, **kwargs):
-        super().__init__(controller, sections, **kwargs)
-        self._grid = TileGrid(columns=columns, padding=padding)
-        self._grid.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
-        self._child(self._grid)
-        self._init_cards()
-
-    def _init_cards(self):
-        self._grid.clear()
-        for d in self._build_cards():
-            self._grid.add_tile(HubTile(
-                title=d["title"], desc=d["desc"], icon_key=d["icon"],
-                on_click=d["on_click"],
-            ))
-
-    def _build_cards(self) -> list[dict]:
-        raise NotImplementedError
-
-    def _render(self, rect: rl.Rectangle):
-        self.set_rect(rect)
-        self._interactive_rects.clear()
-        frame, scroll_rect, content_width = init_list_panel(rect, self._panel_style, self._metrics)
-        self._scroll_rect = scroll_rect
-        self._content_height = scroll_rect.height
-        self._scroll_panel.set_enabled(self.is_visible)
-        self._scroll_offset = self._scroll_panel.update(
-            scroll_rect, scroll_rect.height)
-        self._scroll_offset = 0.0
-        self._draw_scroll_content(scroll_rect, content_width)
-
-    def _draw_scroll_content(self, rect: rl.Rectangle, width: float):
-        y = rect.y + self._scroll_offset
-        self._grid.set_parent_rect(self._scroll_rect)
-        self._grid.render(rl.Rectangle(rect.x, y, width, rect.height))
-
+  def _build_cards(self) -> list[dict]:
+    raise NotImplementedError
 
 def draw_back_button(pill_rect: rl.Rectangle, center_y: float, pressed: bool, hovered: bool) -> rl.Rectangle:
   back_size = 48
@@ -3948,10 +3448,6 @@ class AetherTile(Widget):
     ox = snapped.x + (snapped.width - sw) / 2
     oy = snapped.y + (snapped.height - sh) / 2
     face, accent = draw_hud_background(rl.Rectangle(ox, oy, sw, sh), accent, glow, bg_color=bg_color)
-    if const_connected:
-      self._draw_constellation(face, accent, glow)
-    else:
-      self._draw_constellation_disconnected(face, accent, glow)
     return face, accent
 
   def _render(self, rect: rl.Rectangle):
@@ -4080,129 +3576,18 @@ class ToggleTile(AetherTile):
       self._plate_target = 0.0
       self._is_pressed = False
 
+  def measure_height(self, width: float) -> float:
+    subtitle = self._disabled_label if not self.enabled and self._disabled_label else self.desc
+    return settings_row_height(width, tr(self.title), tr(subtitle), toggle=True)
+
   def _render(self, rect: rl.Rectangle):
-    enabled = self.enabled
-    active = self.get_state()
-    self._animate_plate(rl.get_frame_time())
-
-    if not enabled:
-      self._plate_offset = 0.0
-      self._plate_target = 0.0
-
-    if not enabled:
-      face, accent = self._render_hud_background(rect, self._disabled_color, 0.0, bg_color=_HUD_BG_DISABLED, const_connected=False)
-    else:
-      face, accent = self._render_hud_background(rect, self._active_color, self._glow)
-    rx, ry, rw, rh = face.x, face.y, face.width, face.height
-
-    content_pad = SPACING.tile_content
-    max_w = rw - content_pad * 2
-    text_scale = max(0.92, min(1.15, rh / 185.0))
-    title_size = max(36, int(round(44 * text_scale)))
-
-    if not enabled:
-      title_lines = wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
-      desc_size = max(26, int(round(28 * text_scale)))
-      disabled_text = tr(self._disabled_label) if self._disabled_label else tr("LOCKED")
-      desc_lines = wrap_text(self._font_desc, disabled_text, max_w, desc_size, max_lines=2)
-
-      total_text_h = len(title_lines) * (title_size + 4) + len(desc_lines) * (desc_size + 2) + 6
-      start_y = ry + (rh - total_text_h) / 2
-
-      curr_y = start_y
-      for line in title_lines:
-        draw_text_fit_common(self._font, line, rl.Vector2(rx + content_pad, curr_y), max_w, title_size, align_center=True, color=_HUD_TEXT_DIM)
-        curr_y += title_size + 4
-      curr_y += 6
-      for line in desc_lines:
-        draw_text_fit_common(self._font_desc, line, rl.Vector2(rx + content_pad, curr_y), max_w, desc_size, align_center=True, color=_HUD_TEXT_DIM)
-        curr_y += desc_size + 2
-    else:
-      title_color = rl.WHITE if active else _HUD_TEXT_DIM
-      if self.desc:
-        title_lines = wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
-        desc_size = max(26, int(round(28 * text_scale)))
-        desc_lines = wrap_text(self._font_desc, self.desc, max_w, desc_size, max_lines=2)
-
-        if len(title_lines) == 1:
-          title_y = ry + int(rh * 0.20)
-        else:
-          title_y = ry + int(rh * 0.16)
-
-        curr_y = title_y
-        for line in title_lines:
-          draw_text_fit_common(self._font, line, rl.Vector2(rx + content_pad, curr_y), max_w, title_size, align_center=True, color=title_color)
-          curr_y += title_size + 4
-
-        desc_y = title_y + len(title_lines) * (title_size + 4) + 6
-        curr_y = desc_y
-        for line in desc_lines:
-          draw_text_fit_common(self._font_desc, line, rl.Vector2(rx + content_pad, curr_y), max_w, desc_size, align_center=True, color=rl.Color(255, 255, 255, 140))
-          curr_y += desc_size + 2
-
-        led_cx = rx + rw // 2
-        led_cy = ry + rh - 32
-      else:
-        title_lines = wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
-        led_cy = ry + rh - 35
-        total_text_h = len(title_lines) * (title_size + 4)
-        title_y = ry + (rh - 24 - total_text_h) / 2
-
-        curr_y = title_y
-        for line in title_lines:
-          draw_text_fit_common(self._font, line, rl.Vector2(rx + content_pad, curr_y), max_w, title_size, align_center=True, color=title_color)
-          curr_y += title_size + 4
-
-        led_cx = rx + rw // 2
-
-      if active:
-        rl.draw_circle(int(led_cx), int(led_cy), 16, rl.Color(accent.r, accent.g, accent.b, 24))
-        rl.draw_circle(int(led_cx), int(led_cy), 9, accent)
-      else:
-        rl.draw_ring(rl.Vector2(led_cx, led_cy), 6, 10, 0, 360, 24, rl.Color(accent.r, accent.g, accent.b, 22))
+    subtitle = self._disabled_label if not self.enabled and self._disabled_label else self.desc
+    draw_standard_toggle_row(rect, tr(self.title), tr(subtitle), self.get_state(), enabled=self.enabled,
+                             pressed=self._is_pressed)
 
 
 class RowToggleTile(ToggleTile):
-  def __init__(
-    self,
-    title: str,
-    get_state: Callable[[], bool],
-    set_state: Callable[[bool], None],
-    bg_color: rl.Color | str | None = None,
-    desc: str = "",
-    is_enabled: Callable[[], bool] | None = None,
-    disabled_label: str = "",
-  ):
-    super().__init__(
-      title=title,
-      get_state=get_state,
-      set_state=set_state,
-      bg_color=bg_color,
-      desc=desc,
-      is_enabled=is_enabled,
-      disabled_label=disabled_label,
-    )
-
-  def _render(self, rect: rl.Rectangle):
-    enabled = self.enabled
-    active = self.get_state()
-    
-    status_text = tr("Enabled") if active else tr("Disabled")
-    status_color_override = None if active else rl.Color(200, 210, 225, 255)
-
-    def draw_led(rx, ry, rw, rh, content_pad, accent):
-      led_radius_outer = int(rh * 0.10)
-      led_radius_inner = int(rh * 0.06)
-      led_cx = rx + rw - content_pad - led_radius_outer
-      led_cy = ry + rh / 2
-      
-      if active:
-        rl.draw_circle(int(led_cx), int(led_cy), led_radius_outer, rl.Color(accent.r, accent.g, accent.b, 40))
-        rl.draw_circle(int(led_cx), int(led_cy), led_radius_inner, accent)
-      else:
-        rl.draw_ring(rl.Vector2(led_cx, led_cy), led_radius_inner - 2, led_radius_inner + 1, 0, 360, 24, rl.Color(accent.r, accent.g, accent.b, 22))
-
-    self._render_luxury_grid_layout(rect, self.title, status_text, active, status_color_override, draw_led)
+  """Compatibility name for panels built with row toggles."""
 
 
 class ValueTile(AetherTile):
@@ -5435,6 +4820,10 @@ class TileGrid(Widget):
 
 
   @property
+  def _is_toggle_list(self) -> bool:
+    return bool(self.tiles) and all(isinstance(tile, ToggleTile) for tile in self.tiles)
+
+  @property
   def gap(self) -> int:
     return self._gap
 
@@ -5455,6 +4844,8 @@ class TileGrid(Widget):
 
   def get_column_count(self, tile_count: int | None = None) -> int:
     count = len(self.tiles) if tile_count is None else tile_count
+    if self._is_toggle_list:
+      return 1
     if count <= 0:
       return self._columns or 1
     if self._columns is not None:
@@ -5496,6 +4887,8 @@ class TileGrid(Widget):
     if not self.tiles:
       return 0.0
     count = len(self.tiles)
+    if self._is_toggle_list:
+      return sum(tile.measure_height(width) for tile in self.tiles) + self._gap * max(0, count - 1)
     if self.carousel_rows and self.carousel_tile_width:
       rows = self.carousel_rows
       h = self._tile_height if self._tile_height is not None else 130.0
@@ -5536,6 +4929,14 @@ class TileGrid(Widget):
     if not self.tiles:
       return
     tiles_to_render = list(self.tiles)
+    if self._is_toggle_list:
+      y = rect.y
+      for tile in tiles_to_render:
+        height = tile.measure_height(rect.width)
+        tile.set_parent_rect(self._parent_rect)
+        tile.render(rl.Rectangle(rect.x, y, rect.width, height))
+        y += height + self._gap
+      return
     count = len(tiles_to_render)
     
     if self.carousel_rows and self.carousel_tile_width:

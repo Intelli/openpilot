@@ -188,39 +188,22 @@ class SoundsManagerView(AdjustorTogglesPanelView):
       self._controller._restore_defaults()
 
   def _measure_content_height(self, content_width: float) -> float:
-    col_width = (content_width - SECTION_GAP) / 2
-
-    for key in self._controller.VOLUME_KEYS:
+    all_keys = self._controller.VOLUME_KEYS + [self._controller.COOLDOWN_KEY]
+    for key in all_keys:
       self._adjustor_rows[key].custom_row_height = None
-    self._adjustor_rows[self._controller.COOLDOWN_KEY].custom_row_height = None
-
-    vol_overhead = GROUP_TOP_INSET + 28  # top pad + "Reset All" label
-
-    available_h = max(72.0, (self._scroll_rect.height if self._scroll_rect else 0.0) - 6.0)
-    rows_available = max(72.0 * (len(self._controller.VOLUME_KEYS) + 1), available_h - vol_overhead)
-    ROW_HEIGHT = rows_available / (len(self._controller.VOLUME_KEYS) + 1)
-    for key in self._controller.VOLUME_KEYS:
-      self._adjustor_rows[key].custom_row_height = ROW_HEIGHT
-    self._adjustor_rows[self._controller.COOLDOWN_KEY].custom_row_height = ROW_HEIGHT
-
-    left_content_h = (len(self._controller.VOLUME_KEYS) + 1) * ROW_HEIGHT + vol_overhead
-    tiles_needed_h = self.measure_page_grid_height(self._toggle_grid, col_width - 24) + 24 + GROUP_TOP_INSET + GROUP_HEADER_TOTAL_HEIGHT
-    max_content_h = max(left_content_h, tiles_needed_h)
-
-    self._left_container_h = max_content_h
-    self._tiles_container_h = max_content_h
-
-    return self._compute_two_column_height(max_content_h)
+    self._left_container_h = GROUP_TOP_INSET + 60 + sum(
+      self._adjustor_rows[key].measure_height(content_width) for key in all_keys)
+    self._tiles_container_h = (self.measure_page_grid_height(self._toggle_grid, content_width - 24)
+                               + 24 + GROUP_TOP_INSET + GROUP_HEADER_TOTAL_HEIGHT)
+    return self._left_container_h + SECTION_GAP + self._tiles_container_h
 
   def _draw_header(self, rect: rl.Rectangle):
     pass
 
   def _draw_scroll_content(self, rect: rl.Rectangle, content_width: float):
     y = rect.y + self._scroll_offset
-    col_width = (content_width - SECTION_GAP) / 2
-
-    self._draw_volume_column(y, rect.x, col_width)
-    self._draw_utility_column(y, rect.x + col_width + SECTION_GAP, col_width)
+    self._draw_volume_column(y, rect.x, content_width)
+    self._draw_utility_column(y + self._left_container_h + SECTION_GAP, rect.x, content_width)
 
   def _draw_volume_column(self, y: float, x: float, width: float):
     all_keys = self._controller.VOLUME_KEYS + [self._controller.COOLDOWN_KEY]
@@ -232,12 +215,12 @@ class SoundsManagerView(AdjustorTogglesPanelView):
 
     current_y = y + GROUP_TOP_INSET
 
-    label_rect = rl.Rectangle(x + 24, current_y, width - 48, 28)
-    gui_label(label_rect, tr("Reset All"), 28, AetherListColors.SUBTEXT, FontWeight.MEDIUM,
+    label_rect = rl.Rectangle(x + 24, current_y, width - 48, 60)
+    gui_label(label_rect, tr("Reset All"), 36, AetherListColors.SUBTEXT, FontWeight.MEDIUM,
               alignment=rl.GuiTextAlignment.TEXT_ALIGN_RIGHT)
-    self._reset_rect = rl.Rectangle(label_rect.x + label_rect.width - 140, label_rect.y, 140, 24)
+    self._reset_rect = rl.Rectangle(label_rect.x + label_rect.width - 220, label_rect.y, 220, 60)
     self._interactive_rects["action:restore_defaults"] = self._reset_rect
-    current_y += 28
+    current_y += 60
     for index, key in enumerate(all_keys):
       adjustor = self._adjustor_rows[key]
       row_h = adjustor.measure_height(width)

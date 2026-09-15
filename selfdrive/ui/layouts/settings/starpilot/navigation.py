@@ -224,11 +224,11 @@ NAVIGATION_METRICS = replace(AETHER_LIST_METRICS, header_height=0)
 
 NAV_INSET = 18.0
 NAV_GAP = 12.0
-NAV_SEARCH_HEIGHT = 110.0
-NAV_SUMMARY_HEIGHT = 124.0
-NAV_ACTION_HEIGHT = 78.0
+NAV_SEARCH_HEIGHT = 170.0
+NAV_SUMMARY_HEIGHT = 170.0
+NAV_ACTION_HEIGHT = 90.0
 NAV_SECTION_HEIGHT = 72.0
-NAV_ROW_HEIGHT = 124.0
+NAV_ROW_HEIGHT = 170.0
 NAV_EMPTY_HEIGHT = 132.0
 NAV_ACTION_COLUMNS = 3
 NAV_ACTION_GAP = 12.0
@@ -633,7 +633,7 @@ class StarPilotNavigationLayout(_SettingsPage):
         fill = with_alpha(AetherListColors.PRIMARY, 54 if enabled and (hovered or pressed) else 24 if enabled else 8)
         border = with_alpha(AetherListColors.PRIMARY, 110 if enabled else 28)
         text_color = AetherListColors.HEADER if enabled else AetherListColors.MUTED
-      draw_action_pill(rect, label, fill, border, text_color, font_size=24)
+      draw_action_pill(rect, label, fill, border, text_color, font_size=36)
     return rows * NAV_ACTION_HEIGHT + max(0, rows - 1) * NAV_ACTION_GAP
 
   def _draw_summary_row(self, rect: rl.Rectangle, manager: NavigationManagerView) -> None:
@@ -664,11 +664,11 @@ class StarPilotNavigationLayout(_SettingsPage):
       pressed=pressed,
       action_width=action_width,
       action_pill=True,
-      action_pill_height=64,
+      action_pill_height=72,
       action_pill_width=220,
-      title_size=34,
-      subtitle_size=24,
-      action_text_size=24,
+      title_size=50,
+      subtitle_size=36,
+      action_text_size=36,
       action_fill=with_alpha(AetherListColors.DANGER if target_id == "action:cancel" else AetherListColors.SUCCESS, 38 if enabled else 10),
       action_border=with_alpha(AetherListColors.DANGER if target_id == "action:cancel" else AetherListColors.SUCCESS, 85 if enabled else 25),
       action_text_color=AetherListColors.HEADER if enabled else AetherListColors.MUTED,
@@ -694,11 +694,11 @@ class StarPilotNavigationLayout(_SettingsPage):
       is_last=False,
       action_width=220,
       action_pill=True,
-      action_pill_height=64,
+      action_pill_height=72,
       action_pill_width=180,
-      title_size=32,
-      subtitle_size=22,
-      action_text_size=24,
+      title_size=50,
+      subtitle_size=36,
+      action_text_size=36,
       row_separator=PANEL_STYLE.divider_color,
     )
     y += NAV_SEARCH_HEIGHT + NAV_GAP
@@ -757,13 +757,13 @@ class StarPilotNavigationLayout(_SettingsPage):
           hovered=hovered,
           pressed=pressed,
           is_last=index == len(self._search_results) - 1,
-          action_width=190,
+          action_width=240,
           action_pill=True,
-          action_pill_height=58,
-          action_pill_width=150,
-          title_size=31,
-          subtitle_size=22,
-          action_text_size=23,
+          action_pill_height=72,
+          action_pill_width=210,
+          title_size=50,
+          subtitle_size=36,
+          action_text_size=36,
           row_separator=PANEL_STYLE.divider_color,
         )
         y += NAV_ROW_HEIGHT
@@ -798,13 +798,13 @@ class StarPilotNavigationLayout(_SettingsPage):
           hovered=hovered,
           pressed=pressed,
           is_last=index == len(ordered_favorites) - 1,
-          action_width=190,
+          action_width=240,
           action_pill=True,
-          action_pill_height=58,
-          action_pill_width=150,
-          title_size=31,
-          subtitle_size=22,
-          action_text_size=23,
+          action_pill_height=72,
+          action_pill_width=210,
+          title_size=50,
+          subtitle_size=36,
+          action_text_size=36,
           row_separator=PANEL_STYLE.divider_color,
         )
         y += NAV_ROW_HEIGHT
@@ -833,13 +833,13 @@ class StarPilotNavigationLayout(_SettingsPage):
           hovered=hovered,
           pressed=pressed,
           is_last=index == len(self._recent_destinations) - 1,
-          action_width=190,
+          action_width=240,
           action_pill=True,
-          action_pill_height=58,
-          action_pill_width=150,
-          title_size=31,
-          subtitle_size=22,
-          action_text_size=23,
+          action_pill_height=72,
+          action_pill_width=210,
+          title_size=50,
+          subtitle_size=36,
+          action_text_size=36,
           row_separator=PANEL_STYLE.divider_color,
         )
         y += NAV_ROW_HEIGHT
