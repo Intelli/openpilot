@@ -155,7 +155,7 @@ def test_ford_lateral_controls_are_ford_only_and_galaxy_only():
 def test_device_shutdown_uses_literal_hours():
   device_shutdown = _params_by_section(_layout())["Device & Data"]["DeviceShutdown"]
 
-  assert _declared_default("DeviceShutdown") == "6"
+  assert _declared_default("DeviceShutdown") == "1"
   assert device_shutdown["min"] == 1
   assert device_shutdown["max"] == 30
   assert device_shutdown["step"] == 1
@@ -163,8 +163,12 @@ def test_device_shutdown_uses_literal_hours():
 
 def test_speed_settings_follow_vehicle_units_with_one_unit_steps():
   sections = _params_by_section(_layout())
+  threshold = next(section["MinimumLaneChangeSpeed"] for section in sections.values() if "MinimumLaneChangeSpeed" in section)
+  assert _declared_default("MinimumLaneChangeSpeed") == "20.0"
+  assert threshold["unit"] == " mph"
+  assert "unit_type" not in threshold
   speed_keys = {
-    "MinimumLaneChangeSpeed", "PauseLateralSpeed",
+    "PauseLateralSpeed",
     "CESpeed", "CESpeedLead", "CESignalSpeed",
     "CustomCruise", "CustomCruiseLong", "SetSpeedOffset", "PulseGlideSpeedDelta",
     "Offset1", "Offset2", "Offset3", "Offset4", "Offset5", "Offset6", "Offset7",

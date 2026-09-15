@@ -195,14 +195,13 @@
       {
         "key": "MinimumLaneChangeSpeed",
         "label": "Minimum Lane Change Speed",
-        "description": "Lowest speed at which openpilot will change lanes.",
+        "description": "Lowest speed at which openpilot will change lanes. Always specified in mph, regardless of display units.",
         "data_type": "int",
         "ui_type": "numeric",
         "min": 0.0,
         "max": 99.0,
         "step": 1.0,
-        "unit_type": "vehicle_speed",
-        "metric_max": 150.0,
+        "unit": " mph",
         "parent_key": "LaneChanges",
         "settings_tier": "simple"
       },

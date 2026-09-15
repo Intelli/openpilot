@@ -66,7 +66,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"GsmMetered", {PERSISTENT, BOOL, "1", std::nullopt, 0, SETTINGS_SIMPLE}},
     {"GsmRoaming", {PERSISTENT, BOOL}},
     {"HardwareSerial", {PERSISTENT, STRING}},
-    {"HasAcceptedTerms", {PERSISTENT, STRING, "0"}},
+    {"HasAcceptedTerms", {PERSISTENT, STRING, "2"}},
     // Internal kill switch; the platform verification allowlist remains the hard safety gate.
     {"HondaBoschARadar", {PERSISTENT, BOOL, "1"}},
     {"HondaGasFactorParams", {PERSISTENT, FLOAT}},
@@ -322,7 +322,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"GalaxyMobileDefault", {PERSISTENT | DONT_LOG, BOOL, "1", "1", 0, SETTINGS_SIMPLE}},
     {"DeveloperWidgets", {PERSISTENT, BOOL, "1", "0", 3}},
     {"DeviceManagement", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
-    {"DeviceShutdown", {PERSISTENT, INT, "6", "6", 1, SETTINGS_SIMPLE}},
+    {"DeviceShutdown", {PERSISTENT, INT, "1", "6", 1, SETTINGS_SIMPLE}},
     {"DisableOnroadUploads", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
     {"DisableOpenpilotLongitudinal", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},
     {"DiscordUsername", {PERSISTENT, STRING, "", "", 0}},

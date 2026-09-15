@@ -1,5 +1,5 @@
 diff --git a/common/params_keys.h b/common/params_keys.h
-index 7e6ecc9f288f61650b50852d50caf2ef86d09800..44d286eb4eb5be0df016071755f3d7e518f9fd1b 100644
+index 7e6ecc9f288f61650b50852d50caf2ef86d09800..858d5f4dcf06a4ced7096567a320b39922e88041 100644
 --- a/common/params_keys.h
 +++ b/common/params_keys.h
 @@ -29,7 +29,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -11,6 +11,15 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..44d286eb4eb5be0df016071755f3d7e5
      {"ControlsReady", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
      {"CurrentBootlog", {PERSISTENT, STRING}},
      {"CurrentRoute", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, STRING}},
+@@ -66,7 +66,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"GsmMetered", {PERSISTENT, BOOL, "1", std::nullopt, 0, SETTINGS_SIMPLE}},
+     {"GsmRoaming", {PERSISTENT, BOOL}},
+     {"HardwareSerial", {PERSISTENT, STRING}},
+-    {"HasAcceptedTerms", {PERSISTENT, STRING, "0"}},
++    {"HasAcceptedTerms", {PERSISTENT, STRING, "2"}},
+     // Internal kill switch; the platform verification allowlist remains the hard safety gate.
+     {"HondaBoschARadar", {PERSISTENT, BOOL, "1"}},
+     {"HondaGasFactorParams", {PERSISTENT, FLOAT}},
 @@ -78,7 +78,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"IsEngaged", {PERSISTENT, BOOL}},
      {"IsLdwEnabled", {PERSISTENT, BOOL}},
@@ -33,6 +42,15 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..44d286eb4eb5be0df016071755f3d7e5
      {"CECurves", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
      {"CECurvesLead", {PERSISTENT, BOOL, "0", "0", 1}},
      {"CELead", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+@@ -322,7 +322,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"GalaxyMobileDefault", {PERSISTENT | DONT_LOG, BOOL, "1", "1", 0, SETTINGS_SIMPLE}},
+     {"DeveloperWidgets", {PERSISTENT, BOOL, "1", "0", 3}},
+     {"DeviceManagement", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+-    {"DeviceShutdown", {PERSISTENT, INT, "6", "6", 1, SETTINGS_SIMPLE}},
++    {"DeviceShutdown", {PERSISTENT, INT, "1", "6", 1, SETTINGS_SIMPLE}},
+     {"DisableOnroadUploads", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+     {"DisableOpenpilotLongitudinal", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},
+     {"DiscordUsername", {PERSISTENT, STRING, "", "", 0}},
 @@ -382,7 +382,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"NAPRadarOffset", {PERSISTENT, FLOAT, "0.0", "0.0", 0, SETTINGS_SIMPLE}},
      {"ForceAutoTune", {PERSISTENT, BOOL, "0", "0", 3}},
@@ -127,9 +145,18 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..44d286eb4eb5be0df016071755f3d7e5
 +    {"EV9Path", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
  };
 diff --git a/starpilot/common/starpilot_variables.py b/starpilot/common/starpilot_variables.py
-index b9c59e699ea63a325316bbfb114f80eb5a8b9fd2..b3382a9056b61d9c55e717046233b702117bea30 100644
+index b9c59e699ea63a325316bbfb114f80eb5a8b9fd2..ba28f3c75038757af68992db9bb1f9572e1cab8f 100644
 --- a/starpilot/common/starpilot_variables.py
 +++ b/starpilot/common/starpilot_variables.py
+@@ -240,7 +240,7 @@ DEVELOPER_SIDEBAR_METRICS = {
+ 
+ DEVICE_SHUTDOWN_MIN_HOURS = 1
+ DEVICE_SHUTDOWN_MAX_HOURS = 30
+-DEVICE_SHUTDOWN_DEFAULT_HOURS = 6
++DEVICE_SHUTDOWN_DEFAULT_HOURS = 1
+ 
+ 
+ def device_shutdown_seconds(hours):
 @@ -875,7 +875,8 @@ class StarPilotVariables:
        car_model_name = self.params.get("CarModelName")
        if car_model_name and "2019-21" in car_model_name:
@@ -140,3 +167,13 @@ index b9c59e699ea63a325316bbfb114f80eb5a8b9fd2..b3382a9056b61d9c55e717046233b702
      if toggle.force_fingerprint:
        toggle.car_model = car_model
  
+@@ -1159,7 +1160,8 @@ class StarPilotVariables:
+     toggle.lane_changes_require_cruise = toggle.car_model == HYUNDAI_CAR.KIA_XCEED_PHEV
+     toggle.lane_change_delay = self.get_value("LaneChangeTime", cast=float, condition=toggle.lane_changes)
+     toggle.lane_detection_width = self.get_value("LaneDetectionWidth", cast=float, condition=toggle.lane_changes, conversion=distance_conversion)
+-    toggle.minimum_lane_change_speed = self.get_value("MinimumLaneChangeSpeed", cast=float, condition=toggle.lane_changes, conversion=speed_conversion)
++    # This setting is in mph, matching its UI and the legacy 20 mph threshold.
++    toggle.minimum_lane_change_speed = self.get_value("MinimumLaneChangeSpeed", cast=float, condition=toggle.lane_changes, conversion=CV.MPH_TO_MS)
+     toggle.lane_change_close_gap = self.get_value("LaneChangeCloseGap", condition=toggle.lane_changes)
+     toggle.lane_change_close_gap_seconds = self.get_value(
+       "LaneChangeCloseGapSeconds", cast=float, condition=toggle.lane_change_close_gap, default=0.6, min=0.25, max=1.0,

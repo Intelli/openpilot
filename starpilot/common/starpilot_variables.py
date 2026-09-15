@@ -242,7 +242,7 @@ DEVELOPER_SIDEBAR_METRICS = {
 
 DEVICE_SHUTDOWN_MIN_HOURS = 1
 DEVICE_SHUTDOWN_MAX_HOURS = 30
-DEVICE_SHUTDOWN_DEFAULT_HOURS = 6
+DEVICE_SHUTDOWN_DEFAULT_HOURS = 1
 
 
 def device_shutdown_seconds(hours):
@@ -1171,7 +1171,8 @@ class StarPilotVariables:
     toggle.lane_changes_require_cruise = toggle.car_model == HYUNDAI_CAR.KIA_XCEED_PHEV
     toggle.lane_change_delay = self.get_value("LaneChangeTime", cast=float, condition=toggle.lane_changes)
     toggle.lane_detection_width = self.get_value("LaneDetectionWidth", cast=float, condition=toggle.lane_changes, conversion=distance_conversion)
-    toggle.minimum_lane_change_speed = self.get_value("MinimumLaneChangeSpeed", cast=float, condition=toggle.lane_changes, conversion=speed_conversion)
+    # This setting is in mph, matching its UI and the legacy 20 mph threshold.
+    toggle.minimum_lane_change_speed = self.get_value("MinimumLaneChangeSpeed", cast=float, condition=toggle.lane_changes, conversion=CV.MPH_TO_MS)
     toggle.lane_change_close_gap = self.get_value("LaneChangeCloseGap", condition=toggle.lane_changes)
     toggle.lane_change_close_gap_seconds = self.get_value(
       "LaneChangeCloseGapSeconds", cast=float, condition=toggle.lane_change_close_gap, default=0.6, min=0.25, max=1.0,

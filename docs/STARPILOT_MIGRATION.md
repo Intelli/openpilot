@@ -93,10 +93,15 @@ The custom-defaults port covers supported settings. StarPilot already enables
 road-name and blind-spot visualization. Its native blind-spot/lane-change handling
 is retained. Legacy auto-lock credentials, quickboot/power bookkeeping, unused
 Hkg gains and smoothing knobs, and advanced lane-centering defaults are not
-registered. Legacy percentage speed-limit offsets and independent lane-turn
-speed have no direct equivalent in StarPilot's additive speed bands and shared
-lane-change threshold; those existing StarPilot settings remain unchanged.
-Terms acceptance retains StarPilot's normal flow. Existing saved preferences
+registered. Terms acceptance uses the old `HasAcceptedTerms=2` default, and
+offroad shutdown defaults to one hour (the supported range remains 1–30 hours).
+The shared turn/lane-change threshold defaults to 20 mph, or 32.18688 km/h,
+regardless of vehicle display units. The setting is explicitly in mph in both
+device and Galaxy controls. This matches the old effective threshold: the old
+controller capped the configured 25 mph turn setting at 20 mph.
+StarPilot's native additive speed-offset defaults and blind-spot timing are
+retained by request; no percentage offset or extra clearance delay is added.
+Existing saved preferences
 are preserved, including native RainbowPath settings. The new EV9Path preference
 selects the migrated effect without changing those saved path-color choices.
 
@@ -208,8 +213,8 @@ Cached UI parameter writes use StarPilot's existing broadcast notification.
 This patch also owns the Steering page's previously migrated flat layout;
 its hunks were moved out of `settings_ui_starpilot.patch` so both patches can
 independently recognize already-applied changes. The previous layout remains.
-The legacy lane-turn range change is omitted because StarPilot has its own
-lane-change/turn controls. Path styling uses a separate EV9 Path toggle instead
+The legacy separate lane-turn range control is omitted; StarPilot's shared
+threshold preserves the old effective cutoff. Path styling uses a separate EV9 Path toggle instead
 of renaming the native Rainbow Path control.
 
 ### EV9 path appearance
