@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from openpilot.starpilot.common import starpilot_variables as spv
 
 
@@ -100,6 +102,135 @@ def test_get_starpilot_toggles_uses_live_rivian_angle_request(monkeypatch):
   )
 
   assert toggles.rivian_angle_control is True
+
+
+@pytest.mark.parametrize("broadcast_force", [False, True])
+def test_startup_manual_ev9_selection_overrides_stale_broadcast_without_mutating_it(monkeypatch, broadcast_force):
+  import json
+
+  payload = json.dumps({"force_fingerprint": broadcast_force, "car_model": "MOCK", "force_torque_controller": False})
+  sm = {"starpilotPlan": SimpleNamespace(starpilotToggles=payload)}
+  params = SimpleNamespace(get_bool=lambda key: key == "ForceFingerprint", get=lambda key: "KIA_EV9" if key == "CarModel" else None)
+  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
+  monkeypatch.delattr(spv.get_starpilot_toggles, "_last_toggles_text", raising=False)
+  spv.process_starpilot_toggles.cache_clear()
+
+  broadcast = spv.get_starpilot_toggles(sm)
+  startup = spv.get_starpilot_toggles(sm, read_persisted_force_params=True)
+  assert startup.force_fingerprint is True
+  assert startup.car_model == "KIA_EV9"
+  assert startup is not broadcast
+
+  def unexpected_read(key):
+    raise AssertionError(f"unexpected realtime parameter read: {key}")
+
+  params.get = params.get_bool = unexpected_read
+  realtime = spv.get_starpilot_toggles(sm)
+  assert realtime.force_fingerprint is broadcast_force
+  assert realtime.car_model == "MOCK"
+
+
+@pytest.mark.parametrize("selected,force,expected_force,expected_model", [
+  ("KIA_EV9", False, False, "STALE_MODEL"),
+  (None, True, False, "STALE_MODEL"),
+  ("", True, False, "STALE_MODEL"),
+  ("MOCK", True, False, "STALE_MODEL"),
+  (b"MOCK", True, False, "STALE_MODEL"),
+  (b"KIA_EV9", True, True, "KIA_EV9"),
+  *[(old, True, True, new) for old, new in spv.LEGACY_CARMODEL_MIGRATIONS.items()],
+])
+def test_startup_fingerprint_selection_gating_and_normalization(monkeypatch, selected, force, expected_force, expected_model):
+  params = SimpleNamespace(get_bool=lambda key: force if key == "ForceFingerprint" else False,
+                           get=lambda key: selected if key == "CarModel" else None)
+  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
+  monkeypatch.delattr(spv.get_starpilot_toggles, "_last_toggles_text", raising=False)
+  payload = '{"force_fingerprint": true, "car_model": "STALE_MODEL"}'
+  toggles = spv.get_starpilot_toggles({"starpilotPlan": SimpleNamespace(starpilotToggles=payload)}, read_persisted_force_params=True)
+  assert toggles.force_fingerprint is expected_force
+  assert toggles.car_model == expected_model
+
+
+def test_startup_refreshes_persisted_selection_with_inherited_last_broadcast(monkeypatch):
+  values = {"CarModel": "KIA_EV9", "ForceFingerprint": True}
+  params = SimpleNamespace(get_bool=lambda key: bool(values.get(key, False)), get=lambda key: values.get(key))
+  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
+  payload = '{"force_fingerprint": false, "car_model": "MOCK"}'
+  monkeypatch.setattr(spv.get_starpilot_toggles, "_last_toggles_text", payload, raising=False)
+  # The default SubMaster remains empty in a forked card process. No update() is called.
+  assert not spv.get_starpilot_toggles.__defaults__[0]["starpilotPlan"].starpilotToggles
+  first = spv.get_starpilot_toggles(read_persisted_force_params=True)
+  assert first.force_fingerprint is True
+  assert first.car_model == "KIA_EV9"
+
+  values["CarModel"] = "HYUNDAI_IONIQ_6"
+  second = spv.get_starpilot_toggles(read_persisted_force_params=True)
+  assert second.force_fingerprint is True
+  assert second.car_model == "HYUNDAI_IONIQ_6"
+  assert first.car_model == "KIA_EV9"
+
+  values["ForceFingerprint"] = False
+  third = spv.get_starpilot_toggles(read_persisted_force_params=True)
+  assert third.force_fingerprint is False
+  assert third.car_model == "MOCK"
+  assert second.force_fingerprint is True
+
+
+def test_startup_without_broadcast_refreshes_cached_fallback_selection(monkeypatch):
+  fallback = SimpleNamespace(force_fingerprint=False, car_model="MOCK")
+  monkeypatch.setattr(spv, "StarPilotVariables", lambda: SimpleNamespace(starpilot_toggles=fallback))
+  monkeypatch.delattr(spv.get_starpilot_toggles, "_last_toggles_text", raising=False)
+  params = SimpleNamespace(get_bool=lambda key: key == "ForceFingerprint", get=lambda key: "KIA_EV9" if key == "CarModel" else None)
+  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
+  spv.process_starpilot_toggles.cache_clear()
+  try:
+    # Simulate the fallback object cached by manager before a child starts.
+    assert spv.process_starpilot_toggles("") is fallback
+    startup = spv.get_starpilot_toggles(read_persisted_force_params=True)
+    assert startup.force_fingerprint is True
+    assert startup.car_model == "KIA_EV9"
+    assert fallback.force_fingerprint is False
+    assert fallback.car_model == "MOCK"
+  finally:
+    spv.process_starpilot_toggles.cache_clear()
+
+
+@pytest.mark.parametrize("candidate", [None, "MOCK"])
+def test_startup_manual_ev9_selection_reaches_real_car_interface(monkeypatch, candidate):
+  from opendbc.car import car_helpers, gen_empty_fingerprint, structs
+  from opendbc.car.hyundai.values import CAR, HyundaiFlags, HyundaiSafetyFlags
+  from opendbc.car.vin import VIN_UNKNOWN
+
+  params = SimpleNamespace(get_bool=lambda key: key == "ForceFingerprint", get=lambda key: "KIA_EV9" if key == "CarModel" else None,
+                           put_nonblocking=lambda _key, _value: None)
+  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
+  payload = '{"force_fingerprint": false, "car_model": "MOCK", "disable_openpilot_long": false}'
+  toggles = spv.get_starpilot_toggles({"starpilotPlan": SimpleNamespace(starpilotToggles=payload)}, read_persisted_force_params=True)
+  monkeypatch.setattr(car_helpers, "fingerprint", lambda *_args: (
+    candidate, gen_empty_fingerprint(), VIN_UNKNOWN, [], structs.CarParams.FingerprintSource.can, True,
+  ))
+  interface = car_helpers.get_car(None, None, None, False, False, params, starpilot_toggles=toggles)
+  assert interface.CP.carFingerprint == CAR.KIA_EV9
+  assert interface.CP.steerControlType == structs.CarParams.SteerControlType.angle
+  assert interface.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING
+  safety_param = interface.CP.safetyConfigs[-1].safetyParam
+  for flag in (HyundaiSafetyFlags.CANFD_EV9, HyundaiSafetyFlags.CANFD_ANGLE_STEERING, HyundaiSafetyFlags.EV_GAS):
+    assert safety_param & flag
+  assert interface.CC.BASELINE_VM.l == pytest.approx(3.10)
+  assert interface.CC.BASELINE_VM.sR == pytest.approx(16.0)
+
+
+def test_startup_uses_compiled_ev9_defaults_without_saved_selection(monkeypatch, tmp_path):
+  params = spv.Params(str(tmp_path), return_defaults=True)
+  raw_params = spv.Params(str(tmp_path))
+  assert raw_params.get("ForceFingerprint") is None
+  assert raw_params.get("CarModel") is None
+  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
+  payload = '{"force_fingerprint": false, "car_model": "MOCK"}'
+  toggles = spv.get_starpilot_toggles({"starpilotPlan": SimpleNamespace(starpilotToggles=payload)}, read_persisted_force_params=True)
+  assert toggles.force_fingerprint is True
+  assert toggles.car_model == "KIA_EV9"
+  assert raw_params.get("ForceFingerprint") is None
+  assert raw_params.get("CarModel") is None
 
 
 class _FakeParams:

@@ -159,9 +159,11 @@ cover distinct sensor angles, independent SAS updates and return from handoff.
 
 `drive_helpers_starpilot.patch` connects persistent settings to StarPilot's toggle
 broadcast and the native `EV9AngleConfig` consumer. Startup car identification
-reads current persisted values over cached broadcasts; realtime consumers do no
-parameter-file I/O. Settings publish before fingerprinting, while consumers gate
-behavior on the actual EV9 angle-steering CarParams.
+reads current persisted values over cached broadcasts, including `ForceFingerprint`
+and the selected `CarModel`. Startup overrides use a separate snapshot so they
+cannot modify the cached broadcast consumed by realtime callers, which do no
+parameter-file I/O. Vehicle consumers gate behavior on the actual EV9
+angle-steering CarParams.
 
 | Toggle attribute | Parameter | Application default / range |
 | --- | --- | --- |
