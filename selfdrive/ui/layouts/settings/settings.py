@@ -67,7 +67,7 @@ class SettingsLayout(Widget):
     bluetooth_manager.set_active(False)
 
     self._panels = {
-      PanelType.STARPILOT: PanelInfo(tr_noop("StarPilot"), StarPilotLayout()),
+      PanelType.STARPILOT: PanelInfo(tr_noop("Vehicle"), StarPilotLayout()),
       PanelType.DEVICE: PanelInfo(tr_noop("Device"), DeviceLayout()),
       PanelType.NETWORK: PanelInfo(tr_noop("Network"), NetworkUI(wifi_manager)),
       PanelType.BLUETOOTH: PanelInfo(tr_noop("Bluetooth"), BluetoothManagerUI(bluetooth_manager)),

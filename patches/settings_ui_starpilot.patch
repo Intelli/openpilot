@@ -1,5 +1,5 @@
 diff --git a/selfdrive/ui/layouts/settings/settings.py b/selfdrive/ui/layouts/settings/settings.py
-index 22771d9fab875611575f50fb9163df46cb40ba5b..ac5a0627099381fe77bbda8d71837e669014e394 100644
+index 22771d9fab875611575f50fb9163df46cb40ba5b..3099e9d4c91acc893352724fda29532e40a0a145 100644
 --- a/selfdrive/ui/layouts/settings/settings.py
 +++ b/selfdrive/ui/layouts/settings/settings.py
 @@ -17,9 +17,7 @@ from openpilot.system.ui.widgets.bluetooth import BluetoothManagerUI
@@ -37,6 +37,15 @@ index 22771d9fab875611575f50fb9163df46cb40ba5b..ac5a0627099381fe77bbda8d71837e66
      self._back_btn_rect = rl.Rectangle(0, 0, 0, 0)
  
      # Panel configuration
+@@ -75,7 +67,7 @@ class SettingsLayout(Widget):
+     bluetooth_manager.set_active(False)
+ 
+     self._panels = {
+-      PanelType.STARPILOT: PanelInfo(tr_noop("StarPilot"), StarPilotLayout()),
++      PanelType.STARPILOT: PanelInfo(tr_noop("Vehicle"), StarPilotLayout()),
+       PanelType.DEVICE: PanelInfo(tr_noop("Device"), DeviceLayout()),
+       PanelType.NETWORK: PanelInfo(tr_noop("Network"), NetworkUI(wifi_manager)),
+       PanelType.BLUETOOTH: PanelInfo(tr_noop("Bluetooth"), BluetoothManagerUI(bluetooth_manager)),
 @@ -96,7 +88,7 @@ class SettingsLayout(Widget):
  
    @property
@@ -280,7 +289,7 @@ index 22771d9fab875611575f50fb9163df46cb40ba5b..ac5a0627099381fe77bbda8d71837e66
    def set_current_panel(self, panel_type: PanelType):
      if panel_type != self._current_panel:
 diff --git a/selfdrive/ui/layouts/settings/starpilot/aethergrid.py b/selfdrive/ui/layouts/settings/starpilot/aethergrid.py
-index 21c23a4660cbb2f9a21dcbea33b1f451318c98d7..66cf9cf1c4d2bfe96ca80814333a6d86470f2799 100644
+index 21c23a4660cbb2f9a21dcbea33b1f451318c98d7..94e7d9f3366fc38cd0b11b55e9fcc568b282f9b7 100644
 --- a/selfdrive/ui/layouts/settings/starpilot/aethergrid.py
 +++ b/selfdrive/ui/layouts/settings/starpilot/aethergrid.py
 @@ -21,8 +21,8 @@ PLATE_TAU = 0.060
@@ -420,6 +429,15 @@ index 21c23a4660cbb2f9a21dcbea33b1f451318c98d7..66cf9cf1c4d2bfe96ca80814333a6d86
  
      def __init__(self, *args, **kwargs):
          super().__init__(*args, **kwargs)
+@@ -1220,7 +1199,7 @@ class BreadcrumbController:
+     from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import StarPilotPanelType
+     layout = getattr(main_panel.StarPilotLayout, "active_instance", None)
+ 
+-    path = [(tr("StarPilot"), "action:home")]
++    path = [(tr("Vehicle"), "action:home")]
+     if not layout:
+       return path
+ 
 @@ -1253,185 +1232,37 @@ class BreadcrumbController:
  
      return path
@@ -2769,7 +2787,7 @@ index 0000000000000000000000000000000000000000..2ad224c469908034a7780ec5e7e8579f
 +  assert manager._page_count == 1 and manager._current_page == 0
 +  assert manager._page_grid._tile_height is None
 diff --git a/selfdrive/ui/tests/test_starpilot_navigation_structure.py b/selfdrive/ui/tests/test_starpilot_navigation_structure.py
-index d0077b927097e180af21b92be06cdceeb6020353..117455febbbba0ffb3d78f61a338f0fdaf629fa3 100644
+index d0077b927097e180af21b92be06cdceeb6020353..3dadfa5de5381a6033f11c8fc09993af848e1879 100644
 --- a/selfdrive/ui/tests/test_starpilot_navigation_structure.py
 +++ b/selfdrive/ui/tests/test_starpilot_navigation_structure.py
 @@ -54,70 +54,24 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import StarPilotPan
@@ -2949,7 +2967,7 @@ index d0077b927097e180af21b92be06cdceeb6020353..117455febbbba0ffb3d78f61a338f0fd
    layout, _ = _make_layout(monkeypatch)
    monkeypatch.setattr(gui_app, "_nav_stack", [layout], raising=False)
 -
-   assert BreadcrumbController.build_path() == [("StarPilot", "action:home")]
+-  assert BreadcrumbController.build_path() == [("StarPilot", "action:home")]
 -
 -  _click_title(layout, "Driving Controls")
 -  assert BreadcrumbController.build_path() == [
@@ -2964,6 +2982,7 @@ index d0077b927097e180af21b92be06cdceeb6020353..117455febbbba0ffb3d78f61a338f0fd
 -    ("Navigation & Maps", "action:hub:2"),
 -  ]
 -
++  assert BreadcrumbController.build_path() == [("Vehicle", "action:home")]
    _click_title(layout, "Map Data")
 -  assert BreadcrumbController.build_path()[-1] == ("Map Data", "action:panel")
 -
@@ -2976,7 +2995,7 @@ index d0077b927097e180af21b92be06cdceeb6020353..117455febbbba0ffb3d78f61a338f0fd
 -  assert layout._current_panel == StarPilotPanelType.MAIN
 -  assert [folder["title"] for folder in layout._hub_path] == ["Driving Controls"]
 -  assert BreadcrumbController.build_path()[-1] == ("Driving Controls", "action:hub:1")
-+  assert BreadcrumbController.build_path() == [("StarPilot", "action:home"), ("Map Data", "action:panel")]
++  assert BreadcrumbController.build_path() == [("Vehicle", "action:home"), ("Map Data", "action:panel")]
  
  
  def test_home_breadcrumb_clears_hub_path_panel_stack_and_active_panel(monkeypatch):
@@ -2986,6 +3005,15 @@ index d0077b927097e180af21b92be06cdceeb6020353..117455febbbba0ffb3d78f61a338f0fd
    _click_title(layout, "Map Data")
    layout._panel_stack.append((StarPilotPanelType.MAPS, "details"))
  
+@@ -281,7 +186,7 @@ def test_home_breadcrumb_clears_hub_path_panel_stack_and_active_panel(monkeypatc
+   assert layout._panel_stack == []
+   assert layout._current_panel == StarPilotPanelType.MAIN
+   assert maps_panel.hide_count == 1
+-  assert BreadcrumbController.build_path() == [("StarPilot", "action:home")]
++  assert BreadcrumbController.build_path() == [("Vehicle", "action:home")]
+ 
+ 
+ def test_navigation_start_is_the_summary_action_not_a_duplicate_rail_target():
 @@ -346,8 +251,6 @@ def test_breadcrumb_mouse_interaction_lifecycle():
  
  def test_breadcrumb_panel_stack_unwinds_nav_stack(monkeypatch):
