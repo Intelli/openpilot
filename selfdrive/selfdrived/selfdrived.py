@@ -28,8 +28,7 @@ from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 from openpilot.selfdrive.selfdrived.alert_sound import filter_forcing_stop_alert_sound
-from openpilot.selfdrive.controls.lib.ev9_warnings import (EV9SteeringWarning, ev9_angle_warnings_enabled, ev9_warning_hands_on,
-                                                          steering_saturation_warning_allowed)
+from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning, ev9_angle_warnings_enabled, ev9_warning_hands_on
 
 from openpilot.system.version import get_build_metadata
 from openpilot.system.hardware import HARDWARE
@@ -864,8 +863,7 @@ class SelfdriveD:
       turning = abs(desired_lateral_accel) > 1.0
       commanded_torque_at_max = commanded_torque_at_max_for_saturation(self.CP, lac.output)
       # TODO: lac.saturated includes speed and other checks, should be pulled out
-      if (undershooting and turning and (lac.saturated or commanded_torque_at_max) and
-          steering_saturation_warning_allowed(self.CP, lac, CS.vEgo, self.starpilot_toggles)):
+      if undershooting and turning and (lac.saturated or commanded_torque_at_max):
         self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
 
   def ev9_warning_hands_on(self, CS):

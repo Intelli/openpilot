@@ -34,13 +34,6 @@ def ev9_alert_speed_kph(value) -> float:
   return min(50.0, max(10.0, speed)) if math.isfinite(speed) else 50.0
 
 
-def steering_saturation_warning_allowed(CP, lateral_state, speed_mps, toggles) -> bool:
-  if not ev9_angle_warnings_enabled(CP) or not hasattr(lateral_state, "steeringAngleDesiredDeg"):
-    return True
-  threshold = ev9_alert_speed_kph(getattr(toggles, "hkg_tuning_ev9_alerts_speed_kph", 50.0)) / 3.6
-  return speed_mps > threshold or abs(lateral_state.steeringAngleDesiredDeg) >= EV9_HIGH_ANGLE_WARNING_DEG
-
-
 @dataclass
 class EV9SteeringWarning:
   """Debounce insufficient steering independently of the generic hands-off warning."""

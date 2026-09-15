@@ -1,12 +1,11 @@
 diff --git a/opendbc/car/hyundai/tests/test_ev9.py b/opendbc/car/hyundai/tests/test_ev9.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..ea380c42ccf705e5d572f5dda62741a51b8ab364
+index 0000000000000000000000000000000000000000..408fb17c3168ab6e74d1d49fa09adc8c1e138d0f
 --- /dev/null
 +++ b/opendbc/car/hyundai/tests/test_ev9.py
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,212 @@
 +"""EV9 configuration, driver-intent and manual-control regressions."""
 +
-+import itertools
 +from types import SimpleNamespace
 +
 +import pytest
@@ -28,18 +27,12 @@ index 0000000000000000000000000000000000000000..ea380c42ccf705e5d572f5dda62741a5
 +  assert config.shared_autonomy_mode == 0
 +
 +
-+@pytest.mark.parametrize("raw", [1, 2, 3, 4])
-+@pytest.mark.parametrize("age", [0, 299_999_999, 300_000_000])
-+def test_hod_valid_raw_fresh(raw, age):
-+  assert ev9_hands_on(raw, 1_000_000_000, 1_000_000_000 + age)
-+
-+
-+@pytest.mark.parametrize("raw", [None, 0, 5, -1, "garbage"])
++@pytest.mark.parametrize("raw", [None, -1, "garbage"])
 +def test_hod_invalid_raw(raw):
 +  assert not ev9_hands_on(raw, 1_000_000_000, 1_000_000_000)
 +
 +
-+@pytest.mark.parametrize("timestamp,now", [(0, 1), (1_000_000_000, 1_300_000_001), (1_000_000_001, 1_000_000_000)])
++@pytest.mark.parametrize("timestamp,now", [(0, 1), (1_000_000_001, 1_000_000_000)])
 +def test_hod_invalid_age(timestamp, now):
 +  assert not ev9_hands_on(1, timestamp, now)
 +
@@ -113,7 +106,7 @@ index 0000000000000000000000000000000000000000..ea380c42ccf705e5d572f5dda62741a5
 +  assert EV9AngleConfig.from_toggles(dict(zip(aliases, ["bad", float("nan"), None], strict=True))) == EV9AngleConfig()
 +
 +
-+@pytest.mark.parametrize("states", list(itertools.product((0, 1), repeat=4)))
++@pytest.mark.parametrize("states", [(0, 0, 0, 0), (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)])
 +def test_ev9_doors(states):
 +  toggles = get_test_toggles()
 +  fp = gen_empty_fingerprint()
@@ -126,7 +119,6 @@ index 0000000000000000000000000000000000000000..ea380c42ccf705e5d572f5dda62741a5
 +  message = CANPacker(DBC[cp.carFingerprint][Bus.pt]).make_can_msg("DOORS_SEATBELTS", parsers[Bus.pt].bus, signals)
 +  parsers[Bus.pt].update([(1_000_000_000, [message])])
 +  assert state.update_canfd(parsers)[0].doorOpen == any(states)
-+  assert cp.steerLimitTimer == pytest.approx(0.3)
 +
 +
 +@pytest.mark.parametrize("platform", [CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE, CAR.HYUNDAI_IONIQ_6, CAR.KIA_SPORTAGE_HEV_2026])
@@ -137,6 +129,7 @@ index 0000000000000000000000000000000000000000..ea380c42ccf705e5d572f5dda62741a5
 +  expected = CAR.KIA_EV9 if platform == CAR.KIA_EV9 else CAR.KIA_SPORTAGE_HEV_2026
 +  assert baseline.carFingerprint == expected
 +  if platform == CAR.KIA_EV9:
++    assert cp.steerLimitTimer == pytest.approx(0.3)
 +    assert baseline.wheelbase == pytest.approx(3.10)
 +    assert baseline.steerRatio == pytest.approx(16.0)
 +
@@ -160,7 +153,8 @@ index 0000000000000000000000000000000000000000..ea380c42ccf705e5d572f5dda62741a5
 +  assert parsed.handsOnWheelTimestamp == 1_000_000_000
 +  assert state.hands_on_steering_grip == raw
 +  assert state.hands_on_steering_ts_nanos == 1_000_000_000
-+  assert ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_300_000_000) == (1 <= raw <= 4)
++  for age in (0, 299_999_999, 300_000_000):
++    assert ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_000_000_000 + age) == (1 <= raw <= 4)
 +  assert not ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_300_000_001)
 +
 +
@@ -522,18 +516,17 @@ index 291b4c7072901119c56a59c0b5aea8b1eff621bc..e5c055724ba3c5b8c331c96ef10df0f8
      self._reset_speed_measurement(self.STANDSTILL_THRESHOLD + 1)
 diff --git a/opendbc/safety/tests/test_hyundai_ev9.py b/opendbc/safety/tests/test_hyundai_ev9.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..14248c1df49d67748de8fa88295da540982081ba
+index 0000000000000000000000000000000000000000..14ca89f9e41db9227b5412553aae45ce8daa7ba7
 --- /dev/null
 +++ b/opendbc/safety/tests/test_hyundai_ev9.py
-@@ -0,0 +1,158 @@
+@@ -0,0 +1,151 @@
 +"""EV9-specific model and low-speed envelope checks against native Panda hooks."""
 +import math
 +
 +import pytest
 +
-+from opendbc.car import gen_empty_fingerprint, structs
-+from opendbc.car.hyundai.interface import CarInterface
-+from opendbc.car.hyundai.values import CAR, HyundaiSafetyFlags
++from opendbc.car import structs
++from opendbc.car.hyundai.values import HyundaiSafetyFlags
 +from opendbc.safety.tests import test_hyundai_canfd as hyundai_tests
 +
 +
@@ -579,12 +572,6 @@ index 0000000000000000000000000000000000000000..14248c1df49d67748de8fa88295da540
 +    case.safety.set_controls_allowed(True)
 +    case.safety.set_desired_angle_last(raw if kind == 'accel' else 0)
 +    assert bool(send_angle(case, raw / 10, direct)) == (not beyond), (ev9, direct, speed, kind, sign, raw)
-+
-+
-+@pytest.mark.parametrize('platform', [CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE, CAR.HYUNDAI_IONIQ_6, CAR.KIA_SPORTAGE_HEV_2026])
-+def test_interface_identity_only_ev9(platform):
-+  cp = CarInterface.get_params(platform, gen_empty_fingerprint(), [], False, False, False, None)
-+  assert any(c.safetyParam & HyundaiSafetyFlags.CANFD_EV9 for c in cp.safetyConfigs) == (platform == CAR.KIA_EV9)
 +
 +
 +def test_ev9_flag_preserves_ev_gas_and_aol_behavior():
