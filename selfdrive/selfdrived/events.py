@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import bisect
+import copy
 import math
 import os
 from enum import IntEnum
@@ -7,6 +8,7 @@ from collections.abc import Callable
 from types import SimpleNamespace
 
 from cereal import log, car, custom
+from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
 import cereal.messaging as messaging
 from openpilot.common.constants import CV
 from openpilot.common.git import get_short_branch
@@ -1505,6 +1507,28 @@ if HARDWARE.get_device_type() == 'mici':
       ET.NO_ENTRY: NoEntryAlert("Reverse"),
     },
   })
+
+
+def ev9_compact_alert(original: Alert, text: str, status):
+  """Keep device-specific timing and sounds while changing EV9 presentation only."""
+  def callback(CP, *args, **kwargs):
+    alert = copy.copy(original)
+    if CP.carFingerprint == HYUNDAI_CAR.KIA_EV9:
+      alert.alert_text_1 = text
+      alert.alert_text_2 = ""
+      alert.alert_size = AlertSize.small
+      alert.alert_status = status
+    return alert
+  return callback
+
+
+# Apply after device overrides so mici retains its original distraction duration.
+EVENTS[EventName.driverDistracted2][ET.PERMANENT] = ev9_compact_alert(
+  EVENTS[EventName.driverDistracted2][ET.PERMANENT], "Driver Distracted", AlertStatus.userPrompt,
+)
+EVENTS[EventName.steerSaturated][ET.WARNING] = ev9_compact_alert(
+  EVENTS[EventName.steerSaturated][ET.WARNING], "Turn Exceeds Steering Limit", AlertStatus.normal,
+)
 
 
 if __name__ == '__main__':

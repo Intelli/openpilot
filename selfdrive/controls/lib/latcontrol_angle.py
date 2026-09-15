@@ -3,6 +3,7 @@ import math
 from cereal import log
 from opendbc.car.subaru.values import CAR as SUBARU_CAR
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
+from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_angle_warnings_enabled
 from openpilot.selfdrive.controls.lib.steering_saturation import STEER_ANGLE_SATURATION_THRESHOLD
 
 _ASCENT_ANGLE_TRACKING_GAIN = 0.25
@@ -51,7 +52,7 @@ def _ascent_low_speed_angle_target(target_angle: float, previous_target: float,
 class LatControlAngle(LatControl):
   def __init__(self, CP, CI, dt):
     super().__init__(CP, CI, dt)
-    self.sat_check_min_speed = 5.
+    self.sat_check_min_speed = 2.5 / 3.6 if ev9_angle_warnings_enabled(CP) else 5.
     self.use_steer_limited_by_safety = CP.brand in ("tesla", "hyundai")
     self.is_ascent = CP.carFingerprint == SUBARU_CAR.SUBARU_ASCENT_2023
     self.ascent_angle_target = None

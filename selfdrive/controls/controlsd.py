@@ -15,7 +15,8 @@ from opendbc.car.car_helpers import interfaces
 from opendbc.car.chrysler.values import pacifica_hybrid_aol_stock_acc_mode
 from opendbc.car.gm.values import CAR as GM_CAR
 from opendbc.car.honda.values import CAR as HONDA_CAR
-from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
+from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR, HyundaiFlags
+from opendbc.car.hyundai.ev9 import EV9AngleConfig
 from opendbc.car.nissan.values import CAR as NISSAN_CAR
 from opendbc.car.vehicle_model import VehicleModel
 from openpilot.selfdrive.controls.lib.drive_helpers import (
@@ -787,8 +788,12 @@ class Controls:
           jerk_factor = self.lc_arrest_jerk_factor + rise_alpha * (jerk_factor - self.lc_arrest_jerk_factor)
       self.lc_arrest_jerk_factor = jerk_factor
 
+    ev9_limit_speed = None
+    if self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9 and self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING and \
+        self.CP.steerControlType == car.CarParams.SteerControlType.angle:
+      ev9_limit_speed = EV9AngleConfig.from_toggles(self.starpilot_toggles).limit_speed_mps
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll,
-                                                               jerk_factor)
+                                                               jerk_factor, ev9_angle_limit_speed_mps=ev9_limit_speed)
     lat_smooth_seconds = get_control_lateral_smooth_seconds(self.CP.brand, CS.vEgo, self.CP.lateralSmoothSeconds)
     lat_delay = self.sm["liveDelay"].lateralDelay + lat_smooth_seconds
 

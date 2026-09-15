@@ -7,6 +7,7 @@ import string
 from dataclasses import dataclass
 from cereal import messaging, log, car, custom
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.selfdrive.ui.lib.ev9_alert_style import alert_background_alpha
 from openpilot.common.filter_simple import BounceFilter, FirstOrderFilter
 from openpilot.system.hardware import TICI
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -270,7 +271,7 @@ class AlertRenderer(Widget):
   def _draw_background(self, alert: Alert) -> None:
     # draw top gradient for alert text at top
     color = ALERT_COLORS.get(alert.status, ALERT_COLORS[AlertStatus.normal])
-    color = rl.Color(color.r, color.g, color.b, int(255 * 0.90 * self._alpha_filter.x))
+    color = rl.Color(color.r, color.g, color.b, int(alert_background_alpha(alert.status, ui_state.CP) * self._alpha_filter.x))
     translucent_color = rl.Color(color.r, color.g, color.b, int(0 * self._alpha_filter.x))
 
     small_alert_height = round(self._rect.height * 0.583) # 140px at mici height

@@ -3,6 +3,7 @@ import pyray as rl
 from dataclasses import dataclass
 from cereal import messaging, log, custom
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.selfdrive.ui.lib.ev9_alert_style import alert_background_alpha, hide_normal_alert
 from openpilot.common.filter_simple import BounceFilter, FirstOrderFilter
 from openpilot.system.hardware import TICI
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -122,7 +123,7 @@ class AlertRenderer(Widget):
                   size=starpilot_ss.alertSize.raw, status=starpilot_ss.alertStatus.raw,
                   alert_type=starpilot_ss.alertType)
 
-    if ret.status == AlertStatus.normal and ui_state.starpilot_toggles.get("hide_alerts", False):
+    if hide_normal_alert(ret.status, ret.alert_type, ui_state.starpilot_toggles.get("hide_alerts", False)):
       return None
 
     if sm.recv_frame['selfdriveState'] < ui_state.started_frame:
@@ -173,7 +174,7 @@ class AlertRenderer(Widget):
 
   def _draw_background(self, alert: Alert) -> None:
     color = ALERT_COLORS.get(alert.status, ALERT_COLORS[AlertStatus.normal])
-    color = rl.Color(color.r, color.g, color.b, int(255 * 0.90 * self._alpha_filter.x))
+    color = rl.Color(color.r, color.g, color.b, int(alert_background_alpha(alert.status, ui_state.CP) * self._alpha_filter.x))
     translucent_color = rl.Color(color.r, color.g, color.b, int(0 * self._alpha_filter.x))
 
     if alert.size == AlertSize.full:

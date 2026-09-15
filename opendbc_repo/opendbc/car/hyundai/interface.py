@@ -199,6 +199,8 @@ class CarInterface(CarInterfaceBase):
       if ret.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
         ret.steerControlType = structs.CarParams.SteerControlType.angle
         ret.safetyConfigs[-1].safetyParam |= HyundaiSafetyFlags.CANFD_ANGLE_STEERING.value
+        if candidate == CAR.KIA_EV9:
+          ret.safetyConfigs[-1].safetyParam |= HyundaiSafetyFlags.CANFD_EV9.value
       if candidate == CAR.HYUNDAI_IONIQ_6:
         # Keep lateral active through stops: zeroing torque at standstill dropped the
         # stop-turn hold and forced a rate-limit re-ramp from zero on every pull-away
@@ -262,7 +264,7 @@ class CarInterface(CarInterfaceBase):
 
     ret.centerToFront = ret.wheelbase * 0.4
     ret.steerActuatorDelay = 0.1
-    ret.steerLimitTimer = 0.4
+    ret.steerLimitTimer = 0.3  # Detect sustained steering saturation sooner.
     if not (ret.flags & HyundaiFlags.CANFD_ANGLE_STEERING):
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 

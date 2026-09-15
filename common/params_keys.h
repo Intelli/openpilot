@@ -793,4 +793,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"WheelIcon", {PERSISTENT, STRING, "stock", "stock", 0}},
     {"WheelSpeed", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
     {"WheelToDownload", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
+
+    // EV9 Edition tuning
+    {"HkgTuningAngleCustomLimitMaxSpeedKph", {PERSISTENT, INT, "40", "32", 2, SETTINGS_SIMPLE}},
+    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT, INT, "10", "100", 2, SETTINGS_SIMPLE}},
+    {"HkgSharedAutonomyMode", {PERSISTENT, INT, "0", "0", 2, SETTINGS_SIMPLE}},
+    {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT, INT, "50", "50", 2, SETTINGS_SIMPLE}},
 };

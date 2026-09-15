@@ -95,6 +95,8 @@ class CarState(CarStateBase):
     self.cruise_buttons: deque = deque([Buttons.NONE] * PREV_BUTTON_SAMPLES, maxlen=PREV_BUTTON_SAMPLES)
     self.main_buttons: deque = deque([Buttons.NONE] * PREV_BUTTON_SAMPLES, maxlen=PREV_BUTTON_SAMPLES)
     self.lda_button = 0
+    self.hands_on_steering_grip = 0
+    self.hands_on_steering_ts_nanos = 0
     self.sonata_hybrid_lkas_source = None
     self.sonata_hybrid_lkas_sources = {
       "bcm": 0,
@@ -496,7 +498,9 @@ class CarState(CarStateBase):
 
     ret.brakePressed = cp.vl["TCS"]["DriverBraking"] == 1
 
-    ret.doorOpen = cp.vl["DOORS_SEATBELTS"]["DRIVER_DOOR"] == 1
+    doors_seatbelts = cp.vl["DOORS_SEATBELTS"]
+    door_signals = ("DRIVER_DOOR", "PASSENGER_DOOR", "DRIVER_REAR_DOOR", "PASSENGER_REAR_DOOR")
+    ret.doorOpen = any(doors_seatbelts.get(signal, 0) == 1 for signal in door_signals)
     ret.seatbeltUnlatched = cp.vl["DOORS_SEATBELTS"]["DRIVER_SEATBELT"] == 0
 
     gear = cp.vl[self.gear_msg_canfd]["GEAR"]
@@ -511,6 +515,10 @@ class CarState(CarStateBase):
     )
     ret.standstill = cp.vl["WHEEL_SPEEDS"]["WHL_SpdFLVal"] <= STANDSTILL_THRESHOLD and cp.vl["WHEEL_SPEEDS"]["WHL_SpdFRVal"] <= STANDSTILL_THRESHOLD and \
                      cp.vl["WHEEL_SPEEDS"]["WHL_SpdRLVal"] <= STANDSTILL_THRESHOLD and cp.vl["WHEEL_SPEEDS"]["WHL_SpdRRVal"] <= STANDSTILL_THRESHOLD
+
+    if self.CP.carFingerprint == CAR.KIA_EV9:
+      self.hands_on_steering_grip = cp.vl["HOD_FD_01_100ms"]["HOD_Dir_Status"]
+      self.hands_on_steering_ts_nanos = cp.ts_nanos["HOD_FD_01_100ms"]["HOD_Dir_Status"]
 
     ret.steeringRateDeg = cp.vl["STEERING_SENSORS"]["STEERING_RATE"]
     ret.steeringAngleDeg = cp.vl["STEERING_SENSORS"]["STEERING_ANGLE"]
@@ -650,7 +658,8 @@ class CarState(CarStateBase):
     return ret, fp_ret
 
   def get_can_parsers_canfd(self, CP):
-    msgs = []
+    # Optional: missing HOD does not invalidate CAN; the controller checks freshness.
+    msgs = [("HOD_FD_01_100ms", 0)] if CP.carFingerprint == CAR.KIA_EV9 else []
     cam_msgs = []
     if CP.carFingerprint in CANFD_ALT_BUTTONS_RESUME_CAR:
       msgs.append(("CRUISE_BUTTONS_ALT", 50))

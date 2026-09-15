@@ -21,7 +21,7 @@
 - Save application changes before syncing. Sync is a tree replacement: it removes committed local application customizations. It never replays patches.
 - Preserve the explicit maintenance paths listed in `sync-upstream.sh`; do not add application paths to that list to hide a customization from upstream sync.
 - Root patch helpers support both `patches/` (repository-relative diffs) and `patches/opendbc/` (diffs relative to `opendbc_repo/`).
-- The 17 formerly enabled patches now end in `.patch.temp-disabled`. The six already-disabled patches retain their previous `.disabled` names. Neither suffix is selected by the apply helper, even by explicit filename.
+- The 17 formerly enabled patches were archived as `.patch.temp-disabled`. After porting, preserve each original as `.patch.migrated` and record its StarPilot implementation in a new enabled `.patch`. All six vehicle patches are migrated and use `01_`–`06_` prefixes for dependency order. The six already-disabled patches retain their previous `.disabled` names. Archive suffixes are never applied.
 - `./apply_patch.sh` replays enabled `.patch` files from the root patch directory, then the vehicle directory, alphabetically within each. Enabled patches record the migrated custom defaults and EV9 Edition changes; already-applied patches are skipped. `--check` checks each against the current tree without applying it.
 - `./apply_patch.sh opendbc/<name.patch>` prefixes vehicle paths with `opendbc_repo/`. `tools/opendbc-patches/apply.sh` is a vehicle-only compatibility wrapper.
 - Normal application leaves staging unchanged and stops on failure. `--3way` (also `apply_patch_conflicts.sh`) explicitly allows staging and conflict markers.

@@ -10,14 +10,25 @@ stable StarPilot baseline**. Upstream sync and GitHub builds do not replay them.
 | `patches/<name>.patch` | Enabled patch using paths relative to the main repository |
 | `patches/opendbc/<name>.patch` | Enabled vehicle patch using paths relative to `opendbc_repo/` |
 | `.patch.temp-disabled` | One of the 17 formerly enabled patches, paused for StarPilot porting |
+| `.patch.migrated` | Unchanged historical original whose supported port is recorded in an enabled patch or replacement build tooling |
 | `.disabled` (including `.patch.OUTDATED.disabled`) | A patch that was already disabled before migration |
 
-There are currently **17 temporarily disabled patches and six previously disabled
-patches**, plus one enabled `custom_defaults_starpilot.patch` recording the supported custom defaults. Both disabled suffixes are skipped by bulk
-application and rejected when passed explicitly. After porting and reviewing one,
-rename it to end in `.patch` to enable it. Updating a disabled patch keeps its
-suffix; exporting a new patch defaults to enabled, or accepts an explicit disabled
-suffix when you want to keep it inactive.
+The 17 formerly enabled patches started as temporarily disabled archives. Migrated
+originals now use `.migrated`; the six previously disabled patches keep their
+original suffixes. All archive suffixes are skipped by application. Port source,
+export a new enabled patch, then rename the historical original to `.migrated`.
+Keep the original contents intact. Updating a disabled patch keeps its suffix;
+exporting a new patch defaults to enabled, or accepts an explicit disabled suffix
+when you want to keep it inactive.
+
+The six migrated vehicle patches use prefixes `01_` through `06_` to preserve their
+dependency order. The seven enabled root patches contain custom defaults, EV9 Edition branding,
+settings UI, EV9 control configuration/curvature, warning policy, compact alerts,
+and EV9 settings controls. Only lane centering, driver monitoring, custom path
+colors and power management remain `.temp-disabled` by request. The old prebuilt
+patch is archived as `.migrated` because the StarPilot build/publish tooling has
+already replaced its Sunnypilot implementation; it is not replayed.
+See the migration guide for deliberate adaptations and omitted legacy defaults.
 
 `assets/openpilot/` preserves custom artwork and audio. Original helpers and
 analysis assets are in `legacy-openpilot-tooling/`, with source checksums in its

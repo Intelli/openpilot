@@ -29,6 +29,7 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib.latcontrol_torque import KP
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.starpilot.common.model_versions import is_tinygrad_model_version
+from openpilot.starpilot.common.ev9_tuning import read_ev9_tuning
 from openpilot.starpilot.common.lateral_delay import full_lateral_delay
 from openpilot.starpilot.common.lateral_only_experimental import lateral_only_experimental_available
 from openpilot.starpilot.common.longitudinal_mode import read_mode_values
@@ -50,6 +51,7 @@ from openpilot.starpilot.common.accel_profile import (
   normalize_deceleration_profile,
   parse_custom_accel_profile_curve,
 )
+from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_alert_speed_kph
 from openpilot.starpilot.common.longitudinal_personality_profiles import (
   PERSONALITY_PROFILES_PARAM,
   is_truck_fingerprint,
@@ -372,6 +374,7 @@ def get_starpilot_toggles(sm=messaging.SubMaster(["starpilotPlan"]), *, read_per
     # Controller selection happens before the first live StarPilot broadcast.
     # Realtime callers use the serialized value to avoid blocking reads.
     toggles.rivian_angle_control = get_starpilot_toggles._params.get_bool("RivianAngleControl")
+    vars(toggles).update(read_ev9_tuning(get_starpilot_toggles._params))
   return toggles
 
 @cache
@@ -635,6 +638,7 @@ class StarPilotVariables:
     # CarParams uses this value to select the matching Panda safety configuration.
     toggle.tesla_cooperative_steering = self.params.get_bool("TeslaCoopSteering")
     toggle.rivian_angle_control = self.params.get_bool("RivianAngleControl")
+    vars(toggle).update(read_ev9_tuning(self.params))
 
     fallback_platform = GM_CAR.CHEVROLET_BOLT_ACC_2022_2023 if HARDWARE.get_device_type() == "pc" else MOCK.MOCK
 
@@ -1181,6 +1185,8 @@ class StarPilotVariables:
     toggle.lane_change_pace = pace
     toggle.lane_change_jerk_factor = min(1.0, j_req * 1.3 / 5.0)
     toggle.lane_change_time_max = 10.0 + (10 - pace) * 2.0 / 9.0
+
+    toggle.hkg_tuning_ev9_alerts_speed_kph = ev9_alert_speed_kph(self.params.get("HkgTuningEv9AlertsSpeedKph"))
 
     lateral_tuning = self.get_value("LateralTune")
     toggle.force_torque_controller = self.get_value("ForceTorqueController", condition=lateral_tuning and not is_angle_car)

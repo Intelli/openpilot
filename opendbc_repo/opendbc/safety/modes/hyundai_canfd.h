@@ -65,6 +65,7 @@
 static bool hyundai_canfd_alt_buttons = false;
 static bool hyundai_canfd_lka_steering_alt = false;
 static bool hyundai_canfd_angle_steering = false;
+static bool hyundai_canfd_ev9 = false;
 static bool hyundai_ccnc = false;
 static bool hyundai_canfd_ccnc_angle_long = false;
 static bool hyundai_canfd_lka_alt_drive_gear = false;
@@ -223,15 +224,21 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
     .min_valid_request_rt_interval = 810000,  // 810ms; a ~10% buffer on cutting every 90 frames
     .has_steer_req_tolerance = true,
   };
+  // Match the original EV9 low-speed gate, including the existing 1 m/s speed tolerance.
+  // This is a step at 42 km/h + 0.1 m/s of tolerated speed, not a taper.
+  const float ev9_tolerated_speed = SAFETY_MAX((vehicle_speed.min / VEHICLE_SPEED_FACTOR) - 1.0F, 1.0F);
+  const bool ev9_high_limits = hyundai_canfd_ev9 && (ev9_tolerated_speed <= ((42.0F / 3.6F) + 0.1F));
   const AngleSteeringLimits HYUNDAI_CANFD_ANGLE_STEERING_LIMITS = {
     .max_angle = 3600,
     .angle_deg_to_can = 10,
+    .max_lateral_accel = ev9_high_limits ? 4.2F : 0.0F,
+    .max_lateral_jerk = ev9_high_limits ? 4.2F : 0.0F,
     .frequency = 100U,
   };
   const AngleSteeringParams HYUNDAI_CANFD_ANGLE_STEERING_PARAMS = {
-    .slip_factor = -0.0006085930193026732,
-    .steer_ratio = 13.7,
-    .wheelbase = 2.756,
+    .slip_factor = hyundai_canfd_ev9 ? -0.0005410588125765342 : -0.0006085930193026732,
+    .steer_ratio = hyundai_canfd_ev9 ? 16.0 : 13.7,
+    .wheelbase = hyundai_canfd_ev9 ? 3.10 : 2.756,
   };
 
   bool tx = true;
@@ -365,6 +372,8 @@ static safety_config hyundai_canfd_init(uint16_t param) {
   const uint16_t HYUNDAI_PARAM_CANFD_ALT_BUTTONS = 32;
   const uint16_t HYUNDAI_PARAM_CANFD_ANGLE_STEERING = 1024;
   const uint16_t HYUNDAI_PARAM_CCNC = 32768U;
+  const uint16_t HYUNDAI_PARAM_CANFD_EV9 = 256U;
+  const uint16_t HYUNDAI_PARAM_EV_GAS = 1U;
 
   static const CanMsg HYUNDAI_CANFD_LKA_STEERING_TX_MSGS[] = {
     HYUNDAI_CANFD_LKA_STEERING_COMMON_TX_MSGS(0, 1)
@@ -479,7 +488,11 @@ static safety_config hyundai_canfd_init(uint16_t param) {
     {0x7C4, 2, 8, .check_relay = true},  /* camera support frame */ \
     {0xEA, 2, 24, .check_relay = true},  /* MDPS support frame */ \
 
-  hyundai_common_init(param);
+  // Bit 256 retains its FCEV meaning outside this explicit CAN-FD EV angle context.
+  // Remove the EV9 alias before common decoding so it cannot enable FCEV gas handling.
+  hyundai_canfd_ev9 = GET_FLAG(param, HYUNDAI_PARAM_CANFD_EV9) &&
+                      GET_FLAG(param, HYUNDAI_PARAM_CANFD_ANGLE_STEERING) && GET_FLAG(param, HYUNDAI_PARAM_EV_GAS);
+  hyundai_common_init(hyundai_canfd_ev9 ? (param & (uint16_t)~HYUNDAI_PARAM_CANFD_EV9) : param);
 
   gen_crc_lookup_table_16(0x1021, hyundai_canfd_crc_lut);
   hyundai_canfd_alt_buttons = GET_FLAG(param, HYUNDAI_PARAM_CANFD_ALT_BUTTONS);

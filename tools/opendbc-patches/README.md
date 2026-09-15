@@ -5,10 +5,12 @@ Patch files in `patches/opendbc/` use standalone paths such as
 `opendbc/car/hyundai/carcontroller.py`. The unified root helper adds
 `opendbc_repo/` when applying them.
 
-The six formerly enabled patches now end in `.patch.temp-disabled`; the existing
-`tap_detection_debug.patch.disabled` keeps its original name. All are inactive,
-and their contents are unchanged. `origin.json` records original paths, source
-commit/URLs and SHA-256 checksums, with updated archive locations.
+The six formerly enabled patches have been ported to numbered `01_`–`06_`
+StarPilot `.patch` files. Their unchanged originals end in `.patch.migrated`;
+`tap_detection_debug.patch.disabled` keeps its original name and remains inactive.
+`origin.json` records original paths, source commit/URLs and SHA-256 checksums,
+with updated archive locations. See the [migration guide](../../docs/STARPILOT_MIGRATION.md#ev9-vehicle-migrations)
+for behavior and remaining application integration.
 
 ## Supported helpers
 
@@ -33,8 +35,7 @@ patch unchanged. See [the patch guide](../../patches/README.md) for details.
 
 `tools/opendbc-patches/apply.sh` is a compatibility wrapper for the unified
 application helper. A basename selects one enabled vehicle patch; no arguments or
-`--all` selects all enabled vehicle patches. With the current archive, that mode
-succeeds without applying anything. `--check` performs ordinary applicability
+`--all` selects all six numbered vehicle patches. `--check` performs ordinary applicability
 checks without changing files, independently for each patch. Disabled filenames
 are rejected even when explicitly selected. No helper fetches, syncs, commits or
 pushes; ordinary apply also leaves staging unchanged.
