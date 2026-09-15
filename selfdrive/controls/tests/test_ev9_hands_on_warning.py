@@ -50,16 +50,18 @@ def test_contact_clears_cached_banner_and_published_sound_then_rearms(monkeypatc
   d.last_steering_pressed_frame = 0
   d.last_steer_saturated_alert_time = 0
   d.starpilot_toggles = SimpleNamespace(goat_scream_alert=goat, hkg_tuning_ev9_alerts_speed_kph=50)
-  controls = log.ControlsState.new_message()
+  controls = log.ControlsState.new_message(curvature=0.015)
   controls.lateralControlState.init('angleState')
   controls.lateralControlState.angleState.active = True
+  controls.lateralControlState.angleState.saturated = True
   controls.lateralControlState.angleState.steeringAngleDesiredDeg = 120
   output = car.CarOutput.new_message()
   output.actuatorsOutput.steeringAngleDeg = 90
-  d.sm = SM(controlsState=controls, carOutput=output, starpilotPlan=SimpleNamespace(forcingStop=False))
+  d.sm = SM(controlsState=controls, carOutput=output, starpilotPlan=SimpleNamespace(forcingStop=False),
+            modelV2=SimpleNamespace(action=SimpleNamespace(desiredCurvature=0.04)))
   published = {}
   d.pm = SimpleNamespace(send=lambda service, message: published.update({service: message}))
-  cs = car.CarState.new_message(vEgo=2, steeringAngleDeg=80)
+  cs = car.CarState.new_message(vEgo=10, steeringAngleDeg=80)
 
   def tick(extra_event=None):
     d.sm.frame += 1

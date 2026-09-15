@@ -846,11 +846,20 @@ class SelfdriveD:
                                  for check in ("valid", "alive", "freq_ok") for service in ("controlsState", "carOutput"))
       # The controller reports actual manual handoff; numerical angle agreement also occurs at real EPS limits.
       manual_following = getattr(self.sm['carOutput'].actuatorsOutput, "manualSteeringOverride", False)
+      controller_saturated = getattr(lac, "saturated", False)
+      if controller_saturated:
+        # Preserve the old turning/undershoot gates for saturation already confirmed by the controller.
+        clipped_speed = max(CS.vEgo, 0.3)
+        actual_lateral_accel = controlstate.curvature * clipped_speed**2
+        desired_lateral_accel = self.sm['modelV2'].action.desiredCurvature * clipped_speed**2
+        model_valid = all(getattr(self.sm, check, {}).get("modelV2", True) for check in ("valid", "alive", "freq_ok"))
+        controller_saturated = (model_valid and abs(desired_lateral_accel) > 1.0 and
+                                abs(desired_lateral_accel) > 1.2 * abs(1e-3 + actual_lateral_accel))
       warning = self.ev9_steering_warning.update(
         now=self.sm.frame * DT_CTRL, active=lac.active and not CS.standstill and warning_inputs_valid,
         speed=CS.vEgo, requested=getattr(lac, "steeringAngleDesiredDeg", float("nan")), measured=CS.steeringAngleDeg,
         output=output, threshold_kph=getattr(self.starpilot_toggles, "hkg_tuning_ev9_alerts_speed_kph", 50),
-        manual_following=manual_following, hands_on=self.ev9_warning_hands_on(CS),
+        controller_saturated=controller_saturated, manual_following=manual_following, hands_on=self.ev9_warning_hands_on(CS),
       )
       if warning:
         self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)

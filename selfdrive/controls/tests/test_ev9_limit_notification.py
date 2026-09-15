@@ -1,3 +1,4 @@
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -6,6 +7,7 @@ from cereal import car, log
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai.values import CAR
 from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning
+from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
 from openpilot.selfdrive.selfdrived.events import Events, ET
 from openpilot.selfdrive.selfdrived.selfdrived import SelfdriveD
 
@@ -66,6 +68,54 @@ def test_long_gap_resets_pending_warning():
 
 class SM(dict):
   frame = 0
+
+
+@pytest.mark.parametrize('source,gate,desired_curvature,model_valid,expected', [
+  ('clipping', 'angle', 0.04, True, True),
+  ('curvature', 'speed', 0.04, True, True),
+  ('curvature', 'initial', 0.04, True, True),
+  ('curvature', 'initial', 0.005, True, False),  # Not turning enough for the legacy path.
+  ('curvature', 'initial', 0.015, True, False),  # Already achieving the requested curvature.
+  ('curvature', 'initial', 0.04, False, False),
+])
+def test_controller_saturation_uses_existing_timer_and_legacy_gates(source, gate, desired_curvature, model_valid, expected):
+  d = SelfdriveD.__new__(SelfdriveD)
+  d.CP = CarInterface.get_non_essential_params(CAR.KIA_EV9)
+  d.events, d.starpilot_events = Events(), Events(starpilot=True)
+  d.last_steering_pressed_frame = 0
+  d.starpilot_toggles = SimpleNamespace(hkg_tuning_ev9_alerts_speed_kph=50)
+  controller = LatControlAngle(d.CP, None, 0.01)
+  cs = car.CarState.new_message(vEgo=10)
+  controls = log.ControlsState.new_message(curvature=0.015)
+  controls.lateralControlState.init('angleState')
+  output = car.CarOutput.new_message()
+  d.sm = SM(controlsState=controls, carOutput=output, modelV2=SimpleNamespace(action=SimpleNamespace(desiredCurvature=desired_curvature)))
+  d.sm.valid = {'modelV2': model_valid}
+
+  def tick(frame, requested):
+    cs.steeringAngleDeg = requested
+    output.actuatorsOutput.steeringAngleDeg = requested - (5 if source == 'clipping' else 0)
+    vm = SimpleNamespace(get_steer_from_curvature=lambda *args: math.radians(requested))
+    _, _, angle_log = controller.update(True, cs, vm, SimpleNamespace(roll=0, angleOffsetDeg=0),
+                                       source == 'clipping', desired_curvature, source == 'curvature', 0, None, None, SimpleNamespace())
+    controls.lateralControlState.angleState = angle_log
+    d.sm.frame = frame
+    d.events.clear()
+    d.update_steering_saturation_events(cs)
+    return log.OnroadEvent.EventName.steerSaturated in d.events.names
+
+  requested = 100 if gate == 'initial' else 80
+  for frame in range(29):
+    assert not tick(frame, requested)
+  assert tick(29, requested) == (expected and gate == 'initial')
+  assert controls.lateralControlState.angleState.saturated
+  if gate != 'initial':
+    # An already-saturated controller must warn on even one eligible sample, without another 0.3-second wait.
+    if gate == 'speed':
+      cs.vEgo = 51 / 3.6
+    assert tick(30, 90 if gate == 'angle' else requested) == expected
+    cs.vEgo = 10
+    assert not tick(31, 80)
 
 
 @pytest.mark.parametrize('sign,pressed,manual_mode,healthy,manual_override', [
