@@ -27,7 +27,7 @@ PRESERVE=(
   AGENTS.md sync-upstream.sh update.sh
   apply_patch.sh apply_patch_conflicts.sh fix_patch.sh
   create_patch.sh create_patch_manual.sh update_patch.sh
-  patches tools/opendbc-patches
+  patches tools/opendbc-patches tools/patches
   tools/ci/sync_ev9_branch.sh tools/ci/tests
   .github/workflows release/ci/publish.sh
   docs/STARPILOT_MIGRATION.md starpilot-upstream.json

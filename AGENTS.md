@@ -20,9 +20,14 @@
 - `./update.sh` is a compatibility alias for that sync, with the same arguments.
 - Save application changes before syncing. Sync is a tree replacement: it removes committed local application customizations. It never replays patches.
 - Preserve the explicit maintenance paths listed in `sync-upstream.sh`; do not add application paths to that list to hide a customization from upstream sync.
-- Original openpilot patch helpers remain at the root, with patches in `patches/`. Copied opendbc patches are in `patches/opendbc/`; original opendbc helpers are archived in `tools/opendbc-patches/legacy/`.
-- Do not run legacy patch or inverse-generation helpers automatically. Porting individual patches is separate work and requires reviewing StarPilot's existing behavior first.
-- `tools/opendbc-patches/apply.sh --check <name.patch>` can check one archived vehicle patch using the new path prefix. See its README before explicit replay.
+- Root patch helpers support both `patches/` (repository-relative diffs) and `patches/opendbc/` (diffs relative to `opendbc_repo/`).
+- The 17 formerly enabled patches now end in `.patch.temp-disabled`. The six already-disabled patches retain their previous `.disabled` names. Neither suffix is selected by the apply helper, even by explicit filename.
+- `./apply_patch.sh` replays enabled `.patch` files from the root patch directory, then the vehicle directory, alphabetically within each. With no enabled patches it succeeds without changes. `--check` checks each against the current tree without applying it.
+- `./apply_patch.sh opendbc/<name.patch>` prefixes vehicle paths with `opendbc_repo/`. `tools/opendbc-patches/apply.sh` is a vehicle-only compatibility wrapper.
+- Normal application leaves staging unchanged and stops on failure. `--3way` (also `apply_patch_conflicts.sh`) explicitly allows staging and conflict markers.
+- `./create_patch.sh <name>` exports staged source edits as a forward patch. Use `opendbc/<name>` for vehicle-only exports. It does not sync, replay, stage, commit or push.
+- `./update_patch.sh <name> --base <ref>` replaces a patch from staged source compared with an explicit unpatched base; use `--base HEAD` only when the complete replacement is staged against HEAD. Updating preserves the existing disabled suffix. Both exporters accept `-- PATH...` to limit scope and exclude maintenance files.
+- Original helpers are archived in `patches/legacy-openpilot-tooling/` and `tools/opendbc-patches/legacy/`. Do not run those legacy inverse-generation helpers. See `patches/README.md` for the supported workflow.
 - See `docs/STARPILOT_MIGRATION.md` for provenance, archive layout and migration details.
 
 ## GitHub Build & Publication

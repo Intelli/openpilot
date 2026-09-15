@@ -1,12 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Replace an existing patch from staged source, preserving its enabled/disabled state.
 set -euo pipefail
-
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <name>" >&2
-  exit 1
-fi
-
-script_dir="$(cd "$(dirname "$0")" && pwd)"
-exec "$script_dir/create_patch.sh" "$1" update
-
-
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$script_dir/tools/patches/create.py" update "$@"

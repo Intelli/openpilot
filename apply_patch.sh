@@ -1,145 +1,64 @@
 #!/usr/bin/env bash
+# Replay enabled root and vehicle patches; no sync, commits or pushes.
 set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+exec python3 - "$@" <<'PYTHON'
+import argparse
+from pathlib import Path
+import subprocess
 
-PATCH_DIR_NAME="patches"
+parser = argparse.ArgumentParser(description="Apply enabled root patches, then opendbc patches, in filename order.")
+parser.add_argument("--check", action="store_true", help="check ordinary applicability against the current tree without changes")
+parser.add_argument("--3way", dest="three_way", action="store_true", help="explicit three-way apply; stages changes and may leave conflicts")
+parser.add_argument("--opendbc-only", action="store_true", help="select only patches/opendbc")
+parser.add_argument("--all", action="store_true", help="explicitly select all enabled patches")
+parser.add_argument("patch", nargs="?", help="root name/path or opendbc/name.patch; disabled files must be renamed first")
+args = parser.parse_args()
+root = Path.cwd()
+patch_root = root / "patches"
+vehicle_root = patch_root / "opendbc"
+if args.all and args.patch:
+  parser.error("--all cannot be combined with a patch name")
+if args.patch:
+  given = Path(args.patch)
+  if not args.patch.endswith(".patch"):
+    parser.error("Only enabled .patch files may be selected; rename .disabled or .temp-disabled files first")
+  if given.is_absolute():
+    selected = given
+  elif given.parts[0] == "patches":
+    selected = root / given
+  elif given.parts[0] == "opendbc":
+    selected = patch_root / given
+  else:
+    selected = (vehicle_root if args.opendbc_only else patch_root) / given
+  selected = selected.resolve()
+  allowed = [vehicle_root] if args.opendbc_only else [patch_root, vehicle_root]
+  if selected.parent not in allowed or selected.suffix != ".patch" or not selected.is_file():
+    parser.error("Patch must be an enabled file directly in patches/ or patches/opendbc/")
+  patches = [selected]
+else:
+  folders = [vehicle_root] if args.opendbc_only else [patch_root, vehicle_root]
+  patches = [p for folder in folders for p in sorted(folder.glob("*.patch")) if p.is_file() and not p.is_symlink()]
 
-usage() {
-  echo "Usage: $0 [patch_file]" >&2
-  echo "  With no arguments, applies all .patch files in the '${PATCH_DIR_NAME}' directory." >&2
-  exit 1
-}
-
-if [[ $# -gt 1 ]]; then
-  usage
-fi
-
-if ! command -v git >/dev/null 2>&1; then
-  echo "Error: git command not found" >&2
-  exit 1
-fi
-
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "Error: python3 command not found" >&2
-  exit 1
-fi
-
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")
-PATCH_DIR="$REPO_ROOT/$PATCH_DIR_NAME"
-
-abs_path() {
-  python3 - "$1" <<'PY'
-import os
-import sys
-print(os.path.abspath(sys.argv[1]))
-PY
-}
-
-resolve_patch_path() {
-  local input="$1"
-  local candidate
-  for candidate in \
-    "$input" \
-    "$SCRIPT_DIR/$input" \
-    "$REPO_ROOT/$input" \
-    "$SCRIPT_DIR/$PATCH_DIR_NAME/$input" \
-    "$PATCH_DIR_NAME/$input" \
-    "$PATCH_DIR/$input"; do
-    if [[ -f "$candidate" ]]; then
-      abs_path "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
-
-apply_patch_file() {
-  local patch_path="$1"
-  echo "Applying $patch_path"
-
-  if git apply --reverse --check "$patch_path" >/dev/null 2>&1; then
-    echo "Patch already applied; skipping $patch_path"
-    return 0
-  fi
-
-  local check_output
-  local check_status=0
-  set +e
-  check_output=$(git apply --check "$patch_path" 2>&1)
-  check_status=$?
-  set -e
-  if [[ $check_status -ne 0 ]]; then
-    echo "Standard apply failed; retrying with --3way" >&2
-    local git_dir
-    git_dir=$(git rev-parse --git-dir)
-    local temp_index
-    temp_index=$(mktemp "${TMPDIR:-/tmp}/apply_patch_index.XXXXXX")
-    if [[ -f "$git_dir/index" ]]; then
-      cp "$git_dir/index" "$temp_index"
-    else
-      : > "$temp_index"
-    fi
-
-    local three_way_output
-    local three_way_status=0
-    set +e
-    three_way_output=$(GIT_INDEX_FILE="$temp_index" git apply --3way "$patch_path" 2>&1)
-    three_way_status=$?
-    set -e
-    rm -f "$temp_index"
-
-    if [[ $three_way_status -ne 0 ]]; then
-      echo "Failed to apply $patch_path" >&2
-      [[ -n "$check_output" ]] && printf '%s\n' "$check_output" >&2
-      [[ -n "$three_way_output" ]] && printf '%s\n' "$three_way_output" >&2
-      return $three_way_status
-    fi
-
-    [[ -n "$three_way_output" ]] && printf '%s\n' "$three_way_output"
-    return 0
-  fi
-
-  local apply_output
-  local apply_status=0
-  set +e
-  apply_output=$(git apply "$patch_path" 2>&1)
-  apply_status=$?
-  set -e
-  if [[ $apply_status -ne 0 ]]; then
-    echo "Failed to apply $patch_path" >&2
-    [[ -n "$apply_output" ]] && printf '%s\n' "$apply_output" >&2
-    return $apply_status
-  fi
-
-  [[ -n "$apply_output" ]] && printf '%s\n' "$apply_output"
-  return 0
-}
-
-cd "$REPO_ROOT"
-
-if [[ $# -eq 1 ]]; then
-  if ! patch_file=$(resolve_patch_path "$1"); then
-    echo "Error: could not locate patch file '$1'" >&2
-    exit 1
-  fi
-  apply_patch_file "$patch_file"
-  exit 0
-fi
-
-if [[ ! -d "$PATCH_DIR" ]]; then
-  echo "Error: no patch directory found at $PATCH_DIR" >&2
-  exit 1
-fi
-
-shopt -s nullglob
-patch_files=("$PATCH_DIR"/*.patch)
-shopt -u nullglob
-
-if [[ ${#patch_files[@]} -eq 0 ]]; then
-  echo "No .patch files found in $PATCH_DIR; nothing to do." >&2
-  exit 0
-fi
-
-for patch_file in "${patch_files[@]}"; do
-  apply_patch_file "$patch_file"
-done
+if not patches:
+  print("No enabled patches; nothing to apply.")
+for patch in patches:
+  prefix = ["--directory=opendbc_repo"] if patch.parent == vehicle_root else []
+  cmd = ["git", "apply", *prefix]
+  if subprocess.run([*cmd, "--reverse", "--check", str(patch)], capture_output=True).returncode == 0:
+    print(f"Already applied: {patch.relative_to(root)}", flush=True)
+    continue
+  mode = ["--3way"] if args.three_way and not args.check else []
+  # Normal apply checks first and never falls back to a mutating conflict mode.
+  result = subprocess.run([*cmd, *mode, "--check", str(patch)])
+  if result.returncode and not (args.three_way and not args.check):
+    raise SystemExit(result.returncode)
+  if args.check:
+    print(f"Applicable: {patch.relative_to(root)}", flush=True)
+    continue
+  result = subprocess.run([*cmd, *mode, str(patch)])
+  if result.returncode:
+    raise SystemExit(result.returncode)
+  print(f"Applied: {patch.relative_to(root)}", flush=True)
+PYTHON

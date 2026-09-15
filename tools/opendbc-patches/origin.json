@@ -52,37 +52,37 @@
     },
     {
       "original_path": "patches/customize_warnings.patch",
-      "archived_path": "patches/opendbc/customize_warnings.patch",
+      "archived_path": "patches/opendbc/customize_warnings.patch.temp-disabled",
       "sha256": "db7fe5354e3b045e80a7014513048d98d8e8676c00c2e47f6731ec395c679cfc",
       "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/customize_warnings.patch"
     },
     {
       "original_path": "patches/door_signals.patch",
-      "archived_path": "patches/opendbc/door_signals.patch",
+      "archived_path": "patches/opendbc/door_signals.patch.temp-disabled",
       "sha256": "6d99bd9c098fb64f99afa51c5b669cb17369a5590360aabf81034b05c14843f5",
       "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/door_signals.patch"
     },
     {
       "original_path": "patches/ev9_tests.patch",
-      "archived_path": "patches/opendbc/ev9_tests.patch",
+      "archived_path": "patches/opendbc/ev9_tests.patch.temp-disabled",
       "sha256": "ae10bad5f92bb6e6e540e1cdfe45dbf2f8944cf7ed12c1928c95e8b7982daaa8",
       "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/ev9_tests.patch"
     },
     {
       "original_path": "patches/modify_baseline.patch",
-      "archived_path": "patches/opendbc/modify_baseline.patch",
+      "archived_path": "patches/opendbc/modify_baseline.patch.temp-disabled",
       "sha256": "155425fde1f15aa42597cd315525a596433a6b9340f719cc06706178e2b91a9d",
       "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/modify_baseline.patch"
     },
     {
       "original_path": "patches/panda_safety_limits.patch",
-      "archived_path": "patches/opendbc/panda_safety_limits.patch",
+      "archived_path": "patches/opendbc/panda_safety_limits.patch.temp-disabled",
       "sha256": "38dd6db8a633e2684856ce6f919094b4207c78675550d11c1576a7eda449f247",
       "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/panda_safety_limits.patch"
     },
     {
       "original_path": "patches/steering_and_ev9_limits.patch",
-      "archived_path": "patches/opendbc/steering_and_ev9_limits.patch",
+      "archived_path": "patches/opendbc/steering_and_ev9_limits.patch.temp-disabled",
       "sha256": "8bfba1f0f55a9c87c4822a9345fe18f48f196709ca7d8d02ff8db818d98be529",
       "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/steering_and_ev9_limits.patch"
     },
