@@ -1,4 +1,4 @@
-# Keep this name: the ev9 source-sync workflow on master listens for it.
+# Keep this name: the ev9 deployment-sync workflow on master listens for it.
 name: sunnypilot prebuilt action
 
 on:
