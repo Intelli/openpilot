@@ -18,13 +18,18 @@ Use the main helpers:
 ./apply_patch.sh --check opendbc/example.patch
 ./apply_patch.sh opendbc/example.patch
 ./create_patch.sh opendbc/example
-./update_patch.sh opendbc/example --base HEAD
+./update_patch.sh opendbc/example
 ```
 
-Create/update capture staged source as forward patches. Update requires an
-explicit base and keeps any disabled suffix. Both accept path selection after
-`--`, relative to `opendbc_repo/`. See [the patch guide](../../patches/README.md)
-for choosing a base, complete replacements and enabling individual patches.
+Create requires staged source. Update reads original file versions from the
+existing patch’s Git blob IDs and compares them with the index, or HEAD versions
+when nothing is staged. It keeps committed original hunks and any disabled suffix.
+Default update scope includes existing patch paths and newly staged source files;
+stage new files before committing to include them automatically. Both accept
+`-- PATH...`, relative to `opendbc_repo/`, to override scope; maintenance files are
+excluded. Optional `--base <ref>` uses an explicit baseline and ordinary
+base-to-index diff scope. Empty, malformed or missing-preimage exports leave the
+patch unchanged. See [the patch guide](../../patches/README.md) for details.
 
 `tools/opendbc-patches/apply.sh` is a compatibility wrapper for the unified
 application helper. A basename selects one enabled vehicle patch; no arguments or

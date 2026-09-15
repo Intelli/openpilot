@@ -261,7 +261,7 @@ class HomeLayout(Widget):
     self._prev_alerts_present = alerts_present
 
   def _get_version_text(self) -> str:
-    brand = "StarPilot"
+    brand = "StarPilot - EV9 Edition"
     description = starpilot_display_description(self.params.get("UpdaterCurrentDescription"))
     version_text = f"{brand} {description}" if description else brand
 

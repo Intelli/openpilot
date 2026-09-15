@@ -20,6 +20,8 @@ class SpinnerTheme:
   text_font_size: int
   line_height: int
   horizontal_margin: int
+  edition_font_size: int
+  edition_spacing: int
   progress_label_font_size: int | None = None
 
 
@@ -32,6 +34,8 @@ BIG_THEME = SpinnerTheme(
   text_font_size=96,
   line_height=104,
   horizontal_margin=100,
+  edition_font_size=72,
+  edition_spacing=36,
 )
 
 SMALL_THEME = SpinnerTheme(
@@ -43,6 +47,8 @@ SMALL_THEME = SpinnerTheme(
   text_font_size=30,
   line_height=36,
   horizontal_margin=24,
+  edition_font_size=40,
+  edition_spacing=14,
   progress_label_font_size=24,
 )
 
@@ -50,6 +56,7 @@ SMALL_THEME = SpinnerTheme(
 DEGREES_PER_SECOND = 360.0  # one full rotation per second
 SMALL_MAX_WRAPPED_LINES = 4
 PROGRESS_LABEL_SPACING = 12
+EDITION_TEXT = "EV9 Edition"
 DARKGRAY = (55, 55, 55, 255)
 
 
@@ -96,7 +103,10 @@ class Spinner(Widget):
     if self._progress is not None:
       height = self._theme.texture_size + self._theme.centered_spacing + self._theme.progress_bar_height
       if self._theme.progress_label_font_size is not None:
-        height += PROGRESS_LABEL_SPACING + self._theme.progress_label_font_size
+        height += PROGRESS_LABEL_SPACING + measure_text_cached(
+          gui_app.font(FontWeight.BOLD), f"{self._progress}%", self._theme.progress_label_font_size).y
+      height += self._theme.edition_spacing + measure_text_cached(
+        gui_app.font(FontWeight.BRAND), EDITION_TEXT, self._theme.edition_font_size).y
       return height
 
     if self._wrapped_lines:
@@ -143,12 +153,19 @@ class Spinner(Widget):
 
       bar.width *= self._progress / 100.0
       rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
+      edition_y = y_pos + bar.height
       if self._theme.progress_label_font_size is not None:
         progress_text = f"{self._progress}%"
         font = gui_app.font(FontWeight.BOLD)
         text_size = measure_text_cached(font, progress_text, self._theme.progress_label_font_size)
         text_pos = rl.Vector2(center_x - text_size.x / 2.0, y_pos + bar.height + PROGRESS_LABEL_SPACING)
         rl.draw_text_ex(font, progress_text, text_pos, self._theme.progress_label_font_size, 0.0, rl.Color(255, 255, 255, 180))
+        edition_y = text_pos.y + text_size.y
+
+      edition_font = gui_app.font(FontWeight.BRAND)
+      edition_size = measure_text_cached(edition_font, EDITION_TEXT, self._theme.edition_font_size)
+      edition_pos = rl.Vector2(center_x - edition_size.x / 2.0, edition_y + self._theme.edition_spacing)
+      rl.draw_text_ex(edition_font, EDITION_TEXT, edition_pos, self._theme.edition_font_size, 0.0, rl.WHITE)
     elif self._wrapped_lines:
       font = gui_app.font(FontWeight.BOLD if not gui_app.big_ui() else FontWeight.NORMAL)
       for i, line in enumerate(self._wrapped_lines):

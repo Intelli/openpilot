@@ -177,7 +177,7 @@ class SelfdriveD:
     self.params_memory = Params(memory=True)
 
     # Ensure the current branch is cached, otherwise the first cycle lags
-    build_metadata = get_build_metadata()
+    get_build_metadata()
 
     if CP is None:
       cloudlog.info("selfdrived is waiting for CarParams")
@@ -284,6 +284,9 @@ class SelfdriveD:
       self.startup_event = EventName.startupNoSecOcKey
     elif car_recognized and self.CP.passive:
       self.startup_event = EventName.startupNoControl
+
+    if self.CP.carFingerprint != HYUNDAI_CAR.KIA_EV9 and not REPLAY and not SIMULATION:
+      self.events.add(EventName.startupNoControl, static=True)
 
     if not car_recognized:
       self.events.add(EventName.carUnrecognized, static=True)

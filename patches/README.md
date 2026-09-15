@@ -13,7 +13,7 @@ stable StarPilot baseline**. Upstream sync and GitHub builds do not replay them.
 | `.disabled` (including `.patch.OUTDATED.disabled`) | A patch that was already disabled before migration |
 
 There are currently **17 temporarily disabled patches and six previously disabled
-patches**, with no enabled patches. Both disabled suffixes are skipped by bulk
+patches**, plus one enabled `custom_defaults_starpilot.patch` recording the supported custom defaults. Both disabled suffixes are skipped by bulk
 application and rejected when passed explicitly. After porting and reviewing one,
 rename it to end in `.patch` to enable it. Updating a disabled patch keeps its
 suffix; exporting a new patch defaults to enabled, or accepts an explicit disabled
@@ -29,7 +29,7 @@ These archived scripts are historical references, not supported commands.
 From the repository root (script paths also work from another directory):
 
 ```sh
-./apply_patch.sh                              # All enabled patches; currently a no-op
+./apply_patch.sh                              # All enabled patches; skips already-applied changes
 ./apply_patch.sh --check                      # Check enabled patches without changes
 ./apply_patch.sh example.patch                # One enabled main-repository patch
 ./apply_patch.sh opendbc/example.patch         # One enabled vehicle patch
@@ -80,22 +80,36 @@ to overwrite any enabled or disabled patch with the same name.
 
 ## Update a patch
 
-Update replaces the **whole patch**, so an explicit base is required:
+Update retains the original patch baseline without needing a commit reference:
 
 ```sh
-# For an initial port where the complete replacement is staged against HEAD:
-./update_patch.sh opendbc/door_signals --base HEAD
+./update_patch.sh example
+./update_patch.sh opendbc/door_signals
 
-# If the original patch's changes are already committed, use the unpatched base:
+# Explicitly rebase, or recover when original Git objects are unavailable:
 ./update_patch.sh example --base <unpatched-commit>
 ```
 
-The latter compares the base with the staged index, retaining committed changes
-since that base as well as staged amendments. Choose the base and scope for the
-complete intended patch: unrelated changes since an older base are included unless
-excluded by a path selection. An incremental diff against an already-patched HEAD
-would omit the original behavior, which is why update has no implicit base.
-At least one source change must be staged in the selected scope.
+By default, the helper reads original file versions from the existing patch's
+embedded Git blob IDs, without guessing commits, and compares them with the Git
+index. With nothing staged, the index contains HEAD versions. This preserves
+committed original hunks and captures committed changes to existing patch paths;
+unstaged edits are excluded.
+
+The index must contain the complete intended result. Updating does not apply
+missing historical hunks for you; port or apply a patch before regenerating it.
+
+Default scope is the existing patch's files plus newly staged source files,
+excluding maintenance files. Stage new files before committing if they should be
+included automatically. A path selection after `--` replaces this scope.
+Explicit `--base <ref>` instead uses an ordinary base-to-index diff and its scope;
+select paths to avoid including unrelated changes since an older base. Update
+does not require staged changes, but the resulting patch must be nonempty.
+Malformed patches or unavailable preimage objects fail without overwriting the
+existing patch; use an explicit base when those original objects are unavailable.
+Patches that only change file permissions have no blob IDs: their original
+content comes from HEAD. Use `--base` to include already-committed content
+amendments to those files.
 
 A bare name resolves an existing enabled, temporarily disabled, or previously
 disabled file and preserves its suffix. Ambiguous names require the full disabled
@@ -105,7 +119,7 @@ Both helpers accept an optional path selection after `--`:
 
 ```sh
 ./create_patch.sh example -- selfdrive/path/to/file.py
-./update_patch.sh opendbc/door_signals --base HEAD -- opendbc/car/hyundai/carstate.py
+./update_patch.sh opendbc/door_signals -- opendbc/car/hyundai/carstate.py
 ```
 
 Paths are relative to the main repo for a main patch, or to `opendbc_repo/` for a

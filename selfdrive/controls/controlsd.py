@@ -52,6 +52,7 @@ LateralControlMode = car.CarControl.Actuators.LateralControlMode
 
 ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
 REPLAY = "REPLAY" in os.environ
+SIMULATION = "SIMULATION" in os.environ
 
 # After a smoothed lane change ends, ramp the curvature limits back to stock over this
 # time so the final recenter correction is shaped instead of stepping through unclamped.
@@ -550,6 +551,10 @@ class Controls:
       not self.sm['starpilotCarState'].pauseLongitudinal and self.CP.openpilotLongitudinalControl and
       not self.ecu_disable_failed
     )
+
+    # Always-on lateral bypasses normal engagement, so enforce EV9-only control here too.
+    if self.CP.carFingerprint != HYUNDAI_CAR.KIA_EV9 and not REPLAY and not SIMULATION:
+      CC.enabled = CC.latActive = CC.longActive = False
 
     actuators = CC.actuators
     actuators.longControlState = self.LoC.long_control_state
