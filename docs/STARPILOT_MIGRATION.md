@@ -73,6 +73,7 @@ are enabled. `./apply_patch.sh` skips changes already applied.
 
 | Enabled patch | Scope |
 | --- | --- |
+| `build_config_starpilot.patch` | Explicit editable-install import root, avoiding traversal of uv's temporary build cache |
 | `custom_defaults_starpilot.patch` | Supported StarPilot defaults, EV9 manual fingerprint, completed training `0.2.0`, four Hkg defaults |
 | `ev9_edition_starpilot.patch` | EV9 Edition branding and EV9-only control restriction; already migrated before these ports |
 | `boot_logo_ev9_edition.patch` | EV9 Edition boot JPEG and startup/theme references to the new image |
