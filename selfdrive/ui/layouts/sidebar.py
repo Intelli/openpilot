@@ -9,8 +9,6 @@ from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets import Widget
 
-from openpilot.selfdrive.ui.sunnypilot.layouts.sidebar import SidebarSP
-
 SIDEBAR_WIDTH = 300
 METRIC_HEIGHT = 126
 METRIC_WIDTH = 240
@@ -64,14 +62,13 @@ class MetricData:
     self.color = color
 
 
-class Sidebar(Widget, SidebarSP):
+class Sidebar(Widget):
   def __init__(self):
-    Widget.__init__(self)
-    SidebarSP.__init__(self)
+    super().__init__()
     self._net_type = NETWORK_TYPES.get(NetworkType.none)
     self._net_strength = 0
 
-    self._temp_status = MetricData(tr_noop("TEMP"), tr_noop("GOOD"), Colors.GOOD)
+    self._temp_status = MetricData(tr_noop("TEMP"), "--°C", Colors.GOOD)
     self._panda_status = MetricData(tr_noop("VEHICLE"), tr_noop("ONLINE"), Colors.GOOD)
     self._connect_status = MetricData(tr_noop("CONNECT"), tr_noop("OFFLINE"), Colors.WARNING)
     self._recording_audio = False
@@ -115,7 +112,6 @@ class Sidebar(Widget, SidebarSP):
     self._update_temperature_status(device_state)
     self._update_connection_status(device_state)
     self._update_panda_status()
-    SidebarSP._update_sunnylink_status(self)
 
   def _update_network_status(self, device_state):
     self._net_type = NETWORK_TYPES.get(device_state.networkType.raw, tr_noop("Unknown"))
@@ -124,13 +120,14 @@ class Sidebar(Widget, SidebarSP):
 
   def _update_temperature_status(self, device_state):
     thermal_status = device_state.thermalStatus
+    temperature = f"{int(device_state.maxTempC)}°C"
 
-    if thermal_status == ThermalStatus.green:
-      self._temp_status.update(tr_noop("TEMP"), tr_noop("GOOD"), Colors.GOOD)
-    elif thermal_status == ThermalStatus.yellow:
-      self._temp_status.update(tr_noop("TEMP"), tr_noop("OK"), Colors.WARNING)
+    if thermal_status == ThermalStatus.ok:
+      self._temp_status.update(tr_noop("TEMP"), temperature, Colors.GOOD)
+    elif thermal_status == ThermalStatus.warmDEPRECATED:
+      self._temp_status.update(tr_noop("TEMP"), temperature, Colors.WARNING)
     else:
-      self._temp_status.update(tr_noop("TEMP"), tr_noop("HIGH"), Colors.DANGER)
+      self._temp_status.update(tr_noop("TEMP"), temperature, Colors.DANGER)
 
   def _update_connection_status(self, device_state):
     last_ping = device_state.lastAthenaPingTime
@@ -159,20 +156,20 @@ class Sidebar(Widget, SidebarSP):
         self._open_settings_callback()
 
   def _draw_buttons(self, rect: rl.Rectangle):
-    mouse_pos = rl.get_mouse_position()
-    mouse_down = self.is_pressed and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT)
+    mouse_pos = gui_app.last_mouse_event.pos
+    mouse_down = self.is_pressed and gui_app.last_mouse_event.left_down
 
     # Settings button
     settings_down = mouse_down and rl.check_collision_point_rec(mouse_pos, SETTINGS_BTN)
     tint = Colors.BUTTON_PRESSED if settings_down else Colors.BUTTON_NORMAL
-    rl.draw_texture_ex(self._settings_img, rl.Vector2(SETTINGS_BTN.x, SETTINGS_BTN.y), 0.0, 1.0, tint)
+    rl.draw_texture(self._settings_img, int(SETTINGS_BTN.x), int(SETTINGS_BTN.y), tint)
 
     # Home/Flag button
     flag_pressed = mouse_down and rl.check_collision_point_rec(mouse_pos, HOME_BTN)
     button_img = self._flag_img if ui_state.started else self._home_img
 
     tint = Colors.BUTTON_PRESSED if (ui_state.started and flag_pressed) else Colors.BUTTON_NORMAL
-    rl.draw_texture_ex(button_img, rl.Vector2(HOME_BTN.x, HOME_BTN.y), 0.0, 1.0, tint)
+    rl.draw_texture(button_img, int(HOME_BTN.x), int(HOME_BTN.y), tint)
 
     # Microphone button
     if self._recording_audio:
@@ -182,8 +179,8 @@ class Sidebar(Widget, SidebarSP):
       bg_color = rl.Color(Colors.DANGER.r, Colors.DANGER.g, Colors.DANGER.b, int(255 * 0.65)) if mic_pressed else Colors.DANGER
 
       rl.draw_rectangle_rounded(self._mic_indicator_rect, 1, 10, bg_color)
-      rl.draw_texture_ex(self._mic_img, rl.Vector2(self._mic_indicator_rect.x + (self._mic_indicator_rect.width - self._mic_img.width) / 2,
-                         self._mic_indicator_rect.y + (self._mic_indicator_rect.height - self._mic_img.height) / 2), 0.0, 1.0, Colors.WHITE)
+      rl.draw_texture(self._mic_img, int(self._mic_indicator_rect.x + (self._mic_indicator_rect.width - self._mic_img.width) / 2),
+                      int(self._mic_indicator_rect.y + (self._mic_indicator_rect.height - self._mic_img.height) / 2), Colors.WHITE)
 
   def _draw_network_indicator(self, rect: rl.Rectangle):
     # Signal strength dots
@@ -204,13 +201,6 @@ class Sidebar(Widget, SidebarSP):
     rl.draw_text_ex(self._font_regular, tr(self._net_type), text_pos, FONT_SIZE, 0, Colors.WHITE)
 
   def _draw_metrics(self, rect: rl.Rectangle):
-    if gui_app.sunnypilot_ui():
-      metrics, start_y, spacing = SidebarSP._draw_metrics_w_sunnylink(self, rect, self._temp_status, self._panda_status, self._connect_status)
-      for idx, metric in enumerate(metrics):
-        self._draw_metric(rect, metric, start_y + idx * spacing)
-
-      return
-
     metrics = [(self._temp_status, 338), (self._panda_status, 496), (self._connect_status, 654)]
 
     for metric, y_offset in metrics:

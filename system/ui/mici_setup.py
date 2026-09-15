@@ -145,8 +145,8 @@ class SoftwareSelectionPage(NavWidget):
       self.reset()
 
   def reset(self):
-    self._openpilot_slider.reset()
-    self._custom_software_slider.reset()
+    self._openpilot_slider.reset(reset_shimmer=False)
+    self._custom_software_slider.reset(reset_shimmer=False)
 
   def _render(self, rect: rl.Rectangle):
     self._openpilot_slider.set_opacity(1.0 - self._custom_software_slider.slider_percentage)
@@ -562,7 +562,7 @@ class Setup(Widget):
 
     except urllib.error.HTTPError as e:
       if e.code == 409:
-        self._download_failed_reason = "Incompatible sunnypilot version."
+        self._download_failed_reason = "Incompatible openpilot version."
     except Exception:
       self._download_failed_reason = "Invalid URL: " + self.download_url.replace("https://", "", 1)
 

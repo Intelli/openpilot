@@ -6,24 +6,52 @@ import time
 import signal
 import subprocess
 
-from panda import Panda, PandaDFU, PandaProtocolMismatch, McuType, FW_PATH
+from panda import Panda, PandaDFU, PandaProtocolMismatch, FW_PATH
 from openpilot.common.basedir import BASEDIR
-from openpilot.common.params import Params
+from openpilot.common.params import Params, UnknownKeyName
 from openpilot.system.hardware import HARDWARE
 from openpilot.common.swaglog import cloudlog
+from openpilot.selfdrive.pandad.rivian_long_flasher import prepare_rivian_bridge
+from openpilot.selfdrive.pandad.panda_firmware import get_firmware_path, get_tesla_wake_on_can
+from openpilot.selfdrive.pandad.panda_firmware import get_selected_firmware_name as get_selected_firmware_name
 
-from openpilot.sunnypilot.selfdrive.pandad.rivian_long_flasher import flash_rivian_long
+
+def get_expected_firmware_path(panda: Panda, remote_start: bool, hkg_remote_start: bool, ignore_ignition_line: bool,
+                               tesla_wake: bool = False) -> str:
+  return get_firmware_path(FW_PATH, panda.get_mcu_type().config.app_fn, remote_start, hkg_remote_start, ignore_ignition_line, tesla_wake)
 
 
-def get_expected_signature() -> bytes:
+def get_expected_signature(panda: Panda, remote_start: bool, hkg_remote_start: bool, ignore_ignition_line: bool, tesla_wake: bool = False) -> bytes:
   try:
-    fn = os.path.join(FW_PATH, McuType.H7.config.app_fn)
+    fn = get_expected_firmware_path(panda, remote_start, hkg_remote_start, ignore_ignition_line, tesla_wake)
     return Panda.get_signature_from_firmware(fn)
   except Exception:
     cloudlog.exception("Error computing expected signature")
     return b""
 
-def flash_panda(panda_serial: str) -> Panda:
+
+def get_remote_start_boots_comma(params: Params) -> bool:
+  try:
+    return params.get_bool("RemoteStartBootsComma")
+  except UnknownKeyName:
+    return False
+
+
+def get_hkg_remote_start_boots_comma(params: Params) -> bool:
+  try:
+    return params.get_bool("HKGRemoteStartBootsComma")
+  except UnknownKeyName:
+    return False
+
+
+def get_ignore_ignition_line(params: Params) -> bool:
+  try:
+    return params.get_bool("IgnoreIgnitionLine")
+  except UnknownKeyName:
+    return False
+
+
+def flash_panda(panda_serial: str, remote_start: bool, hkg_remote_start: bool, ignore_ignition_line: bool, tesla_wake: bool = False) -> Panda:
   try:
     panda = Panda(panda_serial)
   except PandaProtocolMismatch:
@@ -31,12 +59,8 @@ def flash_panda(panda_serial: str) -> Panda:
     HARDWARE.recover_internal_panda()
     raise
 
-  # skip flashing if the detected panda is not supported
-  if panda.get_type() not in Panda.SUPPORTED_DEVICES:
-    cloudlog.warning(f"Panda {panda_serial} is not supported (hw_type: {panda.get_type()}), skipping flash...")
-    return panda
-
-  fw_signature = get_expected_signature()
+  fw_path = get_expected_firmware_path(panda, remote_start, hkg_remote_start, ignore_ignition_line, tesla_wake)
+  fw_signature = get_expected_signature(panda, remote_start, hkg_remote_start, ignore_ignition_line, tesla_wake)
   internal_panda = panda.is_internal()
 
   panda_version = "bootstub" if panda.bootstub else panda.get_version()
@@ -45,7 +69,7 @@ def flash_panda(panda_serial: str) -> Panda:
 
   if panda.bootstub or panda_signature != fw_signature:
     cloudlog.info("Panda firmware out of date, update required")
-    panda.flash()
+    panda.flash(fn=fw_path)
     cloudlog.info("Done flashing")
 
   if panda.bootstub:
@@ -66,22 +90,6 @@ def flash_panda(panda_serial: str) -> Panda:
     raise AssertionError
 
   return panda
-
-
-def check_panda_support(panda_serials: list[str]) -> list[str]:
-  spi_serials = set(Panda.spi_list())
-  for serial in panda_serials:
-    if serial in spi_serials:
-      return [serial]
-
-  for serial in panda_serials:
-    panda = Panda(serial)
-    is_internal = panda.is_internal()
-    panda.close()
-    if is_internal:
-      return [serial]
-
-  return []
 
 
 def main() -> None:
@@ -133,43 +141,57 @@ def main() -> None:
 
       cloudlog.info(f"{len(panda_serials)} panda(s) found, connecting - {panda_serials}")
 
-      # custom flasher for xnor's Rivian Longitudinal Upgrade Kit
-      flash_rivian_long(panda_serials)
-
-      # find the internal supported panda (e.g. skip external Black Panda)
-      panda_serials = check_panda_support(panda_serials)
+      # Update and reserve the Rivian harness bridge before managing internal Pandas.
+      bridge_serials = prepare_rivian_bridge(panda_serials)
+      panda_serials = [serial for serial in panda_serials if serial not in bridge_serials]
       if len(panda_serials) == 0:
+        no_internal_panda_count += 1
         continue
 
-      # Flash the first panda
-      panda_serial = panda_serials[0]
-      panda = flash_panda(panda_serial)
+      # Flash pandas
+      pandas: list[Panda] = []
+      remote_start = get_remote_start_boots_comma(params)
+      hkg_remote_start = get_hkg_remote_start_boots_comma(params)
+      ignore_ignition_line = get_ignore_ignition_line(params)
+      tesla_wake = get_tesla_wake_on_can(params)
+      for serial in panda_serials:
+        pandas.append(flash_panda(serial, remote_start, hkg_remote_start, ignore_ignition_line, tesla_wake))
 
       # Ensure internal panda is present if expected
-      if HARDWARE.has_internal_panda() and not panda.is_internal():
+      internal_pandas = [panda for panda in pandas if panda.is_internal()]
+      if HARDWARE.has_internal_panda() and len(internal_pandas) == 0:
         cloudlog.error("Internal panda is missing, trying again")
         no_internal_panda_count += 1
         continue
       no_internal_panda_count = 0
 
-      # log panda fw version
-      params.put("PandaSignatures", panda.get_signature())
+      # sort pandas to have deterministic order
+      # * the internal one is always first
+      # * then sort by hardware type
+      # * as a last resort, sort by serial number
+      pandas.sort(key=lambda x: (not x.is_internal(), x.get_type(), x.get_usb_serial()))
+      panda_serials = [p.get_usb_serial() for p in pandas]
 
-      # check health for lost heartbeat
-      health = panda.health()
-      if health["heartbeat_lost"]:
-        params.put_bool("PandaHeartbeatLost", True)
-        cloudlog.event("heartbeat lost", deviceState=health, serial=panda.get_usb_serial())
-      if health["som_reset_triggered"]:
-        params.put_bool("PandaSomResetTriggered", True)
-        cloudlog.event("panda.som_reset_triggered", health=health, serial=panda.get_usb_serial())
+      # log panda fw versions
+      params.put("PandaSignatures", b','.join(p.get_signature() for p in pandas))
 
-      if first_run:
-        # reset panda to ensure we're in a good state
-        cloudlog.info(f"Resetting panda {panda.get_usb_serial()}")
-        panda.reset(reconnect=True)
+      for panda in pandas:
+        # check health for lost heartbeat
+        health = panda.health()
+        if health["heartbeat_lost"]:
+          params.put_bool("PandaHeartbeatLost", True)
+          cloudlog.event("heartbeat lost", deviceState=health, serial=panda.get_usb_serial())
+        if health["som_reset_triggered"]:
+          params.put_bool("PandaSomResetTriggered", True)
+          cloudlog.event("panda.som_reset_triggered", health=health, serial=panda.get_usb_serial())
 
-      panda.close()
+        if first_run:
+          # reset panda to ensure we're in a good state
+          cloudlog.info(f"Resetting panda {panda.get_usb_serial()}")
+          panda.reset(reconnect=True)
+
+      for p in pandas:
+        p.close()
     # TODO: wrap all panda exceptions in a base panda exception
     except (usb1.USBErrorNoDevice, usb1.USBErrorPipe):
       # a panda was disconnected while setting everything up. let's try again
@@ -185,8 +207,12 @@ def main() -> None:
     first_run = False
 
     # run pandad with all connected serials as arguments
+    if remote_start or hkg_remote_start or ignore_ignition_line or tesla_wake:
+      os.environ["BOARDD_SKIP_FW_CHECK"] = "1"
+    else:
+      os.environ.pop("BOARDD_SKIP_FW_CHECK", None)
     os.environ['MANAGER_DAEMON'] = 'pandad'
-    process = subprocess.Popen(["./pandad", panda_serial], cwd=os.path.join(BASEDIR, "selfdrive/pandad"))
+    process = subprocess.Popen(["./pandad", *panda_serials], cwd=os.path.join(BASEDIR, "selfdrive/pandad"))
     process.wait()
 
 

@@ -8,11 +8,11 @@ from functools import cached_property, lru_cache
 from pathlib import Path
 
 from cereal import log
-from openpilot.common.utils import sudo_read, sudo_write
+from openpilot.common.util import sudo_read, sudo_write
 from openpilot.common.gpio import gpio_set, gpio_init, get_irqs_for_action
 from openpilot.system.hardware.base import HardwareBase, LPABase, ThermalConfig, ThermalZone
 from openpilot.system.hardware.tici import iwlist
-from openpilot.system.hardware.tici.lpa import TiciLPA
+from openpilot.system.hardware.tici.esim import TiciLPA
 from openpilot.system.hardware.tici.pins import GPIO
 from openpilot.system.hardware.tici.amplifier import Amplifier
 
@@ -371,7 +371,7 @@ class Tici(HardwareBase):
     if self.amplifier is not None:
       self.amplifier.set_global_shutdown(amp_disabled=powersave_enabled)
       if not powersave_enabled:
-        self.amplifier.initialize_configuration()
+        self.amplifier.initialize_configuration(self.get_device_type())
 
     # *** CPU config ***
 
@@ -385,6 +385,9 @@ class Tici(HardwareBase):
         continue
       gov = 'ondemand' if powersave_enabled else 'performance'
       sudo_write(gov, f'/sys/devices/system/cpu/cpufreq/policy{n}/scaling_governor')
+      if not powersave_enabled:
+        # cap max core freq to 1689 Mhz
+        sudo_write('1689600', f'/sys/devices/system/cpu/cpufreq/policy{n}/scaling_max_freq')
 
     # *** IRQ config ***
 
@@ -406,7 +409,7 @@ class Tici(HardwareBase):
 
   def initialize_hardware(self):
     if self.amplifier is not None:
-      self.amplifier.initialize_configuration()
+      self.amplifier.initialize_configuration(self.get_device_type())
 
     # Allow hardwared to write engagement status to kmsg
     os.system("sudo chmod a+w /dev/kmsg")
@@ -448,6 +451,9 @@ class Tici(HardwareBase):
 
     # pandad core
     affine_irq(3, "spi_geni")         # SPI
+    if "tici" in self.get_device_type():
+      affine_irq(3, "xhci-hcd:usb3")  # aux panda USB (or potentially anything else on USB)
+      affine_irq(3, "xhci-hcd:usb1")  # internal panda USB (also modem)
     try:
       pid = subprocess.check_output(["pgrep", "-f", "spi0"], encoding='utf8').strip()
       subprocess.call(["sudo", "chrt", "-f", "-p", "1", pid])
@@ -458,26 +464,40 @@ class Tici(HardwareBase):
   def configure_modem(self):
     sim_id = self.get_sim_info().get('sim_id', '')
 
-    cmds = []
     modem = self.get_modem()
+    try:
+      manufacturer = str(modem.Get(MM_MODEM, 'Manufacturer', dbus_interface=DBUS_PROPS, timeout=TIMEOUT))
+    except Exception:
+      manufacturer = None
 
-    # Quectel EG25
-    if self.get_device_type() in ("tizi", ):
+    cmds = []
+
+    if self.get_device_type() in ("tici", "tizi"):
       # clear out old blue prime initial APN
       os.system('mmcli -m any --3gpp-set-initial-eps-bearer-settings="apn="')
 
       cmds += [
-        # SIM hot swap
-        'AT+QSIMDET=1,0',
-        'AT+QSIMSTAT=1',
-
         # configure modem as data-centric
         'AT+QNVW=5280,0,"0102000000000000"',
         'AT+QNVFW="/nv/item_files/ims/IMS_enable",00',
         'AT+QNVFW="/nv/item_files/modem/mmode/ue_usage_setting",01',
       ]
+      if self.get_device_type() == "tizi":
+        # SIM hot swap, not routed on tici
+        cmds += [
+          'AT+QSIMDET=1,0',
+          'AT+QSIMSTAT=1',
+        ]
+    elif manufacturer == 'Cavli Inc.':
+      cmds += [
+        'AT^SIMSWAP=1',     # use SIM slot, instead of internal eSIM
+        'AT$QCSIMSLEEP=0',  # disable SIM sleep
+        'AT$QCSIMCFG=SimPowerSave,0',  # more sleep disable
 
-    # Quectel EG916
+        # ethernet config
+        'AT$QCPCFG=usbNet,0',
+        'AT$QCNETDEVCTL=3,1',
+      ]
     else:
       # this modem gets upset with too many AT commands
       if sim_id is None or len(sim_id) == 0:
@@ -498,7 +518,7 @@ class Tici(HardwareBase):
 
     # eSIM prime
     dest = "/etc/NetworkManager/system-connections/esim.nmconnection"
-    if self.get_sim_lpa().is_comma_profile(sim_id) and not os.path.exists(dest):
+    if LPABase.is_comma_profile(sim_id) and not os.path.exists(dest):
       with open(Path(__file__).parent/'esim.nmconnection') as f, tempfile.NamedTemporaryFile(mode='w') as tf:
         dat = f.read()
         dat = dat.replace("sim-id=", f"sim-id={sim_id}")

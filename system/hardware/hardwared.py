@@ -3,11 +3,15 @@ import fcntl
 import os
 import queue
 import struct
+import subprocess
+import sys
 import threading
 import time
 from collections import OrderedDict, namedtuple
+from datetime import datetime, timezone
 
 import psutil
+import requests
 
 import cereal.messaging as messaging
 from cereal import log
@@ -17,13 +21,26 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_HW
 from openpilot.selfdrive.selfdrived.alertmanager import set_offroad_alert
-from openpilot.system.hardware import HARDWARE, TICI, AGNOS
-from openpilot.system.loggerd.config import get_available_percent
+from openpilot.system.hardware import HARDWARE, TICI, AGNOS, PC
+from openpilot.system.loggerd.config import get_available_bytes, get_available_percent, get_used_bytes
 from openpilot.system.statsd import statlog
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.hardware.power_monitoring import PowerMonitoring
-from openpilot.system.hardware.fan_controller import FanController
-from openpilot.system.version import terms_version, training_version, get_build_metadata, terms_version_sp
+from openpilot.system.hardware.fan_controller import TiciFanController
+from openpilot.system.hardware.usb import (
+  CHESTNUT_FW_VERSION,
+  CHESTNUT_USB_PRODUCT,
+  get_usb_state,
+  get_usb_topology,
+  is_chestnut_usb_id,
+  set_usb_state,
+)
+from openpilot.system.hardware.chestnut.status import ChestnutStatus
+from openpilot.system.version import terms_version, training_version
+from openpilot.system.athena.registration import UNREGISTERED_DONGLE_ID
+
+from openpilot.starpilot.assets.model_manager import selected_chestnut_artifacts_ready
+from openpilot.starpilot.common.starpilot_variables import get_starpilot_toggles
 
 ThermalStatus = log.DeviceState.ThermalStatus
 NetworkType = log.DeviceState.NetworkType
@@ -34,21 +51,136 @@ DISCONNECT_TIMEOUT = 5.  # wait 5 seconds before going offroad after disconnect 
 PANDA_STATES_TIMEOUT = round(1000 / SERVICE_LIST['pandaStates'].frequency * 1.5)  # 1.5x the expected pandaState frequency
 ONROAD_CYCLE_TIME = 1  # seconds to wait offroad after requesting an onroad cycle
 
+SENTRY_POWER_OFF_MESSAGES = {
+  "offroad_timeout": "Sentry Mode is stopping because the off-road power timeout was reached.",
+  "low_voltage": "Sentry Mode is stopping because vehicle voltage is too low.",
+  "battery_capacity_exhausted": "Sentry Mode is stopping because the estimated battery capacity is exhausted.",
+  "forced_power_down": "Sentry Mode is stopping because a power-down was requested.",
+}
+
+
+def notify_sentry_power_off(reason: str, power_monitor: PowerMonitoring) -> bool:
+  port = os.environ.get("SP_GALAXY_PORT", "8083" if PC else "8082")
+  event = {
+    "eventId": f"power-off-{time.time_ns()}",
+    "kind": "power_off",
+    "detectedAt": datetime.now(timezone.utc).isoformat(),
+    "reason": reason,
+    "message": SENTRY_POWER_OFF_MESSAGES.get(reason, "Sentry Mode is stopping because device power is being removed."),
+    "voltage": round(power_monitor.car_voltage_mV / 1000, 3),
+    "instantVoltage": round(power_monitor.car_voltage_instant_mV / 1000, 3),
+    "batteryCapacityUwh": power_monitor.get_car_battery_capacity(),
+  }
+  try:
+    response = requests.post(
+      f"http://127.0.0.1:{port}/api/sentry/events?blocking=1",
+      json=event,
+      timeout=4,
+    )
+    response.raise_for_status()
+    return True
+  except requests.RequestException as error:
+    cloudlog.warning(f"Sentry power-off notification unavailable: {error}")
+    return False
+
+
+def notify_sentry_low_voltage(power_monitor: PowerMonitoring) -> bool:
+  port = os.environ.get("SP_GALAXY_PORT", "8083" if PC else "8082")
+  v = round(power_monitor.car_voltage_mV / 1000, 2)
+  event = {
+    "eventId": f"low-voltage-{time.time_ns()}",
+    "kind": "warning",
+    "detectedAt": datetime.now(timezone.utc).isoformat(),
+    "reason": "low_voltage",
+    "message": f"Low vehicle battery warning: {v:.2f}V (at or below 11.8V).",
+    "voltage": v,
+    "instantVoltage": round(power_monitor.car_voltage_instant_mV / 1000, 2),
+    "batteryCapacityUwh": power_monitor.get_car_battery_capacity(),
+  }
+  try:
+    response = requests.post(
+      f"http://127.0.0.1:{port}/api/sentry/events",
+      json=event,
+      timeout=4,
+    )
+    response.raise_for_status()
+    return True
+  except requests.RequestException as error:
+    cloudlog.warning(f"Sentry low-voltage notification unavailable: {error}")
+    return False
+
+
+class Chestnut:
+  """Keep the ASM2464PD dock on the firmware expected by the GPU runtime."""
+  MAX_ATTEMPTS = 3
+  RETRY_INTERVAL = 20.0
+
+  def __init__(self):
+    self.thread: threading.Thread | None = None
+    self.attempts = 0
+    self.last_attempt = 0.0
+    self.flashed = False
+    self.mismatch = False
+
+  @property
+  def failed(self) -> bool:
+    return self.mismatch and self.attempts >= self.MAX_ATTEMPTS and self.thread is not None and not self.thread.is_alive() and not self.flashed
+
+  def _firmware_mismatch(self, usb_state: list[dict]) -> bool:
+    return any(is_chestnut_usb_id(device["vendorId"], device["productId"], include_bootloader=True) and
+               device["product"] != CHESTNUT_USB_PRODUCT for device in usb_state)
+
+  def _flash(self) -> None:
+    script = os.path.join(os.path.dirname(__file__), "chestnut", "flash.py")
+    result = subprocess.run(
+      ["sudo", sys.executable, script, CHESTNUT_FW_VERSION],
+      stdout=subprocess.PIPE,
+      stderr=subprocess.STDOUT,
+      text=True,
+      check=False,
+    )
+    cloudlog.event("chestnut flash done", returncode=result.returncode, output=result.stdout[-1000:], error=result.returncode != 0)
+    self.flashed = result.returncode == 0
+
+  def update(self, offroad: bool, usb_state: list[dict]) -> None:
+    self.mismatch = self._firmware_mismatch(usb_state)
+    if not self.mismatch:
+      self.flashed = False
+      return
+    if not offroad or self.flashed or self.attempts >= self.MAX_ATTEMPTS:
+      return
+    if self.thread is not None and self.thread.is_alive():
+      return
+    if time.monotonic() - self.last_attempt < self.RETRY_INTERVAL:
+      return
+
+    self.attempts += 1
+    self.last_attempt = time.monotonic()
+    cloudlog.warning(f"chestnut firmware out of date, flashing (attempt {self.attempts})")
+    self.thread = threading.Thread(target=self._flash, name="chestnut_flash", daemon=True)
+    self.thread.start()
+
 ThermalBand = namedtuple("ThermalBand", ['min_temp', 'max_temp'])
 HardwareState = namedtuple("HardwareState", ['network_type', 'network_info', 'network_strength', 'network_stats',
-                                             'network_metered', 'modem_temps'])
+                                             'network_metered', 'modem_temps', 'usb_state'])
 
 # List of thermal bands. We will stay within this region as long as we are within the bounds.
 # When exiting the bounds, we'll jump to the lower or higher band. Bands are ordered in the dict.
-THERMAL_BANDS = OrderedDict({
-  ThermalStatus.green: ThermalBand(None, 80.0),
-  ThermalStatus.yellow: ThermalBand(75.0, 96.0),
-  ThermalStatus.red: ThermalBand(88.0, 107.),
-  ThermalStatus.danger: ThermalBand(94.0, None),
-})
+if HARDWARE.get_device_type() == "mici":
+  THERMAL_BANDS = OrderedDict({
+    ThermalStatus.ok: ThermalBand(None, 100.0),
+    ThermalStatus.overheated: ThermalBand(92.0, 107.),
+    ThermalStatus.critical: ThermalBand(98.0, None),
+  })
+else:
+  THERMAL_BANDS = OrderedDict({
+    ThermalStatus.ok: ThermalBand(None, 96.0),
+    ThermalStatus.overheated: ThermalBand(88.0, 107.),
+    ThermalStatus.critical: ThermalBand(94.0, None),
+  })
 
 # Override to highest thermal band when offroad and above this temp
-OFFROAD_DANGER_TEMP = 75
+OFFROAD_DANGER_TEMP = 85 if HARDWARE.get_device_type() == "mici" else 75
 
 prev_offroad_states: dict[str, tuple[bool, str | None]] = {}
 
@@ -99,6 +231,7 @@ def hw_state_thread(end_event, hw_queue):
   """Handles non critical hardware state, and sends over queue"""
   count = 0
   prev_hw_state = None
+  prev_usb_topology = set()
 
   modem_version = None
   modem_configured = False
@@ -106,8 +239,12 @@ def hw_state_thread(end_event, hw_queue):
   modem_restart_count = 0
 
   while not end_event.is_set():
-    # these are expensive calls. update every 10s
-    if (count % int(10. / DT_HW)) == 0:
+    usb_topology = get_usb_topology()
+    usb_changed = usb_topology != prev_usb_topology
+
+    # these are expensive calls. update every 10s or when USB devices change
+    if (count % int(10. / DT_HW)) == 0 or usb_changed:
+      prev_usb_topology = usb_topology
       try:
         network_type = HARDWARE.get_network_type()
         modem_temps = HARDWARE.get_modem_temperatures()
@@ -142,6 +279,7 @@ def hw_state_thread(end_event, hw_queue):
           network_stats={'wwanTx': tx, 'wwanRx': rx},
           network_metered=HARDWARE.get_network_metered(network_type),
           modem_temps=modem_temps,
+          usb_state=get_usb_state(),
         )
 
         try:
@@ -164,7 +302,7 @@ def hw_state_thread(end_event, hw_queue):
 
 def hardware_thread(end_event, hw_queue) -> None:
   pm = messaging.PubMaster(['deviceState'])
-  sm = messaging.SubMaster(["peripheralState", "gpsLocationExternal", "selfdriveState", "pandaStates"], poll="pandaStates")
+  sm = messaging.SubMaster(["peripheralState", "gpsLocationExternal", "selfdriveState", "pandaStates", "chestnutState"], poll="pandaStates")
 
   count = 0
 
@@ -180,7 +318,7 @@ def hardware_thread(end_event, hw_queue) -> None:
   started_ts: float | None = None
   started_seen = False
   startup_blocked_ts: float | None = None
-  thermal_status = ThermalStatus.yellow
+  thermal_status = ThermalStatus.ok
 
   last_hw_state = HardwareState(
     network_type=NetworkType.none,
@@ -189,6 +327,7 @@ def hardware_thread(end_event, hw_queue) -> None:
     network_strength=NetworkStrength.unknown,
     network_stats={'wwanTx': -1, 'wwanRx': -1},
     modem_temps=[],
+    usb_state=[],
   )
 
   all_temp_filter = FirstOrderFilter(0., TEMP_TAU, DT_HW, initialized=False)
@@ -198,9 +337,14 @@ def hardware_thread(end_event, hw_queue) -> None:
   engaged_prev = False
   pwrsave = False
   offroad_cycle_count = 0
+  sentry_power_off_notified = False
+  sentry_low_voltage_notified = False
+  last_low_voltage_notify_ts = 0.0
 
   params = Params()
   power_monitor = PowerMonitoring()
+  chestnut = Chestnut() if AGNOS else None
+  chestnut_status = ChestnutStatus() if AGNOS else None
 
   uptime_offroad: float = params.get("UptimeOffroad", return_default=True)
   uptime_onroad: float = params.get("UptimeOnroad", return_default=True)
@@ -209,13 +353,20 @@ def hardware_thread(end_event, hw_queue) -> None:
   HARDWARE.initialize_hardware()
   thermal_config = HARDWARE.get_thermal_config()
 
-  fan_controller = FanController(int(1./DT_HW))
+  fan_controller = None
+
+  # StarPilot variables
+  sm = sm.extend(['starpilotPlan'])
+  pm = pm.extend(['starpilotDeviceState'])
+
+  starpilot_toggles = get_starpilot_toggles(read_persisted_force_params=True)
 
   while not end_event.is_set():
     sm.update(PANDA_STATES_TIMEOUT)
 
     pandaStates = sm['pandaStates']
     peripheralState = sm['peripheralState']
+    peripheral_panda_present = peripheralState.pandaType != log.PandaState.PandaType.unknown
 
     # handle requests to cycle system started state
     if params.get_bool("OnroadCycleRequested"):
@@ -231,6 +382,11 @@ def hardware_thread(end_event, hw_queue) -> None:
       pandaState = pandaStates[0]
 
       in_car = pandaState.harnessStatus != log.PandaState.HarnessStatus.notConnected
+
+      # Setup fan handler on first connect to panda
+      if fan_controller is None and peripheral_panda_present:
+        if TICI:
+          fan_controller = TiciFanController()
 
     elif (time.monotonic() - sm.recv_time['pandaStates']) > DISCONNECT_TIMEOUT:
       if onroad_conditions["ignition"]:
@@ -269,6 +425,31 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     msg.deviceState.screenBrightnessPercent = HARDWARE.get_screen_brightness()
 
+    set_usb_state(msg.deviceState, last_hw_state.usb_state)
+    if chestnut is not None:
+      chestnut.update(started_ts is None, last_hw_state.usb_state)
+      model_lab_config = params.get("ModelLabConfig")
+      active_big_model = params.get("ActiveBigModel", encoding="utf-8") or ""
+      chestnut_expected = active_big_model.lower() not in ("", "none") or (
+        isinstance(model_lab_config, dict) and bool(model_lab_config.get("enabled"))
+      )
+      chestnut_state = sm["chestnutState"]
+      chestnut_valid = sm.alive["chestnutState"] and sm.valid["chestnutState"]
+      compiled = params.get_bool("UsbGpuCompiled")
+      if started_ts is None:
+        compiled = selected_chestnut_artifacts_ready(params)
+      chestnut_status.update(
+        started_ts is None,
+        chestnut_expected,
+        last_hw_state.usb_state,
+        chestnut.failed,
+        params.get_bool("UsbGpuLoading"),
+        params.get("UsbGpuActive"),
+        compiled,
+        chestnut_state if chestnut_valid else None,
+        set_offroad_alert_if_changed,
+      )
+
     # this subset is only used for offroad
     temp_sources = [
       msg.deviceState.memoryTempC,
@@ -282,13 +463,18 @@ def hardware_thread(end_event, hw_queue) -> None:
     all_comp_temp = all_temp_filter.update(max(temp_sources))
     msg.deviceState.maxTempC = all_comp_temp
 
-    msg.deviceState.fanSpeedPercentDesired = fan_controller.update(all_comp_temp, onroad_conditions["ignition"])
+    if fan_controller is not None:
+      msg.deviceState.fanSpeedPercentDesired = fan_controller.update(all_comp_temp, onroad_conditions["ignition"], starpilot_toggles.aggressive_cooling)
+
+    # StarPilot variables
+    if starpilot_toggles.increase_thermal_limits:
+      all_comp_temp -= (THERMAL_BANDS[ThermalStatus.critical].min_temp - THERMAL_BANDS[ThermalStatus.overheated].min_temp)
 
     is_offroad_for_5_min = (started_ts is None) and ((not started_seen) or (off_ts is None) or (time.monotonic() - off_ts > 60 * 5))
     if is_offroad_for_5_min and offroad_comp_temp > OFFROAD_DANGER_TEMP:
       # if device is offroad and already hot without the extra onroad load,
       # we want to cool down first before increasing load
-      thermal_status = ThermalStatus.danger
+      thermal_status = ThermalStatus.critical
     else:
       current_band = THERMAL_BANDS[thermal_status]
       band_idx = list(THERMAL_BANDS.keys()).index(thermal_status)
@@ -299,11 +485,10 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     # **** starting logic ****
 
-    startup_conditions["up_to_date"] = params.get("Offroad_ConnectivityNeeded") is None or params.get_bool("DisableUpdates") or params.get_bool("SnoozeUpdate")
+    startup_conditions["up_to_date"] = True
     startup_conditions["no_excessive_actuation"] = params.get("Offroad_ExcessiveActuation") is None
     startup_conditions["not_uninstalling"] = not params.get_bool("DoUninstall")
     startup_conditions["accepted_terms"] = params.get("HasAcceptedTerms") == terms_version
-    startup_conditions["accepted_terms_sp"] = params.get("HasAcceptedTermsSP") == terms_version_sp
 
     # with 2% left, we killall, otherwise the phone will take a long time to boot
     startup_conditions["free_space"] = msg.deviceState.freeSpacePercent > 2
@@ -312,28 +497,13 @@ def hardware_thread(end_event, hw_queue) -> None:
     startup_conditions["not_taking_snapshot"] = not params.get_bool("IsTakingSnapshot")
 
     # must be at an engageable thermal band to go onroad
-    startup_conditions["device_temp_engageable"] = thermal_status < ThermalStatus.red
+    startup_conditions["device_temp_engageable"] = thermal_status < ThermalStatus.overheated
 
     # ensure device is fully booted
     startup_conditions["device_booted"] = startup_conditions.get("device_booted", False) or HARDWARE.booted()
 
-    # user-forced status
-    offroad_mode = params.get_bool("OffroadMode")
-    startup_conditions["not_always_offroad"] = not offroad_mode
-    onroad_conditions["not_always_offroad"] = not offroad_mode
-
-    # if an unsupported device and branch is detected, going onroad is blocked
-    # only allow going onroad when:
-    # - TIZI, or
-    # - TICI and channel_type is "tici"
-    build_metadata = get_build_metadata()
-    is_unsupported_combo = TICI and HARDWARE.get_device_type() == "tici" and build_metadata.channel_type != "tici"
-    startup_conditions["not_tici"] = not is_unsupported_combo
-    onroad_conditions["not_tici"] = not is_unsupported_combo
-    set_offroad_alert("Offroad_TiciSupport", is_unsupported_combo, extra_text=build_metadata.channel)
-
     # if the temperature enters the danger zone, go offroad to cool down
-    onroad_conditions["device_temp_good"] = thermal_status < ThermalStatus.danger
+    onroad_conditions["device_temp_good"] = thermal_status < ThermalStatus.critical
     extra_text = f"{offroad_comp_temp:.1f}C"
     show_alert = (not onroad_conditions["device_temp_good"] or not startup_conditions["device_temp_engageable"]) and onroad_conditions["ignition"]
     set_offroad_alert_if_changed("Offroad_TemperatureTooHigh", show_alert, extra_text=extra_text)
@@ -341,10 +511,20 @@ def hardware_thread(end_event, hw_queue) -> None:
     if show_alert:
       msg.deviceState.fanSpeedPercentDesired = 100
 
+    # *** registration check ***
+    if not PC:
+      # we enforce this for our software, but you are welcome
+      # to make a different decision in your software
+      startup_conditions["registered_device"] = PC or (params.get("DongleId") != UNREGISTERED_DONGLE_ID)
+
     # Handle offroad/onroad transition
     should_start = all(onroad_conditions.values())
     if started_ts is None:
       should_start = should_start and all(startup_conditions.values())
+
+    # StarPilot variables
+    should_start |= starpilot_toggles.force_onroad
+    should_start &= not starpilot_toggles.force_offroad
 
     if should_start != should_start_prev or (count == 0):
       params.put_bool("IsEngaged", False)
@@ -389,11 +569,6 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     # Offroad power monitoring
     voltage = None if peripheralState.pandaType == log.PandaState.PandaType.unknown else peripheralState.voltage
-
-    # GitHub runner auto off: 9V is used as the threshold because most desktop runners
-    # will rarely exceed 5V so 9V is set as our buffer between desk use and car use.
-    params.put_bool_nonblocking("GithubRunnerSufficientVoltage", ((voltage or 0) and voltage > 9000))
-
     power_monitor.calculate(voltage, onroad_conditions["ignition"])
     msg.deviceState.offroadPowerUsageUwh = power_monitor.get_power_used()
     msg.deviceState.carBatteryCapacityUwh = max(0, power_monitor.get_car_battery_capacity())
@@ -405,12 +580,39 @@ def hardware_thread(end_event, hw_queue) -> None:
     statlog.sample("som_power_draw", som_power_draw)
     msg.deviceState.somPowerDrawW = som_power_draw
 
-    # Check if we need to shut down
-    if power_monitor.should_shutdown(onroad_conditions["ignition"], in_car, off_ts, started_seen):
-      cloudlog.warning(f"shutting device down, offroad since {off_ts}")
-      params.put_bool("DoShutdown", True)
+    if not onroad_conditions["ignition"] and (count % int(30. / DT_HW) == 0):
+      low_v_str = f" [LOW VOLTAGE SUSTAINED: {time.monotonic() - power_monitor.low_voltage_start_time:.1f}s / 30.0s]" if power_monitor.low_voltage_start_time else ""
+      print(f"[hardwared] Offroad Power: {power_monitor.car_voltage_mV / 1000.0:.2f}V (instant: {power_monitor.car_voltage_instant_mV / 1000.0:.2f}V), draw: {current_power_draw:.1f}W{low_v_str}", flush=True)
 
-    msg.deviceState.started = started_ts is not None and not offroad_mode
+    # Check if we need to shut down
+    shutdown_reason = power_monitor.shutdown_reason(
+      onroad_conditions["ignition"], in_car, off_ts, started_seen, starpilot_toggles,
+    )
+    if shutdown_reason is not None:
+      cloudlog.warning(f"shutting device down, reason={shutdown_reason}, offroad since {off_ts}")
+      if params.get_bool("SentryModeEnabled") and not sentry_power_off_notified:
+        sentry_power_off_notified = True
+        notify_sentry_power_off(shutdown_reason, power_monitor)
+      params.put_bool("DoShutdown", True)
+    else:
+      sentry_power_off_notified = False
+
+    # Low voltage warning notification (without device shutdown)
+    if in_car and not onroad_conditions["ignition"] and off_ts is not None:
+      voltage_v = power_monitor.car_voltage_mV / 1000.0
+      if voltage_v <= 11.8:
+        now_mono = time.monotonic()
+        if not sentry_low_voltage_notified or (now_mono - last_low_voltage_notify_ts > 1800):
+          sentry_low_voltage_notified = True
+          last_low_voltage_notify_ts = now_mono
+          if params.get_bool("SentryModeEnabled"):
+            notify_sentry_low_voltage(power_monitor)
+      elif voltage_v > 12.2:
+        sentry_low_voltage_notified = False
+    else:
+      sentry_low_voltage_notified = False
+
+    msg.deviceState.started = started_ts is not None
     msg.deviceState.startedMonoTime = int(1e9*(started_ts or 0))
 
     last_ping = params.get("LastAthenaPingTime")
@@ -419,6 +621,14 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     msg.deviceState.thermalStatus = thermal_status
     pm.send("deviceState", msg)
+
+    # StarPilot variables
+    fpmsg = messaging.new_message('starpilotDeviceState')
+
+    fpmsg.starpilotDeviceState.freeSpace = round(get_available_bytes(default=32.0 * (2 ** 30)) / (2 ** 30))
+    fpmsg.starpilotDeviceState.usedSpace = round(get_used_bytes(default=0.0) / (2 ** 30))
+
+    pm.send("starpilotDeviceState", fpmsg)
 
     # Log to statsd
     statlog.gauge("free_space_percent", msg.deviceState.freeSpacePercent)
@@ -473,6 +683,9 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     count += 1
     should_start_prev = should_start
+
+    # StarPilot variables
+    starpilot_toggles = get_starpilot_toggles(sm, read_persisted_force_params=True)
 
 
 def main():

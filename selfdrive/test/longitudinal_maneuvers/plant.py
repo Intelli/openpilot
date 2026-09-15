@@ -1,30 +1,78 @@
 #!/usr/bin/env python3
+import contextlib
+import gc
+import os
+import sys
 import time
 import numpy as np
+from types import SimpleNamespace
 
 from cereal import log
 import cereal.messaging as messaging
+from opendbc.car.interfaces import ACCEL_MAX, ACCEL_MIN
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import Ratekeeper, DT_MDL
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
+from openpilot.selfdrive.controls.lib.lead_behavior import should_hold_tracked_vision_lead, should_track_lead
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import STOP_DISTANCE
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
+from openpilot.starpilot.common.starpilot_variables import THRESHOLD
 
 
 class Plant:
   messaging_initialized = False
+  messaging_prefix = None
+
+  @staticmethod
+  @contextlib.contextmanager
+  def _messaging_socket_env():
+    prefix = os.environ.get("OPENPILOT_PREFIX")
+    if sys.platform != "darwin" or not prefix:
+      yield
+      return
+
+    old_namespace = os.environ.get("OPENPILOT_ZMQ_NAMESPACE")
+    del os.environ["OPENPILOT_PREFIX"]
+    os.environ["OPENPILOT_ZMQ_NAMESPACE"] = prefix
+    try:
+      yield
+    finally:
+      os.environ["OPENPILOT_PREFIX"] = prefix
+      if old_namespace is None:
+        os.environ.pop("OPENPILOT_ZMQ_NAMESPACE", None)
+      else:
+        os.environ["OPENPILOT_ZMQ_NAMESPACE"] = old_namespace
+
+  @staticmethod
+  def _clear_messaging_sockets():
+    for attr in ("radar", "controls_state", "selfdrive_state", "car_state", "plan"):
+      if hasattr(Plant, attr):
+        delattr(Plant, attr)
+    with Plant._messaging_socket_env():
+      messaging.reset_context()
+    gc.collect()
 
   def __init__(self, lead_relevancy=False, speed=0.0, distance_lead=2.0,
-               enabled=True, only_lead2=False, only_radar=False, e2e=False, personality=0, force_decel=False):
+               enabled=True, only_lead2=False, only_radar=False, track_lead_with_gate=False,
+               e2e=False, personality=0, force_decel=False):
     self.rate = 1. / DT_MDL
 
-    if not Plant.messaging_initialized:
-      Plant.radar = messaging.pub_sock('radarState')
-      Plant.controls_state = messaging.pub_sock('controlsState')
-      Plant.selfdrive_state = messaging.pub_sock('selfdriveState')
-      Plant.car_state = messaging.pub_sock('carState')
-      Plant.plan = messaging.sub_sock('longitudinalPlan')
-      Plant.messaging_initialized = True
+    current_prefix = os.environ.get("OPENPILOT_PREFIX")
+    if Plant.messaging_prefix != current_prefix:
+      Plant._clear_messaging_sockets()
+      Plant.messaging_initialized = False
+
+    with Plant._messaging_socket_env():
+      if not Plant.messaging_initialized:
+        Plant.radar = messaging.pub_sock('radarState')
+        Plant.controls_state = messaging.pub_sock('controlsState')
+        Plant.selfdrive_state = messaging.pub_sock('selfdriveState')
+        Plant.car_state = messaging.pub_sock('carState')
+        Plant.plan = messaging.sub_sock('longitudinalPlan')
+        Plant.messaging_initialized = True
+        Plant.messaging_prefix = current_prefix
 
     self.v_lead_prev = 0.0
 
@@ -39,21 +87,30 @@ class Plant:
     self.enabled = enabled
     self.only_lead2 = only_lead2
     self.only_radar = only_radar
+    self.track_lead_with_gate = track_lead_with_gate
     self.e2e = e2e
     self.personality = personality
     self.force_decel = force_decel
+    self.tracking_lead_filter = FirstOrderFilter(0.0, 0.5, DT_MDL)
 
     self.rk = Ratekeeper(self.rate, print_delay_threshold=100.0)
     self.ts = 1. / self.rate
     time.sleep(0.1)
-    self.sm = messaging.SubMaster(['longitudinalPlan'])
+    with Plant._messaging_socket_env():
+      self.sm = messaging.SubMaster(['longitudinalPlan'])
 
     from opendbc.car.honda.values import CAR
     from opendbc.car.honda.interface import CarInterface
 
-    CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
-    CP_SP = CarInterface.get_non_essential_params_sp(CP, CAR.HONDA_CIVIC)
-    self.planner = LongitudinalPlanner(CP, CP_SP, init_v=self.speed)
+    self.planner = LongitudinalPlanner(CarInterface.get_non_essential_params(CAR.HONDA_CIVIC), init_v=self.speed)
+    self.starpilot_toggles = SimpleNamespace(
+      taco_tune=False,
+      classic_model=False,
+      tinygrad_model=True,
+      model_version="v11",
+      longitudinalActuatorDelay=0.2,
+      vEgoStopping=0.5,
+    )
 
   @property
   def current_time(self):
@@ -69,9 +126,6 @@ class Plant:
     lp = messaging.new_message('liveParameters')
     car_control = messaging.new_message('carControl')
     model = messaging.new_message('modelV2')
-    car_state_sp = messaging.new_message('carStateSP')
-    live_map_data_sp = messaging.new_message('liveMapDataSP')
-    gps_data = messaging.new_message('gpsLocation')
     a_lead = (v_lead - self.v_lead_prev)/self.ts
     self.v_lead_prev = v_lead
 
@@ -131,7 +185,52 @@ class Plant:
     car_state.carState.vCruise = float(v_cruise * 3.6)
     car_control.carControl.orientationNED = [0., float(pitch), 0.]
 
+    tracking_lead = bool(status)
+    if self.track_lead_with_gate:
+      tracking_candidate = should_track_lead(
+        status,
+        float(d_rel),
+        float(position.x[-1]) if len(position.x) else 0.0,
+        STOP_DISTANCE,
+        float(self.speed),
+        v_lead=float(v_lead),
+        radar=bool(self.only_radar),
+      )
+      continuity_candidate = self.tracking_lead_filter.x >= THRESHOLD * 0.6
+      if not tracking_candidate and continuity_candidate:
+        tracking_candidate = should_hold_tracked_vision_lead(
+          status,
+          float(d_rel),
+          float(position.x[-1]) if len(position.x) else 0.0,
+          STOP_DISTANCE,
+          float(self.speed),
+          model_prob=float(prob_lead),
+          y_rel=float(lead.yRel),
+          radar=bool(self.only_radar),
+        )
+      self.tracking_lead_filter.update(tracking_candidate)
+      tracking_lead = self.tracking_lead_filter.x >= THRESHOLD
+    else:
+      self.tracking_lead_filter.update(float(status))
+
     # ******** get controlsState messages for plotting ***
+    starpilot_plan = SimpleNamespace(
+      vCruise=float(v_cruise),
+      minAcceleration=float(ACCEL_MIN),
+      maxAcceleration=float(ACCEL_MAX),
+      cscControllingSpeed=False,
+      disableThrottle=False,
+      accelerationJerk=5.0,
+      dangerJerk=5.0,
+      speedJerk=5.0,
+      trackingLead=bool(tracking_lead),
+      desiredFollowDistance=float(d_rel),
+      dangerFactor=1.0,
+      tFollow=1.45,
+      forcingStop=False,
+      forcingStopLength=2,
+    )
+
     sm = {'radarState': radar.radarState,
           'carState': car_state.carState,
           'carControl': car_control.carControl,
@@ -139,10 +238,8 @@ class Plant:
           'selfdriveState': ss.selfdriveState,
           'liveParameters': lp.liveParameters,
           'modelV2': model.modelV2,
-          'carStateSP': car_state_sp.carStateSP,
-          'liveMapDataSP': live_map_data_sp.liveMapDataSP,
-          'gpsLocation': gps_data.gpsLocation}
-    self.planner.update(sm)
+          'starpilotPlan': starpilot_plan}
+    self.planner.update(sm, self.starpilot_toggles)
     self.acceleration = self.planner.output_a_target
     self.speed = self.speed + self.acceleration * self.ts
     self.should_stop = self.planner.output_should_stop

@@ -1,46 +1,222 @@
 #!/usr/bin/env python3
+import bisect
 import math
 import os
+from enum import IntEnum
+from collections.abc import Callable
+from types import SimpleNamespace
 
-from cereal import log, car
+from cereal import log, car, custom
 import cereal.messaging as messaging
 from openpilot.common.constants import CV
 from openpilot.common.git import get_short_branch
+from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
+from openpilot.selfdrive.controls.lib.desire_helper import LaneChangeDirection
 from openpilot.selfdrive.locationd.calibrationd import MIN_SPEED_FILTER
 from openpilot.system.micd import SAMPLE_RATE, SAMPLE_BUFFER
 from openpilot.selfdrive.ui.feedback.feedbackd import FEEDBACK_MAX_DURATION
 from openpilot.system.hardware import HARDWARE
 
-from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, \
-  NoEntryAlert, SoftDisableAlert, UserSoftDisableAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, \
-  StartupAlert, AlertCallbackType, wrong_car_mode_alert
-
-
 AlertSize = log.SelfdriveState.AlertSize
 AlertStatus = log.SelfdriveState.AlertStatus
 VisualAlert = car.CarControl.HUDControl.VisualAlert
-AudibleAlert = car.CarControl.HUDControl.AudibleAlert
+AudibleAlert = log.SelfdriveState.AudibleAlert
 EventName = log.OnroadEvent.EventName
+
+StarPilotAlertStatus = custom.StarPilotSelfdriveState.AlertStatus
+StarPilotAudibleAlert = custom.StarPilotCarControl.HUDControl.AudibleAlert
+StarPilotEventName = custom.StarPilotOnroadEvent.EventName
+
+# Alert priorities
+class Priority(IntEnum):
+  LOWEST = 0
+  LOWER = 1
+  LOW = 2
+  MID = 3
+  HIGH = 4
+  HIGHEST = 5
+
+
+# Event types
+class ET:
+  ENABLE = 'enable'
+  PRE_ENABLE = 'preEnable'
+  OVERRIDE_LATERAL = 'overrideLateral'
+  OVERRIDE_LONGITUDINAL = 'overrideLongitudinal'
+  NO_ENTRY = 'noEntry'
+  WARNING = 'warning'
+  USER_DISABLE = 'userDisable'
+  SOFT_DISABLE = 'softDisable'
+  IMMEDIATE_DISABLE = 'immediateDisable'
+  PERMANENT = 'permanent'
 
 
 # get event name from enum
 EVENT_NAME = {v: k for k, v in EventName.schema.enumerants.items()}
 
+STARPILOT_EVENT_NAME = {v: k for k, v in StarPilotEventName.schema.enumerants.items()}
 
-class Events(EventsBase):
-  def __init__(self):
-    super().__init__()
-    self.event_counters = dict.fromkeys(EVENTS.keys(), 0)
 
-  def get_events_mapping(self) -> dict[int, dict[str, Alert | AlertCallbackType]]:
-    return EVENTS
+class Events:
+  def __init__(self, starpilot=False):
+    self.events: list[int] = []
+    self.static_events: list[int] = []
+    self.event_counters = dict.fromkeys((STARPILOT_EVENTS if starpilot else EVENTS).keys(), 0)
 
-  def get_event_name(self, event: int):
-    return EVENT_NAME[event]
+    self.starpilot = starpilot
 
-  def get_event_msg_type(self):
-    return log.OnroadEvent
+  @property
+  def names(self) -> list[int]:
+    return self.events
+
+  def __len__(self) -> int:
+    return len(self.events)
+
+  def add(self, event_name: int, static: bool=False) -> None:
+    if static:
+      bisect.insort(self.static_events, event_name)
+    bisect.insort(self.events, event_name)
+
+  def clear(self) -> None:
+    self.event_counters = {k: (v + 1 if k in self.events else 0) for k, v in self.event_counters.items()}
+    self.events = self.static_events.copy()
+
+  def contains(self, event_type: str) -> bool:
+    return any(event_type in (STARPILOT_EVENTS if self.starpilot else EVENTS).get(e, {}) for e in self.events)
+
+  def create_alerts(self, event_types: list[str], callback_args=None):
+    if callback_args is None:
+      callback_args = []
+
+    ret = []
+    for e in self.events:
+      types = (STARPILOT_EVENTS if self.starpilot else EVENTS)[e].keys()
+      for et in event_types:
+        if et in types:
+          alert = (STARPILOT_EVENTS if self.starpilot else EVENTS)[e][et]
+          if not isinstance(alert, Alert):
+            alert = alert(*callback_args)
+
+          if DT_CTRL * (self.event_counters[e] + 1) >= alert.creation_delay:
+            alert.alert_type = f"{(STARPILOT_EVENT_NAME if self.starpilot else EVENT_NAME)[e]}/{et}"
+            alert.event_type = et
+            ret.append(alert)
+    return ret
+
+  def add_from_msg(self, events):
+    for e in events:
+      bisect.insort(self.events, e.name.raw)
+
+  def to_msg(self):
+    ret = []
+    for event_name in self.events:
+      event = (custom.StarPilotOnroadEvent if self.starpilot else log.OnroadEvent).new_message()
+      event.name = event_name
+      for event_type in (STARPILOT_EVENTS if self.starpilot else EVENTS).get(event_name, {}):
+        setattr(event, event_type, True)
+      ret.append(event)
+    return ret
+
+
+class Alert:
+  def __init__(self,
+               alert_text_1: str,
+               alert_text_2: str,
+               alert_status: log.SelfdriveState.AlertStatus,
+               alert_size: log.SelfdriveState.AlertSize,
+               priority: Priority,
+               visual_alert: car.CarControl.HUDControl.VisualAlert,
+               audible_alert: log.SelfdriveState.AudibleAlert,
+               duration: float,
+               creation_delay: float = 0.):
+
+    self.alert_text_1 = alert_text_1
+    self.alert_text_2 = alert_text_2
+    self.alert_status = alert_status
+    self.alert_size = alert_size
+    self.priority = priority
+    self.visual_alert = visual_alert
+    self.audible_alert = audible_alert
+
+    self.duration = int(duration / DT_CTRL)
+
+    self.creation_delay = creation_delay
+
+    self.alert_type = ""
+    self.event_type: str | None = None
+
+  def __str__(self) -> str:
+    return f"{self.alert_text_1}/{self.alert_text_2} {self.priority} {self.visual_alert} {self.audible_alert}"
+
+  def __gt__(self, alert2) -> bool:
+    if not isinstance(alert2, Alert):
+      return False
+    return self.priority > alert2.priority
+
+EmptyAlert = Alert("" , "", AlertStatus.normal, AlertSize.none, Priority.LOWEST,
+                   VisualAlert.none, AudibleAlert.none, 0)
+
+class NoEntryAlert(Alert):
+  def __init__(self, alert_text_2: str,
+               alert_text_1: str = "openpilot Unavailable",
+               visual_alert: car.CarControl.HUDControl.VisualAlert=VisualAlert.none,
+               priority: Priority = Priority.LOW):
+    if HARDWARE.get_device_type() == 'mici':
+      alert_text_1, alert_text_2 = alert_text_2, alert_text_1
+    super().__init__(alert_text_1, alert_text_2, AlertStatus.normal,
+                     AlertSize.mid, priority, visual_alert,
+                     AudibleAlert.refuse, 3.)
+
+
+class SoftDisableAlert(Alert):
+  def __init__(self, alert_text_2: str):
+    super().__init__("TAKE CONTROL IMMEDIATELY", alert_text_2,
+                     AlertStatus.userPrompt, AlertSize.full,
+                     Priority.MID, VisualAlert.steerRequired,
+                     AudibleAlert.warningSoft, 2.),
+
+
+# less harsh version of SoftDisable, where the condition is user-triggered
+class UserSoftDisableAlert(SoftDisableAlert):
+  def __init__(self, alert_text_2: str):
+    super().__init__(alert_text_2),
+    self.alert_text_1 = "openpilot will disengage"
+
+
+class ImmediateDisableAlert(Alert):
+  def __init__(self, alert_text_2: str):
+    super().__init__("TAKE CONTROL IMMEDIATELY", alert_text_2,
+                     AlertStatus.critical, AlertSize.full,
+                     Priority.HIGHEST, VisualAlert.steerRequired,
+                     AudibleAlert.warningImmediate, 4.),
+
+
+class EngagementAlert(Alert):
+  def __init__(self, audible_alert: log.SelfdriveState.AudibleAlert):
+    super().__init__("", "",
+                     AlertStatus.normal, AlertSize.none,
+                     Priority.MID, VisualAlert.none,
+                     audible_alert, .2),
+
+
+class NormalPermanentAlert(Alert):
+  def __init__(self, alert_text_1: str, alert_text_2: str = "", duration: float = 0.2, priority: Priority = Priority.LOWER, creation_delay: float = 0.):
+    super().__init__(alert_text_1, alert_text_2,
+                     AlertStatus.normal, AlertSize.mid if len(alert_text_2) else AlertSize.small,
+                     priority, VisualAlert.none, AudibleAlert.none, duration, creation_delay=creation_delay),
+
+
+class StartupAlert(Alert):
+  def __init__(self, alert_text_1: str, alert_text_2: str = "Always keep hands on wheel and eyes on road", alert_status=AlertStatus.normal):
+    alert_size = AlertSize.mid
+    if HARDWARE.get_device_type() == 'mici':
+      if alert_text_2 == "Always keep hands on wheel and eyes on road":
+        alert_text_2 = ""
+      alert_size = AlertSize.small
+    super().__init__(alert_text_1, alert_text_2,
+                     alert_status, alert_size,
+                     Priority.LOWER, VisualAlert.none, AudibleAlert.none, 5.),
 
 
 
@@ -53,44 +229,60 @@ def get_display_speed(speed_ms: float, metric: bool) -> str:
 
 # ********** alert callback functions **********
 
+AlertCallbackType = Callable[[car.CarParams, car.CarState, messaging.SubMaster, bool, int, log.ControlsState], Alert]
+
 
 def soft_disable_alert(alert_text_2: str) -> AlertCallbackType:
-  def func(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+  def func(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
     if soft_disable_time < int(0.5 / DT_CTRL):
       return ImmediateDisableAlert(alert_text_2)
     return SoftDisableAlert(alert_text_2)
   return func
 
 def user_soft_disable_alert(alert_text_2: str) -> AlertCallbackType:
-  def func(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+  def func(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
     if soft_disable_time < int(0.5 / DT_CTRL):
       return ImmediateDisableAlert(alert_text_2)
     return UserSoftDisableAlert(alert_text_2)
   return func
 
-def startup_master_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def startup_master_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   branch = get_short_branch()  # Ensure get_short_branch is cached to avoid lags on startup
   if "REPLAY" in os.environ:
     branch = "replay"
 
-  if branch == "ev9":
-    return EVENTS[EventName.startup][ET.PERMANENT]
-
   return StartupAlert("WARNING: This branch is not tested", branch, alert_status=AlertStatus.userPrompt)
 
-def below_engage_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def below_engage_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   return NoEntryAlert(f"Drive above {get_display_speed(CP.minEnableSpeed, metric)} to engage")
 
 
-def below_steer_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def below_steer_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   return Alert(
-    f"Steer Assist Unavailable Below {get_display_speed(CP.minSteerSpeed, metric)}",
+    f"Steer Unavailable Under {get_display_speed(CP.minSteerSpeed, metric)}",
     "",
     AlertStatus.userPrompt, AlertSize.small,
-    Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 0.4)
+    Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 1.5)
 
 
-def calibration_incomplete_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def brake_hold_alert(CP, *_args) -> Alert:
+  alert_text = "Car in Auto Hold mode" if CP.brand == "gm" else "Press Resume to Exit Brake Hold"
+  return Alert(
+    alert_text,
+    "",
+    AlertStatus.userPrompt, AlertSize.small,
+    Priority.LOW, VisualAlert.none, AudibleAlert.none, .2)
+
+
+def speed_limit_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  return Alert(
+    "Speed limit changed",
+    "",
+    StarPilotAlertStatus.starpilot, AlertSize.small,
+    Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 3.0)
+
+
+def calibration_incomplete_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   first_word = 'Recalibrating' if sm['liveCalibration'].calStatus == log.LiveCalibrationData.Status.recalibrating else 'Calibrating'
   return Alert(
     f"{first_word}: {sm['liveCalibration'].calPerc:.0f}%",
@@ -99,7 +291,14 @@ def calibration_incomplete_alert(CP: car.CarParams, CS: car.CarState, sm: messag
     Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2)
 
 
-def audio_feedback_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def too_distracted_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  if sm['driverMonitoringState'].lockout:
+    mins_left = sm['driverMonitoringState'].lockoutMinutesRemaining
+    return NoEntryAlert("Too Distracted", f"{mins_left} minute{'s' if mins_left != 1 else ''} Left", priority=Priority.HIGH)
+  return NoEntryAlert("Pay Attention to Engage", priority=Priority.HIGH)
+
+
+def audio_feedback_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   duration = FEEDBACK_MAX_DURATION - ((sm['audioFeedback'].blockNum + 1) * SAMPLE_BUFFER / SAMPLE_RATE)
   return NormalPermanentAlert(
     "Recording Audio Feedback",
@@ -109,37 +308,37 @@ def audio_feedback_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
 
 # *** debug alerts ***
 
-def out_of_space_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def out_of_space_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   full_perc = round(100. - sm['deviceState'].freeSpacePercent)
   return NormalPermanentAlert("Out of Storage", f"{full_perc}% full")
 
 
-def posenet_invalid_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def posenet_invalid_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   mdl = sm['modelV2'].velocity.x[0] if len(sm['modelV2'].velocity.x) else math.nan
   err = CS.vEgo - mdl
   msg = f"Speed Error: {err:.1f} m/s"
   return NoEntryAlert(msg, alert_text_1="Posenet Speed Invalid")
 
 
-def process_not_running_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def process_not_running_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   not_running = [p.name for p in sm['managerState'].processes if not p.running and p.shouldBeRunning]
   msg = ', '.join(not_running)
   return NoEntryAlert(msg, alert_text_1="Process Not Running")
 
 
-def comm_issue_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def comm_issue_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   bs = [s for s in sm.data.keys() if not sm.all_checks([s, ])]
   msg = ', '.join(bs[:4])  # can't fit too many on one line
   return NoEntryAlert(msg, alert_text_1="Communication Issue Between Processes")
 
 
-def camera_malfunction_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def camera_malfunction_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   all_cams = ('roadCameraState', 'driverCameraState', 'wideRoadCameraState')
   bad_cams = [s.replace('State', '') for s in all_cams if s in sm.data.keys() and not sm.all_checks([s, ])]
   return NormalPermanentAlert("Camera Malfunction", ', '.join(bad_cams))
 
 
-def calibration_invalid_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def calibration_invalid_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   rpy = sm['liveCalibration'].rpyCalib
   yaw = math.degrees(rpy[2] if len(rpy) == 3 else math.nan)
   pitch = math.degrees(rpy[1] if len(rpy) == 3 else math.nan)
@@ -147,7 +346,7 @@ def calibration_invalid_alert(CP: car.CarParams, CS: car.CarState, sm: messaging
   return NormalPermanentAlert("Calibration Invalid", angles)
 
 
-def paramsd_invalid_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def paramsd_invalid_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   if not sm['liveParameters'].angleOffsetValid:
     angle_offset_deg = sm['liveParameters'].angleOffsetDeg
     title = "Steering misalignment detected"
@@ -165,34 +364,44 @@ def paramsd_invalid_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.Sub
 
   return NoEntryAlert(alert_text_1=title, alert_text_2=text)
 
-def overheat_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def overheat_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   cpu = max(sm['deviceState'].cpuTempC, default=0.)
   gpu = max(sm['deviceState'].gpuTempC, default=0.)
   temp = max((cpu, gpu, sm['deviceState'].memoryTempC))
   return NormalPermanentAlert("System Overheated", f"{temp:.0f} °C")
 
 
-def low_memory_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def low_memory_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   return NormalPermanentAlert("Low Memory", f"{sm['deviceState'].memoryUsagePercent}% used")
 
 
-def high_cpu_usage_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def high_cpu_usage_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   x = max(sm['deviceState'].cpuUsagePercent, default=0.)
   return NormalPermanentAlert("High CPU Usage", f"{x}% used")
 
 
-def modeld_lagging_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def modeld_lagging_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   return NormalPermanentAlert("Driving Model Lagging", f"{sm['modelV2'].frameDropPerc:.1f}% frames dropped")
 
 
-def joystick_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def wrong_car_mode_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  if starpilot_toggles.has_cc_long:
+    text = "Enable Cruise Control to Engage"
+  elif CP.brand == "honda":
+    text = "Enable Main Switch to Engage"
+  else:
+    text = "Enable Adaptive Cruise to Engage"
+  return NoEntryAlert(text)
+
+
+def joystick_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   gb = sm['carControl'].actuators.accel / 4.
   steer = sm['carControl'].actuators.torque
   vals = f"Gas: {round(gb * 100.)}%, Steer: {round(steer * 100.)}%"
   return NormalPermanentAlert("Joystick Mode", vals)
 
 
-def longitudinal_maneuver_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def longitudinal_maneuver_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   ad = sm['alertDebug']
   audible_alert = AudibleAlert.prompt if 'Active' in ad.alertText1 else AudibleAlert.none
   alert_status = AlertStatus.userPrompt if 'Active' in ad.alertText1 else AlertStatus.normal
@@ -202,12 +411,28 @@ def longitudinal_maneuver_alert(CP: car.CarParams, CS: car.CarState, sm: messagi
                Priority.LOW, VisualAlert.none, audible_alert, 0.2)
 
 
-def personality_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def turning_alert(direction: str):
+  def func(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+    if starpilot_toggles.hide_turning_banner:
+      return EmptyAlert
+    return Alert(f"Turning {direction}", "", AlertStatus.normal, AlertSize.small, Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .1)
+  return func
+
+
+def changing_lanes_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  if starpilot_toggles.hide_changing_lanes_banner:
+    return EmptyAlert
+  return Alert("Changing Lanes", "", AlertStatus.normal, AlertSize.small, Priority.LOW, VisualAlert.none, AudibleAlert.none, .1)
+
+
+def personality_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  if starpilot_toggles.hide_distance_profile_banner:
+    return EmptyAlert
   personality = str(personality).title()
   return NormalPermanentAlert(f"Driving Personality: {personality}", duration=1.5)
 
 
-def invalid_lkas_setting_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+def invalid_lkas_setting_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
   text = "Toggle stock LKAS on or off to engage"
   if CP.brand == "tesla":
     text = "Switch to Traffic-Aware Cruise Control to engage"
@@ -216,6 +441,75 @@ def invalid_lkas_setting_alert(CP: car.CarParams, CS: car.CarState, sm: messagin
   elif CP.brand == "nissan":
     text = "Disable your car's stock LKAS to engage"
   return NormalPermanentAlert("Invalid LKAS setting", text)
+
+
+def custom_startup_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  return StartupAlert(starpilot_toggles.startup_alert_top, starpilot_toggles.startup_alert_bottom, alert_status=StarPilotAlertStatus.starpilot)
+
+
+def forcing_stop_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  if CS.standstill:
+    return Alert(
+      "Holding the car at a stop",
+      "Press the gas pedal or 'Resume' button to override",
+      StarPilotAlertStatus.starpilot, AlertSize.small,
+      Priority.MID, VisualAlert.none, AudibleAlert.prompt, 1.)
+
+  return Alert(
+    "", "",
+    StarPilotAlertStatus.starpilot, AlertSize.none,
+    Priority.MID, VisualAlert.none, AudibleAlert.none, .1)
+
+
+def holiday_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  holiday_messages = {
+    "new_years": "Happy New Year! 🎉",
+    "valentines": "Happy Valentine's Day! ❤️",
+    "st_patricks": "Happy St. Patrick's Day! 🍀",
+    "world_frog_day": "Happy World Frog Day! 🐸",
+    "april_fools": "Happy April Fool's Day! 🤡",
+    "easter_week": "Happy Easter! 🐰",
+    "may_the_fourth": "May the 4th be with you! 🚀",
+    "cinco_de_mayo": "¡Feliz Cinco de Mayo! 🌮",
+    "stitch_day": "Happy Stitch Day! 💙",
+    "fourth_of_july": "Happy Fourth of July! 🎆",
+    "halloween_week": "Happy Halloween! 🎃",
+    "thanksgiving_week": "Happy Thanksgiving! 🦃",
+    "christmas_week": "Merry Christmas! 🎄",
+  }
+
+  return Alert(
+    holiday_messages.get(starpilot_toggles.current_holiday_theme, ""),
+    "",
+    AlertStatus.normal, AlertSize.small,
+    Priority.LOWEST, VisualAlert.none, StarPilotAudibleAlert.startup, 5.)
+
+
+def nnff_loaded_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  model_name = Params().get("NNFFModelName")
+  if model_name is None:
+    return Alert(
+      "NNFF Torque Controller not available",
+      "Donate logs to Twilsonco to get your car supported!",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 10.0)
+  else:
+    return Alert(
+      "NNFF Torque Controller loaded with:",
+      model_name,
+      StarPilotAlertStatus.starpilot, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.engage, 5.0)
+
+
+def no_lane_available_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+  lane_width = sm["starpilotPlan"].laneWidthLeft if sm["modelV2"].meta.laneChangeDirection == LaneChangeDirection.left else sm["starpilotPlan"].laneWidthRight
+  lane_width_msg = f"{lane_width:.1f} Meters" if metric else f"{lane_width * CV.METER_TO_FOOT:.1f} Feet"
+
+  return Alert(
+    "No Lane Available",
+    f"Detected Lane Width Is Only {lane_width_msg}",
+    AlertStatus.normal, AlertSize.mid,
+    Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2)
 
 
 
@@ -238,9 +532,15 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
                                        "Ensure road ahead is clear"),
   },
 
-  EventName.lateralManeuver: {
-    ET.WARNING: longitudinal_maneuver_alert,
-    ET.PERMANENT: NormalPermanentAlert("Lateral Maneuver Mode"),
+  EventName.bigModelLoading: {
+    ET.NO_ENTRY: NoEntryAlert("Big Model Loading"),
+  },
+
+  EventName.bigModelFailed: {
+    ET.SOFT_DISABLE: soft_disable_alert("Big Model Failed"),
+    ET.PERMANENT: NormalPermanentAlert("Big Model Failed",
+                                       "Restart the car to retry,\nsmall model is still available",
+                                       duration=20.),
   },
 
   EventName.selfdriveInitializing: {
@@ -311,10 +611,6 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.NO_ENTRY: NoEntryAlert("Stock AEB: Risk of Collision"),
   },
 
-  EventName.stockLkas: {
-    ET.NO_ENTRY: NoEntryAlert("Stock LKAS: Lane Departure Detected"),
-  },
-
   EventName.fcw: {
     ET.PERMANENT: Alert(
       "BRAKE!",
@@ -346,14 +642,14 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Pay Attention",
       "",
       AlertStatus.normal, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
+      Priority.LOW, VisualAlert.none, AudibleAlert.preAlert, .1),
   },
 
   EventName.driverDistracted2: {
     ET.PERMANENT: Alert(
+      "Pay Attention",
       "Driver Distracted",
-      "",
-      AlertStatus.userPrompt, AlertSize.small,
+      AlertStatus.userPrompt, AlertSize.mid,
       Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, .1),
   },
 
@@ -434,18 +730,14 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.laneChange: {
-    ET.WARNING: Alert(
-      "Changing Lanes",
-      "",
-      AlertStatus.normal, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
+    ET.WARNING: changing_lanes_alert,
   },
 
   EventName.steerSaturated: {
     ET.WARNING: Alert(
+      "Take Control",
       "Turn Exceeds Steering Limit",
-      "",
-      AlertStatus.normal, AlertSize.small,
+      AlertStatus.userPrompt, AlertSize.mid,
       Priority.LOW, VisualAlert.steerRequired, AudibleAlert.promptRepeat, 2.),
   },
 
@@ -519,11 +811,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.brakeHold: {
-    ET.WARNING: Alert(
-      "Press Resume to Exit Brake Hold",
-      "",
-      AlertStatus.userPrompt, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
+    ET.WARNING: brake_hold_alert,
   },
 
   EventName.parkBrake: {
@@ -613,7 +901,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.tooDistracted: {
-    ET.NO_ENTRY: NoEntryAlert("Distraction Level Too High"),
+    ET.NO_ENTRY: too_distracted_alert,
   },
 
   EventName.excessiveActuation: {
@@ -681,10 +969,16 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   # ten times the regular interval, or the average interval is more than 10% too high.
   EventName.commIssue: {
     ET.SOFT_DISABLE: soft_disable_alert("Communication Issue Between Processes"),
+    ET.PERMANENT: Alert("Communication Issue Between Processes", "",
+                        AlertStatus.normal, AlertSize.small,
+                        Priority.LOWER, VisualAlert.none, AudibleAlert.none, 1., creation_delay=30.),
     ET.NO_ENTRY: comm_issue_alert,
   },
   EventName.commIssueAvgFreq: {
     ET.SOFT_DISABLE: soft_disable_alert("Low Communication Rate Between Processes"),
+    ET.PERMANENT: Alert("Low Communication Rate Between Processes", "",
+                        AlertStatus.normal, AlertSize.small,
+                        Priority.LOWER, VisualAlert.none, AudibleAlert.none, 1., creation_delay=30.),
     ET.NO_ENTRY: NoEntryAlert("Low Communication Rate Between Processes"),
   },
 
@@ -801,7 +1095,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "",
       AlertStatus.normal, AlertSize.full,
       Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2, creation_delay=0.5),
-    ET.USER_DISABLE: ImmediateDisableAlert("Reverse Gear"),
+    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
     ET.NO_ENTRY: NoEntryAlert("Reverse Gear"),
   },
 
@@ -858,6 +1152,292 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 }
 
+STARPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+  StarPilotEventName.blockUser: {
+    ET.PERMANENT: Alert(
+      "Don't use the 'Development' branch!",
+      "Forcing you into 'Dashcam Mode' for your safety...",
+      AlertStatus.critical, AlertSize.mid,
+      Priority.HIGHEST, VisualAlert.none, AudibleAlert.warningImmediate, 1.),
+  },
+
+  StarPilotEventName.customStartupAlert: {
+    ET.PERMANENT: custom_startup_alert,
+  },
+
+  StarPilotEventName.lateralManeuver: {
+    ET.WARNING: longitudinal_maneuver_alert,
+    ET.PERMANENT: NormalPermanentAlert("Lateral Maneuver Mode",
+                                       "Ensure road ahead is clear"),
+  },
+
+  StarPilotEventName.forcingStop: {
+    ET.WARNING: forcing_stop_alert,
+  },
+
+  StarPilotEventName.goatSteerSaturated: {
+    ET.WARNING: Alert(
+      "JESUS TAKE THE WHEEL!!",
+      "Turn Exceeds Steering Limit",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.LOW, VisualAlert.steerRequired, StarPilotAudibleAlert.goat, 2.),
+  },
+
+  StarPilotEventName.greenLight: {
+    ET.PERMANENT: Alert(
+      "Light Turned Green",
+      "",
+      StarPilotAlertStatus.starpilot, AlertSize.small,
+      Priority.MID, VisualAlert.none, AudibleAlert.prompt, 3.),
+  },
+
+  StarPilotEventName.holidayActive: {
+    ET.PERMANENT: holiday_alert,
+  },
+
+  StarPilotEventName.laneChangeBlockedLoud: {
+    ET.WARNING: Alert(
+      "Car Detected in Blindspot",
+      "",
+      AlertStatus.userPrompt, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.warningSoft, .1),
+  },
+
+  StarPilotEventName.leadDeparting: {
+    ET.PERMANENT: Alert(
+      "Lead Departed",
+      "",
+      StarPilotAlertStatus.starpilot, AlertSize.small,
+      Priority.MID, VisualAlert.none, AudibleAlert.prompt, 3.),
+  },
+
+  StarPilotEventName.nnffLoaded: {
+    ET.PERMANENT: nnff_loaded_alert,
+  },
+
+  StarPilotEventName.noLaneAvailable: {
+    ET.WARNING: no_lane_available_alert,
+  },
+
+  StarPilotEventName.openpilotCrashed: {
+    ET.IMMEDIATE_DISABLE: Alert(
+      "openpilot crashed",
+      "Please post the 'Error Log' in the StarPilot Discord!",
+      AlertStatus.critical, AlertSize.mid,
+      Priority.HIGHEST, VisualAlert.none, AudibleAlert.prompt, .1),
+
+    ET.NO_ENTRY: Alert(
+      "openpilot crashed",
+      "Please post the 'Error Log' in the StarPilot Discord!",
+      AlertStatus.critical, AlertSize.mid,
+      Priority.HIGHEST, VisualAlert.none, AudibleAlert.prompt, .1),
+  },
+
+  StarPilotEventName.speedLimitChanged: {
+    ET.PERMANENT: speed_limit_changed_alert,
+  },
+
+  StarPilotEventName.trafficModeActive: {
+    ET.WARNING: Alert(
+      "Traffic Mode enabled",
+      "",
+      StarPilotAlertStatus.starpilot, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 3.),
+  },
+
+  StarPilotEventName.trafficModeInactive: {
+    ET.WARNING: Alert(
+      "Traffic Mode Disabled",
+      "",
+      StarPilotAlertStatus.starpilot, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 3.),
+  },
+
+  StarPilotEventName.switchbackModeActive: {
+    ET.WARNING: Alert(
+      "Switchback Mode",
+      "",
+      StarPilotAlertStatus.starpilot, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 3.),
+  },
+
+  StarPilotEventName.switchbackModeInactive: {
+    ET.WARNING: Alert(
+      "Switchback Mode Disabled",
+      "",
+      StarPilotAlertStatus.starpilot, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 3.),
+  },
+
+  StarPilotEventName.lkasEnable: {
+    ET.WARNING: EngagementAlert(AudibleAlert.engage),
+  },
+
+  StarPilotEventName.lkasDisable: {
+    ET.PERMANENT: EngagementAlert(AudibleAlert.disengage),
+  },
+
+  StarPilotEventName.pedalNotCalibrated: {
+    ET.PERMANENT: NormalPermanentAlert("Pedal Not Calibrated", "Check Calibration"),
+    ET.NO_ENTRY: NoEntryAlert("Pedal Not Calibrated: Check Calibration"),
+  },
+
+  StarPilotEventName.pedalCruiseEnabled: {
+    ET.WARNING: Alert(
+      "Pedal Cruise Engaged",
+      "",
+      AlertStatus.normal, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.engage, 0.8),
+  },
+
+  StarPilotEventName.pedalCruiseDisabled: {
+    ET.WARNING: Alert(
+      "Pedal Cruise Disengaged",
+      "",
+      AlertStatus.normal, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.disengage, 0.8),
+  },
+
+  StarPilotEventName.pedalMaxRegen: {
+    ET.WARNING: Alert(
+      "Max Regen Being Used",
+      "",
+      AlertStatus.userPrompt, AlertSize.small,
+      Priority.HIGH, VisualAlert.steerRequired, AudibleAlert.prompt, 2.),
+  },
+
+  StarPilotEventName.teslaCCEngaged: {
+    ET.WARNING: Alert(
+      "Tesla Cruise Engaged",
+      "",
+      AlertStatus.normal, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.engage, 0.8),
+  },
+
+  StarPilotEventName.teslaCCDisengaged: {
+    ET.WARNING: Alert(
+      "Tesla Cruise Disengaged",
+      "",
+      AlertStatus.normal, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.disengage, 0.8),
+  },
+
+  StarPilotEventName.teslaCCNotArmed: {
+    ET.PERMANENT: NormalPermanentAlert("Arm Stock Cruise to Enable Speed Control"),
+  },
+
+  StarPilotEventName.turningLeft: {
+    ET.WARNING: turning_alert("Left"),
+  },
+
+  StarPilotEventName.turningRight: {
+    ET.WARNING: turning_alert("Right"),
+  },
+
+  # Random Events
+  StarPilotEventName.accel30: {
+    ET.WARNING: Alert(
+      "UwU u went a bit fast there!",
+      "(⁄ ⁄•⁄ω⁄•⁄ ⁄)",
+      StarPilotAlertStatus.starpilot, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, StarPilotAudibleAlert.uwu, 4.),
+  },
+
+  StarPilotEventName.accel35: {
+    ET.WARNING: Alert(
+      "I ain't giving you no tree-fiddy",
+      "You damn Loch Ness Monsta!",
+      StarPilotAlertStatus.starpilot, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, StarPilotAudibleAlert.nessie, 4.),
+  },
+
+  StarPilotEventName.accel40: {
+    ET.WARNING: Alert(
+      "Great Scott!",
+      "🚗💨",
+      StarPilotAlertStatus.starpilot, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, StarPilotAudibleAlert.doc, 4.),
+  },
+
+  StarPilotEventName.dejaVuCurve: {
+    ET.PERMANENT: Alert(
+      "♬♪ Deja vu! ᕕ(⌐■_■)ᕗ ♪♬",
+      "🏎️",
+      StarPilotAlertStatus.starpilot, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, StarPilotAudibleAlert.dejaVu, 4.),
+  },
+
+  StarPilotEventName.firefoxSteerSaturated: {
+    ET.WARNING: Alert(
+      "IE Has Stopped Responding...",
+      "Turn Exceeds Steering Limit",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.LOW, VisualAlert.steerRequired, StarPilotAudibleAlert.firefox, 4.),
+  },
+
+  StarPilotEventName.hal9000: {
+    ET.WARNING: Alert(
+      "I'm sorry Dave",
+      "I'm afraid I can't do that...",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.HIGH, VisualAlert.none, StarPilotAudibleAlert.hal9000, 4.),
+  },
+
+  StarPilotEventName.openpilotCrashedRandomEvent: {
+    ET.IMMEDIATE_DISABLE: Alert(
+      "openpilot crashed 💩",
+      "Please post the 'Error Log' in the StarPilot Discord!",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.HIGHEST, VisualAlert.none, StarPilotAudibleAlert.fart, 10.),
+
+    ET.NO_ENTRY: Alert(
+      "openpilot crashed 💩",
+      "Please post the 'Error Log' in the StarPilot Discord!",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.HIGHEST, VisualAlert.none, StarPilotAudibleAlert.fart, 10.),
+  },
+
+  StarPilotEventName.thisIsFineSteerSaturated: {
+    ET.WARNING: Alert(
+      "This is fine ☕",
+      "Turn Exceeds Steering Limit",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.LOW, VisualAlert.steerRequired, StarPilotAudibleAlert.thisIsFine, 2.),
+  },
+
+  StarPilotEventName.toBeContinued: {
+    ET.PERMANENT: Alert(
+      "To be continued...",
+      "⬅️",
+      StarPilotAlertStatus.starpilot, AlertSize.mid,
+      Priority.MID, VisualAlert.none, StarPilotAudibleAlert.continued, 7.),
+  },
+
+  StarPilotEventName.vCruise69: {
+    ET.WARNING: Alert(
+      "Lol 69",
+      "",
+      StarPilotAlertStatus.starpilot, AlertSize.small,
+      Priority.LOW, VisualAlert.none, StarPilotAudibleAlert.noice, 2.),
+  },
+
+  StarPilotEventName.yourFrogTriedToKillMe: {
+    ET.PERMANENT: Alert(
+      "Your Frog tried to kill me...",
+      "👺",
+      StarPilotAlertStatus.starpilot, AlertSize.mid,
+      Priority.MID, VisualAlert.none, StarPilotAudibleAlert.angry, 5.),
+  },
+
+  StarPilotEventName.youveGotMail: {
+    ET.WARNING: Alert(
+      "You've got mail! 📧",
+      "",
+      StarPilotAlertStatus.starpilot, AlertSize.small,
+      Priority.LOW, VisualAlert.none, StarPilotAudibleAlert.mail, 3.),
+  },
+}
+
 
 if HARDWARE.get_device_type() == 'mici':
   EVENTS.update({
@@ -866,7 +1446,7 @@ if HARDWARE.get_device_type() == 'mici':
         "Pay Attention",
         "",
         AlertStatus.normal, AlertSize.small,
-        Priority.LOW, VisualAlert.none, AudibleAlert.none, 2),
+        Priority.LOW, VisualAlert.none, AudibleAlert.preAlert, 2),
     },
     EventName.driverDistracted2: {
       ET.PERMANENT: Alert(
@@ -921,7 +1501,7 @@ if HARDWARE.get_device_type() == 'mici':
         "",
         AlertStatus.normal, AlertSize.full,
         Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2, creation_delay=0.5),
-      ET.USER_DISABLE: ImmediateDisableAlert("Reverse"),
+      ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
       ET.NO_ENTRY: NoEntryAlert("Reverse"),
     },
   })
@@ -941,7 +1521,7 @@ if __name__ == '__main__':
 
   for i, alerts in EVENTS.items():
     for et, alert in alerts.items():
-      if not isinstance(alert, Alert):
+      if callable(alert):
         alert = alert(CP, CS, sm, False, 1, log.LongitudinalPersonality.standard)
       alerts_by_type[et][alert.priority].append(event_names[i])
 

@@ -6,6 +6,7 @@ import capnp
 import enum
 import os
 import pathlib
+import re
 import sys
 import tqdm
 import urllib.parse
@@ -13,12 +14,14 @@ import warnings
 import zstandard as zstd
 
 from collections.abc import Iterable, Iterator
+from typing import cast
 from urllib.parse import parse_qs, urlparse
 
 from cereal import log as capnp_log
 from openpilot.common.swaglog import cloudlog
 from openpilot.tools.lib.filereader import FileReader
 from openpilot.tools.lib.file_sources import comma_api_source, internal_source, openpilotci_source, comma_car_segments_source, Source
+from openpilot.tools.lib.helpers import RE
 from openpilot.tools.lib.route import SegmentRange, FileName
 from openpilot.tools.lib.log_time_series import msgs_to_time_series
 
@@ -179,7 +182,7 @@ def auto_source(identifier: str, sources: list[Source], default_mode: ReadMode) 
 
         # We've found all files, return them
         if len(needed_seg_idxs) == 0:
-          return list(valid_files.values())
+          return cast(list[str], list(valid_files.values()))
         else:
           raise FileNotFoundError(f"Did not find {fn} for seg idxs {needed_seg_idxs} of {sr.route_name}")
 
@@ -201,11 +204,12 @@ def auto_source(identifier: str, sources: list[Source], default_mode: ReadMode) 
 
 
 def parse_indirect(identifier: str) -> str:
-  if "useradmin.comma.ai" in identifier:
+  parsed = urlparse(identifier)
+  if parsed.netloc in ("useradmin.comma.ai", "useradmin.konik.ai"):
     query = parse_qs(urlparse(identifier).query)
     identifier = query["onebox"][0]
-  elif "connect.comma.ai" in identifier:
-    path = urlparse(identifier).path.strip("/").split("/")
+  elif parsed.netloc in ("connect.comma.ai", "connect.konik.ai", "stable.konik.ai"):
+    path = parsed.path.strip("/").split("/")
     path = ['/'.join(path[:2]), *path[2:]]  # recombine log id
 
     identifier = path[0]
@@ -220,6 +224,19 @@ def parse_indirect(identifier: str) -> str:
     else:
       # add selector if it exists
       identifier = "/".join(path)
+  else:
+    bare_connect_path = re.fullmatch(
+      fr'(?P<route_name>{RE.DONGLE_ID}[|_/](?:{RE.TIMESTAMP}|{RE.LOG_ID_V2}))/(?P<start_sec>[0-9]+)/(?P<end_sec>[0-9]+)(?:/(?P<selector>[qrai]))?',
+      identifier,
+    )
+    if bare_connect_path is not None:
+      route_name = bare_connect_path.group("route_name")
+      start = int(bare_connect_path.group("start_sec")) // 60
+      end = int(bare_connect_path.group("end_sec")) // 60 + 1
+      identifier = f"{route_name}/{start}:{end}"
+      selector = bare_connect_path.group("selector")
+      if selector is not None:
+        identifier += f"/{selector}"
 
   return identifier
 
@@ -244,7 +261,7 @@ class LogReader:
     return identifiers
 
   def __init__(self, identifier: str | list[str], default_mode: ReadMode = ReadMode.RLOG,
-               sources: list[Source] | None = None, sort_by_time=False, only_union_types=False):
+               sources: list[Source] = None, sort_by_time=False, only_union_types=False):
     if sources is None:
       sources = [internal_source, comma_api_source, openpilotci_source, comma_car_segments_source]
 

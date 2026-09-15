@@ -113,7 +113,7 @@ public:
   SpectraCamera(SpectraMaster *master, const CameraConfig &config);
   ~SpectraCamera();
 
-  void camera_open(VisionIpcServer *v);
+  void camera_open(VisionIpcServer *v, cl_device_id device_id, cl_context ctx);
   bool handle_camera_event(const cam_req_mgr_message *event_data);
   void camera_close();
   void camera_map_bufs();
@@ -173,6 +173,8 @@ public:
   SpectraBuf bps_iq;
   SpectraBuf bps_striping;
   SpectraBuf bps_linearization_lut;
+  SpectraBuf bps_gamma_lut;
+  SpectraBuf bps_fullres_dummy;
   std::vector<uint32_t> bps_lin_reg;
   std::vector<uint32_t> bps_ccm_reg;
 
@@ -194,11 +196,10 @@ private:
   bool validateEvent(uint64_t request_id, uint64_t frame_id_raw);
   bool waitForFrameReady(uint64_t request_id);
   bool processFrame(int buf_idx, uint64_t request_id, uint64_t frame_id_raw, uint64_t timestamp);
-  static bool syncFirstFrame(int camera_id, uint64_t request_id, uint64_t raw_id, uint64_t timestamp, bool staggered);
+  static bool syncFirstFrame(int camera_id, uint64_t request_id, uint64_t raw_id, uint64_t timestamp);
   struct SyncData {
     uint64_t timestamp;
     uint64_t frame_id_offset = 0;
-    bool staggered = false;
   };
   inline static std::map<int, SyncData> camera_sync_data;
   inline static bool first_frame_synced = false;

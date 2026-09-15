@@ -5,22 +5,25 @@ import base64
 import hashlib
 import io
 import json
+import math
 import os
 import queue
 import random
+import re
 import select
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
 import time
-import gzip
+from contextlib import suppress
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from functools import partial, total_ordering
 from queue import Queue
 from typing import cast
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 import requests
 from requests.adapters import HTTPAdapter, DEFAULT_POOLBLOCK
@@ -29,20 +32,26 @@ from websocket import (ABNF, WebSocket, WebSocketException, WebSocketTimeoutExce
                        create_connection)
 
 import cereal.messaging as messaging
-from cereal import log
+from cereal import car, log
 from cereal.services import SERVICE_LIST
 from openpilot.common.api import Api, get_key_pair
+from openpilot.common.basedir import BASEDIR
 from openpilot.common.utils import CallbackReader, get_upload_stream
 from openpilot.common.params import Params
 from openpilot.common.realtime import set_core_affinity
 from openpilot.system.hardware import HARDWARE, PC
+from openpilot.system.loggerd.config import CAMERA_FPS, SEGMENT_LENGTH
 from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
 from openpilot.common.swaglog import cloudlog
+from openpilot.system.athena.registration import UNREGISTERED_DONGLE_ID
 from openpilot.system.version import get_build_metadata
 from openpilot.system.hardware.hw import Paths
+from openpilot.tools.lib.helpers import RE
+
+from openpilot.starpilot.common.starpilot_utilities import use_konik_server
 
 
-ATHENA_HOST = os.getenv('ATHENA_HOST', 'wss://athena.comma.ai')
+ATHENA_HOST = os.getenv('ATHENA_HOST', f"wss://athena.{'konik.ai' if use_konik_server() else 'comma.ai'}")
 HANDLER_THREADS = int(os.getenv('HANDLER_THREADS', "4"))
 LOCAL_PORT_WHITELIST = {22, }  # SSH
 
@@ -56,6 +65,7 @@ MAX_AGE = 31 * 24 * 3600  # seconds
 WS_FRAME_SIZE = 4096
 DEVICE_STATE_UPDATE_INTERVAL = 1.0  # in seconds
 DEFAULT_UPLOAD_PRIORITY = 99  # higher number = lower priority
+CLIP_CHUNK_SIZE = 512 * 1024
 
 # https://bytesolutions.com/dscp-tos-cos-precedence-conversion-chart,
 # https://en.wikipedia.org/wiki/Differentiated_services
@@ -133,9 +143,9 @@ log_recv_queue: Queue[str] = queue.Queue()
 cancelled_uploads: set[str] = set()
 
 cur_upload_items: dict[int, UploadItem | None] = {}
+params_store = Params()
 
 
-# TODO-SP: adapt zst for sunnylink
 def strip_zst_extension(fn: str) -> str:
   if fn.endswith('.zst'):
     return fn[:-4]
@@ -144,6 +154,10 @@ def strip_zst_extension(fn: str) -> str:
 
 class AbortTransferException(Exception):
   pass
+
+
+def always_allow_uploads() -> bool:
+  return params_store.get_bool("AlwaysAllowUploads")
 
 
 class UploadQueueCache:
@@ -201,8 +215,8 @@ def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None) -> None:
       thread.join()
 
 
-def jsonrpc_handler(end_event: threading.Event, localProxyHandler = None) -> None:
-  dispatcher["startLocalProxy"] = localProxyHandler or partial(startLocalProxy, end_event)
+def jsonrpc_handler(end_event: threading.Event) -> None:
+  dispatcher["startLocalProxy"] = partial(startLocalProxy, end_event)
   while not end_event.is_set():
     try:
       data = recv_queue.get(timeout=1)
@@ -249,7 +263,7 @@ def cb(sm, item, tid, end_event: threading.Event, sz: int, cur: int) -> None:
   if not item.allow_cellular:
     if (time.monotonic() - sm.recv_time['deviceState']) > DEVICE_STATE_UPDATE_INTERVAL:
       sm.update(0)
-      if sm['deviceState'].networkMetered:
+      if sm['deviceState'].networkMetered and not always_allow_uploads():
         raise AbortTransferException
 
   if end_event.is_set():
@@ -282,7 +296,7 @@ def upload_handler(end_event: threading.Event) -> None:
       sm.update(0)
       metered = sm['deviceState'].networkMetered
       network_type = sm['deviceState'].networkType.raw
-      if metered and (not item.allow_cellular):
+      if metered and (not item.allow_cellular) and not always_allow_uploads():
         retry_upload(tid, end_event, False)
         continue
 
@@ -316,7 +330,7 @@ def upload_handler(end_event: threading.Event) -> None:
       cloudlog.exception("athena.upload_handler.exception")
 
 
-def _do_upload(upload_item: UploadItem, callback: Callable | None = None) -> requests.Response:
+def _do_upload(upload_item: UploadItem, callback: Callable = None) -> requests.Response:
   path = upload_item.path
   compress = False
 
@@ -368,35 +382,20 @@ def getVersion() -> dict[str, str]:
   }
 
 
-@dispatcher.add_method
-def setNavDestination(latitude: int = 0, longitude: int = 0, place_name: str | None = None, place_details: str | None = None) -> dict[str, int]:
-  destination = {
-    "latitude": latitude,
-    "longitude": longitude,
-    "place_name": place_name,
-    "place_details": place_details,
-  }
-  Params().put("NavDestination", json.dumps(destination))
-
-  return {"success": 1}
-
-
-def scan_dir(path: str, prefix: str, base: str | None = None) -> list[str]:
-  if base is None:
-    base = path
+def scan_dir(path: str, prefix: str) -> list[str]:
   files = []
   # only walk directories that match the prefix
   # (glob and friends traverse entire dir tree)
   with os.scandir(path) as i:
     for e in i:
-      rel_path = os.path.relpath(e.path, base)
+      rel_path = os.path.relpath(e.path, Paths.log_root())
       if e.is_dir(follow_symlinks=False):
         # add trailing slash
         rel_path = os.path.join(rel_path, '')
         # if prefix is a partial dir name, current dir will start with prefix
         # if prefix is a partial file name, prefix with start with dir name
         if rel_path.startswith(prefix) or prefix.startswith(rel_path):
-          files.extend(scan_dir(e.path, prefix, base))
+          files.extend(scan_dir(e.path, prefix))
       else:
         if rel_path.startswith(prefix):
           files.append(rel_path)
@@ -404,12 +403,218 @@ def scan_dir(path: str, prefix: str, base: str | None = None) -> list[str]:
 
 @dispatcher.add_method
 def listDataDirectory(prefix='') -> list[str]:
-  internal_files = scan_dir(Paths.log_root(), prefix, Paths.log_root())
-  try:
-    external_files = scan_dir(Paths.log_root_external(), prefix, Paths.log_root_external())
-  except FileNotFoundError:
-    external_files = []
-  return sorted(set(internal_files + external_files))
+  return scan_dir(Paths.log_root(), prefix)
+
+
+class VideoClips:
+  @dataclass
+  class Clip:
+    route: str
+    camera: str
+    source_start_time: float
+    source_end_time: float
+    bitrate: int
+    speedup: int
+    filename: str
+    requested_at: float
+
+  def __init__(self):
+    self.clip_path = os.path.join(Paths.log_root(), "clips")
+    self.lock = threading.Condition()
+    self.clips: dict[str, VideoClips.Clip] = {}
+    self.transcode_proc: tuple[str, subprocess.Popen] | None = None
+    threading.Thread(target=self._worker, name="video_clip", daemon=True).start()
+
+  def _encode(self, clip: Clip, inputs: Iterable[str], output_path: str, start_time: float, duration: float) -> None:
+    inputs = list(inputs)
+    metadata = json.dumps(asdict(clip), separators=(',', ':'))
+    if PC:
+      command = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-r", str(CAMERA_FPS * clip.speedup), "-f", "concat", "-safe", "0", "-protocol_whitelist", "file,pipe", "-c:v", "hevc",
+        "-i", "pipe:0", "-ss", str(start_time / clip.speedup), "-t", str(duration / clip.speedup),
+        "-map", "0:v:0", "-an", "-r", str(CAMERA_FPS), "-c:v", "libx264", "-preset", "veryfast",
+        "-b:v", f"{clip.bitrate}M", "-pix_fmt", "yuv420p", "-movflags", "+faststart+use_metadata_tags",
+        "-metadata", f"ai.comma.clip.settings={metadata}", output_path,
+      ]
+    else:
+      command = [os.path.join(BASEDIR, "openpilot/system/loggerd/encoderd"), "--clip", output_path,
+                 str(start_time), str(duration), "--bitrate", str(clip.bitrate * 1_000_000),
+                 "--speedup", str(clip.speedup), "--metadata", metadata, "--", *inputs]
+
+    with self.lock:
+      if self.clips.get(clip.filename) is not clip:
+        return
+      process = subprocess.Popen(command, stdin=subprocess.PIPE if PC else subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+      self.transcode_proc = (clip.filename, process)
+    try:
+      if PC:
+        if process.stdin is None:
+          raise RuntimeError("ffmpeg stdin is unavailable")
+        process.stdin.write("ffconcat version 1.0\n")
+        for path in inputs:
+          escaped_path = path.replace("'", "'\\''")
+          process.stdin.write(f"file 'file:{escaped_path}'\noption framerate {CAMERA_FPS}\nduration {SEGMENT_LENGTH}\n")
+        process.stdin.close()
+      process.wait()
+      if process.returncode != 0:
+        raise RuntimeError(f"clip encoder exited with code {process.returncode}")
+    finally:
+      with suppress(OSError):
+        if process.stdin is not None:
+          process.stdin.close()
+      if process.poll() is None:
+        process.terminate()
+        process.wait()
+      with self.lock:
+        if self.transcode_proc is not None and self.transcode_proc[0] == clip.filename:
+          self.transcode_proc = None
+
+  def _worker(self) -> None:
+    while True:
+      with self.lock:
+        while not self.clips:
+          self.lock.wait()
+        clip = next(iter(self.clips.values()))
+      temporary_path = ""
+      try:
+        with self.lock:
+          if self.clips.get(clip.filename) is not clip:
+            continue
+        first_segment = math.floor(clip.source_start_time / SEGMENT_LENGTH)
+        inputs = (
+          os.path.join(Paths.log_root(), f"{clip.route}--{segment}", clip.camera)
+          for segment in range(first_segment, math.ceil(clip.source_end_time / SEGMENT_LENGTH))
+        )
+        os.makedirs(self.clip_path, exist_ok=True)
+        temporary_path = os.path.join(self.clip_path, f".{clip.filename}")
+        output_path = os.path.join(self.clip_path, clip.filename)
+        self._encode(clip, inputs, temporary_path, clip.source_start_time - first_segment * SEGMENT_LENGTH,
+                     clip.source_end_time - clip.source_start_time)
+        with self.lock:
+          if self.clips.get(clip.filename) is clip:
+            os.replace(temporary_path, output_path)
+            del self.clips[clip.filename]
+      except Exception:
+        with self.lock:
+          failed = self.clips.get(clip.filename) is clip
+          if failed:
+            del self.clips[clip.filename]
+        if failed:
+          cloudlog.exception("athena.video_clip.failed")
+      finally:
+        with suppress(OSError):
+          if temporary_path:
+            os.unlink(temporary_path)
+
+  def _on_disk(self) -> dict[str, dict]:
+    clips = {}
+    try:
+      entries = os.scandir(self.clip_path)
+    except FileNotFoundError:
+      return clips
+    with entries:
+      for entry in entries:
+        if entry.name.startswith(".") or not entry.is_file():
+          continue
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags=ai.comma.clip.settings",
+                                "-of", "json", entry.path], capture_output=True, text=True)
+        if probe.returncode != 0:
+          continue
+        try:
+          metadata = json.loads(json.loads(probe.stdout)["format"]["tags"]["ai.comma.clip.settings"])
+          size = entry.stat().st_size
+        except (FileNotFoundError, KeyError, TypeError, json.JSONDecodeError):
+          continue
+        if not isinstance(metadata, dict) or not isinstance(metadata.get("requested_at"), (int, float)):
+          continue
+        clips[entry.name] = {**metadata, "filename": entry.name, "status": "ready",
+                             "fn": os.path.relpath(entry.path, Paths.log_root()), "size": size}
+    return clips
+
+  def _available_ranges(self, route: str) -> dict:
+    cameras: dict[str, list[int]] = {}
+    try:
+      with os.scandir(Paths.log_root()) as entries:
+        for entry in entries:
+          entry_route, _, segment = entry.name.rpartition("--")
+          if entry_route != route or not segment.isdigit() or not entry.is_dir():
+            continue
+          with os.scandir(entry.path) as files:
+            for camera in files:
+              if camera.is_file() and camera.name.endswith("camera.hevc"):
+                cameras.setdefault(camera.name, []).append(int(segment))
+    except OSError:
+      return {}
+
+    available = {}
+    for camera, camera_segments in cameras.items():
+      ranges: list[list[int]] = []
+      for segment in sorted(camera_segments):
+        if ranges and ranges[-1][1] == segment * SEGMENT_LENGTH:
+          ranges[-1][1] += SEGMENT_LENGTH
+        else:
+          ranges.append([segment * SEGMENT_LENGTH, (segment + 1) * SEGMENT_LENGTH])
+      available[camera] = {"available_ranges": ranges}
+    return available
+
+  def createClip(self, route: str, source_start_time: float, source_end_time: float, clip: dict):
+    if not PC and not Params().get_bool("IsOffroad"):
+      raise RuntimeError("video clips can only be created while offroad")
+    route_match = re.fullmatch(RE.ROUTE_NAME, route)
+    assert route_match is not None, "invalid route"
+    route_name = route_match.group("log_id")
+    camera = clip["camera"]
+    filename = clip["filename"]
+    assert camera == os.path.basename(camera) and camera.endswith("camera.hevc"), "invalid camera filename"
+    assert filename == os.path.basename(filename), "invalid filename"
+    with self.lock:
+      self.clips[filename] = self.Clip(route_name, camera, source_start_time, source_end_time, clip["bitrate"], clip["speedup"],
+                                        filename, datetime.now().timestamp())
+      self.lock.notify()
+
+  def getClipState(self, route: str | None = None) -> dict:
+    route_match = re.search(RE.ROUTE_NAME, route or "")
+    with self.lock:
+      transcode_filename = self.transcode_proc[0] if self.transcode_proc is not None else None
+      active_clips = {clip.filename: {**asdict(clip), "status": "encoding" if clip.filename == transcode_filename else "queued"}
+                      for clip in self.clips.values()}
+    clips = self._on_disk()
+    clips.update(active_clips)
+    state = {"clips": sorted(clips.values(), key=lambda clip: clip["requested_at"], reverse=True)}
+    if route_match is not None:
+      route_name = route_match.group("log_id")
+      state.update({"route": route_name, "cameras": self._available_ranges(route_name)})
+    return state
+
+  def deleteClip(self, filename: str) -> None:
+    assert filename == os.path.basename(filename), "invalid filename"
+    with self.lock:
+      self.clips.pop(filename, None)
+      output_path = os.path.join(self.clip_path, filename)
+      if self.transcode_proc is not None and self.transcode_proc[0] == filename:
+        self.transcode_proc[1].terminate()
+      if os.path.exists(output_path):
+        os.unlink(output_path)
+
+  def getClipChunk(self, filename: str, offset: int) -> dict:
+    assert filename == os.path.basename(filename) and not filename.startswith("."), "invalid filename"
+    assert isinstance(offset, int) and offset >= 0, "invalid offset"
+    path = os.path.join(self.clip_path, filename)
+    size = os.path.getsize(path)
+    assert offset <= size, "offset past end of file"
+    with open(path, "rb") as f:
+      f.seek(offset)
+      data = f.read(CLIP_CHUNK_SIZE)
+    return {"data": base64.b64encode(data).decode(), "offset": offset, "size": size}
+
+
+video_clips = VideoClips()
+dispatcher.add_method(video_clips.createClip)
+dispatcher.add_method(video_clips.getClipState)
+dispatcher.add_method(video_clips.deleteClip)
+dispatcher.add_method(video_clips.getClipChunk)
 
 
 @dispatcher.add_method
@@ -434,13 +639,8 @@ def uploadFilesToUrls(files_data: list[UploadFileDict]) -> UploadFilesToUrlRespo
       failed.append(file.fn)
       continue
 
-    path_internal = os.path.join(Paths.log_root(), file.fn)
-    path_external = os.path.join(Paths.log_root_external(), file.fn)
-    if os.path.exists(path_internal) or os.path.exists(strip_zst_extension(path_internal)):
-      path = path_internal
-    elif os.path.exists(path_external) or os.path.exists(strip_zst_extension(path_external)):
-      path = path_external
-    else:
+    path = os.path.join(Paths.log_root(), file.fn)
+    if not os.path.exists(path) and not os.path.exists(strip_zst_extension(path)):
       failed.append(file.fn)
       continue
 
@@ -497,8 +697,8 @@ def setRouteViewed(route: str) -> dict[str, int | str]:
   # maintain a list of the last 10 routes viewed in connect
   params = Params()
 
-  r = params.get("AthenadRecentlyViewedRoutes")
-  routes = [] if r is None else r.split(",")
+  r = params.get("AthenadRecentlyViewedRoutes", encoding="utf-8")
+  routes = [] if r is None else [item for item in r.split(",") if item]
   routes.append(route)
 
   # remove duplicates
@@ -509,25 +709,21 @@ def setRouteViewed(route: str) -> dict[str, int | str]:
 
 
 def startLocalProxy(global_end_event: threading.Event, remote_ws_uri: str, local_port: int) -> dict[str, int]:
-  cloudlog.debug("athena.startLocalProxy.starting")
-  dongle_id = Params().get("DongleId")
-  identity_token = Api(dongle_id).get_token()
-  ws = create_connection(remote_ws_uri, cookie="jwt=" + identity_token, enable_multithread=True)
-
-  return start_local_proxy_shim(global_end_event, local_port, ws)
-
-
-def start_local_proxy_shim(global_end_event: threading.Event, local_port: int, ws: WebSocket) -> dict[str, int]:
   try:
-    if ws.sock is None:
-      raise Exception("WebSocket is not connected")
-
     # migration, can be removed once 0.9.8 is out for a while
     if local_port == 8022:
       local_port = 22
 
     if local_port not in LOCAL_PORT_WHITELIST:
       raise Exception("Requested local port not whitelisted")
+
+    cloudlog.debug("athena.startLocalProxy.starting")
+
+    dongle_id = Params().get("DongleId", encoding="utf-8")
+    identity_token = Api(dongle_id).get_token()
+    ws = create_connection(remote_ws_uri,
+                           cookie="jwt=" + identity_token,
+                           enable_multithread=True)
 
     # Set TOS to keep connection responsive while under load.
     ws.sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, SSH_TOS)
@@ -589,6 +785,38 @@ def getNetworks():
 
 
 @dispatcher.add_method
+def startStream(sdp: str, enabled: bool) -> dict:
+  from openpilot.system.webrtc.helpers import StreamRequestBody, post_stream_request, wait_for_webrtcd
+
+  params = Params()
+  bridge_services_in = []
+
+  # The manager shuts webrtcd down on ignition transitions, so persistent car
+  # params are safe here and remain available while the device is offroad.
+  cp_bytes = params.get("CarParamsPersistent")
+  if cp_bytes is None:
+    raise Exception("failed to get CarParamsPersistent")
+
+  with car.CarParams.from_bytes(cp_bytes) as CP:
+    if CP.notCar:
+      bridge_services_in.append("testJoystick")
+
+  if params.get_bool("IsOffroad"):
+    # Wake camerad, stream_encoderd, and webrtcd. webrtcd clears this after the
+    # last session ends, allowing manager to stop the extra processes again.
+    params.put_bool("IsLiveStreaming", True)
+    wait_for_webrtcd()
+
+  return post_stream_request(StreamRequestBody(
+    sdp=sdp,
+    cameras=["wideRoad"],
+    enabled=enabled,
+    bridge_services_in=bridge_services_in,
+    bridge_services_out=["carState", "deviceState"],
+  ))
+
+
+@dispatcher.add_method
 def takeSnapshot() -> str | dict[str, str] | None:
   from openpilot.system.camerad.snapshot import jpeg_write, snapshot
   ret = snapshot()
@@ -606,7 +834,7 @@ def takeSnapshot() -> str | dict[str, str] | None:
     raise Exception("not available while camerad is started")
 
 
-def get_logs_to_send_sorted(log_attr_name=LOG_ATTR_NAME) -> list[str]:
+def get_logs_to_send_sorted() -> list[str]:
   # TODO: scan once then use inotify to detect file creation/deletion
   curr_time = int(time.time())  # noqa: TID251
   logs = []
@@ -614,7 +842,7 @@ def get_logs_to_send_sorted(log_attr_name=LOG_ATTR_NAME) -> list[str]:
     log_path = os.path.join(Paths.swaglog_root(), log_entry)
     time_sent = 0
     try:
-      value = getxattr(log_path, log_attr_name)
+      value = getxattr(log_path, LOG_ATTR_NAME)
       if value is not None:
         time_sent = int.from_bytes(value, sys.byteorder)
     except (ValueError, TypeError):
@@ -626,69 +854,8 @@ def get_logs_to_send_sorted(log_attr_name=LOG_ATTR_NAME) -> list[str]:
   return sorted(logs)[:-1]
 
 
-def add_log_to_queue(log_path, log_id, is_sunnylink=False):
-  MAX_SIZE_KB = 32
-  MAX_SIZE_BYTES = MAX_SIZE_KB * 1024
-
-  with open(log_path) as f:
-    data = f.read()
-
-    # Check if the file is empty
-    if not data:
-      cloudlog.warning(f"Log file {log_path} is empty.")
-      return
-
-    # Initialize variables for encoding
-    payload = data
-    is_compressed = False
-
-    # Log the current size of the file
-    current_size = len(json.dumps(payload).encode("utf-8")) + len(log_id.encode("utf-8")) + 100  # Add 100 bytes to account for encoding overhead
-    cloudlog.debug(f"Current size of log file {log_path}: {current_size} bytes")
-
-    if is_sunnylink and current_size > MAX_SIZE_BYTES:
-      # Compress and encode the data if it exceeds the maximum size
-      compressed_data = gzip.compress(data.encode())
-      payload = base64.b64encode(compressed_data).decode()
-      is_compressed = True
-
-      # Log the size after compression and encoding
-      compressed_size = len(compressed_data)
-      encoded_size = len(payload)
-      cloudlog.debug(f"Size of log file {log_path} " +
-                     f"after compression: {compressed_size} bytes, " +
-                     f"after encoding: {encoded_size} bytes")
-
-    jsonrpc = {
-      "method": "forwardLogs",
-      "params": {
-        "logs": payload
-      },
-      "jsonrpc": "2.0",
-      "id": log_id
-    }
-
-    if is_sunnylink and is_compressed:
-      jsonrpc["params"]["compressed"] = is_compressed
-
-    jsonrpc_str = json.dumps(jsonrpc)
-    size_in_bytes = len(jsonrpc_str.encode('utf-8'))
-
-    if is_sunnylink and size_in_bytes <= MAX_SIZE_BYTES:
-      cloudlog.debug(f"Target is sunnylink and log file {log_path} is small enough to send in one request ({size_in_bytes} bytes).")
-      low_priority_send_queue.put_nowait(jsonrpc_str)
-    elif is_sunnylink:
-      cloudlog.warning(f"Target is sunnylink and log file {log_path} is too large to send in one request.")
-    else:
-      cloudlog.debug(f"Target is not sunnylink, proceeding to send log file {log_path} in one request ({size_in_bytes} bytes).")
-      low_priority_send_queue.put_nowait(jsonrpc_str)
-
-
-def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME) -> None:
-  is_sunnylink = log_attr_name != LOG_ATTR_NAME
+def log_handler(end_event: threading.Event) -> None:
   if PC:
-    cloudlog.debug("athena.log_handler: Not supported on PC")
-    time.sleep(1)
     return
 
   log_files = []
@@ -697,7 +864,7 @@ def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME) -> None
     try:
       curr_scan = time.monotonic()
       if curr_scan - last_scan > 10:
-        log_files = get_logs_to_send_sorted(log_attr_name)
+        log_files = get_logs_to_send_sorted()
         last_scan = curr_scan
 
       # send one log
@@ -708,10 +875,18 @@ def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME) -> None
         try:
           curr_time = int(time.time())  # noqa: TID251
           log_path = os.path.join(Paths.swaglog_root(), log_entry)
-          setxattr(log_path, log_attr_name, int.to_bytes(curr_time, 4, sys.byteorder))
-
-          add_log_to_queue(log_path, log_entry, is_sunnylink)
-          curr_log = log_entry
+          setxattr(log_path, LOG_ATTR_NAME, int.to_bytes(curr_time, 4, sys.byteorder))
+          with open(log_path) as f:
+            jsonrpc = {
+              "method": "forwardLogs",
+              "params": {
+                "logs": f.read()
+              },
+              "jsonrpc": "2.0",
+              "id": log_entry
+            }
+            low_priority_send_queue.put_nowait(json.dumps(jsonrpc))
+            curr_log = log_entry
         except OSError:
           pass  # file could be deleted by log rotation
 
@@ -728,7 +903,7 @@ def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME) -> None
           if log_entry and log_success:
             log_path = os.path.join(Paths.swaglog_root(), log_entry)
             try:
-              setxattr(log_path, log_attr_name, LOG_ATTR_VALUE_MAX_UNIX_TIME)
+              setxattr(log_path, LOG_ATTR_NAME, LOG_ATTR_VALUE_MAX_UNIX_TIME)
             except OSError:
               pass  # file could be deleted by log rotation
           if curr_log == log_entry:
@@ -741,40 +916,26 @@ def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME) -> None
       cloudlog.exception("athena.log_handler.exception")
 
 
-def stat_handler(end_event: threading.Event, stats_dir=None, is_sunnylink=False) -> None:
-  stats_dir = stats_dir or Paths.stats_root()
+def stat_handler(end_event: threading.Event) -> None:
+  STATS_DIR = Paths.stats_root()
   last_scan = 0.0
 
   while not end_event.is_set():
     curr_scan = time.monotonic()
     try:
       if curr_scan - last_scan > 10:
-        stat_filenames = list(filter(lambda name: not name.startswith(tempfile.gettempprefix()), os.listdir(stats_dir)))
+        stat_filenames = list(filter(lambda name: not name.startswith(tempfile.gettempprefix()), os.listdir(STATS_DIR)))
         if len(stat_filenames) > 0:
-          stat_path = os.path.join(stats_dir, stat_filenames[0])
+          stat_path = os.path.join(STATS_DIR, stat_filenames[0])
           with open(stat_path) as f:
-            payload = f.read()
-            is_compressed = False
-
-            # Log the current size of the file
-            if is_sunnylink:
-              # Compress and encode the data if it exceeds the maximum size
-              compressed_data = gzip.compress(payload.encode())
-              payload = base64.b64encode(compressed_data).decode()
-              is_compressed = True
-
             jsonrpc = {
               "method": "storeStats",
               "params": {
-                "stats": payload
+                "stats": f.read()
               },
               "jsonrpc": "2.0",
               "id": stat_filenames[0]
             }
-
-            if is_sunnylink and is_compressed:
-              jsonrpc["params"]["compressed"] = is_compressed
-
             low_priority_send_queue.put_nowait(json.dumps(jsonrpc))
           os.remove(stat_path)
         last_scan = curr_scan
@@ -878,7 +1039,7 @@ def ws_manage(ws: WebSocket, end_event: threading.Event) -> None:
   onroad_prev = None
   sock = ws.sock
 
-  while not end_event.wait(5):
+  while True:
     onroad = params.get_bool("IsOnroad")
     if onroad != onroad_prev:
       onroad_prev = onroad
@@ -891,32 +1052,61 @@ def ws_manage(ws: WebSocket, end_event: threading.Event) -> None:
           sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_USER_TIMEOUT, 16000 if onroad else 0)
           sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 7 if onroad else 30)
         elif sys.platform == 'darwin':
-          sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
           sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPALIVE, 7 if onroad else 30)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 7 if onroad else 10)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 2 if onroad else 3)
+
+    if end_event.wait(5):
+      break
 
 
 def backoff(retries: int) -> int:
   return random.randrange(0, min(128, int(2 ** retries)))
 
 
-def main(exit_event: threading.Event | None = None):
+def get_athena_dongle_id(params: Params) -> str | None:
+  dongle_id = params.get("DongleId", encoding="utf-8")
+  if dongle_id in (None, "", UNREGISTERED_DONGLE_ID):
+    return None
+  return dongle_id
+
+
+def wait_for_exit(exit_event: threading.Event | None, timeout: float) -> bool:
+  if exit_event is None:
+    time.sleep(timeout)
+    return False
+  return exit_event.wait(timeout)
+
+
+def main(exit_event: threading.Event = None):
   try:
     set_core_affinity([0, 1, 2, 3])
   except Exception:
     cloudlog.exception("failed to set core affinity")
 
   params = Params()
-  dongle_id = params.get("DongleId")
   UploadQueueCache.initialize(upload_queue)
-
-  ws_uri = ATHENA_HOST + "/ws/v2/" + dongle_id
-  api = Api(dongle_id)
 
   conn_start = None
   conn_retries = 0
+  waiting_for_dongle_id = False
   while exit_event is None or not exit_event.is_set():
+    dongle_id = get_athena_dongle_id(params)
+    if dongle_id is None:
+      if not waiting_for_dongle_id:
+        cloudlog.warning("athenad.main.missing_dongle_id")
+        waiting_for_dongle_id = True
+      conn_start = None
+      conn_retries = 0
+      params.remove("LastAthenaPingTime")
+      if wait_for_exit(exit_event, 5):
+        break
+      continue
+
+    waiting_for_dongle_id = False
+    ws_uri = ATHENA_HOST + "/ws/v2/" + dongle_id
+    api = Api(dongle_id)
+
     try:
       if conn_start is None:
         conn_start = time.monotonic()

@@ -1,20 +1,41 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
-IFS=$'\n\t'
 
-# On any failure, run the fallback launcher
-trap 'exec ./launch_chffrplus.sh' ERR
-C3_LAUNCH_SH="./sunnypilot/system/hardware/c3/launch_chffrplus.sh"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
+cd "${DIR}"
+export BASEDIR="${DIR}"
 
-MODEL="$(tr -d '\0' < "/sys/firmware/devicetree/base/model")"
-export MODEL
+is_device_runtime() {
+  [[ -f /TICI ]] || [[ -f /AGNOS ]] || [[ "${SP_FORCE_DEVICE_LAUNCH:-0}" == "1" ]]
+}
 
-if [ "$MODEL" = "comma tici" ]; then
-  # Force a failure if the launcher doesn't exist
-  [ -x "$C3_LAUNCH_SH" ] || false
-
-  # If it exists, run it
-  exec "$C3_LAUNCH_SH"
+if is_device_runtime; then
+  exec ./launch_chffrplus.sh "$@"
 fi
 
-exec ./launch_chffrplus.sh
+# Desktop/laptop path: run manager in the larch64 container so behavior matches device runtime.
+if [[ -x /Applications/Docker.app/Contents/Resources/bin/docker ]]; then
+  export PATH="/Applications/Docker.app/Contents/Resources/bin:${PATH}"
+fi
+
+if ! scripts/laptop_device_build.sh doctor >/dev/null 2>&1; then
+  echo "Preparing laptop device-build environment..."
+  scripts/laptop_device_build.sh setup "${SP_DEVICE_HOST:-}" "${SP_DEVICE_USER:-comma}" "${SP_DEVICE_PORT:-22}"
+fi
+
+desktop_jobs() {
+  if command -v nproc >/dev/null 2>&1; then
+    nproc
+  elif command -v sysctl >/dev/null 2>&1; then
+    sysctl -n hw.ncpu
+  else
+    echo 8
+  fi
+}
+
+if [[ "${SP_SKIP_DOCKER_AUTO_BUILD:-0}" == "1" ]]; then
+  exec scripts/laptop_device_build.sh manager --no-build "$@"
+else
+  exec scripts/laptop_device_build.sh manager "${SP_DOCKER_BUILD_JOBS:-$(desktop_jobs)}" "$@"
+fi

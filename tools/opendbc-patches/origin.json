@@ -1,0 +1,96 @@
+{
+  "repository": "https://github.com/Intelli/opendbc",
+  "commit": "320a91e47a274742af96fc43d8633397d439c1bf",
+  "files": [
+    {
+      "original_path": "apply_patch.sh",
+      "archived_path": "tools/opendbc-patches/legacy/apply_patch.sh",
+      "sha256": "5a5cc231a0e4c724f48b2e44b9b6f3aa8015d0d3dd155839576666f398696441",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/apply_patch.sh"
+    },
+    {
+      "original_path": "apply_patch_conflicts.sh",
+      "archived_path": "tools/opendbc-patches/legacy/apply_patch_conflicts.sh",
+      "sha256": "190dbc85f31895c572b8e76c8e2db981ed9ecbaca81b19b3d33865fe0a2ac946",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/apply_patch_conflicts.sh"
+    },
+    {
+      "original_path": "create_patch.sh",
+      "archived_path": "tools/opendbc-patches/legacy/create_patch.sh",
+      "sha256": "5bca2636a579944720d049cae45b9ec502ae9114b4af8e5cd65dc033ec9dbb8b",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/create_patch.sh"
+    },
+    {
+      "original_path": "create_patch_manual.sh",
+      "archived_path": "tools/opendbc-patches/legacy/create_patch_manual.sh",
+      "sha256": "8f4af842e26d45e5991b1a54eec028b3ad23e36527f225e21bfde33f8ca6d1e7",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/create_patch_manual.sh"
+    },
+    {
+      "original_path": "fix_patch.sh",
+      "archived_path": "tools/opendbc-patches/legacy/fix_patch.sh",
+      "sha256": "154d1f99e19cccbb757971d456d8d3374936ae81bd830fc460d10bf8cda4c50b",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/fix_patch.sh"
+    },
+    {
+      "original_path": "update_patch.sh",
+      "archived_path": "tools/opendbc-patches/legacy/update_patch.sh",
+      "sha256": "e410219be01dff6dba919a687c55c2fec43a7e079a8be77ce51af06594b87a9e",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/update_patch.sh"
+    },
+    {
+      "original_path": "sync-upstream.sh",
+      "archived_path": "tools/opendbc-patches/legacy/sync-upstream.sh",
+      "sha256": "816ba36dc1495c8894199ce763023be06eefaee5ee8df7d68fbee380503d1cf0",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/sync-upstream.sh"
+    },
+    {
+      "original_path": "AGENTS.md",
+      "archived_path": "tools/opendbc-patches/legacy/AGENTS.md",
+      "sha256": "6134ea88db331af3a50f59954d4128784b602fe45ebd1b11580a04a51101fdc0",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/AGENTS.md"
+    },
+    {
+      "original_path": "patches/customize_warnings.patch",
+      "archived_path": "patches/opendbc/customize_warnings.patch",
+      "sha256": "db7fe5354e3b045e80a7014513048d98d8e8676c00c2e47f6731ec395c679cfc",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/customize_warnings.patch"
+    },
+    {
+      "original_path": "patches/door_signals.patch",
+      "archived_path": "patches/opendbc/door_signals.patch",
+      "sha256": "6d99bd9c098fb64f99afa51c5b669cb17369a5590360aabf81034b05c14843f5",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/door_signals.patch"
+    },
+    {
+      "original_path": "patches/ev9_tests.patch",
+      "archived_path": "patches/opendbc/ev9_tests.patch",
+      "sha256": "ae10bad5f92bb6e6e540e1cdfe45dbf2f8944cf7ed12c1928c95e8b7982daaa8",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/ev9_tests.patch"
+    },
+    {
+      "original_path": "patches/modify_baseline.patch",
+      "archived_path": "patches/opendbc/modify_baseline.patch",
+      "sha256": "155425fde1f15aa42597cd315525a596433a6b9340f719cc06706178e2b91a9d",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/modify_baseline.patch"
+    },
+    {
+      "original_path": "patches/panda_safety_limits.patch",
+      "archived_path": "patches/opendbc/panda_safety_limits.patch",
+      "sha256": "38dd6db8a633e2684856ce6f919094b4207c78675550d11c1576a7eda449f247",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/panda_safety_limits.patch"
+    },
+    {
+      "original_path": "patches/steering_and_ev9_limits.patch",
+      "archived_path": "patches/opendbc/steering_and_ev9_limits.patch",
+      "sha256": "8bfba1f0f55a9c87c4822a9345fe18f48f196709ca7d8d02ff8db818d98be529",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/steering_and_ev9_limits.patch"
+    },
+    {
+      "original_path": "patches/tap_detection_debug.patch.disabled",
+      "archived_path": "patches/opendbc/tap_detection_debug.patch.disabled",
+      "sha256": "aa9f99fe6254c7ad76df6687d55274859a2f094b42befa4f1ee5c4d26a101bc0",
+      "source_url": "https://github.com/Intelli/opendbc/blob/320a91e47a274742af96fc43d8633397d439c1bf/patches/tap_detection_debug.patch.disabled"
+    }
+  ]
+}

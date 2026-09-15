@@ -1,8 +1,11 @@
-from cereal import car, log
+from cereal import car, custom, log
+import cereal.messaging as messaging
 from opendbc.car import DT_CTRL, structs
-from opendbc.car.car_helpers import interfaces
+from opendbc.car.chrysler.values import RAM_DT
+from opendbc.car.gm.values import CAR as GM_CAR, GMFlags, SDGM_CAR
+from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
 from opendbc.car.interfaces import MAX_CTRL_SPEED
-from opendbc.car.toyota.values import ToyotaFlags
+from opendbc.car.rivian.values import RivianFlags
 
 from openpilot.selfdrive.selfdrived.events import Events
 
@@ -12,31 +15,104 @@ EventName = log.OnroadEvent.EventName
 NetworkLocation = structs.CarParams.NetworkLocation
 
 
+# TODO: the goal is to abstract this file into the CarState struct and make events generic
+class MockCarState:
+  def __init__(self):
+    self.sm = messaging.SubMaster(['gpsLocation', 'gpsLocationExternal'])
+
+  def update(self, CS: car.CarState, FPCS: custom.StarPilotCarState):
+    self.sm.update(0)
+    gps_sock = 'gpsLocationExternal' if self.sm.recv_frame['gpsLocationExternal'] > 1 else 'gpsLocation'
+
+    CS.vEgo = self.sm[gps_sock].speed
+    CS.vEgoRaw = self.sm[gps_sock].speed
+
+    return CS, FPCS
+
+
+BRAND_EXTRA_GEARS = {
+  'ford': [GearShifter.low, GearShifter.manumatic],
+  'nissan': [GearShifter.brake],
+  'chrysler': [GearShifter.low],
+  'honda': [GearShifter.sport],
+  'toyota': [GearShifter.sport],
+  'gm': [GearShifter.sport, GearShifter.low, GearShifter.eco, GearShifter.manumatic],
+  'volkswagen': [GearShifter.eco, GearShifter.sport, GearShifter.manumatic],
+  'hyundai': [GearShifter.sport, GearShifter.manumatic]
+}
+
+GM_STANDSTILL_BRAKE_CAMERA_CARS = {
+  GM_CAR.CHEVROLET_VOLT,
+  GM_CAR.CHEVROLET_VOLT_2019,
+  GM_CAR.CHEVROLET_VOLT_ASCM,
+  GM_CAR.CHEVROLET_VOLT_CAMERA,
+  GM_CAR.CHEVROLET_VOLT_CC,
+  GM_CAR.CHEVROLET_MALIBU,
+  GM_CAR.CHEVROLET_MALIBU_ASCM,
+  GM_CAR.BUICK_LACROSSE_ASCM,
+  GM_CAR.CHEVROLET_MALIBU_SDGM,
+  GM_CAR.CHEVROLET_MALIBU_CC,
+  GM_CAR.CHEVROLET_MALIBU_HYBRID_CC,
+  GM_CAR.CHEVROLET_BLAZER,
+  GM_CAR.CHEVROLET_TRAVERSE,
+}
+
+
 class CarSpecificEvents:
   def __init__(self, CP: structs.CarParams):
     self.CP = CP
 
     self.steering_unpressed = 0
     self.low_speed_alert = False
+    self.gm_low_speed_alert_shown = False
     self.no_steer_warning = False
     self.silent_steer_warning = True
+    self.rivian = self.CP.brand == "rivian"
+    self.rivian_angle_harness = self.rivian and bool(self.CP.flags & RivianFlags.ANGLE_HARNESS)
+    self.rivian_status_frame = 0
+    self.rivian_angle_saturated = False
+    self.rivian_toi_recovery_failed = False
+    self.rivian_status_params = None
+    self.rivian_angle_params = None
+    if self.rivian:
+      try:
+        from openpilot.common.params import Params
+        self.rivian_status_params = Params(memory=True)
+        if self.rivian_angle_harness:
+          self.rivian_angle_params = self.rivian_status_params
+      except Exception:
+        pass
 
   def update(self, CS: car.CarState, CS_prev: car.CarState, CC: car.CarControl):
+    extra_gears = BRAND_EXTRA_GEARS.get(self.CP.brand, None)
+    # The Accord 11G is the only Honda currently using the B/regen gear in
+    # StarPilot. Do not change wrong-gear handling for other Honda models.
+    if self.CP.brand == 'honda' and self.CP.carFingerprint == 'HONDA_ACCORD_11G':
+      extra_gears = [GearShifter.sport, GearShifter.brake]
+
     if self.CP.brand in ('body', 'mock'):
-      return Events()
+      events = Events()
 
-    events = self.create_common_events(CS, CS_prev)
+    elif self.CP.brand == 'chrysler':
+      events = self.create_common_events(CS, CS_prev, extra_gears=extra_gears)
 
-    if self.CP.brand == 'chrysler':
       # Low speed steer alert hysteresis logic
-      if self.CP.minSteerSpeed > 0. and CS.vEgo < (self.CP.minSteerSpeed + 0.5):
-        self.low_speed_alert = True
-      elif CS.vEgo > (self.CP.minSteerSpeed + 1.):
-        self.low_speed_alert = False
+      if self.CP.carFingerprint in RAM_DT:
+        if CS.vEgo >= self.CP.minEnableSpeed:
+          self.low_speed_alert = False
+        if (self.CP.minEnableSpeed >= 14.5) and (CS.gearShifter != GearShifter.drive):
+          self.low_speed_alert = True
+      else:
+        if self.CP.minSteerSpeed > 0. and CS.vEgo < (self.CP.minSteerSpeed + 0.5):
+          self.low_speed_alert = True
+        elif CS.vEgo > (self.CP.minSteerSpeed + 1.):
+          self.low_speed_alert = False
       if self.low_speed_alert:
         events.add(EventName.belowSteerSpeed)
 
     elif self.CP.brand == 'honda':
+      events = self.create_common_events(CS, CS_prev, extra_gears=extra_gears, pcm_enable=False)
+
       if self.CP.pcmCruise and CS.vEgo < self.CP.minEnableSpeed:
         events.add(EventName.belowEngageSpeed)
 
@@ -57,9 +133,11 @@ class CarSpecificEvents:
 
     elif self.CP.brand == 'toyota':
       # TODO: when we check for unexpected disengagement, check gear not S1, S2, S3
+      events = self.create_common_events(CS, CS_prev, extra_gears=extra_gears)
+
       if self.CP.openpilotLongitudinalControl:
         # Only can leave standstill when planner wants to move
-        if CS.cruiseState.standstill and not CS.brakePressed and (CC.cruiseControl.resume or self.CP.flags & ToyotaFlags.HYBRID.value):
+        if CS.cruiseState.standstill and not CS.brakePressed and CC.cruiseControl.resume:
           events.add(EventName.resumeRequired)
         if CS.vEgo < self.CP.minEnableSpeed:
           events.add(EventName.belowEngageSpeed)
@@ -71,15 +149,42 @@ class CarSpecificEvents:
             events.add(EventName.manualRestart)
 
     elif self.CP.brand == 'gm':
-      # Enabling at a standstill with brake is allowed
-      # TODO: verify 17 Volt can enable for the first time at a stop and allow for all GMs
-      if CS.vEgo < self.CP.minEnableSpeed and not (CS.standstill and CS.brake >= 20 and
-                                                   self.CP.networkLocation == NetworkLocation.fwdCamera):
+      events = self.create_common_events(CS, CS_prev, extra_gears=extra_gears, pcm_enable=self.CP.pcmCruise,
+                                         suppress_low_speed_alert=True)
+
+      # Show the low-speed steer alert once per drive when speed dips below min steer speed.
+      crossed_below_min_steer_speed = (
+        self.CP.minSteerSpeed > 0. and
+        CS_prev.vEgo >= self.CP.minSteerSpeed and
+        CS.vEgo < self.CP.minSteerSpeed
+      )
+      if CS.lowSpeedAlert and crossed_below_min_steer_speed and not self.gm_low_speed_alert_shown:
+        events.add(EventName.belowSteerSpeed)
+        self.gm_low_speed_alert_shown = True
+
+      # Most camera-ACC cars can engage below 5 kph only when stopped with brake applied;
+      # SDGM remains narrower.
+      standstill_brake_enable_allowed = (
+        CS.standstill and
+        CS.brake >= 20 and
+        self.CP.networkLocation == NetworkLocation.fwdCamera and
+        (self.CP.carFingerprint in GM_STANDSTILL_BRAKE_CAMERA_CARS or self.CP.carFingerprint not in SDGM_CAR)
+      )
+      below_min_enable_speed = CS.vEgo < self.CP.minEnableSpeed or getattr(CS, "moving_backward", False)
+      if below_min_enable_speed and not standstill_brake_enable_allowed:
         events.add(EventName.belowEngageSpeed)
-      if CS.cruiseState.standstill:
+      if CS.cruiseState.standstill and not self.CP.autoResumeSng:
         events.add(EventName.resumeRequired)
 
+      # Preserve the prior cycle's cruise-enabled state for low-speed disengage behavior.
+      if ((self.CP.flags & GMFlags.CC_LONG) and
+          CS.vEgo < self.CP.minEnableSpeed and
+          (CS.cruiseState.enabled or CS_prev.cruiseState.enabled)):
+        events.add(EventName.speedTooLow)
+
     elif self.CP.brand == 'volkswagen':
+      events = self.create_common_events(CS, CS_prev, extra_gears=extra_gears, pcm_enable=self.CP.pcmCruise)
+
       if self.CP.openpilotLongitudinalControl:
         if CS.vEgo < self.CP.minEnableSpeed + 0.5:
           events.add(EventName.belowEngageSpeed)
@@ -87,30 +192,58 @@ class CarSpecificEvents:
           events.add(EventName.speedTooLow)
 
       # TODO: this needs to be implemented generically in carState struct
-      # if CC.eps_timer_soft_disable_alert:
+      # if CC.eps_timer_soft_disable_alert:  # type: ignore[attr-defined]
       #   events.add(EventName.steerTimeLimit)
+
+    elif self.CP.brand == 'tesla':
+      events = self.create_common_events(CS, CS_prev, extra_gears=extra_gears)
+
+    elif self.CP.brand == 'hyundai':
+      ray_ev = self.CP.carFingerprint == HYUNDAI_CAR.KIA_RAY_EV
+      events = self.create_common_events(
+        CS, CS_prev, extra_gears=extra_gears,
+        pcm_enable=self.CP.pcmCruise,
+        allow_button_cancel=False,
+        ignore_cruise_state=ray_ev,
+      )
+
+    elif self.CP.brand == 'nissan':
+      events = self.create_common_events(CS, CS_prev, extra_gears=extra_gears, pcm_enable=self.CP.pcmCruise)
+
+    else:
+      events = self.create_common_events(CS, CS_prev, extra_gears=extra_gears)
+
+    if self.rivian:
+      self.rivian_status_frame += 1
+      if self.rivian_status_params is not None and self.rivian_status_frame % 5 == 0:
+        self.rivian_toi_recovery_failed = self.rivian_status_params.get_bool("RivianToiRecoveryFailed")
+        if self.rivian_angle_harness:
+          self.rivian_angle_saturated = self.rivian_status_params.get_bool("RivianAngleSaturated")
+      if self.rivian_toi_recovery_failed:
+        events.add(EventName.steerTempUnavailable)
+    if self.rivian_angle_harness:
+      if self.rivian_angle_saturated:
+        events.add(EventName.steerSaturated)
 
     return events
 
-  def create_common_events(self, CS: structs.CarState, CS_prev: car.CarState):
+  def create_common_events(self, CS: structs.CarState, CS_prev: car.CarState, extra_gears: list | None = None, pcm_enable=True,
+                           allow_button_cancel=True, suppress_low_speed_alert=False, ignore_cruise_state=False):
     events = Events()
-
-    CI = interfaces[self.CP.carFingerprint]
-    # TODO: cleanup the honda-specific logic
-    pcm_enable = self.CP.pcmCruise and self.CP.brand != 'honda'
-    # TODO: on some hyundai cars, the cancel button is also the pause/resume button,
-    # so only use it for cancel when running openpilot longitudinal
-    allow_button_cancel = self.CP.brand != 'hyundai'
+    preap_software_cruise = (self.CP.brand == "tesla" and self.CP.carFingerprint == "TESLA_MODEL_S_PREAP" and
+                             self.CP.openpilotLongitudinalControl and not self.CP.pcmCruise)
+    pcm_enable = pcm_enable or preap_software_cruise
 
     if CS.doorOpen:
       events.add(EventName.doorOpen)
     if CS.seatbeltUnlatched:
       events.add(EventName.seatbeltNotLatched)
-    if CS.gearShifter != GearShifter.drive and CS.gearShifter not in CI.DRIVABLE_GEARS:
+    if CS.gearShifter != GearShifter.drive and (extra_gears is None or
+       CS.gearShifter not in extra_gears):
       events.add(EventName.wrongGear)
     if CS.gearShifter == GearShifter.reverse:
       events.add(EventName.reverseGear)
-    if not CS.cruiseState.available:
+    if not CS.cruiseState.available and not ignore_cruise_state:
       events.add(EventName.wrongCarMode)
     if CS.espDisabled:
       events.add(EventName.espDisabled)
@@ -120,8 +253,6 @@ class CarSpecificEvents:
       events.add(EventName.stockFcw)
     if CS.stockAeb:
       events.add(EventName.stockAeb)
-    if CS.stockLkas:
-      events.add(EventName.stockLkas)
     if CS.vEgo > MAX_CTRL_SPEED:
       events.add(EventName.speedTooHigh)
     if CS.cruiseState.nonAdaptive:
@@ -144,7 +275,7 @@ class CarSpecificEvents:
       events.add(EventName.vehicleSensorsInvalid)
     if CS.invalidLkasSetting:
       events.add(EventName.invalidLkasSetting)
-    if CS.lowSpeedAlert:
+    if CS.lowSpeedAlert and not suppress_low_speed_alert:
       events.add(EventName.belowSteerSpeed)
     if CS.buttonEnable:
       events.add(EventName.buttonEnable)

@@ -1,6 +1,7 @@
-import subprocess
-import threading
 import time
+import threading
+
+from types import SimpleNamespace
 
 from openpilot.common.params import Params
 from openpilot.system.hardware import HARDWARE
@@ -18,6 +19,7 @@ MAX_TIME_OFFROAD_S = 30*3600
 MIN_ON_TIME_S = 3600
 DELAY_SHUTDOWN_TIME_S = 300 # Wait at least DELAY_SHUTDOWN_TIME_S seconds after offroad_time to shutdown.
 VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S = 60
+VOLTAGE_SHUTDOWN_SUSTAINED_TIME_S = 30.0
 
 class PowerMonitoring:
   def __init__(self):
@@ -28,14 +30,19 @@ class PowerMonitoring:
     self.next_pulsed_measurement_time = None
     self.car_voltage_mV = 12e3                  # Low-passed version of peripheralState voltage
     self.car_voltage_instant_mV = 12e3          # Last value of peripheralState voltage
+    self.low_voltage_start_time = None          # Monotonic timestamp when low voltage was first observed
     self.integration_lock = threading.Lock()
-    self._last_login_check = 0.0
-    self._remote_logged_in = False
 
-    car_battery_capacity_uWh = self.params.get("CarBatteryCapacity") or 0
+    # Preserve an exhausted persisted value so the shutdown policy can act on it.
+    # A missing or malformed value is treated as a newly initialized battery.
+    car_battery_capacity_uWh = self.params.get_int("CarBatteryCapacity", default=CAR_BATTERY_CAPACITY_uWh)
+    if car_battery_capacity_uWh < 0:
+      car_battery_capacity_uWh = CAR_BATTERY_CAPACITY_uWh
 
-    # Reset capacity if it's low
-    self.car_battery_capacity_uWh = max((CAR_BATTERY_CAPACITY_uWh / 10), car_battery_capacity_uWh)
+    # Reset low but non-zero estimates; zero means the estimate is exhausted.
+    self.car_battery_capacity_uWh = (
+      0 if car_battery_capacity_uWh == 0 else max((CAR_BATTERY_CAPACITY_uWh / 2), car_battery_capacity_uWh)
+    )
 
   # Calculation tick
   def calculate(self, voltage: int | None, ignition: bool):
@@ -107,75 +114,49 @@ class PowerMonitoring:
   def get_car_battery_capacity(self) -> int:
     return int(self.car_battery_capacity_uWh)
 
-  # Max Time Offroad
-  def max_time_offroad_exceeded(self, offroad_time):
-    """
-    Check if the max time offroad has been exceeded. If the value is 0, it means no limit.
-    :param offroad_time: Time spent offroad in seconds
-    :return: True if the max time offroad has been exceeded, False otherwise
-    """
-    try:
-      param = self.params.get("MaxTimeOffroad")
-      sp_max_time_val_s = param * 60 if param is not None and param >= 0 else MAX_TIME_OFFROAD_S
-    except Exception:
-      sp_max_time_val_s = MAX_TIME_OFFROAD_S
-
-    return 0 < sp_max_time_val_s <= offroad_time
-
-  def _remote_user_logged_in(self) -> bool:
-    now = time.monotonic()
-    if (now - self._last_login_check) < 60.0:
-      return self._remote_logged_in
-
-    remote_logged_in = False
-    try:
-      result = subprocess.run(["last", "-w"], capture_output=True, text=True, check=False)
-      for line in result.stdout.splitlines():
-        if "still logged in" not in line:
-          continue
-
-        parts = line.split()
-        if len(parts) < 2:
-          continue
-
-        user = parts[0]
-        terminal = parts[1]
-        host = parts[2] if len(parts) > 2 else ""
-
-        if user in {"reboot", "shutdown", "runlevel", "wtmp"}:
-          continue
-
-        host_has_network_marker = host not in {"", "-", "localhost", "local"} and any(ch in host for ch in (".", ":"))
-        if terminal.startswith("pts/") or host_has_network_marker:
-          remote_logged_in = True
-          break
-    except Exception:
-      remote_logged_in = False
-
-    self._remote_logged_in = remote_logged_in
-    self._last_login_check = now
-    return remote_logged_in
-
   # See if we need to shutdown
-  def should_shutdown(self, ignition: bool, in_car: bool, offroad_timestamp: float | None, started_seen: bool):
+  def shutdown_reason(self, ignition: bool, in_car: bool, offroad_timestamp: float | None,
+                      started_seen: bool, starpilot_toggles: SimpleNamespace) -> str | None:
     if offroad_timestamp is None:
-      return False
+      self.low_voltage_start_time = None
+      return None
 
     now = time.monotonic()
-    should_shutdown = False
     offroad_time = (now - offroad_timestamp)
-    low_voltage_shutdown = (self.car_voltage_mV < (VBATT_PAUSE_CHARGING * 1e3) and
-                            offroad_time > VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S)
-    max_time_exceeded = self.max_time_offroad_exceeded(offroad_time)
-    if max_time_exceeded and self._remote_user_logged_in():
-      max_time_exceeded = False
-    should_shutdown |= max_time_exceeded
-    should_shutdown |= low_voltage_shutdown
-    should_shutdown |= (self.car_battery_capacity_uWh <= 0)
+
+    cutoff_voltage = starpilot_toggles.low_voltage_shutdown if getattr(starpilot_toggles, "low_voltage_shutdown", 0) > 0 else 11.8
+    is_below_voltage = self.car_voltage_mV < (cutoff_voltage * 1e3)
+
+    if is_below_voltage and offroad_time > VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S:
+      if self.low_voltage_start_time is None:
+        self.low_voltage_start_time = now
+      low_voltage_sustained_time = now - self.low_voltage_start_time
+      low_voltage_shutdown = low_voltage_sustained_time >= VOLTAGE_SHUTDOWN_SUSTAINED_TIME_S
+    else:
+      self.low_voltage_start_time = None
+      low_voltage_shutdown = False
+
+    reason = None
+    if starpilot_toggles.device_shutdown_time > 0 and offroad_time > starpilot_toggles.device_shutdown_time:
+      reason = "offroad_timeout"
+    elif low_voltage_shutdown:
+      reason = "low_voltage"
+    elif self.car_battery_capacity_uWh <= 0:
+      reason = "battery_capacity_exhausted"
+
+    should_shutdown = reason is not None
     should_shutdown &= not ignition
     should_shutdown &= (not self.params.get_bool("DisablePowerDown"))
     should_shutdown &= in_car
     should_shutdown &= offroad_time > DELAY_SHUTDOWN_TIME_S
-    should_shutdown |= self.params.get_bool("ForcePowerDown")
+
+    forced = self.params.get_bool("ForcePowerDown")
+    should_shutdown |= forced
     should_shutdown &= started_seen or (now > MIN_ON_TIME_S)
-    return should_shutdown
+    if not should_shutdown:
+      return None
+    return "forced_power_down" if forced else reason
+
+  def should_shutdown(self, ignition: bool, in_car: bool, offroad_timestamp: float | None,
+                      started_seen: bool, starpilot_toggles: SimpleNamespace):
+    return self.shutdown_reason(ignition, in_car, offroad_timestamp, started_seen, starpilot_toggles) is not None

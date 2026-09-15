@@ -19,7 +19,7 @@ You can replay a route from your comma account by specifying the route name.
 tools/replay/replay <route-name>
 
 # Example:
-tools/replay/replay '5beb9b58bd12b691/0000010a--a51155e496'
+tools/replay/replay 'a2a0ccea32023010|2023-07-27--13-01-19'
 
 # Replay the default demo route:
 tools/replay/replay --demo
@@ -34,10 +34,10 @@ tools/replay/replay <route-name> --data_dir="/path_to/route"
 
 # Example:
 # If you have a local route stored at /path_to_routes with segments like:
-# 5beb9b58bd12b691/0000010a--a51155e496--0
-# 5beb9b58bd12b691/0000010a--a51155e496--1
+# a2a0ccea32023010|2023-07-27--13-01-19--0
+# a2a0ccea32023010|2023-07-27--13-01-19--1
 # You can replay it like this:
-tools/replay/replay "5beb9b58bd12b691/0000010a--a51155e496" --data_dir="/path_to_routes"
+tools/replay/replay "a2a0ccea32023010|2023-07-27--13-01-19" --data_dir="/path_to_routes"
 ```
 
 ## Send Messages via ZMQ
@@ -77,6 +77,7 @@ Options:
   --no-vipc              do not output video
   --all                  do output all messages including uiDebug, userBookmark.
                          this may causes issues when used along with UI
+  --headless             run replay without the ncurses console UI
 
 Arguments:
   route                  the drive to replay. find your drives at
@@ -89,6 +90,12 @@ To visualize the replay within the openpilot UI, run the following commands:
 ```bash
 tools/replay/replay <route-name>
 cd selfdrive/ui && ./ui.py
+```
+
+For the StarPilot host workflow, the combined desktop launcher is:
+
+```bash
+./onroad --c3 <route-name>
 ```
 
 ## Work with plotjuggler

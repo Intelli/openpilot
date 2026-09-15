@@ -11,8 +11,11 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.selfdrived.events import Alert, EVENTS, ET
 from openpilot.selfdrive.selfdrived.alertmanager import set_offroad_alert
 from openpilot.selfdrive.test.process_replay.process_replay import CONFIGS
+from openpilot.starpilot.common.starpilot_variables import get_starpilot_toggles
 
 AlertSize = log.SelfdriveState.AlertSize
+AudibleAlert = log.SelfdriveState.AudibleAlert
+EventName = log.OnroadEvent.EventName
 
 OFFROAD_ALERTS_PATH = os.path.join(BASEDIR, "selfdrive/selfdrived/alerts_offroad.json")
 
@@ -35,13 +38,14 @@ class TestAlerts:
       cls.CP = car.CarParams.new_message()
       cfg = [c for c in CONFIGS if c.proc_name == 'selfdrived'][0]
       cls.sm = SubMaster(cfg.pubs)
+      cls.starpilot_toggles = get_starpilot_toggles()
 
   def test_events_defined(self):
     # Ensure all events in capnp schema are defined in events.py
     events = log.OnroadEvent.EventName.schema.enumerants
 
     for name, e in events.items():
-      if not name.endswith("DEPRECATED") and not name.startswith("eventReserved"):
+      if not name.endswith("DEPRECATED"):
         fail_msg = f"{name} @{e} not in EVENTS"
         assert e in EVENTS.keys(), fail_msg
 
@@ -63,7 +67,8 @@ class TestAlerts:
 
     for alert in ALERTS:
       if not isinstance(alert, Alert):
-        alert = alert(self.CP, self.CS, self.sm, metric=False, soft_disable_time=100, personality=log.LongitudinalPersonality.standard)
+        alert = alert(self.CP, self.CS, self.sm, metric=False, soft_disable_time=100,
+                      personality=log.LongitudinalPersonality.standard, starpilot_toggles=self.starpilot_toggles)
 
       # for full size alerts, both text fields wrap the text,
       # so it's unlikely that they  would go past the max width
@@ -103,6 +108,14 @@ class TestAlerts:
 
         if event_type not in (ET.WARNING, ET.PERMANENT, ET.PRE_ENABLE):
           assert a.creation_delay == 0.
+
+  def test_reverse_gear_user_disable_is_normal_disengage(self):
+    alert = EVENTS[EventName.reverseGear][ET.USER_DISABLE]
+    assert isinstance(alert, Alert)
+    assert alert.alert_text_1 == ""
+    assert alert.alert_text_2 == ""
+    assert alert.alert_size == AlertSize.none
+    assert alert.audible_alert == AudibleAlert.disengage
 
   def test_offroad_alerts(self):
     params = Params()

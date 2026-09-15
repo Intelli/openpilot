@@ -5,10 +5,15 @@ from openpilot.common.basedir import BASEDIR
 
 class Spinner:
   def __init__(self):
+    self.spinner_proc = None
+
+    spinner_cwd = os.path.join(BASEDIR, "system", "ui")
+    venv_python = os.path.join(BASEDIR, ".venv", "bin", "python")
+    python_exec = venv_python if os.path.isfile(venv_python) else "python3"
     try:
-      self.spinner_proc = subprocess.Popen(["./spinner.py"],
+      self.spinner_proc = subprocess.Popen([python_exec, "./spinner.py"],
                                            stdin=subprocess.PIPE,
-                                           cwd=os.path.join(BASEDIR, "system", "ui"),
+                                           cwd=spinner_cwd,
                                            close_fds=True)
     except OSError:
       self.spinner_proc = None

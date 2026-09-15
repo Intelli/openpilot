@@ -5,7 +5,7 @@ import threading
 import time
 import uuid
 
-from openpilot.common.params import Params, ParamKeyFlag, UnknownKeyName
+from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType, UnknownKeyName
 
 class TestParams:
   def setup_method(self):
@@ -50,11 +50,8 @@ class TestParams:
     assert self.params.get("CarParams", block=True) == b"test"
 
   def test_params_unknown_key_fails(self):
-    with pytest.raises(UnknownKeyName):
-      self.params.get("swag")
-
-    with pytest.raises(UnknownKeyName):
-      self.params.get_bool("swag")
+    assert self.params.get("swag") is None
+    assert not self.params.get_bool("swag")
 
     with pytest.raises(UnknownKeyName):
       self.params.put("swag", "abc")
@@ -101,6 +98,16 @@ class TestParams:
     assert q.get("CarParams") is None
     assert q.get("CarParams", True) == b"1"
 
+  def test_put_nonblocking_latest_value_wins(self, tmp_path):
+    q = Params(str(tmp_path))
+    for i in range(100):
+      q.put_nonblocking("CarParams", f"value-{i}".encode())
+
+    del q
+
+    r = Params(str(tmp_path))
+    assert r.get("CarParams") == b"value-99"
+
   def test_params_all_keys(self):
     keys = Params().all_keys()
 
@@ -121,10 +128,35 @@ class TestParams:
     assert self.params.get("LiveParameters") is None
     assert self.params.get("LiveParameters", return_default=True) is None
 
+  def test_longitudinal_personality_profiles_json_round_trip(self):
+    key = "LongitudinalPersonalityProfiles"
+    value = {
+      "schemaVersion": 1,
+      "enabled": False,
+      "axes": {
+        "acceleration": {
+          "speed": {"unit": "mph", "values": [0.0, 11.184681, 22.369363, 33.554044, 44.738726, 55.923407, 89.477452]},
+          "value": {"unit": "m/s^2", "meaning": "maximum_requested_acceleration"},
+        },
+        "braking": {
+          "speed": {"unit": "mph", "values": [0.0, 11.184681, 22.369363, 33.554044, 44.738726, 55.923407, 89.477452]},
+          "value": {"unit": "m/s^2", "meaning": "cruise_slc_deceleration_magnitude"},
+        },
+        "following": {"speed": {"unit": "mph", "values": [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]}, "value": {"unit": "s", "meaning": "base_time_headway"}},
+      },
+      "profiles": {},
+    }
+    self.params.remove(key)
+
+    assert self.params.get_type(key) == ParamKeyType.JSON
+    assert self.params.get(key) is None
+    self.params.put(key, value)
+    assert self.params.get(key) == value
+
   def test_params_get_type(self):
     # json
-    self.params.put("ApiCache_FirehoseStats", {"a": 0})
-    assert self.params.get("ApiCache_FirehoseStats") == {"a": 0}
+    self.params.put("ApiCache_DriveStats", {"a": 0})
+    assert self.params.get("ApiCache_DriveStats") == {"a": 0}
 
     # int
     self.params.put("BootCount", 1441)

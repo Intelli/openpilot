@@ -1,9 +1,11 @@
 import numpy as np
+import platform
+import pytest
 from collections import defaultdict
 from enum import Enum
 
-from openpilot.tools.lib.logreader import LogReader
 from openpilot.selfdrive.locationd.lagd import masked_symmetric_moving_average
+from openpilot.tools.lib.logreader import LogReader
 from openpilot.selfdrive.test.process_replay.migration import migrate_all
 from openpilot.selfdrive.test.process_replay.process_replay import replay_process_with_name
 
@@ -96,6 +98,7 @@ def run_scenarios(scenario, logs):
   return get_select_fields_data(logs), get_select_fields_data(replayed_logs)
 
 
+@pytest.mark.skipif(platform.system() == "Darwin", reason="Fake socket events are unavailable on macOS")
 class TestLocationdScenarios:
   """
   Test locationd with different scenarios. In all these scenarios, we expect the following:

@@ -105,7 +105,7 @@ class BigButton(Widget):
   LABEL_HORIZONTAL_PADDING = 40
   LABEL_VERTICAL_PADDING = 23  # visually matches 30 in figma
 
-  """A lightweight stand-in for the Qt BigButton, drawn & updated each frame."""
+  """A lightweight large action button, drawn and updated each frame."""
 
   def __init__(self, text: str, value: str = "", icon: Union[rl.Texture, None] = None, scroll: bool = False):
     super().__init__()
@@ -148,8 +148,8 @@ class BigButton(Widget):
     super().set_touch_valid_callback(lambda: touch_callback() and self._grow_animation_until is None)
 
   def _width_hint(self) -> int:
-    # Single line if scrolling, so hide behind icon if exists
-    icon_size = self._txt_icon.width if self._txt_icon and self._scroll and self.value else 0
+    # Reserve icon space when a top-aligned label shares the card with a value.
+    icon_size = self._txt_icon.width + 10 if self._txt_icon and self.value else 0
     return int(self._rect.width - self.LABEL_HORIZONTAL_PADDING * 2 - icon_size)
 
   def _get_label_font_size(self):

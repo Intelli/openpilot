@@ -1,21 +1,23 @@
 import datetime
+import re
 import time
 
 from cereal import log
 import pyray as rl
 from collections.abc import Callable
+from importlib.resources import as_file
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.layouts import HBoxLayout
 from openpilot.system.ui.widgets.icon_widget import IconWidget
-from openpilot.system.ui.widgets.label import UnifiedLabel, gui_label
-from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
+from openpilot.system.ui.widgets.label import UnifiedLabel
+from openpilot.system.ui.lib.application import ASSETS_DIR, gui_app, FontWeight, MousePos
+from openpilot.selfdrive.ui.lib.mode_banner import ModeBannerVariant, get_mode_banner_variant, mode_atom_color
+from openpilot.selfdrive.ui.lib.starpilot_version import STARPILOT_DISPLAY_VERSION
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.system.version import RELEASE_BRANCHES
+from openpilot.starpilot.common.model_lab import model_lab_pair_display_name_from_params
 
 HEAD_BUTTON_FONT_SIZE = 40
 HOME_PADDING = 8
-SETTINGS_ZONE_WIDTH = 280
-ALERTS_ZONE_WIDTH = 180
 
 NetworkType = log.DeviceState.NetworkType
 
@@ -28,37 +30,6 @@ NETWORK_TYPES = {
   NetworkType.cell5G: "5G",
   NetworkType.ethernet: "Ethernet",
 }
-
-
-class AlertsPill(Widget):
-  ICON_OFFSET = 12
-  COUNT_OFFSET = 40
-
-  def __init__(self):
-    super().__init__()
-    self.set_rect(rl.Rectangle(0, 0, 104, 52))
-
-    self._pill_bg_txt = gui_app.texture("icons_mici/alerts_pill.png", 104, 52)
-    self._warning_txt = gui_app.texture("icons_mici/offroad_alerts/red_warning.png", 36, 36)
-    self._alert_count_callback: Callable[[], int] | None = None
-
-  def set_alert_count_callback(self, callback: Callable[[], int] | None):
-    self._alert_count_callback = callback
-
-  def _render(self, _):
-    alert_count = self._alert_count_callback() if self._alert_count_callback else 0
-    if alert_count > 0:
-      pill_w, pill_h = self._pill_bg_txt.width, self._pill_bg_txt.height
-      rl.draw_texture_ex(self._pill_bg_txt, rl.Vector2(self.rect.x, self.rect.y), 0.0, 1.0, rl.WHITE)
-
-      warn_x = self.rect.x + self.ICON_OFFSET
-      warn_y = self.rect.y + (pill_h - self._warning_txt.height) / 2
-      rl.draw_texture_ex(self._warning_txt, rl.Vector2(warn_x, warn_y), 0.0, 1.0, rl.WHITE)
-
-      count_rect = rl.Rectangle(self.rect.x + self.COUNT_OFFSET, self.rect.y, pill_w - self.COUNT_OFFSET, pill_h)
-      gui_label(count_rect, str(alert_count), font_size=36,
-                alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-                alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
 
 
 class NetworkIcon(Widget):
@@ -113,12 +84,72 @@ class NetworkIcon(Widget):
     rl.draw_texture_ex(draw_net_txt, rl.Vector2(draw_x, draw_y), 0.0, 1.0, rl.Color(255, 255, 255, int(255 * 0.9)))
 
 
+class ModeStatusAtom(Widget):
+  def __init__(self):
+    super().__init__()
+    self._variant = ModeBannerVariant.CHILL
+    self._textures = self._make_textures()
+    self.set_rect(rl.Rectangle(0, 0, 48, 48))
+    self.set_enabled(False)
+    self.refresh()
+
+  @staticmethod
+  def _make_textures() -> dict[ModeBannerVariant, rl.Texture]:
+    textures = {}
+    with as_file(ASSETS_DIR.joinpath("icons_mici/experimental_mode.png")) as asset_path:
+      source = rl.load_image(asset_path.as_posix())
+
+    pixel_count = source.width * source.height
+    source_pixels = bytearray(rl.ffi.buffer(source.data, pixel_count * 4))
+    try:
+      for variant in ModeBannerVariant:
+        tinted = rl.image_copy(source)
+        tinted_pixels = bytearray(source_pixels)
+        gradient = [mode_atom_color(variant, x / max(source.width - 1, 1)) for x in range(source.width)]
+        for y in range(source.height):
+          for x in range(source.width):
+            offset = (y * source.width + x) * 4
+            opacity = source_pixels[offset + 3]
+            if opacity == 0:
+              continue
+
+            color = gradient[x]
+            source_shade = max(source_pixels[offset:offset + 3]) / 255.0
+            shade = 0.65 + 0.35 * source_shade
+            tinted_pixels[offset] = round(color.r * shade)
+            tinted_pixels[offset + 1] = round(color.g * shade)
+            tinted_pixels[offset + 2] = round(color.b * shade)
+            tinted_pixels[offset + 3] = opacity
+
+        rl.ffi.buffer(tinted.data, len(tinted_pixels))[:] = bytes(tinted_pixels)
+        texture = rl.load_texture_from_image(tinted)
+        rl.set_texture_filter(texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+        rl.set_texture_wrap(texture, rl.TextureWrap.TEXTURE_WRAP_CLAMP)
+        rl.unload_image(tinted)
+        textures[variant] = texture
+    finally:
+      rl.unload_image(source)
+    return textures
+
+  def refresh(self) -> None:
+    self._variant = get_mode_banner_variant(ui_state.params, ui_state.params_memory)
+
+  def _render(self, rect: rl.Rectangle) -> None:
+    texture = self._textures[self._variant]
+    source = rl.Rectangle(0, 0, texture.width, texture.height)
+    rl.draw_texture_pro(texture, source, rect, rl.Vector2(0, 0), 0, rl.WHITE)
+
+  def __del__(self):
+    if rl.is_window_ready():
+      for texture in getattr(self, "_textures", {}).values():
+        if texture.id != 0:
+          rl.unload_texture(texture)
+
+
 class MiciHomeLayout(Widget):
   def __init__(self):
     super().__init__()
     self._on_settings_click: Callable | None = None
-    self._on_alerts_click: Callable | None = None
-    self._alert_count_callback: Callable[[], int] | None = None
 
     self._last_refresh = 0
     self._mouse_down_t: None | float = None
@@ -127,20 +158,26 @@ class MiciHomeLayout(Widget):
 
     self._version_text = None
     self._experimental_mode = False
+    self._current_model_name = "default"
 
-    self._experimental_icon = IconWidget("icons_mici/experimental_mode.png", (48, 48))
+    self._mode_status_atom = ModeStatusAtom()
+    self._bluetooth_icon = IconWidget("icons_mici/settings/bluetooth.png", (38, 38), opacity=0.9)
+    self._bluetooth_icon.set_visible(False)
+    self._egpu_icon = IconWidget("icons_mici/egpu.png", (50, 37))
+    self._egpu_icon_gray = IconWidget("icons_mici/egpu_gray.png", (50, 37))
     self._mic_icon = IconWidget("icons_mici/microphone.png", (32, 46))
-
-    self._alerts_pill = AlertsPill()
 
     self._status_bar_layout = HBoxLayout([
       IconWidget("icons_mici/settings.png", (48, 48), opacity=0.9),
       NetworkIcon(),
-      self._experimental_icon,
+      self._bluetooth_icon,
+      self._mode_status_atom,
+      self._egpu_icon,
+      self._egpu_icon_gray,
       self._mic_icon,
     ], spacing=18)
 
-    self._openpilot_label = UnifiedLabel("sunnypilot - EV9 Edition", font_size=96, font_weight=FontWeight.DISPLAY, max_width=480, wrap_text=False)
+    self._openpilot_label = UnifiedLabel("StarPilot", font_size=96, font_weight=FontWeight.BRAND, max_width=480, wrap_text=False)
     self._version_label = UnifiedLabel("", font_size=36, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
     self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
     self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
@@ -154,6 +191,23 @@ class MiciHomeLayout(Widget):
 
   def _update_params(self):
     self._experimental_mode = ui_state.params.get_bool("ExperimentalMode")
+    self._bluetooth_icon.set_visible(ui_state.params.get_bool("BluetoothEnabled"))
+    self._mode_status_atom.refresh()
+
+    def _clean_model_name(value: str) -> str:
+      return re.sub(r"[🗺️👀📡]", "", value).replace("(Default)", "").strip()
+
+    current_name = (model_lab_pair_display_name_from_params(ui_state.params) or
+                    _clean_model_name(ui_state.params.get("DrivingModelName", encoding="utf-8") or ""))
+    if not current_name:
+      default_name = ui_state.params.get_default_value("DrivingModelName")
+      if isinstance(default_name, bytes):
+        default_name = default_name.decode("utf-8", errors="ignore")
+      current_name = _clean_model_name(str(default_name or ""))
+
+    current_key = (ui_state.params.get("Model", encoding="utf-8") or
+                   ui_state.params.get("DrivingModel", encoding="utf-8") or "").strip()
+    self._current_model_name = current_name or current_key or "default"
 
   def _update_state(self):
     if self.is_pressed and not self._is_pressed_prev:
@@ -165,10 +219,11 @@ class MiciHomeLayout(Widget):
 
     if self._mouse_down_t is not None:
       if time.monotonic() - self._mouse_down_t > 0.5:
-        # long gating for experimental mode - only allow toggle if longitudinal control is available
-        if ui_state.has_longitudinal_control:
+        # Only allow the toggle when this vehicle exposes Experimental Mode.
+        if ui_state.experimental_mode_available:
           self._experimental_mode = not self._experimental_mode
           ui_state.params.put("ExperimentalMode", self._experimental_mode)
+          self._mode_status_atom.refresh()
         self._mouse_down_t = None
         self._did_long_press = True
 
@@ -178,31 +233,20 @@ class MiciHomeLayout(Widget):
       self._last_refresh = rl.get_time()
       self._update_params()
 
-  def set_callbacks(self, on_settings: Callable | None = None, on_alerts: Callable | None = None,
-                    alert_count_callback: Callable[[], int] | None = None):
+  def set_callbacks(self, on_settings: Callable | None = None):
     self._on_settings_click = on_settings
-    self._on_alerts_click = on_alerts
-    self._alert_count_callback = alert_count_callback
-    self._alerts_pill.set_alert_count_callback(alert_count_callback)
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     if not self._did_long_press:
-      relative_x = mouse_pos.x - self.rect.x
-      has_alerts = self._alert_count_callback and self._alert_count_callback() > 0
-      if relative_x < SETTINGS_ZONE_WIDTH:
-        if self._on_settings_click:
-          self._on_settings_click()
-      elif has_alerts and relative_x > self.rect.width - ALERTS_ZONE_WIDTH:
-        if self._on_alerts_click:
-          self._on_alerts_click()
+      if self._on_settings_click:
+        self._on_settings_click()
     self._did_long_press = False
 
   def _get_version_text(self) -> tuple[str, str, str, str] | None:
-    version = ui_state.params.get("Version")
     branch = ui_state.params.get("GitBranch")
     commit = ui_state.params.get("GitCommit")
 
-    if not all((version, branch, commit)):
+    if not all((branch, commit)):
       return None
 
     commit_date_raw = ui_state.params.get("GitCommitDate")
@@ -213,7 +257,7 @@ class MiciHomeLayout(Widget):
     except (ValueError, IndexError, TypeError, AttributeError):
       date_str = ""
 
-    return version, branch, commit[:7], date_str
+    return STARPILOT_DISPLAY_VERSION, branch, commit[:7], date_str
 
   def _render(self, _):
     # TODO: why is there extra space here to get it to be flush?
@@ -222,8 +266,6 @@ class MiciHomeLayout(Widget):
     self._openpilot_label.render()
 
     if self._version_text is not None:
-      # release branch
-      release_branch = self._version_text[1] in RELEASE_BRANCHES
       version_pos = rl.Rectangle(text_pos.x, text_pos.y + self._openpilot_label.font_size + 16, 100, 44)
       self._version_label.set_text(self._version_text[0])
       self._version_label.set_position(version_pos.x, version_pos.y)
@@ -234,24 +276,19 @@ class MiciHomeLayout(Widget):
       self._date_label.render()
 
       self._branch_label.set_max_width(gui_app.width - self._version_label.text_width - self._date_label.text_width - 32)
-      self._branch_label.set_text(" " + ("release" if release_branch else self._version_text[1]))
+      self._branch_label.set_text(" " + self._current_model_name)
       self._branch_label.set_position(version_pos.x + self._version_label.text_width + self._date_label.text_width + 20, version_pos.y)
       self._branch_label.render()
 
-      if not release_branch:
-        # 2nd line
-        self._version_commit_label.set_text(self._version_text[2])
-        self._version_commit_label.set_position(version_pos.x, version_pos.y + self._date_label.font_size + 7)
-        self._version_commit_label.render()
+      # 2nd line
+      self._version_commit_label.set_text(self._version_text[2])
+      self._version_commit_label.set_position(version_pos.x, version_pos.y + self._date_label.font_size + 7)
+      self._version_commit_label.render()
 
     # ***** Center-aligned bottom section icons *****
-    self._experimental_icon.set_visible(self._experimental_mode)
+    self._egpu_icon.set_visible(ui_state.usbgpu and ui_state.usbgpu_active)
+    self._egpu_icon_gray.set_visible(ui_state.usbgpu and not ui_state.usbgpu_active)
     self._mic_icon.set_visible(ui_state.recording_audio)
 
     footer_rect = rl.Rectangle(self.rect.x + HOME_PADDING, self.rect.y + self.rect.height - 48, self.rect.width - HOME_PADDING, 48)
     self._status_bar_layout.render(footer_rect)
-
-    # TODO: add alignment to hboxlayout and add to there
-    self._alerts_pill.set_position(self.rect.x + self.rect.width - self._alerts_pill.rect.width - HOME_PADDING,
-                                   self.rect.y + self.rect.height - self._alerts_pill.rect.height)
-    self._alerts_pill.render()

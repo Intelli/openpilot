@@ -11,8 +11,8 @@ from openpilot.common.realtime import config_realtime_process, DT_MDL
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.locationd.helpers import PointBuckets, ParameterEstimator, PoseCalibrator, Pose
-from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
-from openpilot.sunnypilot.selfdrive.locationd.torqued_ext import TorqueEstimatorExt
+
+from openpilot.starpilot.common.starpilot_variables import get_starpilot_toggles
 
 HISTORY = 5  # secs
 POINTS_PER_BUCKET = 1500
@@ -35,7 +35,7 @@ MIN_BUCKET_POINTS = np.array([100, 300, 500, 500, 500, 500, 300, 100])
 MIN_ENGAGE_BUFFER = 2  # secs
 
 VERSION = 1  # bump this to invalidate old parameter caches
-ALLOWED_CARS = ['toyota', 'hyundai', 'rivian', 'honda', 'volkswagen']
+ALLOWED_CARS = ['toyota', 'hyundai', 'rivian', 'honda']
 
 
 def slope2rot(slope):
@@ -52,11 +52,8 @@ class TorqueBuckets(PointBuckets):
         break
 
 
-class TorqueEstimator(ParameterEstimator, TorqueEstimatorExt):
+class TorqueEstimator(ParameterEstimator):
   def __init__(self, CP, decimated=False, track_all_points=False):
-    ParameterEstimator.__init__(self)
-    TorqueEstimatorExt.__init__(self, CP)
-    self.CP = CP
     self.hist_len = int(HISTORY / DT_MDL)
     self.lag = 0.0
     self.track_all_points = track_all_points  # for offline analysis, without max lateral accel or max steer torque filters
@@ -85,8 +82,6 @@ class TorqueEstimator(ParameterEstimator, TorqueEstimatorExt):
 
     self.calibrator = PoseCalibrator()
 
-    TorqueEstimatorExt.initialize_custom_params(self, decimated)
-
     self.reset()
 
     initial_params = {
@@ -103,7 +98,6 @@ class TorqueEstimator(ParameterEstimator, TorqueEstimatorExt):
 
     # try to restore cached params
     params = Params()
-    self.params = params
     params_cache = params.get("CarParamsPrevRoute")
     torque_cache = params.get("LiveTorqueParameters")
     if params_cache is not None and torque_cache is not None:
@@ -185,12 +179,10 @@ class TorqueEstimator(ParameterEstimator, TorqueEstimatorExt):
     elif which == "liveCalibration":
       self.calibrator.feed_live_calib(msg)
     elif which == "liveDelay":
-      self.lag = get_lat_delay(self.params, msg.lateralDelay)
+      self.lag = msg.lateralDelay
     # calculate lateral accel from past steering torque
     elif which == "livePose":
-      is_valid = msg.angularVelocityDevice.valid and msg.orientationNED.valid and msg.inputsOK and msg.sensorsOK and msg.posenetOK
-      if len(self.raw_points['steer_torque']) == self.hist_len and is_valid:
-        t = msg.timestamp * 1e-9
+      if len(self.raw_points['steer_torque']) == self.hist_len:
         device_pose = Pose.from_live_pose(msg)
         calibrated_pose = self.calibrator.build_calibrated_pose(device_pose)
         angular_velocity_calibrated = calibrated_pose.angular_velocity
@@ -240,9 +232,9 @@ class TorqueEstimator(ParameterEstimator, TorqueEstimatorExt):
     if with_points:
       liveTorqueParameters.points = self.filtered_points.get_points()[:, [0, 2]].tolist()
 
-    liveTorqueParameters.latAccelFactorFiltered = float(self.filtered_params['latAccelFactor'].x)
+    liveTorqueParameters.latAccelFactorFiltered = float(self.filtered_params['latAccelFactor'].x if not self.starpilot_toggles.use_custom_latAccelFactor else self.starpilot_toggles.latAccelFactor)
     liveTorqueParameters.latAccelOffsetFiltered = float(self.filtered_params['latAccelOffset'].x)
-    liveTorqueParameters.frictionCoefficientFiltered = float(self.filtered_params['frictionCoefficient'].x)
+    liveTorqueParameters.frictionCoefficientFiltered = float(self.filtered_params['frictionCoefficient'].x if not self.starpilot_toggles.use_custom_friction else self.starpilot_toggles.friction)
     liveTorqueParameters.totalBucketPoints = len(self.filtered_points)
     liveTorqueParameters.calPerc = self.filtered_points.get_valid_percent()
     liveTorqueParameters.decay = self.decay
@@ -261,6 +253,15 @@ def main(demo=False):
   params = Params()
   estimator = TorqueEstimator(messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams))
 
+  sm = sm.extend(['starpilotPlan'])
+
+  starpilot_toggles = get_starpilot_toggles()
+
+  if not starpilot_toggles.liveValid:
+    estimator = TorqueEstimator(messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams), decimated=True)
+
+  estimator.starpilot_toggles = starpilot_toggles
+
   while True:
     sm.update()
     if sm.all_checks():
@@ -268,8 +269,6 @@ def main(demo=False):
         if sm.updated[which]:
           t = sm.logMonoTime[which] * 1e-9
           estimator.handle_log(t, which, sm[which])
-
-    TorqueEstimatorExt.update_use_params(estimator)
 
     # 4Hz driven by livePose
     if sm.frame % 5 == 0:
@@ -279,6 +278,8 @@ def main(demo=False):
     if sm.frame % 240 == 0:
       msg = estimator.get_msg(valid=sm.all_checks(), with_points=True)
       params.put_nonblocking("LiveTorqueParameters", msg.to_bytes())
+
+    estimator.starpilot_toggles = get_starpilot_toggles(sm)
 
 
 if __name__ == "__main__":

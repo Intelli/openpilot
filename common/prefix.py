@@ -1,5 +1,4 @@
 import os
-import platform
 import shutil
 import uuid
 
@@ -10,10 +9,9 @@ from openpilot.system.hardware.hw import Paths
 from openpilot.system.hardware.hw import DEFAULT_DOWNLOAD_CACHE_ROOT
 
 class OpenpilotPrefix:
-  def __init__(self, prefix: str | None = None, create_dirs_on_enter: bool = True, clean_dirs_on_exit: bool = True, shared_download_cache: bool = False):
+  def __init__(self, prefix: str = None, create_dirs_on_enter: bool = True, clean_dirs_on_exit: bool = True, shared_download_cache: bool = False):
     self.prefix = prefix if prefix else str(uuid.uuid4().hex[0:15])
-    shm_path = "/tmp" if platform.system() == "Darwin" else "/dev/shm"
-    self.msgq_path = os.path.join(shm_path, "msgq_" + self.prefix)
+    self.msgq_path = os.path.join(Paths.shm_path(), "msgq_" + self.prefix)
     self.create_dirs_on_enter = create_dirs_on_enter
     self.clean_dirs_on_exit = clean_dirs_on_exit
     self.shared_download_cache = shared_download_cache
@@ -52,7 +50,10 @@ class OpenpilotPrefix:
     symlink_path = Params().get_param_path()
     if os.path.exists(symlink_path):
       shutil.rmtree(os.path.realpath(symlink_path), ignore_errors=True)
-      os.remove(symlink_path)
+      # when the params path is a real directory rather than a symlink, rmtree above already
+      # removed it and there is no link left to unlink
+      if os.path.islink(symlink_path):
+        os.remove(symlink_path)
     shutil.rmtree(self.msgq_path, ignore_errors=True)
     if PC:
       shutil.rmtree(Paths.log_root(), ignore_errors=True)

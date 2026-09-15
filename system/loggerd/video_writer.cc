@@ -3,6 +3,7 @@
 #include "system/loggerd/video_writer.h"
 #include "common/swaglog.h"
 #include "common/util.h"
+#include <libavutil/version.h>
 
 VideoWriter::VideoWriter(const char *path, const char *filename, bool remuxing, int width, int height, int fps, cereal::EncodeIndex::Type codec)
   : remuxing(remuxing) {
@@ -49,6 +50,11 @@ VideoWriter::VideoWriter(const char *path, const char *filename, bool remuxing, 
   }
 }
 
+void VideoWriter::set_metadata(const char *key, const char *value) {
+  assert(remuxing && !header_written);
+  av_dict_set(&ofmt_ctx->metadata, key, value, 0);
+}
+
 void VideoWriter::initialize_audio(int sample_rate) {
   assert(this->ofmt_ctx->oformat->audio_codec != AV_CODEC_ID_NONE); // check output format supports audio streams
   const AVCodec *audio_avcodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
@@ -57,10 +63,11 @@ void VideoWriter::initialize_audio(int sample_rate) {
   assert(this->audio_codec_ctx);
   this->audio_codec_ctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
   this->audio_codec_ctx->sample_rate = sample_rate;
-  #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100)  // FFmpeg 5.1+
-  av_channel_layout_default(&this->audio_codec_ctx->ch_layout, 1);
+  #if defined(AV_CHANNEL_LAYOUT_MONO)
+  this->audio_codec_ctx->ch_layout = AV_CHANNEL_LAYOUT_MONO;
   #else
   this->audio_codec_ctx->channel_layout = AV_CH_LAYOUT_MONO;
+  this->audio_codec_ctx->channels = 1;
   #endif
   this->audio_codec_ctx->bit_rate = 32000;
   this->audio_codec_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -77,10 +84,12 @@ void VideoWriter::initialize_audio(int sample_rate) {
   this->audio_frame = av_frame_alloc();
   assert(this->audio_frame);
   this->audio_frame->format = this->audio_codec_ctx->sample_fmt;
-  #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100)  // FFmpeg 5.1+
-  av_channel_layout_copy(&this->audio_frame->ch_layout, &this->audio_codec_ctx->ch_layout);
+  #if defined(AV_CHANNEL_LAYOUT_MONO)
+  // Keep this symbol-free for older libavutil on-device: assign mono layout directly.
+  this->audio_frame->ch_layout = AV_CHANNEL_LAYOUT_MONO;
   #else
   this->audio_frame->channel_layout = this->audio_codec_ctx->channel_layout;
+  this->audio_frame->channels = this->audio_codec_ctx->channels;
   #endif
   this->audio_frame->sample_rate = this->audio_codec_ctx->sample_rate;
   this->audio_frame->nb_samples = this->audio_codec_ctx->frame_size;
@@ -106,7 +115,10 @@ void VideoWriter::write(uint8_t *data, int len, long long timestamp, bool codecc
       int err = avcodec_parameters_from_context(out_stream->codecpar, codec_ctx);
       assert(err >= 0);
       // if there is an audio stream, it must be initialized before this point
-      err = avformat_write_header(ofmt_ctx, NULL);
+      AVDictionary *options = nullptr;
+      if (ofmt_ctx->metadata) av_dict_set(&options, "movflags", "+faststart+use_metadata_tags", 0);
+      err = avformat_write_header(ofmt_ctx, &options);
+      av_dict_free(&options);
       assert(err >= 0);
       header_written = true;
     } else {
