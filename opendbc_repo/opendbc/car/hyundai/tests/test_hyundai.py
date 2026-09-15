@@ -541,13 +541,17 @@ class TestHyundaiFingerprint:
     assert get_angle_smoothing_alpha(ev9_cp, 20.0) == pytest.approx(get_angle_smoothing_alpha(other_cp, 20.0))
     assert get_angle_smoothing_alpha(other_cp, 20.0) == pytest.approx(0.0)
 
-  def test_ev9_direct_angle_waits_for_safety_envelope(self):
+  @pytest.mark.parametrize("speed,inside,outside", [(8.47, 210.0, 225.0), (20.0, 30.0, 40.0)])
+  @pytest.mark.parametrize("sign", [-1, 1])
+  def test_ev9_direct_angle_waits_for_safety_envelope(self, speed, inside, outside, sign):
     CP = CarInterface.get_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], True, False, False, None)
     controller = CarController(DBC[CP.carFingerprint], CP)
-
-    assert not direct_angle_request_allowed(8.47, 155.5, 155.6, True, controller.BASELINE_VM, controller.params)
-    assert direct_angle_request_allowed(8.47, 140.0, 140.0, True, controller.BASELINE_VM, controller.params)
-    assert not direct_angle_request_allowed(8.47, 140.0, 140.0, False, controller.BASELINE_VM, controller.params)
+    controller._update_ev9_angle_limits(speed, get_test_toggles())
+    limits = controller._ev9_safety_params
+    assert direct_angle_request_allowed(speed, inside * sign, inside * sign, True, controller.BASELINE_VM, limits)
+    assert not direct_angle_request_allowed(speed, outside * sign, inside * sign, True, controller.BASELINE_VM, limits)
+    assert not direct_angle_request_allowed(speed, inside * sign, outside * sign, True, controller.BASELINE_VM, limits)
+    assert not direct_angle_request_allowed(speed, inside * sign, inside * sign, False, controller.BASELINE_VM, limits)
 
   def test_angle_platforms_standstill_steering_flags(self):
     ev9_cp = CarInterface.get_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], False, False, False, None)
@@ -2488,7 +2492,8 @@ class TestHyundaiFingerprint:
     assert lead_distance == pytest.approx(20.0)
     assert lead_rel_speed == pytest.approx(0.0)
 
-  def test_ev9_angle_status_stays_active_when_gain_is_zero(self):
+  @pytest.mark.parametrize("steer_request", [False, True])
+  def test_ev9_angle_status_follows_request_when_gain_is_zero(self, steer_request):
     CP = CarParams.new_message()
     CP.carFingerprint = CAR.KIA_EV9
     CP.flags = int(HyundaiFlags.CANFD | HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING |
@@ -2524,7 +2529,7 @@ class TestHyundaiFingerprint:
     cs = SimpleNamespace(stock_lfa_msg=None, stock_lkas_msg=stock_lkas,
                          out=SimpleNamespace(steeringAngleDeg=0.0, gearShifter=structs.CarState.GearShifter.drive))
 
-    msgs = controller.create_canfd_msgs(0, False, 0.0, 8.5, 0.0, 0.0, False, cc.hudControl, cs, cc,
+    msgs = controller.create_canfd_msgs(0, steer_request, 0.0, 8.5, 0.0, 0.0, False, cc.hudControl, cs, cc,
                                         get_test_toggles(), lka_icon=2, lfa_icon=2)
     lkas_msgs = [msg for msg in msgs if msg[0] == 0x110]
     assert len(lkas_msgs) == 1
@@ -2532,7 +2537,7 @@ class TestHyundaiFingerprint:
     parser.update([(1, lkas_msgs)])
 
     assert parser.can_valid
-    assert parser.vl["LKAS_ALT"]["LKAS_ANGLE_ACTIVE"] == 2
+    assert parser.vl["LKAS_ALT"]["LKAS_ANGLE_ACTIVE"] == (2 if steer_request else 1)
     assert parser.vl["LKAS_ALT"]["ADAS_ACIAnglTqRedcGainVal"] == pytest.approx(0.0)
     assert parser.vl["LKAS_ALT"]["ADAS_StrAnglReqVal"] == pytest.approx(8.5)
 
@@ -3610,7 +3615,8 @@ class TestHyundaiFingerprint:
     assert parser.vl["LKAS_ALT"]["DAMP_FACTOR"] == 0
     assert parser.vl["LKAS_ALT"]["LKAS_ANGLE_ACTIVE"] == 1
     assert parser.vl["LKAS_ALT"]["HAS_LANE_SAFETY"] == 0
-    assert parser.vl["LKAS_ALT"]["ADAS_StrAnglReqVal"] == pytest.approx(12.3)
+    assert parser.vl["LKAS_ALT"]["ADAS_StrAnglReqVal"] == pytest.approx(-31.5)
+    assert stock_lkas["ADAS_StrAnglReqVal"] == pytest.approx(12.3)
     assert parser.vl["LKAS_ALT"]["ADAS_ACIAnglTqRedcGainVal"] == pytest.approx(0.0)
 
   def test_ev9_accelerator_brake_alt_spoof_matches_route_template(self):

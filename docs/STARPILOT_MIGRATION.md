@@ -11,9 +11,8 @@ install. We fetch only `refs/heads/StarPilot`.
 The first snapshot is `c3e4ec630f41c4baa43254a90f718abd1bf764a1`.
 `starpilot-upstream.json` records its commit and Git tree. The initial import
 matched upstream outside the explicitly preserved maintenance files. Migrated
-custom defaults and EV9 Edition changes are now recorded in enabled patches;
-historical steering/tuning patches remain disabled. The baseline uses StarPilot's
-own vehicle support and behavior.
+custom defaults, EV9 Edition, settings UI and the six vehicle migrations are now
+recorded in enabled patches. Unmigrated openpilot patches remain disabled.
 
 `opendbc_repo/`, `panda/`, and the other bundled dependencies are ordinary files
 from that same snapshot. `opendbc` links to `opendbc_repo/opendbc`. Make future
@@ -59,17 +58,20 @@ bytes directly.
 | `patches/*.patch*` | Openpilot patches; formerly enabled patches use `.temp-disabled`, pre-existing disabled suffixes are unchanged |
 | `patches/assets/openpilot/` | Custom lock artwork and audio for future patch porting |
 | `patches/legacy-openpilot-tooling/` | Original patch and sync/update helpers, guidance, custom analysis assets and checksums |
-| `patches/opendbc/` | Standalone opendbc patches, copied verbatim |
+| `patches/opendbc/` | Numbered StarPilot vehicle patches and unchanged historical originals |
 | `tools/opendbc-patches/legacy/` | Original standalone helpers and guidance |
 | `tools/opendbc-patches/origin.json` | Standalone source commit and archive checksums |
 
-All 17 patches that were enabled before migration now have the `.temp-disabled`
-suffix. The six previously disabled patches retain their `.disabled` names.
-Historical patch contents are unchanged. Enabled `custom_defaults_starpilot.patch`
-and `ev9_edition_starpilot.patch` record the migrated defaults and EV9 Edition
-changes. The defaults include completion of training version `0.2.0`, matching
-the old custom-defaults patch. `./apply_patch.sh` skips changes already applied.
-Re-enable individual reviewed patches by renaming them to end in `.patch`.
+The 17 patches enabled before migration were initially paused with the
+`.temp-disabled` suffix. After a port, its unchanged original uses `.migrated` and
+a new `.patch` records the reviewed StarPilot implementation. The six previously
+disabled patches retain their `.disabled` names. Only files ending in `.patch`
+are enabled. `./apply_patch.sh` skips changes already applied.
+
+Enabled `custom_defaults_starpilot.patch`, `ev9_edition_starpilot.patch` and
+`settings_ui_starpilot.patch` record the current application changes. The defaults
+include completion of training version `0.2.0`, matching the old custom-defaults
+patch.
 
 The root helpers now support both patch locations. Application discovers enabled
 root patches first, then vehicle patches, and adds `opendbc_repo/` to standalone
@@ -83,6 +85,67 @@ preimage exports leave the patch unchanged. Exporters do not sync, modify source
 stage, commit or push. Neither sync nor CI invokes these helpers.
 See [the patch guide](../patches/README.md) for examples and scope selection.
 Original helper copies are historical reference; do not run archived scripts.
+
+## EV9 vehicle migrations
+
+All six formerly enabled opendbc patches have been ported into the bundled tree.
+Replay these numbered patches in order; each builds on the preceding source:
+
+| Patch in `patches/opendbc/` | Migrated behavior |
+| --- | --- |
+| `01_customize_warnings_starpilot.patch` | Steering saturation warning timer of 0.3 seconds |
+| `02_door_signals_starpilot.patch` | CAN-FD door-open detection includes all four doors |
+| `03_modify_baseline_starpilot.patch` | EV9 controller and Panda vehicle models; other platforms retain StarPilot's model |
+| `04_panda_safety_limits_starpilot.patch` | EV9-only low-speed limits: 4.2 m/s² lateral acceleration and 4.2 m/s³ lateral jerk |
+| `05_steering_and_ev9_limits_starpilot.patch` | Controller limits, override-effort tuning, HOD sensing and manual handoff |
+| `06_ev9_tests_starpilot.patch` | Python behavior and native Panda CAN regression coverage |
+
+Panda identifies EV9 using safety bit 256 together with EV-gas and angle-steering
+flags. Bit 256 retains its FCEV meaning outside that context and is removed before
+common gas decoding on EV9. This avoids consuming StarPilot's existing AOL flag.
+
+The controller's higher limits default to speeds at or below 32 km/h. Panda's
+independent gate retains the original calculation: `max(measured_speed - 1, 1)`
+at or below `42 / 3.6 + 0.1` m/s, approximately 45.96 km/h measured speed. This is
+a step, not the 50 km/h gate assumed by the old test patch. Above the applicable
+gate, the standard road-roll-adjusted limits apply. Controller outputs respect
+both envelopes, including when a configured controller threshold exceeds Panda's.
+An empty angle/rate intersection sends inactive measured-angle control.
+
+Manual handoff requires fresh HOD touch/grip (raw 1–4, no older than 300 ms) and
+driver torque. Missing, reserved and stale HOD values do not count as intent. The
+legacy torque hysteresis, entry-only speed gate, one-second low-demand release,
+two-second reentry guard, 0.1-second grip dwell and 90°/15° high-angle hysteresis
+are preserved. High-angle hold respects gear, fault and angle/rate checks. The
+request state reaches both LKAS_ALT and direct `0xCB` steering messages.
+
+### Remaining openpilot integration
+
+`opendbc.car.hyundai.ev9.EV9AngleConfig` consumes StarPilot's existing toggle
+namespace (or a mapping). The opendbc implementation and defaults are complete;
+the application parameter registry, settings UI and toggle producer are the next
+migration step. No new Params reads or Sunnypilot-only schema fields are required
+inside opendbc.
+
+| Toggle attribute to broadcast | Former parameter | Default / range |
+| --- | --- | --- |
+| `hkg_tuning_angle_custom_limit_max_speed_kph` | `HkgTuningAngleCustomLimitMaxSpeedKph` | 32 km/h; nonpositive or malformed values use the default |
+| `hkg_tuning_angle_override_effort_percent` | `HkgTuningAngleOverrideEffortPercent` | 10%; clamped to 10–100% |
+| `hkg_shared_autonomy_mode` | `HkgSharedAutonomyMode` | 0; modes 1 and legacy 2 enable improved manual handoff |
+
+The former PascalCase parameter names and lower-camel schema names are also
+accepted. If mode is absent, the old `HkgSharedAutonomyEnabled` boolean aliases
+are supported. With no producer fields, 32 km/h and 10% override effort work now;
+improved manual handoff remains off (mode 0). Existing saved Hkg Params will not
+affect this consumer until the application publishes them. Higher-level openpilot
+curvature/planner changes are still separate work.
+
+Regression tests live in `opendbc_repo/opendbc/car/hyundai/tests/test_ev9.py` and
+`opendbc_repo/opendbc/safety/tests/test_hyundai_ev9*.py`, with corresponding updates
+to existing Hyundai tests. They exercise real CAN packing/parsing, controller
+output and native Panda hooks, including one-tick limit violations and stale
+stock commands during manual handoff. Native safety tests require rebuilding
+`libsafety.so` for the test host; the tracked AGNOS binary cannot run on macOS.
 
 ## Build and deployment branches
 
