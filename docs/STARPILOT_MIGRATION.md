@@ -55,24 +55,27 @@ bytes directly.
 
 | Location | Contents |
 | --- | --- |
-| Root `apply_patch*.sh`, `create_patch*.sh`, `fix_patch.sh`, `update_patch.sh` | Existing openpilot patch helpers, unchanged |
-| `patches/*.patch*` | Existing openpilot patches, including disabled patches |
+| Root `apply_patch*.sh`, `create_patch*.sh`, `update_patch.sh` | Unified replay and staged forward-patch export helpers |
+| `patches/*.patch*` | Openpilot patches; formerly enabled patches use `.temp-disabled`, pre-existing disabled suffixes are unchanged |
 | `patches/assets/openpilot/` | Custom lock artwork and audio for future patch porting |
-| `patches/legacy-openpilot-tooling/` | Previous sync/update scripts, guidance and custom analysis assets |
+| `patches/legacy-openpilot-tooling/` | Original patch and sync/update helpers, guidance, custom analysis assets and checksums |
 | `patches/opendbc/` | Standalone opendbc patches, copied verbatim |
 | `tools/opendbc-patches/legacy/` | Original standalone helpers and guidance |
 | `tools/opendbc-patches/origin.json` | Standalone source commit and archive checksums |
 
-These are inactive archives. Existing root patch helpers retain their old manual
-behavior: `apply_patch.sh` with no arguments applies root patches, and
-`create_patch.sh`/`update_patch.sh` invoke sync, replay patches and generate inverse
-diffs. They have not been adapted for a new StarPilot patch series. Neither sync
-nor CI calls them. Do not run the copied `legacy/` scripts in their new location.
+All 17 patches that were enabled before migration now have the `.temp-disabled`
+suffix. The six previously disabled patches retain their `.disabled` names.
+Patch contents are unchanged. `./apply_patch.sh` currently reports that there are
+no enabled patches and makes no changes. Re-enable individual reviewed patches by
+renaming them to end in `.patch`.
 
-For a future opendbc patch review,
-`tools/opendbc-patches/apply.sh --check <name.patch>` checks paths with the
-`opendbc_repo/` prefix. An explicit patch name without `--check` applies it;
-no arguments never applies anything. See that directory's README for details.
+The root helpers now support both patch locations. Application discovers enabled
+root patches first, then vehicle patches, and adds `opendbc_repo/` to standalone
+vehicle paths. Create/update export forward diffs from staged source, without
+syncing or modifying application files. Update requires an explicit base revision
+and preserves the existing suffix. Neither sync nor CI invokes these helpers.
+See [the patch guide](../patches/README.md) for examples and scope selection.
+Original helper copies are historical reference; do not run archived scripts.
 
 ## Build and deployment branches
 
@@ -105,7 +108,8 @@ collision refusal, legacy LFS/hooks, deployment history, source SHA propagation,
 file removals and promotion of the published source. They use temporary Git
 repositories and never publish to GitHub.
 
-The hosted AGNOS build still needs its first run after these changes are pushed.
+The initial migration build succeeded on GitHub. Future deployments continue to
+use the GitHub build workflow.
 Local Python dependencies and compiled extensions also need to follow StarPilot's
 lockfile for native development; the old Sunnypilot environment is not proof of a
 working native build.

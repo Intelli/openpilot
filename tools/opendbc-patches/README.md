@@ -1,48 +1,42 @@
-# Archived Intelli opendbc patches
+# Bundled opendbc patches
 
-The main repository now carries StarPilot's `opendbc_repo/` source directly.
-`patches/opendbc/` preserves the standalone Intelli/opendbc patches verbatim;
-they have **not** been applied during migration. Their `opendbc/...` paths are
-relative to the former standalone repository, so replay must add `opendbc_repo/`.
+Vehicle source is tracked directly in the main repository under `opendbc_repo/`.
+Patch files in `patches/opendbc/` use standalone paths such as
+`opendbc/car/hyundai/carcontroller.py`. The unified root helper adds
+`opendbc_repo/` when applying them.
 
-## Explicit replay
+The six formerly enabled patches now end in `.patch.temp-disabled`; the existing
+`tap_detection_debug.patch.disabled` keeps its original name. All are inactive,
+and their contents are unchanged. `origin.json` records original paths, source
+commit/URLs and SHA-256 checksums, with updated archive locations.
 
-From the main repository, inspect a patch and check its applicability first:
+## Supported helpers
+
+Use the main helpers:
 
 ```sh
-tools/opendbc-patches/apply.sh --check door_signals.patch
+./apply_patch.sh --check opendbc/example.patch
+./apply_patch.sh opendbc/example.patch
+./create_patch.sh opendbc/example
+./update_patch.sh opendbc/example --base HEAD
 ```
 
-Only when intentionally restoring that behavior:
+Create/update capture staged source as forward patches. Update requires an
+explicit base and keeps any disabled suffix. Both accept path selection after
+`--`, relative to `opendbc_repo/`. See [the patch guide](../../patches/README.md)
+for choosing a base, complete replacements and enabling individual patches.
 
-```sh
-tools/opendbc-patches/apply.sh door_signals.patch
-```
-
-An explicit `--all` selects the six `.patch` files in filename order. The
-`.patch.disabled` file is retained as reference and is never selected. With no
-argument the helper exits without applying anything. It never fetches, syncs,
-stages, commits or pushes. Ordinary `git apply` failures stop replay for manual
-review; earlier patches may already have applied. `--check --all` checks each
-patch against the current tree independently, not the result of earlier patches.
-An already-applied patch is detected by a reverse applicability check and skipped.
-
-These historical patches were written for Sunnypilot-derived Intelli code. Check
-their intent against StarPilot's existing implementation before restoring them.
+`tools/opendbc-patches/apply.sh` is a compatibility wrapper for the unified
+application helper. A basename selects one enabled vehicle patch; no arguments or
+`--all` selects all enabled vehicle patches. With the current archive, that mode
+succeeds without applying anything. `--check` performs ordinary applicability
+checks without changing files, independently for each patch. Disabled filenames
+are rejected even when explicitly selected. No helper fetches, syncs, commits or
+pushes; ordinary apply also leaves staging unchanged.
 
 ## Original helper archive
 
-`origin.json` records the original commit, source URLs and SHA-256 checksums.
-`legacy/AGENTS.md` preserves the original standalone repository guidance as history.
-
-`legacy/` preserves these seven original standalone scripts byte-for-byte:
-`apply_patch.sh`, `apply_patch_conflicts.sh`, `create_patch.sh`,
-`create_patch_manual.sh`, `fix_patch.sh`, `sync-upstream.sh`, and `update_patch.sh`.
-They are historical source, **not supported commands in the new repository**.
-In particular, the old sync targets Sunnypilot's HKG branch, and create/update
-helpers invoke sync, stage changes and generate inverse HEAD-relative diffs.
-Running them from their new location would use the wrong repository/path context.
-
-Use the wrapper above for explicit replay. Maintain patch files manually after
-reviewing the desired diff; do not run archived inverse-generation helpers.
-No upstream-sync or deployment workflow invokes these patches or scripts.
+`legacy/` preserves the original standalone helpers and `AGENTS.md` byte-for-byte.
+They are historical source, **not supported commands** in the main repository.
+They still contain the old Sunnypilot sync and inverse-patch generation logic.
+Do not run them in their archive location. Use the root helpers described above.
