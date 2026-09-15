@@ -75,6 +75,7 @@ are enabled. `./apply_patch.sh` skips changes already applied.
 | --- | --- |
 | `custom_defaults_starpilot.patch` | Supported StarPilot defaults, EV9 manual fingerprint, completed training `0.2.0`, four Hkg defaults |
 | `ev9_edition_starpilot.patch` | EV9 Edition branding and EV9-only control restriction; already migrated before these ports |
+| `boot_logo_ev9_edition.patch` | EV9 Edition boot JPEG and startup/theme references to the new image |
 | `settings_ui_starpilot.patch` | Shared flat settings layout and larger, clearer controls |
 | `drive_helpers_starpilot.patch` | EV9 tuning broadcast and upper-level curvature integration |
 | `customize_warnings_starpilot.patch` | EV9-specific steering warning thresholds |

@@ -162,7 +162,7 @@ def update_boot_logo(starpilot=False, stock=False, selected_logo=None):
     return
 
   if starpilot:
-    target_logo = Path(BASEDIR) / "starpilot/assets/other_images/starpilot_boot_logo.jpg"
+    target_logo = Path(BASEDIR) / "starpilot/assets/other_images/starpilot_ev9_edition.jpg"
     if selected_logo:
       selected = selected_logo.decode("utf-8", "ignore") if isinstance(selected_logo, (bytes, bytearray)) else str(selected_logo)
       selected = selected.strip()
