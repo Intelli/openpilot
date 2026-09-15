@@ -440,3 +440,45 @@ def test_divergent_sensor_manual_handoff_and_recovery(direct, sign):
   cc.latActive = False
   actuators, _ = c.update(cc.as_reader(), cs, now + 10_000_000, toggles)
   assert not actuators.manualSteeringOverride
+
+
+@pytest.mark.parametrize('direct', [False, True])
+@pytest.mark.parametrize('sign', [-1, 1])
+@pytest.mark.parametrize('speed', [11.1, 11.2])
+def test_steady_saturation_holds_valid_boundary_without_releasing(direct, sign, speed):
+  from opendbc.car.lateral import get_max_angle_vm
+  from opendbc.safety.tests.test_hyundai_ev9 import make_case
+
+  c, cs, cc, toggles = setup_controller(direct)
+  toggles.hkg_shared_autonomy_mode = 0
+  toggles.hkg_tuning_angle_custom_limit_max_speed_kph = 40
+  c._update_ev9_angle_limits(speed, toggles)
+  boundary = min(c.params.ANGLE_LIMITS.STEER_ANGLE_MAX, get_max_angle_vm(speed, c.VM, c.params),
+                 get_max_angle_vm(speed - 1, c.BASELINE_VM, c._ev9_safety_params))
+  initial = sign * (boundary - 0.2)
+  c.apply_angle_last = c.angle_filter.x = initial
+  c.apply_torque_last = c.apply_torque_base_last = 0.5
+  cs.out.vEgoRaw = cs.out.vEgo = speed
+  cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = sign * 90
+  cs.out.steeringTorque = 0
+  cs.out.steeringPressed = False
+  cc.actuators.steeringAngleDeg = sign * 360
+  safety = make_case(True, direct)
+  safety._rx(safety._gear_msg(5))
+  safety._reset_speed_measurement(round(speed * 3.6 / 0.03125))
+  safety.safety.set_desired_angle_last(round(initial * 10))
+  safety.safety.set_controls_allowed(True)
+  for frame in range(100):
+    for _ in range(6):
+      safety._rx(safety.packer.make_can_msg_safety('MDPS', 1, {'STEERING_ANGLE': sign * 90, 'STEERING_ANGLE_2': sign * 90}))
+    safety.safety.set_timer(frame * 10_000)
+    actuators, msgs = c.update(cc.as_reader(), cs, 1_000_000_000 + frame * 10_000_000, toggles)
+    assert_steering_payloads(c, msgs, True)
+    assert not actuators.manualSteeringOverride
+    assert c.apply_torque_last >= 0.5
+    assert abs(c.apply_angle_last) <= boundary + 1e-5
+    steering = [msg for msg in msgs if msg[0] == (0xCB if direct else 0x110)]
+    assert len(steering) == 1
+    addr, data, bus = steering[0]
+    assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))
+  assert c.apply_angle_last == pytest.approx(sign * boundary, abs=1e-4)

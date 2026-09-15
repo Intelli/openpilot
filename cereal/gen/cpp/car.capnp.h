@@ -384,7 +384,7 @@ struct CarState {
   struct ButtonEvent;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(9da4fa09e052903c, 10, 6)
+    CAPNP_DECLARE_STRUCT_HEADER(9da4fa09e052903c, 11, 6)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -1023,6 +1023,10 @@ public:
 
   inline bool getBlockPcmEnable() const;
 
+  inline bool getHandsOnWheel() const;
+
+  inline  ::uint64_t getHandsOnWheelTimestamp() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -1259,6 +1263,12 @@ public:
 
   inline bool getBlockPcmEnable();
   inline void setBlockPcmEnable(bool value);
+
+  inline bool getHandsOnWheel();
+  inline void setHandsOnWheel(bool value);
+
+  inline  ::uint64_t getHandsOnWheelTimestamp();
+  inline void setHandsOnWheelTimestamp( ::uint64_t value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -5315,6 +5325,34 @@ inline bool CarState::Builder::getBlockPcmEnable() {
 inline void CarState::Builder::setBlockPcmEnable(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<371>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool CarState::Reader::getHandsOnWheel() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<372>() * ::capnp::ELEMENTS);
+}
+
+inline bool CarState::Builder::getHandsOnWheel() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<372>() * ::capnp::ELEMENTS);
+}
+inline void CarState::Builder::setHandsOnWheel(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<372>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t CarState::Reader::getHandsOnWheelTimestamp() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t CarState::Builder::getHandsOnWheelTimestamp() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
+}
+inline void CarState::Builder::setHandsOnWheelTimestamp( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<10>() * ::capnp::ELEMENTS, value);
 }
 
 inline float CarState::WheelSpeeds::Reader::getFl() const {

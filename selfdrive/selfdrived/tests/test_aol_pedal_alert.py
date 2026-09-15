@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from cereal import car, log
-from openpilot.selfdrive.selfdrived.events import AudibleAlert, ET, EventName, Events
+from openpilot.selfdrive.selfdrived.events import AlertSize, AudibleAlert, ET, EventName, Events, VisualAlert
 from openpilot.selfdrive.selfdrived.state import State, StateMachine
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
 
@@ -66,13 +66,15 @@ def brake_alert(*, normal_enabled=True, pedal="brake", guard=None, pcm_disable=F
 
 
 @pytest.mark.parametrize("pedal", ["brake", "regen"])
-def test_brake_partial_disengagement_has_distinct_sound_and_clear_text(pedal):
+def test_brake_partial_disengagement_has_no_sound_or_visual_feedback(pedal):
   alerts, sm = brake_alert(pedal=pedal)
   alert, = alerts
   assert alert.event_type == ET.USER_DISABLE
-  assert alert.audible_alert == AudibleAlert.prompt
-  assert alert.duration == 20
-  assert (alert.alert_text_1, alert.alert_text_2) == ("Cruise off", "Steering remains active")
+  assert alert.audible_alert == AudibleAlert.none
+  assert alert.visual_alert == VisualAlert.none
+  assert alert.alert_size == AlertSize.none
+  assert alert.duration == 0
+  assert (alert.alert_text_1, alert.alert_text_2) == ("", "")
   assert sm["carControl"].latActive
 
 
@@ -103,8 +105,9 @@ def test_simultaneous_pcm_and_pedal_disable_cannot_restore_standard_chime():
   manager = AlertManager()
   manager.add_many(0, alerts)
   manager.process_alerts(0, set())
-  assert manager.current_alert.audible_alert == AudibleAlert.prompt
-  assert manager.current_alert.alert_text_2 == "Steering remains active"
+  assert manager.current_alert.audible_alert == AudibleAlert.none
+  assert manager.current_alert.alert_size == AlertSize.none
+  assert manager.current_alert.alert_text_1 == manager.current_alert.alert_text_2 == ""
 
 
 def test_partial_disengagement_does_not_override_immediate_fault_alert():
@@ -117,3 +120,26 @@ def test_partial_disengagement_does_not_override_immediate_fault_alert():
   manager.process_alerts(0, set())
   assert manager.current_alert.event_type == ET.IMMEDIATE_DISABLE
   assert manager.current_alert.alert_text_2 != "Steering remains active"
+
+
+def test_partial_disengagement_remains_silent_after_each_cruise_reengagement():
+  manager = AlertManager()
+  for frame in (0, 100, 200):
+    alerts, _ = brake_alert(normal_enabled=True, pcm_disable=True)
+    manager.add_many(frame, alerts)
+    manager.process_alerts(frame, set())
+    assert manager.current_alert.audible_alert == AudibleAlert.none
+    assert manager.current_alert.alert_size == AlertSize.none
+    assert manager.current_alert.alert_text_1 == manager.current_alert.alert_text_2 == ""
+
+
+def test_partial_disengagement_does_not_mute_explicit_cancel():
+  alerts, _ = brake_alert()
+  events = Events()
+  events.add(EventName.buttonCancel)
+  alerts += events.create_alerts([ET.USER_DISABLE])
+  manager = AlertManager()
+  manager.add_many(0, alerts)
+  manager.process_alerts(0, set())
+  assert manager.current_alert.alert_type == "buttonCancel/userDisable"
+  assert manager.current_alert.audible_alert == AudibleAlert.disengage

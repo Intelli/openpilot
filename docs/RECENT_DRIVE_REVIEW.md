@@ -101,7 +101,11 @@ use the most recent preceding sample, not a future interpolated sample.
 
 Pair the first segment's `initData.wallTimeNanos` with that event's `logMonoTime`
 when converting monotonic offsets to UTC. Keep sampling precision explicit and
-do not reset the relative clock at each segment boundary.
+do not reset the relative clock at each segment boundary. Validate startup wall
+time against the route's recorded time: the device clock can be incorrect before
+time synchronization. If they disagree, retain monotonic offsets for causal
+analysis and identify the UTC anchor as uncertain rather than assigning events
+to an incorrect date.
 
 ## Build an evidence timeline
 
@@ -109,7 +113,7 @@ For EV9 steering/engagement reports, inspect these together:
 
 | Service | Relevant fields |
 | --- | --- |
-| `carState` | Button edges, speed, gear, brake/regen, driver torque and `steeringPressed`, measured angle, cruise state and fault flags |
+| `carState` | Button edges, speed, gear, brake/regen, driver torque and `steeringPressed`, capacitive `handsOnWheel` with sample timestamp when available, measured angle, cruise state and fault flags |
 | `liveCalibration` | `calStatus` as well as percentage; 100% alone does not establish valid calibration |
 | `starpilotCarState` | AOL allowed/enabled, pause state and button state |
 | `carControl` | `enabled`, `latActive`, `longActive` and requested actuators |

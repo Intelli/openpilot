@@ -149,7 +149,9 @@ def test_hod_can_decode_timestamp_and_freshness(raw):
   assert not ev9_hands_on(state.hands_on_steering_grip, state.hands_on_steering_ts_nanos, 1_000_000_000)
   msg = CANPacker(DBC[CAR.KIA_EV9][Bus.pt]).make_can_msg(name, parser.bus, {"HOD_Dir_Status": raw})
   parser.update([(1_000_000_000, [msg])])
-  state.update_canfd(parsers)
+  parsed, _ = state.update_canfd(parsers)
+  assert parsed.handsOnWheel == (1 <= raw <= 4)
+  assert parsed.handsOnWheelTimestamp == 1_000_000_000
   assert state.hands_on_steering_grip == raw
   assert state.hands_on_steering_ts_nanos == 1_000_000_000
   assert ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_300_000_000) == (1 <= raw <= 4)
