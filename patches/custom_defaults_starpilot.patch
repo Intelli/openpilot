@@ -1,5 +1,5 @@
 diff --git a/common/params_keys.h b/common/params_keys.h
-index 7e6ecc9f288f61650b50852d50caf2ef86d09800..8c973302cbe44e897e8ed208c0bce6bc607e0f77 100644
+index 7e6ecc9f288f61650b50852d50caf2ef86d09800..c8958da205c5767ca7b06ee221ff61b1305149cf 100644
 --- a/common/params_keys.h
 +++ b/common/params_keys.h
 @@ -78,7 +78,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -11,6 +11,28 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..8c973302cbe44e897e8ed208c0bce6bc
      {"IsOffroad", {CLEAR_ON_MANAGER_START, BOOL}},
      {"IsOnroad", {PERSISTENT, BOOL}},
      {"IsRHD", {PERSISTENT, BOOL, std::nullopt, std::nullopt, 0, SETTINGS_SIMPLE}},
+@@ -224,9 +224,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"DisableWideRoad", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"CancelModelDownload", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+     {"CancelThemeDownload", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+-    {"CarMake", {PERSISTENT, STRING, "mock", "mock", 0, SETTINGS_SIMPLE}},
+-    {"CarModel", {PERSISTENT, STRING, "MOCK", "MOCK", 0, SETTINGS_SIMPLE}},
+-    {"CarModelName", {PERSISTENT, STRING, "", "", 0}},
++    {"CarMake", {PERSISTENT, STRING, "Kia", "mock", 0, SETTINGS_SIMPLE}},
++    {"CarModel", {PERSISTENT, STRING, "KIA_EV9", "MOCK", 0, SETTINGS_SIMPLE}},
++    {"CarModelName", {PERSISTENT, STRING, "Kia EV9 2025-26", "", 0}},
+     {"CECurves", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
+     {"CECurvesLead", {PERSISTENT, BOOL, "0", "0", 1}},
+     {"CELead", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+@@ -382,7 +382,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"NAPRadarOffset", {PERSISTENT, FLOAT, "0.0", "0.0", 0, SETTINGS_SIMPLE}},
+     {"ForceAutoTune", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"ForceAutoTuneOff", {PERSISTENT, BOOL, "1", "0", 2}},
+-    {"ForceFingerprint", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
++    {"ForceFingerprint", {PERSISTENT, BOOL, "1", "0", 2, SETTINGS_SIMPLE}},
+     {"ForceOffroad", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+     {"ForceOnroad", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+     {"ForceStops", {PERSISTENT, BOOL, "1", "0", 2, SETTINGS_SIMPLE}},
 @@ -419,7 +419,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"StarPilotTogglesUpdated", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
      {"GoatScream", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
@@ -83,3 +105,17 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..8c973302cbe44e897e8ed208c0bce6bc
      {"TurnSteeringLimitMuteSpeed", {PERSISTENT, INT, "0", "0", 0}},
      {"UnlockDoors", {PERSISTENT, BOOL, "1", "0", 0}},
      {"Updated", {PERSISTENT, STRING, "0", "0"}},
+diff --git a/starpilot/common/starpilot_variables.py b/starpilot/common/starpilot_variables.py
+index b9c59e699ea63a325316bbfb114f80eb5a8b9fd2..b3382a9056b61d9c55e717046233b702117bea30 100644
+--- a/starpilot/common/starpilot_variables.py
++++ b/starpilot/common/starpilot_variables.py
+@@ -875,7 +875,8 @@ class StarPilotVariables:
+       car_model_name = self.params.get("CarModelName")
+       if car_model_name and "2019-21" in car_model_name:
+         self.params.put("CarModelName", car_model_name.replace("2019-21", "2018-21"))
+-    toggle.force_fingerprint = self.get_value("ForceFingerprint", condition=car_model != self.default_values["CarModel"])
++    # A real vehicle can be the default; only missing or mock selections disable the override.
++    toggle.force_fingerprint = self.get_value("ForceFingerprint", condition=bool(car_model) and car_model != "MOCK")
+     if toggle.force_fingerprint:
+       toggle.car_model = car_model
+ 
