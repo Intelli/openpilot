@@ -211,22 +211,32 @@ class StarPilotAppearanceLayout(_SettingsPage):
                        subtitle="",
                        get_value=lambda: self._get_color_display("PathColor"),
                        on_click=lambda: self._show_color_selector("PathColor"),
+                       enabled=lambda: not self._params.get_bool("EV9Path"),
+                       disabled_label=tr_noop("EV9 Path controls this setting"),
                        visible=model_on),
             SettingRow("RoadEdgesWidth", "value", tr_noop("Road Edge Width"),
                        subtitle="",
                        get_value=self._get_road_edges_display,
                        on_click=lambda: self._show_int_selector("RoadEdgesWidth", 0, 24, self._get_road_edges_unit()),
                        visible=model_on),
+            SettingRow("EV9Path", "toggle", tr_noop("EV9 Path"),
+                       subtitle=tr_noop("Blue while cruising, rainbow while accelerating, red for warnings."),
+                       get_state=lambda: self._params.get_bool("EV9Path"),
+                       set_state=lambda s: self._params.put_bool("EV9Path", s),
+                       visible=model_on),
             SettingRow("RainbowPath", "toggle", tr_noop("Rainbow Path"),
                        subtitle="",
                        get_state=lambda: self._params.get_bool("RainbowPath"),
-                       set_state=lambda s: self._params.put_bool("RainbowPath", s),
+                       set_state=lambda s: self._set_path_option("RainbowPath", s),
+                       enabled=lambda: not self._params.get_bool("EV9Path"),
+                       disabled_label=tr_noop("EV9 Path controls this setting"),
                        visible=model_on),
             SettingRow("AccelerationPath", "toggle", tr_noop("Acceleration Path"),
                        subtitle="",
                        get_state=lambda: self._params.get_bool("AccelerationPath"),
-                       set_state=lambda s: self._params.put_bool("AccelerationPath", s),
-                       enabled=ol,
+                       set_state=lambda s: self._set_path_option("AccelerationPath", s),
+                       enabled=lambda: ol() and not self._params.get_bool("EV9Path"),
+                       disabled_label=tr_noop("Requires longitudinal control. EV9 Path controls this setting while enabled."),
                        visible=model_on),
             SettingRow("AdjacentPath", "toggle", tr_noop("Adjacent Lanes"),
                        subtitle="",
@@ -620,10 +630,18 @@ class StarPilotAppearanceLayout(_SettingsPage):
             return "Stock"
         return val.upper()
 
+    def _set_path_option(self, key, state):
+        if not self._params.get_bool("EV9Path"):
+            self._params.put_bool(key, state)
+
     def _show_color_selector(self, key):
+        if key == "PathColor" and self._params.get_bool("EV9Path"):
+            return
         current = self._params.get(key, encoding='utf-8') or "Stock"
 
         def on_select(res):
+            if key == "PathColor" and self._params.get_bool("EV9Path"):
+                return
             if res == DialogResult.CONFIRM and dialog.selection:
                 if dialog.selection == "Stock":
                     self._params.remove(key)

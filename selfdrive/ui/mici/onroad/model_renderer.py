@@ -1,4 +1,5 @@
 import colorsys
+import time
 import math
 import numpy as np
 import pyray as rl
@@ -10,6 +11,7 @@ from openpilot.selfdrive.controls.lib.lane_centering import get_lane_centering_v
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
 from openpilot.selfdrive.ui.lib.starpilot_theme import get_param_color, get_theme_color, get_visual_color, is_stock_color_scheme, with_alpha
 from openpilot.selfdrive.ui.onroad.starpilot.rainbow_path import RainbowPath
+from openpilot.selfdrive.ui.onroad.starpilot.ev9_path import EV9Path, ev9_path_state
 from openpilot.selfdrive.ui.lib.starpilot_visuals import LeadInfoMode, blend_colors, lead_indicator_enabled, lead_info_mode
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.mici.onroad.starpilot_status import get_border_color
@@ -100,6 +102,8 @@ class ModelRenderer(Widget):
       stops=[0.0, 0.5, 1.0],
     )
     self._rainbow_path = RainbowPath()
+    self._ev9_path = EV9Path()
+    self._ev9_started_frame = None
 
     # Get longitudinal control setting from car parameters
     self._params = ui_state.ui_params
@@ -461,7 +465,17 @@ class ModelRenderer(Widget):
   def _draw_path(self, sm):
     """Draw path with dynamic coloring based on mode and throttle state."""
     if not self._path.projected_points.size:
+      self._ev9_path.reset()
       return
+
+    use_ev9 = self._params.get_bool("EV9Path", default=False)
+    if self._ev9_started_frame != ui_state.started_frame or not use_ev9:
+      self._ev9_path.reset()
+    self._ev9_started_frame = ui_state.started_frame
+    if use_ev9:
+      now = time.monotonic()
+      acceleration, active, hazard = ev9_path_state(sm, ui_state.started_frame, now)
+      self._ev9_path.update(now=now, acceleration=acceleration, active=active, hazard=hazard)
 
     lateral_ui_active = ui_state.status == UIStatus.ENGAGED or ui_state.always_on_lateral_active
     allow_throttle = sm['longitudinalPlan'].allowThrottle or not self._longitudinal_control or ui_state.always_on_lateral_active
@@ -469,7 +483,9 @@ class ModelRenderer(Widget):
     use_rainbow = self._params.get_bool("RainbowPath", default=False)
     use_accel_path = not use_rainbow and self._params.get_bool("AccelerationPath", default=True)
 
-    if use_rainbow:
+    if use_ev9:
+      draw_polygon(self._rect, self._path.projected_points, gradient=self._ev9_path.get_gradient())
+    elif use_rainbow:
       if len(self._exp_gradient.colors) > 1:
         draw_polygon(self._rect, self._path.projected_points, gradient=self._exp_gradient)
       else:

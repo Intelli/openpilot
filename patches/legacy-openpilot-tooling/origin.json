@@ -54,7 +54,7 @@
     },
     {
       "original_path": "patches/custom_model_ui.patch",
-      "preserved_path": "patches/custom_model_ui.patch.temp-disabled",
+      "preserved_path": "patches/custom_model_ui.patch.migrated",
       "sha256": "7187b4c3946a3035d0efea94b043747a67c6973e3852ee32e2a0a0ae431a82d4"
     },
     {

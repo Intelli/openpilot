@@ -1,5 +1,5 @@
 diff --git a/common/params_keys.h b/common/params_keys.h
-index 7e6ecc9f288f61650b50852d50caf2ef86d09800..fe8052aab36a0ee362578dba3e69bf6c1640997d 100644
+index 7e6ecc9f288f61650b50852d50caf2ef86d09800..44d286eb4eb5be0df016071755f3d7e518f9fd1b 100644
 --- a/common/params_keys.h
 +++ b/common/params_keys.h
 @@ -29,7 +29,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -114,7 +114,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..fe8052aab36a0ee362578dba3e69bf6c
      {"TurnSteeringLimitMuteSpeed", {PERSISTENT, INT, "0", "0", 0}},
      {"UnlockDoors", {PERSISTENT, BOOL, "1", "0", 0}},
      {"Updated", {PERSISTENT, STRING, "0", "0"}},
-@@ -793,4 +793,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -793,4 +793,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"WheelIcon", {PERSISTENT, STRING, "stock", "stock", 0}},
      {"WheelSpeed", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"WheelToDownload", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
@@ -124,6 +124,7 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..fe8052aab36a0ee362578dba3e69bf6c
 +    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT, INT, "10", "100", 2, SETTINGS_SIMPLE}},
 +    {"HkgSharedAutonomyMode", {PERSISTENT, INT, "0", "0", 2, SETTINGS_SIMPLE}},
 +    {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT, INT, "50", "50", 2, SETTINGS_SIMPLE}},
++    {"EV9Path", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
  };
 diff --git a/starpilot/common/starpilot_variables.py b/starpilot/common/starpilot_variables.py
 index b9c59e699ea63a325316bbfb114f80eb5a8b9fd2..b3382a9056b61d9c55e717046233b702117bea30 100644
