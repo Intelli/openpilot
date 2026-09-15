@@ -22,10 +22,10 @@ exporting a new patch defaults to enabled, or accepts an explicit disabled suffi
 when you want to keep it inactive.
 
 The six migrated vehicle patches use prefixes `01_` through `06_` to preserve their
-dependency order. The seven enabled root patches contain custom defaults, EV9 Edition branding,
+dependency order. The eight enabled root patches contain custom defaults, EV9 Edition branding,
 settings UI, EV9 control configuration/curvature, warning policy, compact alerts,
-and EV9 settings controls. Only lane centering, driver monitoring, custom path
-colors and power management remain `.temp-disabled` by request. The old prebuilt
+EV9 settings controls, and the EV9 animated path effect. Only lane centering,
+driver monitoring and power management remain `.temp-disabled` by request. The old prebuilt
 patch is archived as `.migrated` because the StarPilot build/publish tooling has
 already replaced its Sunnypilot implementation; it is not replayed.
 See the migration guide for deliberate adaptations and omitted legacy defaults.

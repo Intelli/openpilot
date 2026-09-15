@@ -97,6 +97,8 @@ class VisualsLayoutMici(NavScroller):
     self._stopped_timer_btn = BigParamControl("stopped timer", "StoppedTimer")
     self._stock_confidence_ball_btn = BigParamControl("stock confidence ball", "StockConfidenceBallWidget")
     self._torque_bar_btn = BigParamControl("torque bar", "EnableTorqueBarWidget")
+    self._ev9_path_btn = BigParamControl("EV9 path", "EV9Path")
+    self._ev9_path_btn.set_value("blue cruise / rainbow accel / red warnings")
     self._rainbow_path_btn = BigParamControl("rainbow road", "RainbowPath")
     self._lead_indicator_btn = LeadIndicatorBigButton()
     self._lead_info_btn = LeadInfoBigButton()
@@ -111,6 +113,7 @@ class VisualsLayoutMici(NavScroller):
       self._stopped_timer_btn,
       self._stock_confidence_ball_btn,
       self._torque_bar_btn,
+      self._ev9_path_btn,
       self._rainbow_path_btn,
       self._lead_indicator_btn,
       self._lead_info_btn,
@@ -129,6 +132,10 @@ class VisualsLayoutMici(NavScroller):
     self._refresh()
 
   def _refresh(self):
+    ev9_path = self._ev9_path_btn.params.get_bool("EV9Path")
+    self._ev9_path_btn.set_checked(ev9_path)
+    self._rainbow_path_btn.set_enabled(not ev9_path)
+    self._rainbow_path_btn.set_value("EV9 Path controls this setting" if ev9_path else "")
     self._camera_view_btn.refresh()
     self._lead_indicator_btn.refresh()
     self._lead_info_btn.refresh()

@@ -79,6 +79,7 @@ are enabled. `./apply_patch.sh` skips changes already applied.
 | `drive_helpers_starpilot.patch` | EV9 tuning broadcast and upper-level curvature integration |
 | `customize_warnings_starpilot.patch` | EV9-specific steering warning thresholds |
 | `alerts_starpilot.patch` | Compact EV9 alert presentation and translucent normal banners |
+| `custom_model_ui_starpilot.patch` | Ocean-blue/rainbow/warning EV9 path gradients and optional appearance control |
 | `ui_options_starpilot.patch` | Flat Steering page and four relevant EV9 controls |
 
 The original `custom_defaults`, `ev9_edition` and `prebuilt` archives now use
@@ -95,11 +96,11 @@ registered. Legacy percentage speed-limit offsets and independent lane-turn
 speed have no direct equivalent in StarPilot's additive speed bands and shared
 lane-change threshold; those existing StarPilot settings remain unchanged.
 Terms acceptance retains StarPilot's normal flow. Existing saved preferences
-are preserved, including existing native RainbowPath settings; no custom EV9
-path-color code or renamed path-color control was added.
+are preserved, including native RainbowPath settings. The new EV9Path preference
+selects the migrated effect without changing those saved path-color choices.
 
-Four originals remain `.temp-disabled` by request: `lane_centering`,
-`driver_monitoring`, `custom_model_ui` (custom path colors), and `power_management`.
+Three originals remain `.temp-disabled` by request: `lane_centering`,
+`driver_monitoring` and `power_management`.
 All previously `.disabled` archives remain unchanged.
 
 The root helpers now support both patch locations. Application discovers enabled
@@ -199,9 +200,36 @@ Cached UI parameter writes use StarPilot's existing broadcast notification.
 This patch also owns the Steering page's previously migrated flat layout;
 its hunks were moved out of `settings_ui_starpilot.patch` so both patches can
 independently recognize already-applied changes. The previous layout remains.
-The legacy lane-turn range change and EV9 path-color label are intentionally
-omitted: StarPilot has its own lane-change/turn controls, and custom path colors
-are deferred.
+The legacy lane-turn range change is omitted because StarPilot has its own
+lane-change/turn controls. Path styling uses a separate EV9 Path toggle instead
+of renaming the native Rainbow Path control.
+
+### EV9 path appearance
+
+`custom_model_ui_starpilot.patch` adds one shared gradient provider used by both
+C3X and mici model renderers. Normal active steering shows animated ocean blue;
+positive measured acceleration fades into the old rainbow effect (0.25 m/s² on,
+0.15 m/s² off, 0.5-second fade in and 1-second fade out). Relevant steering,
+collision and driver-attention alerts override the fill with red, held for
+0.5 seconds after the alert and blended back over 1 second. Standard and StarPilot
+alert channels are checked, including alternate steering-saturation alerts.
+
+Fresh carControl.latActive determines steering activity, including always-on
+lateral. Inactive steering uses a subdued gray fill; warning red has priority.
+Invalid, stale, future-dated or previous-drive input is ignored. Animation updates
+once per path draw, independently of model-message updates. Toggling off, starting
+a new drive, missing geometry or a long frame gap resets the animation state.
+
+Path geometry, Dynamic Path width, lane/road lines, outlines and adjacent blind-
+spot overlays remain in StarPilot's existing rendering pipeline. The shared
+helper returns colors and performs no drawing or vehicle-control changes.
+
+EV9 Path appears under Appearance's Model & Path Visualization settings and in
+the mici visuals page. It overrides Rainbow Path, Acceleration Path and the main
+Path Color while enabled; their saved values are preserved and the controls
+explain the override. Turning EV9 Path off restores those choices. The new key
+is enabled by default in `custom_defaults_starpilot.patch`, with stock value off;
+a saved EV9Path preference always takes precedence.
 
 Regression tests live in `opendbc_repo/opendbc/car/hyundai/tests/test_ev9.py` and
 `opendbc_repo/opendbc/safety/tests/test_hyundai_ev9*.py`, with corresponding updates

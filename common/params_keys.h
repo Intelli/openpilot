@@ -799,4 +799,5 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT, INT, "10", "100", 2, SETTINGS_SIMPLE}},
     {"HkgSharedAutonomyMode", {PERSISTENT, INT, "0", "0", 2, SETTINGS_SIMPLE}},
     {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT, INT, "50", "50", 2, SETTINGS_SIMPLE}},
+    {"EV9Path", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
 };
