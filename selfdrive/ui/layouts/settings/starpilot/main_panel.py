@@ -3,7 +3,7 @@ from collections.abc import Callable
 import pyray as rl
 
 from openpilot.system.ui.widgets import Widget
-from openpilot.system.ui.lib.multilang import tr, tr_noop
+from openpilot.system.ui.lib.multilang import tr_noop
 from openpilot.system.ui.lib.application import MousePos
 
 from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import StarPilotPanelType, StarPilotPanelInfo, FrameCachedParams
@@ -17,51 +17,21 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.system_settings import St
 from openpilot.selfdrive.ui.layouts.settings.starpilot.appearance import StarPilotAppearanceLayout
 from openpilot.selfdrive.ui.layouts.settings.starpilot.vehicle import StarPilotVehicleSettingsLayout
 
-from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import TileGrid, HubTile, SPACING, BreadcrumbController, AETHER_LIST_METRICS, AetherListColors, draw_hud_background
+from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
+  AetherSettingsView, SettingRow, SettingSection, BreadcrumbController,
+)
 
 class StarPilotLayout(Widget):
   CATEGORIES = [
-    {
-      "title": "Sounds & Alerts",
-      "icon": "sound",
-      "panel": "SOUNDS",
-    },
-    {
-      "title": "Driving Model",
-      "icon": "aicar",
-      "panel": "DRIVING_MODEL",
-    },
-    {
-      "title": "Driving Controls",
-      "icon": "steering",
-      "children": [
-        {
-          "title": "Navigation & Maps",
-          "icon": "navigate",
-          "children": [
-            {"title": "Map Data", "panel": "MAPS", "icon": "navigate"},
-            {"title": "Navigation", "panel": "NAVIGATION", "icon": "road"},
-          ],
-        },
-        {"title": "Gas / Brake", "panel": "LONGITUDINAL", "icon": "road"},
-        {"title": "Steering", "panel": "LATERAL", "icon": "steering"},
-      ],
-    },
-    {
-      "title": "System",
-      "icon": "system",
-      "panel": "SYSTEM",
-    },
-    {
-      "title": "Appearance",
-      "icon": "display",
-      "panel": "VISUALS",
-    },
-    {
-      "title": "Vehicle Settings",
-      "icon": "vehicle",
-      "panel": "VEHICLE",
-    },
+    {"title": "Sounds & Alerts", "panel": "SOUNDS"},
+    {"title": "Driving Model", "panel": "DRIVING_MODEL"},
+    {"title": "Steering", "panel": "LATERAL"},
+    {"title": "Gas / Brake", "panel": "LONGITUDINAL"},
+    {"title": "Map Data", "panel": "MAPS"},
+    {"title": "Navigation", "panel": "NAVIGATION"},
+    {"title": "System", "panel": "SYSTEM"},
+    {"title": "Appearance", "panel": "VISUALS"},
+    {"title": "Vehicle Settings", "panel": "VEHICLE"},
   ]
 
   PANEL_TYPE_MAP = {
@@ -83,16 +53,15 @@ class StarPilotLayout(Widget):
     self._current_panel = StarPilotPanelType.MAIN
     self._hub_path: list[dict] = []
     self._selected_leaf: dict | None = None
-    # Kept as a compatibility alias for callers that only need the top-level
-    # folder index.  Nested hub navigation is represented by _hub_path.
+    # Compatibility fields for modal breadcrumb navigation; the root has no folders.
     self._current_category_idx: int | None = None
     self._depth_callback: Callable | None = None
     self._settings_layout = None
 
     StarPilotLayout.active_instance = self
 
-    self._panel_stack: list[tuple[StarPilotPanelType, str]] = []  
-    self._sub_panel_callbacks: dict[str, Callable] = {}  
+    self._panel_stack: list[tuple[StarPilotPanelType, str]] = []
+    self._sub_panel_callbacks: dict[str, Callable] = {}
 
     self._panels = {
       StarPilotPanelType.MAIN: StarPilotPanelInfo("", None),
@@ -119,8 +88,7 @@ class StarPilotLayout(Widget):
     )
 
     self._breadcrumbs = BreadcrumbController()
-    self._main_grid = TileGrid(columns=None, padding=SPACING.tile_gap)
-    self._rebuild_grid()
+    self._build_root_list()
 
   def set_depth_callback(self, callback: Callable):
     self._depth_callback = callback
@@ -137,44 +105,18 @@ class StarPilotLayout(Widget):
       self._panel_stack.pop()
       self._commit_navigation()
     elif self._current_panel != StarPilotPanelType.MAIN:
-      # A panel always returns to the folder that launched it.
+      # Every panel returns directly to the root list.
       self._set_current_panel(StarPilotPanelType.MAIN)
-    elif self._hub_path:
-      # Once the grid is visible, each back step removes one hub folder.
-      self._hub_path.pop()
-      self._selected_leaf = None
-      self._sync_legacy_category_idx()
-      self._rebuild_grid()
-      self._commit_navigation()
 
   def reset_to_root(self):
-    """Close nested content and restore the primary six-tile hub."""
+    """Close nested content and restore the direct settings list."""
     self._hub_path.clear()
     self._selected_leaf = None
-    self._sync_legacy_category_idx()
     self._set_current_panel(StarPilotPanelType.MAIN)
 
   def navigate_to_hub_depth(self, depth: int):
-    """Jump to a folder in the current hub path from a breadcrumb."""
-    depth = max(0, min(depth, len(self._hub_path)))
-    self._hub_path = self._hub_path[:depth]
-    self._selected_leaf = None
-    self._sync_legacy_category_idx()
-    self._set_current_panel(StarPilotPanelType.MAIN)
-
-  def _sync_legacy_category_idx(self):
-    if self._hub_path:
-      self._current_category_idx = self.CATEGORIES.index(self._hub_path[0])
-    else:
-      self._current_category_idx = None
-
-  def _open_folder(self, folder: dict):
-    if "children" not in folder:
-      return
-    self._hub_path.append(folder)
-    self._selected_leaf = None
-    self._sync_legacy_category_idx()
-    self._set_current_panel(StarPilotPanelType.MAIN)
+    """Retain compatibility with modal breadcrumbs from the former folder hub."""
+    self.reset_to_root()
 
   def _open_leaf(self, leaf: dict):
     panel_key = leaf.get("panel")
@@ -184,9 +126,8 @@ class StarPilotLayout(Widget):
     self._set_current_panel(self.PANEL_TYPE_MAP[panel_key])
 
   def _update_depth(self):
-    # Root = 0, each visible hub folder = 1, and an open backend panel adds
-    # one more level.  Existing panel sub-pages remain below that panel.
-    depth = len(self._hub_path)
+    # Existing panel sub-pages remain below their direct root entry.
+    depth = 0
     if self._current_panel != StarPilotPanelType.MAIN:
       depth += 1
     depth += len(self._panel_stack)
@@ -223,33 +164,17 @@ class StarPilotLayout(Widget):
       if panel and hasattr(panel, 'set_navigate_callback'):
         panel.set_navigate_callback(self._push_sub_panel)
 
-  def _rebuild_grid(self):
-    state = tuple(id(folder) for folder in self._hub_path)
-    if getattr(self, "_last_grid_state", None) == state:
-      return
-    self._last_grid_state = state
-    self._main_grid.clear()
-
-    visible_nodes = self.CATEGORIES if not self._hub_path else self._hub_path[-1]["children"]
-    for node in visible_nodes:
-      def on_click(item=node):
-        if "children" in item:
-          self._open_folder(item)
-        else:
-          self._open_leaf(item)
-
-      tile = HubTile(
-        title=tr(node["title"]),
-        desc=tr(node.get("desc", "")),
-        icon_key=node["icon"],
-        on_click=on_click,
-        bg_color=node.get("color")
-      )
-      self._main_grid.add_tile(tile)
+  def _build_root_list(self):
+    rows = [SettingRow(
+      id=node["panel"], type="value", title=node["title"],
+      on_click=lambda item=node: self._open_leaf(item),
+    ) for node in self.CATEGORIES]
+    self._root_list = AetherSettingsView(self, [SettingSection("", rows)])
 
   def _set_current_panel(self, panel_type: StarPilotPanelType):
     if panel_type != self._current_panel:
-
+      if self._current_panel == StarPilotPanelType.MAIN:
+        self._root_list.hide_event()
       if self._current_panel != StarPilotPanelType.MAIN:
         old = self._panels[self._current_panel].instance
         old.hide_event()
@@ -261,10 +186,10 @@ class StarPilotLayout(Widget):
         self._panels[panel_type].instance.show_event()
       else:
         self._selected_leaf = None
-        self._rebuild_grid()
+        self._root_list.show_event()
+
     elif panel_type == StarPilotPanelType.MAIN:
       self._selected_leaf = None
-      self._rebuild_grid()
       self._panel_stack.clear()
 
     self._commit_navigation()
@@ -274,22 +199,11 @@ class StarPilotLayout(Widget):
     BOTTOM_BAR_HEIGHT = 10
     content_rect = rl.Rectangle(rect.x, rect.y + TOP_BAR_HEIGHT, rect.width, rect.height - TOP_BAR_HEIGHT - BOTTOM_BAR_HEIGHT)
 
-    # Standardize width to perfectly match subpanel shells
-    shell_w = min(rect.width - AETHER_LIST_METRICS.outer_margin_x * 2, AETHER_LIST_METRICS.max_content_width)
-    shell_x = rect.x + (rect.width - shell_w) / 2
+    # Keep a plain location bar; Back remains in the fixed outer sidebar.
+    self._breadcrumbs.draw(rl.Rectangle(rect.x, rect.y, rect.width, TOP_BAR_HEIGHT))
 
-    # 0. Draw top bar with HubTile-style purple glow
-    glass_rect = rl.Rectangle(shell_x, rect.y + 2, shell_w, TOP_BAR_HEIGHT - 4)
-    draw_hud_background(glass_rect, AetherListColors.PRIMARY, radius_px=34)
-
-    # 1. Draw breadcrumbs in top bar
-    crumb_rect = rl.Rectangle(glass_rect.x, glass_rect.y, glass_rect.width, glass_rect.height)
-    self._breadcrumbs.draw(crumb_rect)
-
-    # 4. Render active content panel
     if self._current_panel == StarPilotPanelType.MAIN:
-      grid_rect = rl.Rectangle(shell_x, content_rect.y + AETHER_LIST_METRICS.outer_margin_y, shell_w, content_rect.height - AETHER_LIST_METRICS.outer_margin_y * 2)
-      self._main_grid.render(grid_rect)
+      self._root_list.render(content_rect)
     else:
       panel = self._panels[self._current_panel]
       if panel.instance:
@@ -311,9 +225,13 @@ class StarPilotLayout(Widget):
     self._breadcrumbs.cancel_interaction()
     if self._current_panel != StarPilotPanelType.MAIN:
       self._panels[self._current_panel].instance.show_event()
+    else:
+      self._root_list.show_event()
 
   def hide_event(self):
     super().hide_event()
     self._breadcrumbs.cancel_interaction()
     if self._current_panel != StarPilotPanelType.MAIN:
       self._panels[self._current_panel].instance.hide_event()
+    else:
+      self._root_list.hide_event()

@@ -17,7 +17,6 @@ from openpilot.system.ui.widgets.option_dialog import MultiOptionDialog
 from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import _SettingsPage
 
 from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
-  AETHER_LIST_METRICS,
   AetherListColors,
   COMPACT_PANEL_METRICS,
   AdjustorTogglesPanelView,
@@ -77,30 +76,6 @@ SLC_FALLBACK_OPTIONS = [
   (2, "Previous Limit"),
 ]
 
-# ═══════════════════════════════════════════════════════════════
-# AdaptiveSpeedView — nested panel with two adaptive speed tiles
-# ═══════════════════════════════════════════════════════════════
-
-class AdaptiveSpeedView(CardHubManagerView):
-  def __init__(self, controller):
-    super().__init__(controller, [], columns=2,
-                     header_title=tr_noop("Adaptive Speed Controls"))
-
-  def _build_cards(self):
-    return [
-      {
-        "title": tr("Conditional Drive Mode"),
-        "desc": tr("Configure automated switching between Experimental and Chill Modes based on set conditions."),
-        "icon": "steering",
-        "on_click": lambda: self._controller._navigate_to("ce"),
-      },
-      {
-        "title": tr("Curve Speed Controller"),
-        "desc": tr("Configure speed control on curves and reset collected calibration data."),
-        "icon": "navigate",
-        "on_click": lambda: self._controller._navigate_to("csc"),
-      },
-    ]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -138,10 +113,16 @@ class LongitudinalManagerView(CardHubManagerView):
         "on_click": lambda: self._controller._navigate_to("vision_speed_limits"),
       },
       {
-        "title": tr("Adaptive Speed Controls"),
-        "desc": tr("Configure Curve Speed Controller and Conditional Experimental Mode triggers."),
-        "icon": "display",
-        "on_click": lambda: self._controller._navigate_to("adaptive_speed"),
+        "title": tr("Conditional Drive Mode"),
+        "desc": tr("Configure automated switching between Experimental and Chill Modes."),
+        "icon": "steering",
+        "on_click": lambda: self._controller._navigate_to("ce"),
+      },
+      {
+        "title": tr("Curve Speed Controller"),
+        "desc": tr("Configure speed control on curves and reset collected calibration data."),
+        "icon": "navigate",
+        "on_click": lambda: self._controller._navigate_to("csc"),
       },
       {
         "title": tr("Driving Personalities"),
@@ -347,19 +328,8 @@ class ConditionalDriveModeView(AdjustorTogglesPanelView):
     for key in keys:
       self._adjustor_rows[key].custom_row_height = None
 
-    default_adjustor_h = float(AETHER_LIST_METRICS.adjustor_row_height)
-    left_h = len(keys) * default_adjustor_h + 16.0
-    
-    num_tiles = 4 if self._has_pagination else len(grid.tiles)
-    if PANEL_STYLE.toggle_row_mode:
-      rows = num_tiles
-      tile_h = TOGGLE_ROW_HEIGHT
-    else:
-      rows = (num_tiles + 1) // 2 if self._uses_two_columns(content_width) else num_tiles
-      tile_h = grid.min_tile_height
-    
-    pagination_space = 32.0 if self._has_pagination else 0.0
-    tiles_h = rows * tile_h + (rows - 1) * grid.gap + grid.gap * 2 + pagination_space
+    left_h = sum(self._adjustor_rows[key].measure_height(col_width) for key in keys) + 16.0
+    tiles_h = self.measure_page_grid_height(grid, col_width - 24) + 24.0
 
     right_h = tiles_h
 
@@ -854,7 +824,6 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       panel_style=PANEL_STYLE,
     )
 
-    self._sub_panels["adaptive_speed"] = AdaptiveSpeedView(self)
 
     # Register subpanels for Level 2 slide transitions
     self._sub_panels["tune"] = AetherSettingsView(
