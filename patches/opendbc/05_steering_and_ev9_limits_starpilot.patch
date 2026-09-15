@@ -1,5 +1,5 @@
 diff --git a/opendbc/car/hyundai/carcontroller.py b/opendbc/car/hyundai/carcontroller.py
-index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..ddb3d9f887ff16bdc46035702e6aa3dbadf8d220 100644
+index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..323382e06895529ebc70da694d5a805d50a80016 100644
 --- a/opendbc/car/hyundai/carcontroller.py
 +++ b/opendbc/car/hyundai/carcontroller.py
 @@ -1,4 +1,4 @@
@@ -63,7 +63,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..ddb3d9f887ff16bdc46035702e6aa3db
    def _update_dash_icon_state(self, CC):
      if CC.latActive:
        self._dash_lat_disengage_init = False
-@@ -572,6 +606,11 @@ class CarController(CarControllerBase):
+@@ -572,15 +606,23 @@ class CarController(CarControllerBase):
      hud_control = CC.hudControl
      lka_icon, lfa_icon = self._update_dash_icon_state(CC)
  
@@ -75,7 +75,11 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..ddb3d9f887ff16bdc46035702e6aa3db
      if not self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
        self.params = CarControllerParams(self.CP, CS.out.vEgoRaw)
      direct_angle_control = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and self.long_active_ecu
-@@ -580,7 +619,7 @@ class CarController(CarControllerBase):
+     measured_steering_angle = CS.angle_steering_angle if direct_angle_control else CS.out.steeringAngleDeg
++    if ev9_angle_control and not direct_angle_control:
++      # Panda checks inactive LKAS commands against MDPS, which can differ from the public SAS angle.
++      measured_steering_angle = CS.mdps_steering_angle
+     angle_lat_active = CC.latActive
      if direct_angle_control and CC.latActive:
        drive_gear = CS.out.gearShifter == structs.CarState.GearShifter.drive
        angle_lat_active = direct_angle_request_allowed(CS.out.vEgoRaw, measured_steering_angle, self.apply_angle_last,
@@ -84,7 +88,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..ddb3d9f887ff16bdc46035702e6aa3db
      if self.CP.carFingerprint == CAR.HYUNDAI_IONIQ_5_PE and CS.out.standstill:
        angle_lat_active = False
      self.direct_angle_request_allowed = angle_lat_active
-@@ -602,7 +641,17 @@ class CarController(CarControllerBase):
+@@ -602,7 +644,17 @@ class CarController(CarControllerBase):
          apply_angle = apply_steer_angle_limits_vm(apply_angle or desired_angle, self.apply_angle_last, v_ego_raw,
                                                    measured_steering_angle, angle_lat_active, self.params, self.BASELINE_VM)
  
@@ -103,7 +107,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..ddb3d9f887ff16bdc46035702e6aa3db
          # Match Panda's 1 m/s speed tolerance so a shrinking absolute limit stays inside its jerk envelope.
          safety_v_ego = max(v_ego_raw - 1.0, 1.0)
          max_angle_delta = min(get_max_angle_delta_vm(safety_v_ego, self.BASELINE_VM, self.params),
-@@ -611,14 +660,40 @@ class CarController(CarControllerBase):
+@@ -611,14 +663,40 @@ class CarController(CarControllerBase):
                                      self.apply_angle_last - max_angle_delta,
                                      self.apply_angle_last + max_angle_delta))
  
@@ -146,7 +150,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..ddb3d9f887ff16bdc46035702e6aa3db
  
        self.apply_angle_last = apply_angle
        if not angle_lat_active:
-@@ -900,7 +975,7 @@ class CarController(CarControllerBase):
+@@ -900,7 +978,7 @@ class CarController(CarControllerBase):
      ccnc_angle_long = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and \
        self.CP.flags & HyundaiFlags.CCNC and angle_lkas_alt and self.long_active_ecu
      steering_msg_active = apply_steer_req
@@ -155,7 +159,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..ddb3d9f887ff16bdc46035702e6aa3db
        # Angle LKAS_ALT cars fault if the angle-steering status drops inactive during torque limiting.
        # Hold the angle status active while lateral is active; VM/safety limits handle actuation.
        steering_msg_active = CC.latActive
-@@ -922,6 +997,8 @@ class CarController(CarControllerBase):
+@@ -922,6 +1000,8 @@ class CarController(CarControllerBase):
                                                               lka_icon=lka_icon,
                                                               longitudinal_active=lfa_longitudinal_active))
      direct_steering_active = ccnc_angle_long and drive_gear and CC.latActive and self.direct_angle_request_allowed and not CS.angle_steering_fault
@@ -165,30 +169,32 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..ddb3d9f887ff16bdc46035702e6aa3db
                                              -self.params.ANGLE_LIMITS.STEER_ANGLE_MAX,
                                              self.params.ANGLE_LIMITS.STEER_ANGLE_MAX)) if ccnc_angle_long else 0.0
 diff --git a/opendbc/car/hyundai/carstate.py b/opendbc/car/hyundai/carstate.py
-index 40d68e42b372a79dbf86756749fa22d0f29d2dc0..0b7f05017eda1a6ccf7d04d9df84fb41863ea71d 100644
+index 40d68e42b372a79dbf86756749fa22d0f29d2dc0..3263738734bfebcc8a691246373646d1d8261b9e 100644
 --- a/opendbc/car/hyundai/carstate.py
 +++ b/opendbc/car/hyundai/carstate.py
-@@ -95,6 +95,8 @@ class CarState(CarStateBase):
+@@ -95,6 +95,9 @@ class CarState(CarStateBase):
      self.cruise_buttons: deque = deque([Buttons.NONE] * PREV_BUTTON_SAMPLES, maxlen=PREV_BUTTON_SAMPLES)
      self.main_buttons: deque = deque([Buttons.NONE] * PREV_BUTTON_SAMPLES, maxlen=PREV_BUTTON_SAMPLES)
      self.lda_button = 0
 +    self.hands_on_steering_grip = 0
 +    self.hands_on_steering_ts_nanos = 0
++    self.mdps_steering_angle = 0.0
      self.sonata_hybrid_lkas_source = None
      self.sonata_hybrid_lkas_sources = {
        "bcm": 0,
-@@ -514,6 +516,10 @@ class CarState(CarStateBase):
+@@ -514,6 +517,11 @@ class CarState(CarStateBase):
      ret.standstill = cp.vl["WHEEL_SPEEDS"]["WHL_SpdFLVal"] <= STANDSTILL_THRESHOLD and cp.vl["WHEEL_SPEEDS"]["WHL_SpdFRVal"] <= STANDSTILL_THRESHOLD and \
                       cp.vl["WHEEL_SPEEDS"]["WHL_SpdRLVal"] <= STANDSTILL_THRESHOLD and cp.vl["WHEEL_SPEEDS"]["WHL_SpdRRVal"] <= STANDSTILL_THRESHOLD
  
 +    if self.CP.carFingerprint == CAR.KIA_EV9:
 +      self.hands_on_steering_grip = cp.vl["HOD_FD_01_100ms"]["HOD_Dir_Status"]
 +      self.hands_on_steering_ts_nanos = cp.ts_nanos["HOD_FD_01_100ms"]["HOD_Dir_Status"]
++      self.mdps_steering_angle = cp.vl["MDPS"]["STEERING_ANGLE"]
 +
      ret.steeringRateDeg = cp.vl["STEERING_SENSORS"]["STEERING_RATE"]
      ret.steeringAngleDeg = cp.vl["STEERING_SENSORS"]["STEERING_ANGLE"]
      ret.steeringTorque = cp.vl["MDPS"]["STEERING_COL_TORQUE"]
-@@ -652,7 +658,8 @@ class CarState(CarStateBase):
+@@ -652,7 +660,8 @@ class CarState(CarStateBase):
      return ret, fp_ret
  
    def get_can_parsers_canfd(self, CP):

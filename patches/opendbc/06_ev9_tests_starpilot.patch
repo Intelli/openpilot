@@ -1,9 +1,9 @@
 diff --git a/opendbc/car/hyundai/tests/test_ev9.py b/opendbc/car/hyundai/tests/test_ev9.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..5a3da3be4574575f356ee8f0c8f819562f3441ac
+index 0000000000000000000000000000000000000000..defbd11ad1c1602396a2984171e7f93477c1fef2
 --- /dev/null
 +++ b/opendbc/car/hyundai/tests/test_ev9.py
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,216 @@
 +"""EV9 configuration, driver-intent and manual-control regressions."""
 +
 +import itertools
@@ -193,6 +193,33 @@ index 0000000000000000000000000000000000000000..5a3da3be4574575f356ee8f0c8f81956
 +      steer_threshold=threshold,
 +    )
 +    assert result.override_active == pressed
++
++
++@pytest.mark.parametrize("sign", [-1, 1])
++def test_ev9_keeps_mdps_angles_when_only_sas_updates(sign):
++  fp = gen_empty_fingerprint()
++  toggles = get_test_toggles()
++  cp = CarInterface.get_params(CAR.KIA_EV9, fp, [], False, False, False, toggles)
++  fpcp = CarInterface.get_starpilot_params(CAR.KIA_EV9, fp, [], cp, toggles)
++  state = CarState(cp, fpcp)
++  parsers = state.get_can_parsers(cp)
++  parser = parsers[Bus.pt]
++  packer = CANPacker(DBC[CAR.KIA_EV9][Bus.pt])
++  state.update_canfd(parsers)
++  parser.update([(1_000_000_000, [
++    packer.make_can_msg("MDPS", parser.bus, {"STEERING_ANGLE": 10 * sign, "STEERING_ANGLE_2": 20 * sign}),
++    packer.make_can_msg("STEERING_SENSORS", parser.bus, {"STEERING_ANGLE": 30 * sign}),
++  ])])
++  out, _ = state.update_canfd(parsers)
++  assert out.steeringAngleDeg == pytest.approx(30 * sign)
++  assert state.mdps_steering_angle == pytest.approx(10 * sign)
++  assert state.angle_steering_angle == pytest.approx(20 * sign)
++
++  parser.update([(1_010_000_000, [packer.make_can_msg("STEERING_SENSORS", parser.bus, {"STEERING_ANGLE": 40 * sign})])])
++  out, _ = state.update_canfd(parsers)
++  assert out.steeringAngleDeg == pytest.approx(40 * sign)
++  assert state.mdps_steering_angle == pytest.approx(10 * sign)
++  assert state.angle_steering_angle == pytest.approx(20 * sign)
 diff --git a/opendbc/car/hyundai/tests/test_hyundai.py b/opendbc/car/hyundai/tests/test_hyundai.py
 index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..0a189191cee1a79bcee488607e24a9bff469cd0a 100644
 --- a/opendbc/car/hyundai/tests/test_hyundai.py
@@ -438,15 +465,15 @@ index 0000000000000000000000000000000000000000..8ddba9077d3ccc64e50087bf3aebdf7b
 +  assert not send_angle(case, 30.0, True)
 diff --git a/opendbc/safety/tests/test_hyundai_ev9_controller.py b/opendbc/safety/tests/test_hyundai_ev9_controller.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..20fb7b3f1331fc9d3f38ad2b24d2cf948cb786dd
+index 0000000000000000000000000000000000000000..5280a1b4dce19b9a1dc5d7df104b370de0d0bbc8
 --- /dev/null
 +++ b/opendbc/safety/tests/test_hyundai_ev9_controller.py
-@@ -0,0 +1,167 @@
+@@ -0,0 +1,223 @@
 +"""Verify complete EV9 controller output against native Panda safety hooks."""
 +
 +import pytest
 +
-+from opendbc.can import CANParser
++from opendbc.can import CANPacker, CANParser
 +from opendbc.car import Bus, gen_empty_fingerprint, structs
 +from opendbc.car.hyundai.carcontroller import CarController
 +from opendbc.car.hyundai.carstate import CarState
@@ -463,7 +490,8 @@ index 0000000000000000000000000000000000000000..20fb7b3f1331fc9d3f38ad2b24d2cf94
 +  cp.flags = int(cp.flags | HyundaiFlags.CANFD_LKA_STEERING | HyundaiFlags.CANFD_LKA_STEERING_ALT)
 +  c = CarController(DBC[CAR.KIA_EV9], cp)
 +  c.long_active_ecu = direct
-+  cs = CarState(cp, None)
++  fpcp = CarInterface.get_starpilot_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], cp, get_test_toggles())
++  cs = CarState(cp, fpcp)
 +  cs.out = structs.CarState.new_message()
 +  cs.out.gearShifter = structs.CarState.GearShifter.drive
 +  cs.out.vEgoRaw = cs.out.vEgo = 5
@@ -483,7 +511,7 @@ index 0000000000000000000000000000000000000000..20fb7b3f1331fc9d3f38ad2b24d2cf94
 +  c, cs, cc, toggles = setup_controller(direct)
 +  toggles.hkg_shared_autonomy_mode = int(manual)
 +  cs.out.vEgoRaw = cs.out.vEgo = 2
-+  cs.out.steeringAngleDeg = cs.angle_steering_angle = angle
++  cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = angle
 +  cs.out.steeringTorque = 200 if manual else 0
 +  cs.out.steeringPressed = manual
 +  cs.hands_on_steering_grip = 3
@@ -609,3 +637,58 @@ index 0000000000000000000000000000000000000000..20fb7b3f1331fc9d3f38ad2b24d2cf94
 +  assert c.apply_angle_last == 0
 +  _, msgs = c.update(cc.as_reader(), cs, 1_010_000_000, toggles)
 +  assert_steering_payloads(c, msgs, True)
++
++
++@pytest.mark.parametrize("direct", [False, True])
++@pytest.mark.parametrize("sign", [-1, 1])
++def test_divergent_sensor_manual_handoff_and_recovery(direct, sign):
++  c, cs, cc, toggles = setup_controller(direct)
++  toggles.hkg_shared_autonomy_mode = 1
++  parsers = cs.get_can_parsers(c.CP)
++  parser = parsers[Bus.pt]
++  packer = CANPacker(DBC[CAR.KIA_EV9][Bus.pt])
++  cs.update_canfd(parsers)
++  mdps = packer.make_can_msg("MDPS", parser.bus, {"STEERING_ANGLE": 10 * sign, "STEERING_ANGLE_2": 20 * sign})
++  parser.update([(1_000_000_000, [mdps])])
++  expected_angle = (20 if direct else 10) * sign
++  c.apply_angle_last = c.angle_filter.x = expected_angle
++  cc.actuators.steeringAngleDeg = expected_angle
++
++  safety = test_hyundai_canfd.TestHyundaiCanfdLKASteeringAltAngleLongEV(methodName="test_lateral_accel_limit")
++  safety.SAFETY_PARAM |= HyundaiSafetyFlags.CANFD_EV9 | HyundaiSafetyFlags.CCNC
++  if not direct:
++    safety.SAFETY_PARAM &= ~HyundaiSafetyFlags.LONG
++  safety.setUp()
++  safety._reset_speed_measurement(round(2 * 3.6 / 0.03125))
++  for _ in range(6):
++    safety._rx(safety.packer.make_can_msg_safety("MDPS", safety.PT_BUS, {"STEERING_ANGLE": 10 * sign, "STEERING_ANGLE_2": 20 * sign}))
++  assert safety.safety.get_angle_meas_min() == round(expected_angle * 10)
++  safety.safety.set_desired_angle_last(round(expected_angle * 10))
++  safety.safety.set_controls_allowed(True)
++
++  # SAS changes independently; neither controller nor Panda receives another MDPS sample.
++  for frame, (sas, hands_on) in enumerate([(30, True), (40, True), (40, False)]):
++    now = 1_000_000_000 + frame * 10_000_000
++    parser.update([(now, [packer.make_can_msg("STEERING_SENSORS", parser.bus, {"STEERING_ANGLE": sas * sign})])])
++    cs.out, _ = cs.update_canfd(parsers)
++    assert cs.out.steeringAngleDeg == pytest.approx(sas * sign)
++    cs.out.gearShifter = structs.CarState.GearShifter.drive
++    cs.out.vEgoRaw = cs.out.vEgo = 2
++    cs.out.standstill = False
++    cs.out.steeringTorque = 200 if hands_on else 0
++    cs.out.steeringPressed = hands_on
++    cs.hands_on_steering_grip = 3 if hands_on else 0
++    cs.hands_on_steering_ts_nanos = now
++    cs.stock_lkas_msg = {"ADAS_StrAnglReqVal": -45.0, "ADAS_ACIAnglTqRedcGainVal": 0.8}
++    cs.lfa_block_msg = {f"BYTE{i}": 0 for i in range(3, 32) if i != 7}
++    cs.lfa_block_msg["COUNTER"] = 0
++    safety.safety.set_timer(frame * 10_000)
++    _, msgs = c.update(cc.as_reader(), cs, now, toggles)
++    assert_steering_payloads(c, msgs, not hands_on)
++    assert c.apply_angle_last == pytest.approx(expected_angle)
++    assert c._ev9_manual.manual_latched == hands_on
++    selected = [m for m in msgs if m[0] == (0xCB if direct else 0x110)]
++    assert len(selected) == 1
++    addr, data, bus = selected[0]
++    assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))
++    assert safety.safety.get_controls_allowed()

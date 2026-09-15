@@ -615,6 +615,9 @@ class CarController(CarControllerBase):
       self.params = CarControllerParams(self.CP, CS.out.vEgoRaw)
     direct_angle_control = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and self.long_active_ecu
     measured_steering_angle = CS.angle_steering_angle if direct_angle_control else CS.out.steeringAngleDeg
+    if ev9_angle_control and not direct_angle_control:
+      # Panda checks inactive LKAS commands against MDPS, which can differ from the public SAS angle.
+      measured_steering_angle = CS.mdps_steering_angle
     angle_lat_active = CC.latActive
     if direct_angle_control and CC.latActive:
       drive_gear = CS.out.gearShifter == structs.CarState.GearShifter.drive

@@ -187,3 +187,30 @@ def test_real_vehicle_threshold_and_full_effort_pressed_behavior():
       steer_threshold=threshold,
     )
     assert result.override_active == pressed
+
+
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_ev9_keeps_mdps_angles_when_only_sas_updates(sign):
+  fp = gen_empty_fingerprint()
+  toggles = get_test_toggles()
+  cp = CarInterface.get_params(CAR.KIA_EV9, fp, [], False, False, False, toggles)
+  fpcp = CarInterface.get_starpilot_params(CAR.KIA_EV9, fp, [], cp, toggles)
+  state = CarState(cp, fpcp)
+  parsers = state.get_can_parsers(cp)
+  parser = parsers[Bus.pt]
+  packer = CANPacker(DBC[CAR.KIA_EV9][Bus.pt])
+  state.update_canfd(parsers)
+  parser.update([(1_000_000_000, [
+    packer.make_can_msg("MDPS", parser.bus, {"STEERING_ANGLE": 10 * sign, "STEERING_ANGLE_2": 20 * sign}),
+    packer.make_can_msg("STEERING_SENSORS", parser.bus, {"STEERING_ANGLE": 30 * sign}),
+  ])])
+  out, _ = state.update_canfd(parsers)
+  assert out.steeringAngleDeg == pytest.approx(30 * sign)
+  assert state.mdps_steering_angle == pytest.approx(10 * sign)
+  assert state.angle_steering_angle == pytest.approx(20 * sign)
+
+  parser.update([(1_010_000_000, [packer.make_can_msg("STEERING_SENSORS", parser.bus, {"STEERING_ANGLE": 40 * sign})])])
+  out, _ = state.update_canfd(parsers)
+  assert out.steeringAngleDeg == pytest.approx(40 * sign)
+  assert state.mdps_steering_angle == pytest.approx(10 * sign)
+  assert state.angle_steering_angle == pytest.approx(20 * sign)
