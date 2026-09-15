@@ -262,7 +262,7 @@ class CarInterface(CarInterfaceBase):
 
     ret.centerToFront = ret.wheelbase * 0.4
     ret.steerActuatorDelay = 0.1
-    ret.steerLimitTimer = 0.4
+    ret.steerLimitTimer = 0.3  # Detect sustained steering saturation sooner.
     if not (ret.flags & HyundaiFlags.CANFD_ANGLE_STEERING):
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
