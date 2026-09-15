@@ -3,9 +3,8 @@ import math
 
 import pytest
 
-from opendbc.car import gen_empty_fingerprint, structs
-from opendbc.car.hyundai.interface import CarInterface
-from opendbc.car.hyundai.values import CAR, HyundaiSafetyFlags
+from opendbc.car import structs
+from opendbc.car.hyundai.values import HyundaiSafetyFlags
 from opendbc.safety.tests import test_hyundai_canfd as hyundai_tests
 
 
@@ -51,12 +50,6 @@ def test_actual_quantized_bounds(ev9, direct, physical_speed, kind, sign):
     case.safety.set_controls_allowed(True)
     case.safety.set_desired_angle_last(raw if kind == 'accel' else 0)
     assert bool(send_angle(case, raw / 10, direct)) == (not beyond), (ev9, direct, speed, kind, sign, raw)
-
-
-@pytest.mark.parametrize('platform', [CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE, CAR.HYUNDAI_IONIQ_6, CAR.KIA_SPORTAGE_HEV_2026])
-def test_interface_identity_only_ev9(platform):
-  cp = CarInterface.get_params(platform, gen_empty_fingerprint(), [], False, False, False, None)
-  assert any(c.safetyParam & HyundaiSafetyFlags.CANFD_EV9 for c in cp.safetyConfigs) == (platform == CAR.KIA_EV9)
 
 
 def test_ev9_flag_preserves_ev_gas_and_aol_behavior():

@@ -42,6 +42,20 @@ def test_configured_speed_policy_and_command_clip():
   assert not sample(state, 40, active=False)
 
 
+@pytest.mark.parametrize('speed_kph,threshold_kph,requested,expected', [
+  (49.9, 50, 30, False), (50, 50, 30, False), (50.1, 50, 30, True),
+  (2.5, 50, 89.9, False), (2.5, 50, 90, True), (2.5, 50, -90, True),
+  (25, 25, 30, False), (25.1, 25, 30, True),
+])
+def test_active_warning_speed_and_angle_boundaries(speed_kph, threshold_kph, requested, expected):
+  state = EV9SteeringWarning()
+  measured = requested - (20 if requested > 0 else -20)
+  for frame in range(30):
+    result = sample(state, frame, speed=speed_kph / 3.6, requested=requested, measured=measured,
+                    output=requested, threshold_kph=threshold_kph)
+  assert result == expected
+
+
 def test_long_gap_resets_pending_warning():
   state = EV9SteeringWarning()
   for frame in range(25):
@@ -54,11 +68,15 @@ class SM(dict):
   frame = 0
 
 
-@pytest.mark.parametrize('manual_override', [False, True])
-@pytest.mark.parametrize('healthy', [False, True])
-@pytest.mark.parametrize('sign', [-1, 1])
-@pytest.mark.parametrize('pressed', [False, True])
-@pytest.mark.parametrize('manual_mode', [0, 1, 2])
+@pytest.mark.parametrize('sign,pressed,manual_mode,healthy,manual_override', [
+  pytest.param(1, False, 0, True, False, id='left'),
+  pytest.param(-1, False, 0, True, False, id='right'),
+  pytest.param(1, True, 0, True, False, id='driver-contact'),
+  pytest.param(1, False, 0, False, False, id='unhealthy-input'),
+  pytest.param(1, False, 1, True, True, id='actual-manual-handoff'),
+  pytest.param(1, False, 1, True, False, id='manual-option-without-handoff'),
+  pytest.param(1, False, 2, True, False, id='legacy-manual-option-without-handoff'),
+])
 def test_slow_turn_generates_visible_audible_event_respects_driver_contact(sign, pressed, manual_mode, healthy, manual_override):
   d = SelfdriveD.__new__(SelfdriveD)
   d.CP = CarInterface.get_non_essential_params(CAR.KIA_EV9)

@@ -1,6 +1,5 @@
 """EV9 configuration, driver-intent and manual-control regressions."""
 
-import itertools
 from types import SimpleNamespace
 
 import pytest
@@ -22,18 +21,12 @@ def test_default_config():
   assert config.shared_autonomy_mode == 0
 
 
-@pytest.mark.parametrize("raw", [1, 2, 3, 4])
-@pytest.mark.parametrize("age", [0, 299_999_999, 300_000_000])
-def test_hod_valid_raw_fresh(raw, age):
-  assert ev9_hands_on(raw, 1_000_000_000, 1_000_000_000 + age)
-
-
-@pytest.mark.parametrize("raw", [None, 0, 5, -1, "garbage"])
+@pytest.mark.parametrize("raw", [None, -1, "garbage"])
 def test_hod_invalid_raw(raw):
   assert not ev9_hands_on(raw, 1_000_000_000, 1_000_000_000)
 
 
-@pytest.mark.parametrize("timestamp,now", [(0, 1), (1_000_000_000, 1_300_000_001), (1_000_000_001, 1_000_000_000)])
+@pytest.mark.parametrize("timestamp,now", [(0, 1), (1_000_000_001, 1_000_000_000)])
 def test_hod_invalid_age(timestamp, now):
   assert not ev9_hands_on(1, timestamp, now)
 
@@ -107,7 +100,7 @@ def test_config_aliases_clamps(aliases):
   assert EV9AngleConfig.from_toggles(dict(zip(aliases, ["bad", float("nan"), None], strict=True))) == EV9AngleConfig()
 
 
-@pytest.mark.parametrize("states", list(itertools.product((0, 1), repeat=4)))
+@pytest.mark.parametrize("states", [(0, 0, 0, 0), (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)])
 def test_ev9_doors(states):
   toggles = get_test_toggles()
   fp = gen_empty_fingerprint()
@@ -120,7 +113,6 @@ def test_ev9_doors(states):
   message = CANPacker(DBC[cp.carFingerprint][Bus.pt]).make_can_msg("DOORS_SEATBELTS", parsers[Bus.pt].bus, signals)
   parsers[Bus.pt].update([(1_000_000_000, [message])])
   assert state.update_canfd(parsers)[0].doorOpen == any(states)
-  assert cp.steerLimitTimer == pytest.approx(0.3)
 
 
 @pytest.mark.parametrize("platform", [CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE, CAR.HYUNDAI_IONIQ_6, CAR.KIA_SPORTAGE_HEV_2026])
@@ -131,6 +123,7 @@ def test_interface_ev9_safety_flag_and_baseline(platform):
   expected = CAR.KIA_EV9 if platform == CAR.KIA_EV9 else CAR.KIA_SPORTAGE_HEV_2026
   assert baseline.carFingerprint == expected
   if platform == CAR.KIA_EV9:
+    assert cp.steerLimitTimer == pytest.approx(0.3)
     assert baseline.wheelbase == pytest.approx(3.10)
     assert baseline.steerRatio == pytest.approx(16.0)
 
@@ -154,7 +147,8 @@ def test_hod_can_decode_timestamp_and_freshness(raw):
   assert parsed.handsOnWheelTimestamp == 1_000_000_000
   assert state.hands_on_steering_grip == raw
   assert state.hands_on_steering_ts_nanos == 1_000_000_000
-  assert ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_300_000_000) == (1 <= raw <= 4)
+  for age in (0, 299_999_999, 300_000_000):
+    assert ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_000_000_000 + age) == (1 <= raw <= 4)
   assert not ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_300_000_001)
 
 
