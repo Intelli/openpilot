@@ -59,7 +59,7 @@
     },
     {
       "original_path": "patches/customize_warnings.patch",
-      "preserved_path": "patches/customize_warnings.patch.temp-disabled",
+      "preserved_path": "patches/customize_warnings.patch.migrated",
       "sha256": "105e4db426bce3d6dd84d46f49a7b97b939bb05b973424ef11f5c1c0094a1708"
     },
     {

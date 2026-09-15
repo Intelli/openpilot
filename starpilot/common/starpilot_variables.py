@@ -51,6 +51,7 @@ from openpilot.starpilot.common.accel_profile import (
   normalize_deceleration_profile,
   parse_custom_accel_profile_curve,
 )
+from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_alert_speed_kph
 from openpilot.starpilot.common.longitudinal_personality_profiles import (
   PERSONALITY_PROFILES_PARAM,
   is_truck_fingerprint,
@@ -1184,6 +1185,8 @@ class StarPilotVariables:
     toggle.lane_change_pace = pace
     toggle.lane_change_jerk_factor = min(1.0, j_req * 1.3 / 5.0)
     toggle.lane_change_time_max = 10.0 + (10 - pace) * 2.0 / 9.0
+
+    toggle.hkg_tuning_ev9_alerts_speed_kph = ev9_alert_speed_kph(self.params.get("HkgTuningEv9AlertsSpeedKph"))
 
     lateral_tuning = self.get_value("LateralTune")
     toggle.force_torque_controller = self.get_value("ForceTorqueController", condition=lateral_tuning and not is_angle_car)

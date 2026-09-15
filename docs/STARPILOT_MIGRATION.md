@@ -144,7 +144,16 @@ symmetric 4.2 m/s² envelope as the controller, without roll compensation or the
 generic curvature cap. Existing lane-change comfort shaping remains active.
 Above it, and on other cars or torque control, StarPilot behavior is unchanged.
 The downstream controller/Panda intersection still limits actual steering.
-Settings UI and steering-warning integration are subsequent migrations.
+`customize_warnings_starpilot.patch` restores the EV9 saturation timer's 2.5 km/h
+minimum speed. The existing undershoot, turn-demand, driver-input and saturation
+checks remain required. Below or at `HkgTuningEv9AlertsSpeedKph` (default 50 km/h,
+range 10–50), the warning additionally requires at least 90° desired steering.
+This policy applies only to EV9 angle steering, before StarPilot's existing
+Switchback cooldown and sound selection. High-angle warnings remain available
+at low speed. Other cars and torque controllers retain their existing behavior.
+The former startup-master exception is unnecessary: normal StarPilot startup
+already uses its custom startup event, while unsupported-car guards remain.
+Settings UI is a subsequent migration.
 
 Regression tests live in `opendbc_repo/opendbc/car/hyundai/tests/test_ev9.py` and
 `opendbc_repo/opendbc/safety/tests/test_hyundai_ev9*.py`, with corresponding updates
