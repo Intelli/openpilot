@@ -1,7 +1,9 @@
 """Exercise deployment and built-artifact promotion against an isolated local Git remote."""
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import tempfile
 import pytest
 
@@ -73,8 +75,16 @@ class TestStarPilotPublish:
   def remote_tree(self, branch):
     return self.git("--git-dir", str(self.remote), "rev-parse", f"{branch}^{{tree}}")
 
+  def assert_root_snapshot(self, sha):
+    assert self.git("--git-dir", str(self.remote), "rev-list", "--count", sha) == "1"
+    # Inspect real headers: a depth-one fetch alone can hide an existing parent.
+    headers = self.git("--git-dir", str(self.remote), "cat-file", "-p", sha).split("\n\n", 1)[0]
+    assert not any(line.startswith("parent ") for line in headers.splitlines())
+    assert self.git("--git-dir", str(self.remote), "rev-parse", "ev9-dev") == self.newer
+
   def test_identical_payload_updates_provenance_and_promotes_only_built_source(self):
     first = self.publish(self.published)
+    self.assert_root_snapshot(first)
     self.sync()
     first_prod = self.git("--git-dir", str(self.remote), "rev-parse", "ev9")
     assert self.remote_tree('ev9') == self.remote_tree(first)
@@ -93,6 +103,7 @@ class TestStarPilotPublish:
     assert self.git("--git-dir", str(self.remote), "log", "-1", "--format=%(trailers:key=Build-Commit,valueonly)", "ev9") == first
     assert self.remote_tree('ev9') != self.remote_tree('ev9-dev')
     second = self.publish(self.newer)
+    self.assert_root_snapshot(second)
     assert first != second
     assert self.remote_tree(first) == self.remote_tree(second)
     assert self.publish(self.newer) == second
@@ -106,12 +117,13 @@ class TestStarPilotPublish:
     self.sync()
     assert self.git('--git-dir', str(self.remote), 'rev-parse', 'ev9') == head
 
-  def test_publish_removes_obsolete_files_and_preserves_history(self):
+  def test_publish_replaces_snapshot_removes_obsolete_files_and_preserves_ev9_history(self):
     first = self.publish(self.published, "obsolete")
     self.sync()
     first_prod = self.git("--git-dir", str(self.remote), "rev-parse", "ev9")
     second = self.publish(self.newer, "replacement")
-    assert self.git('--git-dir', str(self.remote), 'rev-parse', f'{second}^') == first
+    self.assert_root_snapshot(first)
+    self.assert_root_snapshot(second)
     files = self.git('--git-dir', str(self.remote), 'ls-tree', '-r', '--name-only', second).splitlines()
     assert "obsolete" not in files and "replacement" in files and "prebuilt" in files
     self.sync()
@@ -158,3 +170,57 @@ class TestStarPilotPublish:
     assert self.remote_tree("ev9") == tree
     message = self.git("--git-dir", str(self.remote), "log", "-1", "--format=%B", "ev9")
     assert f"Build-Commit: {second}" in message
+
+  def test_identical_legacy_snapshot_is_flattened_despite_shallow_fetch(self):
+    first = self.publish(self.published)
+    self.git("fetch", "origin", "ev9-prebuilt", cwd=self.source)
+    tree = self.remote_tree(first)
+    legacy = self.git("commit-tree", tree, "-p", first, "-m", f"legacy\n\nSource-Commit: {self.published}", cwd=self.source)
+    self.git("push", "origin", f"{legacy}:ev9-prebuilt", cwd=self.source)
+    assert self.git("--git-dir", str(self.remote), "rev-list", "--count", "ev9-prebuilt") == "2"
+    prod_before = self.git("--git-dir", str(self.remote), "rev-parse", "ev9")
+    flattened = self.publish(self.published)
+    assert flattened != legacy
+    assert self.remote_tree(flattened) == tree
+    self.assert_root_snapshot(flattened)
+    assert self.publish(self.published) == flattened
+    assert self.git("--git-dir", str(self.remote), "rev-parse", "ev9") == prod_before
+
+  def test_publish_rejects_intervening_remote_change_with_explicit_lease(self):
+    first = self.publish(self.published)
+    self.git("fetch", "origin", "ev9-prebuilt", cwd=self.source)
+    competitor = self.git("commit-tree", self.remote_tree(first), "-m", "concurrent build", cwd=self.source)
+    self.git("push", "origin", f"{competitor}:refs/heads/race-fixture", cwd=self.source)
+    real_git = shutil.which("git")
+    wrapper_dir = self.root / "wrapper"
+    wrapper_dir.mkdir()
+    wrapper = wrapper_dir / "git"
+    wrapper.write_text(f"#!{sys.executable}\n" + '''import os
+import subprocess
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+if args and args[0] == "push":
+  Path(os.environ["TEST_PUSH_ARGS"]).write_text("\\n".join(args))
+  subprocess.run([os.environ["TEST_REAL_GIT"], "--git-dir", os.environ["TEST_REMOTE"],
+                  "update-ref", "refs/heads/ev9-prebuilt", os.environ["TEST_COMPETITOR"]], check=True)
+os.execv(os.environ["TEST_REAL_GIT"], [os.environ["TEST_REAL_GIT"], *args])
+''')
+    wrapper.chmod(0o755)
+    push_args = self.root / "push-args"
+    original_env = self.env.copy()
+    self.env.update(PATH=str(wrapper_dir) + os.pathsep + os.environ["PATH"], TEST_REAL_GIT=real_git,
+                    TEST_REMOTE=str(self.remote), TEST_COMPETITOR=competitor, TEST_PUSH_ARGS=str(push_args))
+    prod_before = self.git("--git-dir", str(self.remote), "rev-parse", "ev9")
+    try:
+      with pytest.raises(subprocess.CalledProcessError):
+        self.publish(self.newer)
+    finally:
+      self.env = original_env
+    args = push_args.read_text().splitlines()
+    assert f"--force-with-lease=refs/heads/ev9-prebuilt:{first}" in args
+    assert "--force" not in args and "--mirror" not in args and "--all" not in args
+    assert self.git("--git-dir", str(self.remote), "rev-parse", "ev9-prebuilt") == competitor
+    assert self.git("--git-dir", str(self.remote), "rev-parse", "ev9") == prod_before
+    assert self.git("--git-dir", str(self.remote), "rev-parse", "ev9-dev") == self.newer

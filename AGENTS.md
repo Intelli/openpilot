@@ -4,7 +4,7 @@
 - Develop in `ev9-dev` in `https://github.com/Intelli/openpilot` at `/Volumes/2TB/Documents/GitHub/openpilot`.
 - Stable upstream is `https://github.com/firestar5683/StarPilot`, branch **`StarPilot`**. `Dom` is upstream development and is not our sync target.
 - `starpilot-upstream.json` records the imported baseline commit/tree. Migrated Intelli customizations are recorded in enabled patches; historical disabled patches remain unapplied.
-- Target `ev9-dev` for development PRs. `master` is GitHub's default branch and hosts the deployment-sync trigger. `ev9-prebuilt` holds the GitHub build output; `ev9` is the install branch and receives that exact built tree.
+- Target `ev9-dev` for development PRs. `master` is GitHub's default branch and hosts the deployment-sync trigger. `ev9-prebuilt` holds only the latest GitHub build as a single root commit; `ev9` is the install branch and receives that exact built tree while retaining deployment history.
 
 ## Project Structure & opendbc Routing
 - Core: `selfdrive/`, `system/`, `common/`, `cereal/`, `starpilot/`, `panda/`, `tools/`, `docs/`.
@@ -34,7 +34,7 @@
 - Pushing `ev9-dev` runs `.github/workflows/sunnypilot-build-prebuilt.yaml` on `ubuntu-24.04-arm`, pinned to the triggering SHA.
 - The workflow retains the display name `sunnypilot prebuilt action` because the existing `.github/workflows/ev9-sync.yaml` on `master` listens for it. Coordinate changes to both before renaming it.
 - Build uses StarPilot's `scripts/laptop_device_build.sh build-image`, `setup-sysroot-agnos`, then `./build`. No standalone opendbc checkout or Sunnypilot artifact overlay participates.
-- `release/ci/publish.sh` publishes the built tree to `ev9-prebuilt` with a `Source-Commit` trailer. It uses the existing `PREBUILT_PUSH_TOKEN` in the `ev9-dev` environment.
+- `release/ci/publish.sh` publishes the built tree as a parentless `ev9-prebuilt` commit with a `Source-Commit` trailer. It replaces only that branch using an explicit `--force-with-lease` against the fetched tip; `ev9-dev` and `ev9` keep their histories. It uses the existing `PREBUILT_PUSH_TOKEN` in the `ev9-dev` environment.
 - After success, the workflow on `master` runs `tools/ci/sync_ev9_branch.sh` from `ev9-dev`. It copies the exact `ev9-prebuilt` tree into a new commit on `ev9`, preserving that branch's history and recording `Source-Commit` and `Build-Commit` trailers.
 - Promote compiled artifacts with their source. Imported upstream binaries and the `prebuilt` marker remain tracked in `ev9-dev`; copying that source tree to `ev9` would ship stale native code while skipping device compilation. Defaults in `common/params_keys.h` require the rebuilt `common/params_pyx.so`.
 - Defaults initialize missing settings only. Active `/data/params/d` values take precedence over cached `/cache/starpilot/params/d` values and compiled defaults; an update does not reset existing preferences.

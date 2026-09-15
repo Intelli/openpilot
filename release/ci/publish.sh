@@ -11,17 +11,22 @@ git init --initial-branch=ev9-prebuilt
 git config user.name 'github-actions[bot]'
 git config user.email 'github-actions[bot]@users.noreply.github.com'
 git remote add origin https://github.com/Intelli/openpilot.git
+previous_sha=""
 if git ls-remote --exit-code --heads origin ev9-prebuilt >/dev/null; then
-  git fetch --depth=1 origin ev9-prebuilt
-  git reset --soft FETCH_HEAD
+  git fetch --depth=1 --no-tags origin ev9-prebuilt
+  previous_sha="$(git rev-parse FETCH_HEAD)"
 fi
 git add -f --all
-if git diff --cached --quiet && git rev-parse --verify HEAD >/dev/null 2>&1; then
-  previous_source=$(git log -1 --format=%B | git interpret-trailers --parse | sed -n 's/^Source-Commit: //p')
-  if [[ "$previous_source" == "$source_sha" ]]; then
+build_tree="$(git write-tree)"
+if [[ -n "$previous_sha" ]]; then
+  previous_source="$(git log -1 --format=%B "$previous_sha" | git interpret-trailers --parse | sed -n 's/^Source-Commit: //p')"
+  # Read actual commit headers: shallow history would hide parents from git log.
+  previous_parents="$(git cat-file -p "$previous_sha" | sed -n '/^$/q; s/^parent //p')"
+  if [[ "$build_tree" == "$(git rev-parse "$previous_sha^{tree}")" && "$previous_source" == "$source_sha" && -z "$previous_parents" ]]; then
     echo 'Deployment already matches this source and build.'
     exit 0
   fi
 fi
-git commit --allow-empty -m "StarPilot deployment from ${source_sha}" -m "Source-Commit: ${source_sha}"
-git push origin HEAD:refs/heads/ev9-prebuilt
+# Keep only the latest build on this branch. ev9 retains deployment history.
+build_sha="$(git commit-tree "$build_tree" -m "StarPilot deployment from ${source_sha}" -m "Source-Commit: ${source_sha}")"
+git push --force-with-lease="refs/heads/ev9-prebuilt:$previous_sha" origin "$build_sha:refs/heads/ev9-prebuilt"
