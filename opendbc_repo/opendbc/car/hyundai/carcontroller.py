@@ -76,6 +76,7 @@ REDNECK_BUTTON_COPIES_TIME = 7
 REDNECK_BUTTON_COPIES_TIME_IMPERIAL = [REDNECK_BUTTON_COPIES_TIME + 3, 70]
 REDNECK_BUTTON_COPIES_TIME_METRIC = [REDNECK_BUTTON_COPIES_TIME, 40]
 ANGLE_SAFETY_BASELINE_MODEL = str(CAR.KIA_SPORTAGE_HEV_2026)
+EV9_ANGLE_SAFETY_BASELINE_MODEL = str(CAR.KIA_EV9)
 DEFAULT_ANGLE_SMOOTHING_VEGO_BP = [5.0, 10.0, 20.0]
 DEFAULT_ANGLE_SMOOTHING_ALPHA_V = [0.2, 0.1, 0.0]
 EV9_STOP_REQUEST_SPEED = 0.47
@@ -367,9 +368,10 @@ def update_genesis_g90_longitudinal_tuning(state: GenesisG90LongitudinalTuningSt
   return state
 
 
-def get_baseline_safety_cp():
+def get_baseline_safety_cp(car_fingerprint=None):
   from opendbc.car.hyundai.interface import CarInterface
-  return CarInterface.get_non_essential_params(ANGLE_SAFETY_BASELINE_MODEL)
+  baseline = EV9_ANGLE_SAFETY_BASELINE_MODEL if car_fingerprint == CAR.KIA_EV9 else ANGLE_SAFETY_BASELINE_MODEL
+  return CarInterface.get_non_essential_params(baseline)
 
 
 def get_angle_smoothing_alpha(CP, v_ego: float) -> float:
@@ -452,7 +454,7 @@ class CarController(CarControllerBase):
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.angle_limit_counter = 0
     self.VM = VehicleModel(CP)
-    self.BASELINE_VM = VehicleModel(get_baseline_safety_cp()) if CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING else self.VM
+    self.BASELINE_VM = VehicleModel(get_baseline_safety_cp(CP.carFingerprint)) if CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING else self.VM
     self.angle_filter = FirstOrderFilter(0.0, 0.2, DT_CTRL)
     self.direct_angle_request_allowed = True
 
@@ -595,7 +597,8 @@ class CarController(CarControllerBase):
       apply_angle = apply_steer_angle_limits_vm(desired_angle, self.apply_angle_last, v_ego_raw,
                                                 measured_steering_angle, angle_lat_active, self.params, self.VM)
 
-      if str(self.CP.carFingerprint) != ANGLE_SAFETY_BASELINE_MODEL:
+      baseline_model = EV9_ANGLE_SAFETY_BASELINE_MODEL if self.CP.carFingerprint == CAR.KIA_EV9 else ANGLE_SAFETY_BASELINE_MODEL
+      if str(self.CP.carFingerprint) != baseline_model:
         apply_angle = apply_steer_angle_limits_vm(apply_angle or desired_angle, self.apply_angle_last, v_ego_raw,
                                                   measured_steering_angle, angle_lat_active, self.params, self.BASELINE_VM)
 

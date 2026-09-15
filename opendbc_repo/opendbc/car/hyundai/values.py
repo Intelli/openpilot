@@ -107,6 +107,8 @@ class HyundaiSafetyFlags(IntFlag):
   ALT_LIMITS = 64
   CANFD_LKA_STEERING_ALT = 128
   FCEV_GAS = 256
+  # Contextual alias: only Hyundai CAN-FD EV angle steering uses this as EV9 identity.
+  CANFD_EV9 = 256
   ALT_LIMITS_2 = 512
   CANFD_ANGLE_STEERING = 1024
   NON_SCC = 4096
