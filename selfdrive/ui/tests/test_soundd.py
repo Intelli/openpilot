@@ -182,3 +182,30 @@ class TestSoundd:
     assert check_selfdrive_timeout_alert(sm)
 
   # TODO: add test with micd for checking that soundd actually outputs sounds
+
+
+def test_cleared_ev9_steering_warning_stops_before_first_sound_finishes():
+  from types import SimpleNamespace
+  from opendbc.car.hyundai.values import CAR
+
+  class SM(dict):
+    updated = {'selfdriveState': True}
+
+  for platform in (CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE):
+    for previous_type in ('steerSaturated/warning', 'goatSteerSaturated/warning', 'driverDistracted2/permanent'):
+      for new_alert in (AudibleAlert.none, AudibleAlert.warningImmediate):
+        soundd = Soundd.__new__(Soundd)
+        soundd.params_memory = SimpleNamespace(get=lambda key: None)
+        soundd.openpilot_crashed_played = True
+        soundd.starpilot_toggles = SimpleNamespace(car_model=platform, goat_scream_critical_alerts=False)
+        soundd.current_alert = AudibleAlert.promptRepeat
+        soundd.current_alert_type = previous_type
+        soundd.current_sound_frame = 0
+        soundd.loaded_sounds = {AudibleAlert.promptRepeat: np.ones(1000), AudibleAlert.warningImmediate: np.ones(1000)}
+        ss = log.SelfdriveState.new_message(alertSound=new_alert)
+        ss.alertType = 'controlsMismatch/immediateDisable' if new_alert != AudibleAlert.none else ''
+        sm = SM(selfdriveState=ss, starpilotSelfdriveState=custom.StarPilotSelfdriveState.new_message())
+        soundd.get_audible_alert(sm)
+        should_stop = platform == CAR.KIA_EV9 and is_turn_steering_limit_alert(previous_type)
+        expected = new_alert if new_alert != AudibleAlert.none or should_stop else AudibleAlert.promptRepeat
+        assert soundd.current_alert == expected

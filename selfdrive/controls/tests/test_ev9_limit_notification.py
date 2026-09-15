@@ -59,7 +59,7 @@ class SM(dict):
 @pytest.mark.parametrize('sign', [-1, 1])
 @pytest.mark.parametrize('pressed', [False, True])
 @pytest.mark.parametrize('manual_mode', [0, 1, 2])
-def test_slow_turn_generates_visible_audible_event_while_driver_assists(sign, pressed, manual_mode, healthy, manual_override):
+def test_slow_turn_generates_visible_audible_event_respects_driver_contact(sign, pressed, manual_mode, healthy, manual_override):
   d = SelfdriveD.__new__(SelfdriveD)
   d.CP = CarInterface.get_non_essential_params(CAR.KIA_EV9)
   d.events = Events()
@@ -80,8 +80,8 @@ def test_slow_turn_generates_visible_audible_event_while_driver_assists(sign, pr
     d.sm.frame = frame
     d.events.clear()
     d.update_steering_saturation_events(cs)
-  assert (log.OnroadEvent.EventName.steerSaturated in d.events.names) == (not manual_override and healthy)
-  if not manual_override and healthy:
+  assert (log.OnroadEvent.EventName.steerSaturated in d.events.names) == (not manual_override and healthy and not pressed)
+  if not manual_override and healthy and not pressed:
     alerts = d.events.create_alerts([ET.WARNING], [d.CP])
     assert len(alerts) == 1
     assert alerts[0].alert_text_1 == 'Turn Exceeds Steering Limit'

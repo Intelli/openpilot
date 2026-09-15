@@ -1,9 +1,9 @@
 diff --git a/opendbc/car/hyundai/tests/test_ev9.py b/opendbc/car/hyundai/tests/test_ev9.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..defbd11ad1c1602396a2984171e7f93477c1fef2
+index 0000000000000000000000000000000000000000..ea380c42ccf705e5d572f5dda62741a51b8ab364
 --- /dev/null
 +++ b/opendbc/car/hyundai/tests/test_ev9.py
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,218 @@
 +"""EV9 configuration, driver-intent and manual-control regressions."""
 +
 +import itertools
@@ -155,7 +155,9 @@ index 0000000000000000000000000000000000000000..defbd11ad1c1602396a2984171e7f934
 +  assert not ev9_hands_on(state.hands_on_steering_grip, state.hands_on_steering_ts_nanos, 1_000_000_000)
 +  msg = CANPacker(DBC[CAR.KIA_EV9][Bus.pt]).make_can_msg(name, parser.bus, {"HOD_Dir_Status": raw})
 +  parser.update([(1_000_000_000, [msg])])
-+  state.update_canfd(parsers)
++  parsed, _ = state.update_canfd(parsers)
++  assert parsed.handsOnWheel == (1 <= raw <= 4)
++  assert parsed.handsOnWheelTimestamp == 1_000_000_000
 +  assert state.hands_on_steering_grip == raw
 +  assert state.hands_on_steering_ts_nanos == 1_000_000_000
 +  assert ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_300_000_000) == (1 <= raw <= 4)
@@ -724,10 +726,10 @@ index 0000000000000000000000000000000000000000..e5c3b901bb553a6077c53e76b8372f2e
 +  assert not case._tx(case._angle_cmd_msg(0, enabled=True))
 diff --git a/opendbc/safety/tests/test_hyundai_ev9_controller.py b/opendbc/safety/tests/test_hyundai_ev9_controller.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..0e1d5759ba33dcc58502ad777214669188631905
+index 0000000000000000000000000000000000000000..b50d2bde683fe120a2658a7e7ab8a414bcf481e7
 --- /dev/null
 +++ b/opendbc/safety/tests/test_hyundai_ev9_controller.py
-@@ -0,0 +1,442 @@
+@@ -0,0 +1,484 @@
 +"""Verify complete EV9 controller output against native Panda safety hooks."""
 +
 +import pytest
@@ -1170,3 +1172,45 @@ index 0000000000000000000000000000000000000000..0e1d5759ba33dcc58502ad7772146691
 +  cc.latActive = False
 +  actuators, _ = c.update(cc.as_reader(), cs, now + 10_000_000, toggles)
 +  assert not actuators.manualSteeringOverride
++
++
++@pytest.mark.parametrize('direct', [False, True])
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('speed', [11.1, 11.2])
++def test_steady_saturation_holds_valid_boundary_without_releasing(direct, sign, speed):
++  from opendbc.car.lateral import get_max_angle_vm
++  from opendbc.safety.tests.test_hyundai_ev9 import make_case
++
++  c, cs, cc, toggles = setup_controller(direct)
++  toggles.hkg_shared_autonomy_mode = 0
++  toggles.hkg_tuning_angle_custom_limit_max_speed_kph = 40
++  c._update_ev9_angle_limits(speed, toggles)
++  boundary = min(c.params.ANGLE_LIMITS.STEER_ANGLE_MAX, get_max_angle_vm(speed, c.VM, c.params),
++                 get_max_angle_vm(speed - 1, c.BASELINE_VM, c._ev9_safety_params))
++  initial = sign * (boundary - 0.2)
++  c.apply_angle_last = c.angle_filter.x = initial
++  c.apply_torque_last = c.apply_torque_base_last = 0.5
++  cs.out.vEgoRaw = cs.out.vEgo = speed
++  cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = sign * 90
++  cs.out.steeringTorque = 0
++  cs.out.steeringPressed = False
++  cc.actuators.steeringAngleDeg = sign * 360
++  safety = make_case(True, direct)
++  safety._rx(safety._gear_msg(5))
++  safety._reset_speed_measurement(round(speed * 3.6 / 0.03125))
++  safety.safety.set_desired_angle_last(round(initial * 10))
++  safety.safety.set_controls_allowed(True)
++  for frame in range(100):
++    for _ in range(6):
++      safety._rx(safety.packer.make_can_msg_safety('MDPS', 1, {'STEERING_ANGLE': sign * 90, 'STEERING_ANGLE_2': sign * 90}))
++    safety.safety.set_timer(frame * 10_000)
++    actuators, msgs = c.update(cc.as_reader(), cs, 1_000_000_000 + frame * 10_000_000, toggles)
++    assert_steering_payloads(c, msgs, True)
++    assert not actuators.manualSteeringOverride
++    assert c.apply_torque_last >= 0.5
++    assert abs(c.apply_angle_last) <= boundary + 1e-5
++    steering = [msg for msg in msgs if msg[0] == (0xCB if direct else 0x110)]
++    assert len(steering) == 1
++    addr, data, bus = steering[0]
++    assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))
++  assert c.apply_angle_last == pytest.approx(sign * boundary, abs=1e-4)

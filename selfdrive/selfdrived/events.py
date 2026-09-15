@@ -278,7 +278,8 @@ def brake_hold_alert(CP, *_args) -> Alert:
 
 def cruise_disengagement_alert(CP, CS, sm, metric=False, soft_disable_time=0, personality=None, starpilot_toggles=None) -> Alert:
   # The brake ends normal cruise engagement even when AOL keeps steering.
-  # Only describe steering as active when its current request and guards agree.
+  # Keep that partial transition silent only when the current steering request
+  # and its safety/readiness guards agree that lateral control continues.
   steering_continues = (CS.brakePressed or CS.regenBraking) and not CS.steerFaultTemporary and not CS.steerFaultPermanent
   steering_continues = steering_continues and CS.canValid and not CS.canTimeout
   steering_continues = steering_continues and CS.gearShifter not in (
@@ -294,8 +295,7 @@ def cruise_disengagement_alert(CP, CS, sm, metric=False, soft_disable_time=0, pe
   brake_pause_speed = getattr(starpilot_toggles, 'always_on_lateral_pause_speed', 0.0)
   steering_continues = steering_continues and not (CS.brakePressed and CS.vEgo < brake_pause_speed and not CS.standstill)
   if steering_continues:
-    return Alert("Cruise off", "Steering remains active", AlertStatus.normal, AlertSize.mid,
-                 Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .2)
+    return copy.copy(EmptyAlert)
   return EngagementAlert(AudibleAlert.disengage)
 
 

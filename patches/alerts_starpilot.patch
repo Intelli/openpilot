@@ -1,5 +1,5 @@
 diff --git a/selfdrive/selfdrived/events.py b/selfdrive/selfdrived/events.py
-index cb5f4c64b1d001daf4ce0adc74063f9b113d7780..04fa753c305a94dfe62bda40c006030056456c9e 100644
+index cb5f4c64b1d001daf4ce0adc74063f9b113d7780..18b1824c41febb34082593a3b9180355b00f8040 100644
 --- a/selfdrive/selfdrived/events.py
 +++ b/selfdrive/selfdrived/events.py
 @@ -1,5 +1,6 @@
@@ -23,7 +23,8 @@ index cb5f4c64b1d001daf4ce0adc74063f9b113d7780..04fa753c305a94dfe62bda40c0060300
  
 +def cruise_disengagement_alert(CP, CS, sm, metric=False, soft_disable_time=0, personality=None, starpilot_toggles=None) -> Alert:
 +  # The brake ends normal cruise engagement even when AOL keeps steering.
-+  # Only describe steering as active when its current request and guards agree.
++  # Keep that partial transition silent only when the current steering request
++  # and its safety/readiness guards agree that lateral control continues.
 +  steering_continues = (CS.brakePressed or CS.regenBraking) and not CS.steerFaultTemporary and not CS.steerFaultPermanent
 +  steering_continues = steering_continues and CS.canValid and not CS.canTimeout
 +  steering_continues = steering_continues and CS.gearShifter not in (
@@ -39,8 +40,7 @@ index cb5f4c64b1d001daf4ce0adc74063f9b113d7780..04fa753c305a94dfe62bda40c0060300
 +  brake_pause_speed = getattr(starpilot_toggles, 'always_on_lateral_pause_speed', 0.0)
 +  steering_continues = steering_continues and not (CS.brakePressed and CS.vEgo < brake_pause_speed and not CS.standstill)
 +  if steering_continues:
-+    return Alert("Cruise off", "Steering remains active", AlertStatus.normal, AlertSize.mid,
-+                 Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .2)
++    return copy.copy(EmptyAlert)
 +  return EngagementAlert(AudibleAlert.disengage)
 +
 +
@@ -96,16 +96,16 @@ index cb5f4c64b1d001daf4ce0adc74063f9b113d7780..04fa753c305a94dfe62bda40c0060300
    from cereal.services import SERVICE_LIST
 diff --git a/selfdrive/selfdrived/tests/test_aol_pedal_alert.py b/selfdrive/selfdrived/tests/test_aol_pedal_alert.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..300cb30741cd6ff9f6182a0606a5ffd4e0c0963a
+index 0000000000000000000000000000000000000000..0bce2a73dadafd9e56306fd986eb032558615dd9
 --- /dev/null
 +++ b/selfdrive/selfdrived/tests/test_aol_pedal_alert.py
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,145 @@
 +from types import SimpleNamespace
 +
 +import pytest
 +
 +from cereal import car, log
-+from openpilot.selfdrive.selfdrived.events import AudibleAlert, ET, EventName, Events
++from openpilot.selfdrive.selfdrived.events import AlertSize, AudibleAlert, ET, EventName, Events, VisualAlert
 +from openpilot.selfdrive.selfdrived.state import State, StateMachine
 +from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
 +
@@ -168,13 +168,15 @@ index 0000000000000000000000000000000000000000..300cb30741cd6ff9f6182a0606a5ffd4
 +
 +
 +@pytest.mark.parametrize("pedal", ["brake", "regen"])
-+def test_brake_partial_disengagement_has_distinct_sound_and_clear_text(pedal):
++def test_brake_partial_disengagement_has_no_sound_or_visual_feedback(pedal):
 +  alerts, sm = brake_alert(pedal=pedal)
 +  alert, = alerts
 +  assert alert.event_type == ET.USER_DISABLE
-+  assert alert.audible_alert == AudibleAlert.prompt
-+  assert alert.duration == 20
-+  assert (alert.alert_text_1, alert.alert_text_2) == ("Cruise off", "Steering remains active")
++  assert alert.audible_alert == AudibleAlert.none
++  assert alert.visual_alert == VisualAlert.none
++  assert alert.alert_size == AlertSize.none
++  assert alert.duration == 0
++  assert (alert.alert_text_1, alert.alert_text_2) == ("", "")
 +  assert sm["carControl"].latActive
 +
 +
@@ -205,8 +207,9 @@ index 0000000000000000000000000000000000000000..300cb30741cd6ff9f6182a0606a5ffd4
 +  manager = AlertManager()
 +  manager.add_many(0, alerts)
 +  manager.process_alerts(0, set())
-+  assert manager.current_alert.audible_alert == AudibleAlert.prompt
-+  assert manager.current_alert.alert_text_2 == "Steering remains active"
++  assert manager.current_alert.audible_alert == AudibleAlert.none
++  assert manager.current_alert.alert_size == AlertSize.none
++  assert manager.current_alert.alert_text_1 == manager.current_alert.alert_text_2 == ""
 +
 +
 +def test_partial_disengagement_does_not_override_immediate_fault_alert():
@@ -219,6 +222,29 @@ index 0000000000000000000000000000000000000000..300cb30741cd6ff9f6182a0606a5ffd4
 +  manager.process_alerts(0, set())
 +  assert manager.current_alert.event_type == ET.IMMEDIATE_DISABLE
 +  assert manager.current_alert.alert_text_2 != "Steering remains active"
++
++
++def test_partial_disengagement_remains_silent_after_each_cruise_reengagement():
++  manager = AlertManager()
++  for frame in (0, 100, 200):
++    alerts, _ = brake_alert(normal_enabled=True, pcm_disable=True)
++    manager.add_many(frame, alerts)
++    manager.process_alerts(frame, set())
++    assert manager.current_alert.audible_alert == AudibleAlert.none
++    assert manager.current_alert.alert_size == AlertSize.none
++    assert manager.current_alert.alert_text_1 == manager.current_alert.alert_text_2 == ""
++
++
++def test_partial_disengagement_does_not_mute_explicit_cancel():
++  alerts, _ = brake_alert()
++  events = Events()
++  events.add(EventName.buttonCancel)
++  alerts += events.create_alerts([ET.USER_DISABLE])
++  manager = AlertManager()
++  manager.add_many(0, alerts)
++  manager.process_alerts(0, set())
++  assert manager.current_alert.alert_type == "buttonCancel/userDisable"
++  assert manager.current_alert.audible_alert == AudibleAlert.disengage
 diff --git a/selfdrive/selfdrived/tests/test_ev9_compact_alerts.py b/selfdrive/selfdrived/tests/test_ev9_compact_alerts.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..e399d0caedd718473abe6e4c73156f38bbaa32f8

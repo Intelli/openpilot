@@ -200,7 +200,7 @@ def test_lateral_inactive_clears_previous_limit_feedback(normal_active, angle_co
   (120, 120, 90, False, 10, True, True),  # EPS undertracking without command clipping.
   (120, 120, 120, False, 10, True, False),
   (89, 89, 45, False, 10, True, False),
-  (120, 90, 90, True, 10, True, True),
+  (120, 90, 90, True, 10, True, False),
   (120, 90, 90, False, 0.5, True, True),
   (120, 90, 90, False, 10, False, False),
 ])

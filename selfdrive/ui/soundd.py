@@ -1,5 +1,6 @@
 import math
 import numpy as np
+from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
 import time
 import wave
 
@@ -280,12 +281,12 @@ class Soundd:
       return goat_alert
     return stock_alert
 
-  def update_alert(self, new_alert):
+  def update_alert(self, new_alert, *, allow_early_stop=False):
     if new_alert != AudibleAlert.none and new_alert not in self.loaded_sounds:
       new_alert = AudibleAlert.none
     loaded = self.loaded_sounds.get(self.current_alert)
     current_alert_played_once = self.current_alert == AudibleAlert.none or loaded is None or self.current_sound_frame > len(loaded)
-    if self.current_alert != new_alert and (new_alert != AudibleAlert.none or current_alert_played_once):
+    if self.current_alert != new_alert and (new_alert != AudibleAlert.none or current_alert_played_once or allow_early_stop):
       self.current_alert = new_alert
       self.current_sound_frame = 0
 
@@ -322,8 +323,13 @@ class Soundd:
         new_alert = starpilot_alert_key(new_starpilot_alert)
         new_alert_type = sm['starpilotSelfdriveState'].alertType
 
+      stop_cleared_ev9_steering_alert = (
+        new_alert == AudibleAlert.none and
+        getattr(self.starpilot_toggles, "car_model", None) == HYUNDAI_CAR.KIA_EV9 and
+        is_turn_steering_limit_alert(self.current_alert_type)
+      )
       self.current_alert_type = new_alert_type
-      self.update_alert(new_alert)
+      self.update_alert(new_alert, allow_early_stop=stop_cleared_ev9_steering_alert)
     elif check_selfdrive_timeout_alert(sm):
       self.current_alert_type = ""
       self.update_alert(AudibleAlert.warningImmediate)

@@ -187,13 +187,12 @@ symmetric 4.2 m/s² envelope as the controller, without roll compensation or the
 generic curvature cap. Existing lane-change comfort shaping remains active.
 Above it, and on other cars or torque control, StarPilot behavior is unchanged.
 The downstream controller/Panda intersection still limits actual steering.
-`customize_warnings_starpilot.patch` restores the EV9 saturation timer's 2.5 km/h
-minimum speed. The existing undershoot, turn-demand, driver-input and saturation
-checks remain required. Below or at `HkgTuningEv9AlertsSpeedKph` (default 50 km/h,
-range 10–50), the warning additionally requires at least 90° desired steering.
-This policy applies only to EV9 angle steering, before StarPilot's existing
-Switchback cooldown and sound selection. High-angle warnings remain available
-at low speed. Other cars and torque controllers retain their existing behavior.
+`customize_warnings_starpilot.patch` gives EV9 angle steering a sustained
+tracking-error/command-clipping warning, detailed below. Below or at
+`HkgTuningEv9AlertsSpeedKph` (default 50 km/h, range 10–50), it requires at least
+90° desired steering. Fresh hands-on detection suppresses this warning. StarPilot's
+Switchback cooldown and sound selection still apply. High-angle warnings remain
+available at low speed. Other cars and torque controllers retain their existing behavior.
 The former startup-master exception is unnecessary: normal StarPilot startup
 already uses its custom startup event, while unsupported-car guards remain.
 `alerts_starpilot.patch` uses compact EV9 distraction and steering-limit banners,
@@ -223,6 +222,15 @@ Use [the recent-drive review workflow](RECENT_DRIVE_REVIEW.md) to find the lates
 uploaded route, verify the build that ran, and separate sampled log evidence
 from native reproductions and confirmed vehicle behavior.
 
+The imported StarPilot baseline already contained the stock-LKAS forwarding
+handoff, overlapping bit-128 meanings and a calibration percentage check that
+allowed AOL at 1%. Our EV9 main-button integration exposed a controller/Panda
+ownership mismatch: the controller could stop sending while Panda still blocked
+factory steering traffic. The fixes below keep the EV9 inactive stream continuous
+and require completed calibration. This identifies an inherited integration
+defect; it does not establish the same dashboard warning on unmodified StarPilot
+or on other vehicles without testing those configurations.
+
 The existing enabled patches record the steering and AOL fixes:
 
 - `drive_helpers_starpilot.patch` refreshes command-limit feedback whenever lateral
@@ -238,15 +246,19 @@ The existing enabled patches record the steering and AOL fixes:
   configured EV9 alert threshold, plus directional tracking error/command
   clipping above 2.5 degrees for 0.3 seconds. It clears with angle/error hysteresis
   (85 degrees / 1 degree), inactive steering, standstill, unhealthy inputs or
-  actual manual handoff. Detected driver assistance no longer suppresses the
-  warning. Switchback cooldown and selected alert sound still apply. This is a
+  actual manual handoff. A fresh capacitive touch/grip sample (at most 300 ms old)
+  or steering torque detected through `steeringPressed` suppresses and resets
+  the warning. Taking the wheel also clears an already-displayed warning and
+  stops its sound; hands-off operation must satisfy the persistence period again.
+  Stale or future-dated touch samples cannot suppress it. Switchback cooldown and selected alert sound still apply. This is a
   warning policy, not a new universal 90-degree command cap; numeric steering
   envelopes remain authoritative.
 - `alerts_starpilot.patch` retains the compact EV9 steering-limit banner and
   audible prompt. Braking that ends normal engagement while AOL steering remains
-  active produces a brief “Cruise off / Steering remains active” prompt instead
-  of the full disengagement sound. Both pedal and simultaneous PCM-disable events
-  use this distinction. Faults, paused/inactive steering and full disengagement
+  active is silent, with no banner or HUD cue. Both pedal and simultaneous
+  PCM-disable events use this distinction only while current control, calibration,
+  gear and communication checks confirm steering continues. Faults, explicit
+  cancellation, paused/inactive steering and full disengagement
   retain their original alerts.
 - `custom_defaults_starpilot.patch` registers `PauseAOLOnBrake` as an integer speed.
   Its UI value is mph and its runtime value is converted to m/s; zero preserves
@@ -262,7 +274,10 @@ The existing enabled patches record the steering and AOL fixes:
   fields match the former Sunnypilot protocol. Factory cruise traffic is retained.
   The appended `CarControl.Actuators.manualSteeringOverride` log field reports
   actual controller handoff, so a matching requested/output angle at a real limit
-  is not mistaken for intentional manual control.
+  is not mistaken for intentional manual control. Appended `CarState.handsOnWheel`
+  and `handsOnWheelTimestamp` fields carry the capacitive sensor indication and
+  its monotonic sample time for warning suppression without treating old sensor
+  data as current driver contact.
 - Vehicle patch `03_modify_baseline_starpilot.patch` removes CAN-FD EV9 alias bits before common flag
   decoding so LKAS_ALT cannot accidentally enable the main-button LKAS latch.
   With stock cruise, received SCC main availability supplies main permission;
@@ -277,7 +292,17 @@ The existing enabled patches record the steering and AOL fixes:
   regressions, including continuous inactive traffic through refused calibration,
   button OFF, braking, standstill and gear changes, and unauthorized active-command
   rejection. Root patches include calibration, partial-disengagement and warning
-  pipeline regressions.
+  pipeline regressions. Saturation tests exercise both steering transports and
+  directions around the configured speed threshold, holding the closest valid
+  boundary for consecutive commands through native Panda checks.
+
+Ordinary angle clipping keeps the steering request active. The historical
+Sunnypilot controller also released when acceleration and angle-rate limits left
+no valid command; a blanket hold would violate that contract. Low assistance
+from the configured driver-override effort can also feel like release without
+the request becoming inactive. Check actual command activity, gain, driver torque
+and safety rejection counters before changing this behavior. Sampled qlogs may
+miss short transitions; use full-rate rlogs for an unresolved isolated release.
 
 These changes retain the numeric steering envelopes and StarPilot's longitudinal
 acceleration limits. Host checks exercise current Python plus freshly compiled

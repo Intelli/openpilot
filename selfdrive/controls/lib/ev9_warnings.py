@@ -10,6 +10,14 @@ EV9_WARNING_CLEAR_ANGLE_DEG = 85.0
 EV9_WARNING_TRACKING_GAP_DEG = 2.5
 EV9_WARNING_CLEAR_GAP_DEG = 1.0
 EV9_WARNING_PERSISTENCE_SECONDS = 0.3
+EV9_HANDS_ON_MAX_AGE_NS = 300_000_000
+
+
+def ev9_warning_hands_on(CS, now_nanos):
+  timestamp = getattr(CS, "handsOnWheelTimestamp", 0)
+  fresh_touch = (getattr(CS, "handsOnWheel", False) and timestamp > 0 and
+                 0 <= now_nanos - timestamp <= EV9_HANDS_ON_MAX_AGE_NS)
+  return bool(fresh_touch or CS.steeringPressed)
 
 
 def ev9_angle_warnings_enabled(CP) -> bool:
@@ -40,7 +48,7 @@ class EV9SteeringWarning:
   warning: bool = False
   last_time: float | None = None
 
-  def update(self, *, now, active, speed, requested, measured, output, threshold_kph, manual_following=False):
+  def update(self, *, now, active, speed, requested, measured, output, threshold_kph, manual_following=False, hands_on=False):
     dt = 0.01 if self.last_time is None else now - self.last_time
     self.last_time = now
     if not all(math.isfinite(value) for value in (now, speed, requested, measured, dt)) or dt < 0 or dt > 0.2:
@@ -54,7 +62,7 @@ class EV9SteeringWarning:
     command_shortfall = direction * (requested - output) if output is not None and math.isfinite(output) else 0.0
     gap_threshold = EV9_WARNING_CLEAR_GAP_DEG if self.warning else EV9_WARNING_TRACKING_GAP_DEG
     insufficient = max(tracking_shortfall, command_shortfall) > gap_threshold
-    if not active or speed <= 0.3 or manual_following or not eligible or not insufficient:
+    if not active or speed <= 0.3 or manual_following or hands_on or not eligible or not insufficient:
       self.elapsed, self.warning = 0.0, False
       return False
     self.elapsed += max(dt, 0.0)
