@@ -49,7 +49,7 @@
     },
     {
       "original_path": "patches/custom_defaults.patch",
-      "preserved_path": "patches/custom_defaults.patch.temp-disabled",
+      "preserved_path": "patches/custom_defaults.patch.migrated",
       "sha256": "2b371553a13f24bec832cdd6d6967a616f4dda353f61869292de63816502d1fc"
     },
     {
@@ -74,7 +74,7 @@
     },
     {
       "original_path": "patches/ev9_edition.patch",
-      "preserved_path": "patches/ev9_edition.patch.temp-disabled",
+      "preserved_path": "patches/ev9_edition.patch.migrated",
       "sha256": "28454069aa709704de44596d6d5249403b0041d1be75630f3369179d9782c195"
     },
     {
@@ -94,7 +94,7 @@
     },
     {
       "original_path": "patches/prebuilt.patch",
-      "preserved_path": "patches/prebuilt.patch.temp-disabled",
+      "preserved_path": "patches/prebuilt.patch.migrated",
       "sha256": "afbecc873ff00581a8070b01a955d8ec52f31877876b45923d370e7217370cc0"
     },
     {

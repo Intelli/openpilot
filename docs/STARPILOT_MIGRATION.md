@@ -11,8 +11,9 @@ install. We fetch only `refs/heads/StarPilot`.
 The first snapshot is `c3e4ec630f41c4baa43254a90f718abd1bf764a1`.
 `starpilot-upstream.json` records its commit and Git tree. The initial import
 matched upstream outside the explicitly preserved maintenance files. Migrated
-custom defaults, EV9 Edition, settings UI and the six vehicle migrations are now
-recorded in enabled patches. Unmigrated openpilot patches remain disabled.
+custom defaults, EV9 Edition, settings UI, EV9 control/warning integration and the
+six vehicle migrations are now recorded in enabled patches. Deferred features
+remain disabled.
 
 `opendbc_repo/`, `panda/`, and the other bundled dependencies are ordinary files
 from that same snapshot. `opendbc` links to `opendbc_repo/opendbc`. Make future
@@ -55,7 +56,7 @@ bytes directly.
 | Location | Contents |
 | --- | --- |
 | Root `apply_patch*.sh`, `create_patch*.sh`, `update_patch.sh` | Unified replay and staged forward-patch export helpers |
-| `patches/*.patch*` | Openpilot patches; formerly enabled patches use `.temp-disabled`, pre-existing disabled suffixes are unchanged |
+| `patches/*.patch*` | Application patches and unchanged `.migrated` / `.temp-disabled` archives; pre-existing disabled suffixes are unchanged |
 | `patches/assets/openpilot/` | Custom lock artwork and audio for future patch porting |
 | `patches/legacy-openpilot-tooling/` | Original patch and sync/update helpers, guidance, custom analysis assets and checksums |
 | `patches/opendbc/` | Numbered StarPilot vehicle patches and unchanged historical originals |
@@ -68,10 +69,38 @@ a new `.patch` records the reviewed StarPilot implementation. The six previously
 disabled patches retain their `.disabled` names. Only files ending in `.patch`
 are enabled. `./apply_patch.sh` skips changes already applied.
 
-Enabled `custom_defaults_starpilot.patch`, `ev9_edition_starpilot.patch` and
-`settings_ui_starpilot.patch` record the current application changes. The defaults
-include completion of training version `0.2.0`, matching the old custom-defaults
-patch.
+### Application migration status
+
+| Enabled patch | Scope |
+| --- | --- |
+| `custom_defaults_starpilot.patch` | Supported StarPilot defaults, EV9 manual fingerprint, completed training `0.2.0`, four Hkg defaults |
+| `ev9_edition_starpilot.patch` | EV9 Edition branding and EV9-only control restriction; already migrated before these ports |
+| `settings_ui_starpilot.patch` | Shared flat settings layout and larger, clearer controls |
+| `drive_helpers_starpilot.patch` | EV9 tuning broadcast and upper-level curvature integration |
+| `customize_warnings_starpilot.patch` | EV9-specific steering warning thresholds |
+| `alerts_starpilot.patch` | Compact EV9 alert presentation and translucent normal banners |
+| `ui_options_starpilot.patch` | Flat Steering page and four relevant EV9 controls |
+
+The original `custom_defaults`, `ev9_edition` and `prebuilt` archives now use
+`.migrated` too. Their existing StarPilot replacements were reviewed rather than
+reapplied. The prebuilt replacement is maintained CI tooling, preserved by sync,
+so it does not need another enabled application patch. Its old Sunnypilot binary
+overlay, LFS exceptions and auxiliary workflows are obsolete in this monorepo.
+
+The custom-defaults port covers supported settings. StarPilot already enables
+road-name and blind-spot visualization. Its native blind-spot/lane-change handling
+is retained. Legacy auto-lock credentials, quickboot/power bookkeeping, unused
+Hkg gains and smoothing knobs, and advanced lane-centering defaults are not
+registered. Legacy percentage speed-limit offsets and independent lane-turn
+speed have no direct equivalent in StarPilot's additive speed bands and shared
+lane-change threshold; those existing StarPilot settings remain unchanged.
+Terms acceptance retains StarPilot's normal flow. Existing saved preferences
+are preserved, including existing native RainbowPath settings; no custom EV9
+path-color code or renamed path-color control was added.
+
+Four originals remain `.temp-disabled` by request: `lane_centering`,
+`driver_monitoring`, `custom_model_ui` (custom path colors), and `power_management`.
+All previously `.disabled` archives remain unchanged.
 
 The root helpers now support both patch locations. Application discovers enabled
 root patches first, then vehicle patches, and adds `opendbc_repo/` to standalone
