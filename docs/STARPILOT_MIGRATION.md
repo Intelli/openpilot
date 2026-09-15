@@ -92,7 +92,10 @@ Original helper copies are historical reference; do not run archived scripts.
    and runs `./build`. The upstream build clears native build signatures and
    recreates `prebuilt` only after success.
 3. The publisher commits the built output to **`ev9-prebuilt`**, recording
-   `Source-Commit: <ev9-dev SHA>`. It appends history and propagates file removals.
+   `Source-Commit: <ev9-dev SHA>`. This branch contains one parentless commit for
+   the latest build. The publisher replaces only this branch with an explicit
+   force-with-lease against the fetched tip, so a concurrent publication is not
+   overwritten. Each snapshot contains only the current build's files.
 4. The existing workflow on **`master`** reacts to build success and runs the
    deployment-sync helper from `ev9-dev`. That helper copies the exact tree from
    **`ev9-prebuilt`**, including rebuilt binaries and the `prebuilt` marker, into
@@ -104,6 +107,13 @@ build; `ev9-dev` is for development. The sync helper validates build provenance
 and the `prebuilt` marker before promotion. Repeating a promotion with the same
 tree and provenance makes no new commit; a new build/source is recorded even
 when its file contents are identical.
+
+Publishing an identical snapshot for the same source is also a no-op once
+`ev9-prebuilt` has a single root commit. The first publication after switching
+from the earlier history-preserving publisher replaces its history even if the
+payload is unchanged. `ev9-dev` retains development history and `ev9` retains
+deployment history. Old build-commit IDs may eventually be pruned from Git;
+previously deployed files remain available through `ev9` history.
 
 Do not copy the `ev9-dev` source tree directly to the install branch. Upstream
 ships tracked native binaries and a `prebuilt` marker, which disables device
