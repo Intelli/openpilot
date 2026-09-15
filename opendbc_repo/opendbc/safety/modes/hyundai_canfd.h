@@ -224,9 +224,15 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
     .min_valid_request_rt_interval = 810000,  // 810ms; a ~10% buffer on cutting every 90 frames
     .has_steer_req_tolerance = true,
   };
+  // Match the original EV9 low-speed gate, including the existing 1 m/s speed tolerance.
+  // This is a step at 42 km/h + 0.1 m/s of tolerated speed, not a taper.
+  const float ev9_tolerated_speed = SAFETY_MAX((vehicle_speed.min / VEHICLE_SPEED_FACTOR) - 1.0F, 1.0F);
+  const bool ev9_high_limits = hyundai_canfd_ev9 && (ev9_tolerated_speed <= ((42.0F / 3.6F) + 0.1F));
   const AngleSteeringLimits HYUNDAI_CANFD_ANGLE_STEERING_LIMITS = {
     .max_angle = 3600,
     .angle_deg_to_can = 10,
+    .max_lateral_accel = ev9_high_limits ? 4.2F : 0.0F,
+    .max_lateral_jerk = ev9_high_limits ? 4.2F : 0.0F,
     .frequency = 100U,
   };
   const AngleSteeringParams HYUNDAI_CANFD_ANGLE_STEERING_PARAMS = {
