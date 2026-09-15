@@ -20,8 +20,8 @@ MAINTENANCE = (
 SUFFIXES = ('.patch', '.patch.temp-disabled', '.patch.disabled', '.patch.OUTDATED.disabled')
 
 
-def git(*args: str) -> bytes:
-  result = subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True)
+def git(*args: str, stdin: bytes | None = None, env: dict | None = None) -> bytes:
+  result = subprocess.run(['git', '-C', str(ROOT), *args], input=stdin, env=env, capture_output=True)
   if result.returncode:
     raise ValueError(result.stderr.decode(errors='replace').strip() or 'Git command failed.')
   return result.stdout
@@ -82,6 +82,67 @@ def source_paths(paths: list[str], vehicle: bool) -> list[str]:
   return selected + [':(top,exclude)' + path for path in MAINTENANCE]
 
 
+def diff_options(vehicle: bool) -> list[str]:
+  options = ['--cached', '--binary', '--full-index', '--no-renames', '--no-ext-diff', '--no-textconv', '--no-color',
+             '--src-prefix=a/', '--dst-prefix=b/']
+  if vehicle:
+    options.append('--relative=opendbc_repo')
+  return options
+
+
+def patch_paths(output: Path, vehicle: bool) -> list[str]:
+  # git apply's numstat reports rename destinations only; reverse includes sources.
+  paths = set()
+  for direction in ([], ['--reverse']):
+    stats = git('apply', '--numstat', '-z', *direction, *(['--directory=opendbc_repo'] if vehicle else []), str(output))
+    for record in stats.split(b'\0'):
+      if record:
+        name = os.fsdecode(record.split(b'\t', 2)[2])
+        path = PurePosixPath(name)
+        if path.is_absolute() or '..' in path.parts:
+          raise ValueError(f'Unsafe patch path: {name}')
+        paths.add(name)
+  if not paths:
+    raise ValueError('The existing patch contains no file changes.')
+  return sorted(paths)
+
+
+def automatic_update(output: Path, vehicle: bool, paths: list[str]) -> bytes:
+  try:
+    existing = patch_paths(output, vehicle)
+    selected = source_paths(paths, vehicle)
+    if not paths:
+      staged = git('diff', '--cached', '--name-only', '--no-renames', '-z', 'HEAD', '--', *selected)
+      scope = sorted(set(existing) | {os.fsdecode(p) for p in staged.split(b'\0') if p})
+      selected = [':(top,literal)' + p for p in scope] + [':(top,exclude)' + p for p in MAINTENANCE]
+
+    with tempfile.TemporaryDirectory(prefix='update-patch-') as directory:
+      temp = Path(directory)
+      objects = temp / 'objects'
+      objects.mkdir()
+      original_objects = git('rev-parse', '--path-format=absolute', '--git-path', 'objects').decode().strip()
+      # Keep generated trees out of the repository's object store as well as its index.
+      (objects / 'info').mkdir()
+      (objects / 'info/alternates').write_text(original_objects + '\n')
+      env = dict(os.environ, GIT_OBJECT_DIRECTORY=str(objects))
+      base_env = dict(env, GIT_INDEX_FILE=str(temp / 'base-index'))
+      ancestor_env = dict(env, GIT_INDEX_FILE=str(temp / 'ancestor-index'))
+      git('read-tree', 'HEAD', env=base_env)
+      # Mode-only patches read content from this HEAD index, never staged amendments.
+      git('apply', '--numstat', '--build-fake-ancestor=' + ancestor_env['GIT_INDEX_FILE'],
+          *(['--directory=opendbc_repo'] if vehicle else []), str(output), env=base_env)
+      originals = git('ls-files', '--stage', '-z', env=ancestor_env)
+      # Added paths must be absent from the base; deleted paths must be restored.
+      git('update-index', '--force-remove', '-z', '--stdin',
+          stdin=b''.join(os.fsencode(p) + b'\0' for p in existing), env=base_env)
+      git('update-index', '-z', '--index-info', stdin=originals, env=base_env)
+      base = git('write-tree', env=base_env).decode().strip()
+      return git('diff', *diff_options(vehicle), base, '--', *selected, env=env)
+  except ValueError as error:
+    raise ValueError('Cannot reconstruct the original patch base; existing patch left unchanged. ' +
+                     f'Use --base REF to select an unpatched revision explicitly. Details: {error}') from error
+
+
 def main() -> None:
   argv = sys.argv[1:]
   paths = []
@@ -94,23 +155,21 @@ def main() -> None:
   )
   parser.add_argument('command', choices=('create', 'update'))
   parser.add_argument('name', help='NAME[.patch] or opendbc/NAME[.patch]; disabled suffixes are preserved')
-  parser.add_argument('--base', help='Unpatched Git revision to compare with the index. Create defaults to HEAD; update requires this.')
+  parser.add_argument('--base', help='Override the unpatched base. Create defaults to HEAD; update uses original versions from the existing patch.')
   args = parser.parse_args(argv)
-  if args.command == 'update' and args.base is None:
-    parser.error('update requires --base REF: replacing a patch with only incremental edits could drop its original changes. ' +
-                 'Use --base HEAD when the full replacement is staged against HEAD.')
   output, vehicle = patch_destination(args.name, args.command == 'update')
   if git('ls-files', '--unmerged', '-z'):
     raise ValueError('Resolve staged merge conflicts before exporting a patch.')
   selected = source_paths(paths, vehicle)
-  if not git('diff', '--cached', '--name-only', '--no-renames', '-z', 'HEAD', '--', *selected):
+  if args.command == 'create' and not git('diff', '--cached', '--name-only', '--no-renames', '-z', 'HEAD', '--', *selected):
     raise ValueError('No staged source changes in the selected scope. Stage the intended edits first.')
-  base = git('rev-parse', '--verify', '--end-of-options', (args.base or 'HEAD') + '^{tree}').decode().strip()
-  options = ['--cached', '--binary', '--full-index', '--no-renames', '--no-ext-diff', '--no-textconv', '--no-color',
-             '--src-prefix=a/', '--dst-prefix=b/']
-  if vehicle:
-    options.append('--relative=opendbc_repo')
-  patch = git('diff', *options, base, '--', *selected)
+  if args.command == 'update' and args.base is None:
+    patch = automatic_update(output, vehicle, paths)
+    base_label = 'original versions recorded in the existing patch'
+  else:
+    base_label = args.base or 'HEAD'
+    base = git('rev-parse', '--verify', '--end-of-options', base_label + '^{tree}').decode().strip()
+    patch = git('diff', *diff_options(vehicle), base, '--', *selected)
   if not patch:
     raise ValueError('The staged source matches the selected base; existing patch left unchanged.')
   output.parent.mkdir(parents=True, exist_ok=True)
@@ -127,7 +186,7 @@ def main() -> None:
       os.replace(temporary, output)
   finally:
     temporary.unlink(missing_ok=True)
-  print(f"{'Updated' if args.command == 'update' else 'Created'} {output.relative_to(ROOT)} from the staged index (base {args.base or 'HEAD'}).")
+  print(f"{'Updated' if args.command == 'update' else 'Created'} {output.relative_to(ROOT)} from the staged index (base: {base_label}).")
   print('Source files and staging are unchanged. Review and stage the patch file separately.')
 
 

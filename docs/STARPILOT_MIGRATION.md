@@ -65,15 +65,21 @@ bytes directly.
 
 All 17 patches that were enabled before migration now have the `.temp-disabled`
 suffix. The six previously disabled patches retain their `.disabled` names.
-Patch contents are unchanged. `./apply_patch.sh` currently reports that there are
-no enabled patches and makes no changes. Re-enable individual reviewed patches by
+Historical patch contents are unchanged. One new enabled patch,
+`custom_defaults_starpilot.patch`, records the supported custom defaults.
+`./apply_patch.sh` skips it when those changes are already applied. Re-enable individual reviewed patches by
 renaming them to end in `.patch`.
 
 The root helpers now support both patch locations. Application discovers enabled
 root patches first, then vehicle patches, and adds `opendbc_repo/` to standalone
-vehicle paths. Create/update export forward diffs from staged source, without
-syncing or modifying application files. Update requires an explicit base revision
-and preserves the existing suffix. Neither sync nor CI invokes these helpers.
+vehicle paths. Create exports staged source. Update reconstructs original file
+versions from the existing patch’s Git blob IDs and compares them with the index
+(HEAD versions when nothing is staged), preserving committed original hunks and
+the existing suffix. Its default scope includes existing patch paths and newly
+staged source files; `-- PATH...` overrides scope and `--base <ref>` selects an
+explicit baseline. Maintenance files are excluded. Empty, malformed or missing-
+preimage exports leave the patch unchanged. Exporters do not sync, modify source,
+stage, commit or push. Neither sync nor CI invokes these helpers.
 See [the patch guide](../patches/README.md) for examples and scope selection.
 Original helper copies are historical reference; do not run archived scripts.
 

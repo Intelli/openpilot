@@ -38,11 +38,12 @@ def repo(tmp_path):
 
   def export(script, *args, success=True):
     index = (tmp_path / ".git/index").read_bytes()
-    tracked = git("diff", "--binary")
+    # The patch output may itself be tracked; only application/tool source must stay unchanged.
+    tracked = git("diff", "--binary", "--", ".", ":(exclude)patches")
     result = command("bash", script, *args, check=False)
     assert (result.returncode == 0) == success, result.stdout.decode() + result.stderr.decode()
     assert (tmp_path / ".git/index").read_bytes() == index
-    assert git("diff", "--binary") == tracked
+    assert git("diff", "--binary", "--", ".", ":(exclude)patches") == tracked
     return result
 
   return tmp_path, git, stage, export
@@ -71,7 +72,7 @@ def test_update_explicit_base_keeps_committed_and_staged_hunks(repo):
   assert not (path / "patches/example.patch").exists()
 
 
-@pytest.mark.parametrize("case", ["missing_base", "invalid_base", "no_staged", "empty_selection"])
+@pytest.mark.parametrize("case", ["missing_metadata", "invalid_base", "no_staged", "empty_selection"])
 def test_failed_update_preserves_existing_patch(repo, case):
   path, _, stage, export = repo
   (path / "patches").mkdir()
@@ -79,7 +80,7 @@ def test_failed_update_preserves_existing_patch(repo, case):
   target.write_bytes(b"original patch bytes\n")
   if case != "no_staged":
     stage()
-  args = [] if case == "missing_base" else ["--base", "not-a-ref" if case == "invalid_base" else "HEAD"]
+  args = [] if case == "missing_metadata" else ["--base", "not-a-ref" if case == "invalid_base" else "HEAD"]
   if case == "empty_selection":
     args += ["--", "opendbc_repo/opendbc/car/example.py"]
   export("update_patch.sh", "example", *args, success=False)
@@ -172,3 +173,120 @@ def test_export_preserves_deletion_and_executable_mode(repo):
   patch = (path / "patches/example.patch").read_text()
   assert "deleted file mode 100644" in patch
   assert "new file mode 100755" in patch
+
+
+@pytest.mark.parametrize("vehicle", [False, True])
+@pytest.mark.parametrize("committed", [False, True])
+def test_update_infers_base_and_keeps_original_hunks(repo, vehicle, committed):
+  path, git, stage, export = repo
+  name = "opendbc/example" if vehicle else "example"
+  source = "opendbc_repo/opendbc/car/example.py" if vehicle else "app.txt"
+  base = git("rev-parse", "HEAD").decode().strip()
+  stage(source, "first customization\n")
+  export("create_patch.sh", name)
+  git("add", "patches")
+  git("commit", "-m", "first patch")
+  stage("unrelated.txt", "unrelated committed history\n")
+  git("commit", "-m", "unrelated source")
+  stage(source, "first customization\nsecond customization\n")
+  if committed:
+    git("commit", "-m", "amend source before exporting patch")
+  (path / source).write_text("unstaged content must not leak\n")
+  export("update_patch.sh", name)
+  options = ["--relative=opendbc_repo"] if vehicle else []
+  expected = git("diff", "--cached", "--binary", "--full-index", "--no-renames", *options, base, "--", source)
+  assert (path / f"patches/{name}.patch").read_bytes() == expected
+  # Repeating with no further changes must preserve the full patch.
+  export("update_patch.sh", name)
+  assert (path / f"patches/{name}.patch").read_bytes() == expected
+
+
+def test_update_includes_newly_staged_files_and_excludes_maintenance(repo):
+  path, git, stage, export = repo
+  base = git("rev-parse", "HEAD").decode().strip()
+  stage(content="original customization\n")
+  export("create_patch.sh", "example.patch.temp-disabled")
+  git("add", "patches")
+  git("commit", "-m", "first patch")
+  stage("extra source.txt", "newly included customization\n")
+  stage("AGENTS.md", "maintenance\n")
+  export("update_patch.sh", "example")
+  expected = git("diff", "--cached", "--binary", "--full-index", "--no-renames", base, "--", "app.txt", "extra source.txt")
+  assert (path / "patches/example.patch.temp-disabled").read_bytes() == expected
+  assert not (path / "patches/example.patch").exists()
+
+
+@pytest.mark.parametrize("vehicle", [False, True])
+def test_update_infers_binary_add_delete_rename_and_executable_changes(repo, vehicle):
+  path, git, stage, export = repo
+  prefix = "opendbc_repo/" if vehicle else ""
+  name = "opendbc/example" if vehicle else "example"
+  binary = prefix + "binary.dat"
+  old = prefix + "old name.txt"
+  new = prefix + "new name.txt"
+  deleted = prefix + "deleted.txt"
+  added = prefix + "added\tspace\nfile.sh"
+  (path / binary).write_bytes(bytes(range(256)))
+  stage(old, "rename me\n")
+  stage(deleted, "delete me\n")
+  git("add", binary)
+  git("commit", "-m", "binary and rename baseline")
+  base = git("rev-parse", "HEAD").decode().strip()
+  (path / binary).write_bytes(bytes(range(256)) * 2)
+  (path / old).rename(path / new)
+  (path / deleted).unlink()
+  stage(added, "#!/bin/sh\necho first\n")
+  (path / added).chmod(0o755)
+  git("add", "-A")
+  export("create_patch.sh", name)
+  git("add", "patches")
+  git("commit", "-m", "first compound patch")
+  (path / binary).write_bytes(bytes(range(256)) * 3)
+  stage(new, "rename me and amend\n")
+  stage(added, "#!/bin/sh\necho second\n")
+  git("add", binary)
+  export("update_patch.sh", name)
+  options = ["--relative=opendbc_repo"] if vehicle else []
+  expected = git("diff", "--cached", "--binary", "--full-index", "--no-renames", *options, base, "--", binary, old, new, deleted, added)
+  assert (path / f"patches/{name}.patch").read_bytes() == expected
+
+
+def test_update_mode_only_patch_does_not_swallow_staged_content(repo):
+  path, git, stage, export = repo
+  base = git("rev-parse", "HEAD").decode().strip()
+  (path / "app.txt").chmod(0o755)
+  git("add", "app.txt")
+  export("create_patch.sh", "example")
+  git("add", "patches")
+  git("commit", "-m", "executable mode patch")
+  stage(content="content amendment\n")
+  export("update_patch.sh", "example")
+  expected = git("diff", "--cached", "--binary", "--full-index", "--no-renames", base, "--", "app.txt")
+  assert (path / "patches/example.patch").read_bytes() == expected
+
+
+def test_update_with_unavailable_original_blob_preserves_patch(repo):
+  path, git, stage, export = repo
+  stage()
+  export("create_patch.sh", "example")
+  target = path / "patches/example.patch"
+  original = git("rev-parse", "HEAD:app.txt").strip()
+  missing_blob_patch = target.read_bytes().replace(original, b"f" * len(original))
+  target.write_bytes(missing_blob_patch)
+  result = export("update_patch.sh", "example", success=False)
+  assert b"--base REF" in result.stderr
+  assert target.read_bytes() == missing_blob_patch
+
+
+def test_update_automatic_scope_can_be_explicitly_limited(repo):
+  path, git, stage, export = repo
+  base = git("rev-parse", "HEAD").decode().strip()
+  stage(content="first customization\n")
+  export("create_patch.sh", "example")
+  git("add", "patches")
+  git("commit", "-m", "first patch")
+  stage(content="second customization\n")
+  stage("unrelated.txt", "excluded staged file\n")
+  export("update_patch.sh", "example", "--", "app.txt")
+  expected = git("diff", "--cached", "--binary", "--full-index", "--no-renames", base, "--", "app.txt")
+  assert (path / "patches/example.patch").read_bytes() == expected
