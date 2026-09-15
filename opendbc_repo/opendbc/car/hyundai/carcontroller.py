@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 # Provenance: portions of HKG angle control are adapted from sunnypilot/opendbc's
 # hkg-angle-steering-2025 branch at cc4b08625. See CREDITS.md and THIRD_PARTY_NOTICES.md.
@@ -11,6 +11,8 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.lead_data import CanLeadDataState
+from opendbc.car.hyundai.ev9 import (EV9AngleConfig, EV9ManualControlState, EV9_HIGH_LATERAL_LIMIT, EV9_PANDA_LIMIT_SPEED_MPS,
+                                   apply_override_gain, ev9_hands_on)
 from opendbc.car.hyundai.values import HyundaiFlags, HyundaiSafetyFlags, HyundaiStarPilotFlags, Buttons, CarControllerParams, CAR, CANFD_ANGLE_LONGITUDINAL_CAR, \
                                         CANFD_RADAR_ECU_KEEPALIVE_CAR, CANFD_ALT_BUTTONS_RESUME_CAR, kia_ev6_gt_line_longitudinal_tuning, \
                                         KIA_EV6_GT_LINE_LONG_TUNING_TESTING_GROUND_ID
@@ -401,6 +403,18 @@ def compute_torque_reduction_gain(steering_torque, v_ego, lat_active, last_gain)
   return round(gain / 0.004) * 0.004
 
 
+def ev9_angle_bounds(v_ego_raw, last_angle, params, VM, safety_params, safety_VM):
+  """Intersect controller and Panda envelopes; an empty interval requires inactive control."""
+  speed = max(v_ego_raw, 1.0)
+  safety_speed = max(v_ego_raw - 1.0, 1.0)
+  absolute = min(params.ANGLE_LIMITS.STEER_ANGLE_MAX,
+                 get_max_angle_vm(speed, VM, params), get_max_angle_vm(safety_speed, safety_VM, safety_params))
+  delta = min(params.ANGLE_LIMITS.MAX_ANGLE_RATE,
+              get_max_angle_delta_vm(speed, VM, params), get_max_angle_delta_vm(safety_speed, safety_VM, safety_params))
+  lower, upper = max(-absolute, last_angle - delta), min(absolute, last_angle + delta)
+  return (lower, upper) if lower <= upper else None
+
+
 def process_hud_alert(enabled, fingerprint, hud_control):
   sys_warning = (hud_control.visualAlert in (VisualAlert.steerRequired, VisualAlert.ldw))
 
@@ -488,6 +502,26 @@ class CarController(CarControllerBase):
     )
     self._ray_lfa_packer = CANPacker("hyundai_kia_ray_lfa") if self._ray_lfa_8byte else None
 
+    self.apply_torque_base_last = 0.0
+    self.ev9_angle_config = EV9AngleConfig()
+    self._ev9_manual = EV9ManualControlState()
+    if CP.carFingerprint == CAR.KIA_EV9:
+      # Never modify the class-level angle limits shared with other Hyundai controllers.
+      self._ev9_stock_angle_limits = replace(self.params.ANGLE_LIMITS)
+      self._ev9_safety_params = CarControllerParams(CP)
+
+  def _update_ev9_angle_limits(self, v_ego_raw, toggles):
+    self.ev9_angle_config = EV9AngleConfig.from_toggles(toggles)
+    self.params.ANGLE_LIMITS = replace(self._ev9_stock_angle_limits)
+    self._ev9_safety_params.ANGLE_LIMITS = replace(self._ev9_stock_angle_limits)
+    if v_ego_raw <= self.ev9_angle_config.limit_speed_mps:
+      self.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = EV9_HIGH_LATERAL_LIMIT
+      self.params.ANGLE_LIMITS.MAX_LATERAL_JERK = EV9_HIGH_LATERAL_LIMIT
+    # A larger configured controller speed never enlarges Panda's independent envelope.
+    if max(v_ego_raw - 1.0, 1.0) <= EV9_PANDA_LIMIT_SPEED_MPS:
+      self._ev9_safety_params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = EV9_HIGH_LATERAL_LIMIT
+      self._ev9_safety_params.ANGLE_LIMITS.MAX_LATERAL_JERK = EV9_HIGH_LATERAL_LIMIT
+
   def _update_dash_icon_state(self, CC):
     if CC.latActive:
       self._dash_lat_disengage_init = False
@@ -572,6 +606,11 @@ class CarController(CarControllerBase):
     hud_control = CC.hudControl
     lka_icon, lfa_icon = self._update_dash_icon_state(CC)
 
+    ev9_angle_control = self.CP.carFingerprint == CAR.KIA_EV9 and bool(self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING)
+    if ev9_angle_control:
+      self._update_ev9_angle_limits(CS.out.vEgoRaw, starpilot_toggles)
+    safety_params = self._ev9_safety_params if ev9_angle_control else self.params
+
     if not self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
       self.params = CarControllerParams(self.CP, CS.out.vEgoRaw)
     direct_angle_control = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and self.long_active_ecu
@@ -580,7 +619,7 @@ class CarController(CarControllerBase):
     if direct_angle_control and CC.latActive:
       drive_gear = CS.out.gearShifter == structs.CarState.GearShifter.drive
       angle_lat_active = direct_angle_request_allowed(CS.out.vEgoRaw, measured_steering_angle, self.apply_angle_last,
-                                                      drive_gear, self.BASELINE_VM, self.params) and not CS.angle_steering_fault
+                                                      drive_gear, self.BASELINE_VM, safety_params) and not CS.angle_steering_fault
     if self.CP.carFingerprint == CAR.HYUNDAI_IONIQ_5_PE and CS.out.standstill:
       angle_lat_active = False
     self.direct_angle_request_allowed = angle_lat_active
@@ -602,7 +641,17 @@ class CarController(CarControllerBase):
         apply_angle = apply_steer_angle_limits_vm(apply_angle or desired_angle, self.apply_angle_last, v_ego_raw,
                                                   measured_steering_angle, angle_lat_active, self.params, self.BASELINE_VM)
 
-      if direct_angle_control and angle_lat_active:
+      ev9_bounds = None
+      if ev9_angle_control and angle_lat_active:
+        ev9_bounds = ev9_angle_bounds(v_ego_raw, self.apply_angle_last, self.params, self.VM, safety_params, self.BASELINE_VM)
+        if ev9_bounds is None or apply_angle is None:
+          angle_lat_active = False
+          self.direct_angle_request_allowed = False
+          apply_angle = None
+        else:
+          apply_angle = float(np.clip(apply_angle, *ev9_bounds))
+
+      if direct_angle_control and angle_lat_active and not ev9_angle_control:
         # Match Panda's 1 m/s speed tolerance so a shrinking absolute limit stays inside its jerk envelope.
         safety_v_ego = max(v_ego_raw - 1.0, 1.0)
         max_angle_delta = min(get_max_angle_delta_vm(safety_v_ego, self.BASELINE_VM, self.params),
@@ -611,14 +660,40 @@ class CarController(CarControllerBase):
                                     self.apply_angle_last - max_angle_delta,
                                     self.apply_angle_last + max_angle_delta))
 
-      apply_torque = compute_torque_reduction_gain(CS.out.steeringTorque, v_ego_raw, angle_lat_active, self.apply_torque_last)
-      apply_steer_req = angle_lat_active and apply_torque != 0.0
+      if ev9_angle_control:
+        handoff = self._ev9_manual.update(
+          self.ev9_angle_config, lat_active=angle_lat_active,
+          steering_torque=CS.out.steeringTorque, steering_pressed=CS.out.steeringPressed,
+          hands_on=ev9_hands_on(getattr(CS, "hands_on_steering_grip", 0), getattr(CS, "hands_on_steering_ts_nanos", 0), now_nanos),
+          v_ego=v_ego_raw, desired_angle=desired_angle, measured_angle=measured_steering_angle,
+          steer_threshold=self.params.STEER_THRESHOLD,
+        )
+        # Keep the ramp history independent of the temporary manual-override scaling.
+        self.apply_torque_base_last = compute_torque_reduction_gain(
+          CS.out.steeringTorque, v_ego_raw, angle_lat_active, self.apply_torque_base_last,
+        ) if angle_lat_active else 0.0
+        apply_torque = apply_override_gain(self.apply_torque_base_last, handoff.override_active, self.ev9_angle_config.override_effort_scale)
+        apply_steer_req = angle_lat_active
+        if handoff.manual_override:
+          # Following the wheel with active control must still satisfy both angle/rate envelopes.
+          # Otherwise use the normal inactive measured-angle command, never revive a failed guard.
+          apply_steer_req = bool(handoff.keep_active and ev9_bounds is not None and ev9_bounds[0] <= measured_steering_angle <= ev9_bounds[1])
+          apply_torque = 0.10 if apply_steer_req else 0.0
+          apply_angle = float(np.clip(measured_steering_angle, -self.params.ANGLE_LIMITS.STEER_ANGLE_MAX, self.params.ANGLE_LIMITS.STEER_ANGLE_MAX))
+          self.angle_filter.x = apply_angle
+      else:
+        apply_torque = compute_torque_reduction_gain(CS.out.steeringTorque, v_ego_raw, angle_lat_active, self.apply_torque_last)
+        apply_steer_req = angle_lat_active and apply_torque != 0.0
       torque_fault = False
 
       if apply_angle is None:
         apply_torque = 0
         apply_angle = measured_steering_angle
         apply_steer_req = False
+        if ev9_angle_control:
+          self.apply_torque_base_last = 0.0
+          self._ev9_manual.reset()
+          self.direct_angle_request_allowed = False
 
       self.apply_angle_last = apply_angle
       if not angle_lat_active:
@@ -900,7 +975,7 @@ class CarController(CarControllerBase):
     ccnc_angle_long = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and \
       self.CP.flags & HyundaiFlags.CCNC and angle_lkas_alt and self.long_active_ecu
     steering_msg_active = apply_steer_req
-    if angle_lkas_alt:
+    if angle_lkas_alt and self.CP.carFingerprint != CAR.KIA_EV9:
       # Angle LKAS_ALT cars fault if the angle-steering status drops inactive during torque limiting.
       # Hold the angle status active while lateral is active; VM/safety limits handle actuation.
       steering_msg_active = CC.latActive
@@ -922,6 +997,8 @@ class CarController(CarControllerBase):
                                                              lka_icon=lka_icon,
                                                              longitudinal_active=lfa_longitudinal_active))
     direct_steering_active = ccnc_angle_long and drive_gear and CC.latActive and self.direct_angle_request_allowed and not CS.angle_steering_fault
+    if self.CP.carFingerprint == CAR.KIA_EV9:
+      direct_steering_active = direct_steering_active and apply_steer_req
     inactive_steering_angle = float(np.clip(CS.angle_steering_angle,
                                             -self.params.ANGLE_LIMITS.STEER_ANGLE_MAX,
                                             self.params.ANGLE_LIMITS.STEER_ANGLE_MAX)) if ccnc_angle_long else 0.0
