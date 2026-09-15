@@ -153,6 +153,11 @@ Switchback cooldown and sound selection. High-angle warnings remain available
 at low speed. Other cars and torque controllers retain their existing behavior.
 The former startup-master exception is unnecessary: normal StarPilot startup
 already uses its custom startup event, while unsupported-car guards remain.
+`alerts_starpilot.patch` uses compact EV9 distraction and steering-limit banners,
+retaining event timing, priority and sounds. This changes presentation only; driver
+monitoring logic remains unchanged. Normal EV9 banners use 50% black opacity in
+both device renderers. Steering-limit warnings remain visible with Hide Alerts
+enabled. Other vehicles retain their original presentation.
 Settings UI is a subsequent migration.
 
 Regression tests live in `opendbc_repo/opendbc/car/hyundai/tests/test_ev9.py` and

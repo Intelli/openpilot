@@ -34,7 +34,7 @@
     },
     {
       "original_path": "patches/alerts.patch",
-      "preserved_path": "patches/alerts.patch.temp-disabled",
+      "preserved_path": "patches/alerts.patch.migrated",
       "sha256": "2aa8fd3464d9802150df01de74ec3853e441721444b8c835a11c503e724cccc4"
     },
     {
