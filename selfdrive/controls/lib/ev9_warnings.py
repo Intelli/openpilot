@@ -4,6 +4,8 @@ import math
 from opendbc.car import structs
 from opendbc.car.hyundai.values import CAR, HyundaiFlags
 
+EV9_HIGH_ANGLE_WARNING_DEG = 90.0
+
 
 def ev9_angle_warnings_enabled(CP) -> bool:
   return (CP.carFingerprint == CAR.KIA_EV9 and
@@ -23,4 +25,4 @@ def steering_saturation_warning_allowed(CP, lateral_state, speed_mps, toggles) -
   if not ev9_angle_warnings_enabled(CP) or not hasattr(lateral_state, "steeringAngleDesiredDeg"):
     return True
   threshold = ev9_alert_speed_kph(getattr(toggles, "hkg_tuning_ev9_alerts_speed_kph", 50.0)) / 3.6
-  return speed_mps > threshold or abs(lateral_state.steeringAngleDesiredDeg) >= 90.0
+  return speed_mps > threshold or abs(lateral_state.steeringAngleDesiredDeg) >= EV9_HIGH_ANGLE_WARNING_DEG

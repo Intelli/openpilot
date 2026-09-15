@@ -104,6 +104,8 @@ class StarPilotCard:
       self.always_on_lateral_supported and
       bool(FPCP.alternativeExperience & ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL)
     )
+    self.prev_always_on_lateral = self.always_on_lateral_set
+    self.aol_rearm_required = False
     self.long_press_threshold = CRUISE_LONG_PRESS
     self.very_long_press_threshold = CRUISE_LONG_PRESS * 5
 
@@ -163,6 +165,7 @@ class StarPilotCard:
       return False
     if self.hyundai_aol_needs_engagement:
       self.hyundai_aol_ready = True
+    self.aol_rearm_required = False
     self.always_on_lateral_allowed = not self.always_on_lateral_allowed
     if carState.cruiseState.enabled or self.pause_lateral:
       self.pause_lateral = not self.always_on_lateral_allowed
@@ -214,6 +217,16 @@ class StarPilotCard:
       self.params.put_bool_nonblocking("ExperimentalMode", not sm["selfdriveState"].experimentalMode)
 
   def update(self, carState, starpilotCarState, sm, starpilot_toggles):
+    # The safety configuration is fixed at startup, but switching AOL off must
+    # immediately revoke the software request and discard the old session.
+    live_aol = starpilot_toggles.always_on_lateral
+    if not live_aol:
+      self.always_on_lateral_allowed = False
+      self.aol_rearm_required = True
+      if self.prev_always_on_lateral:
+        self.pause_lateral = False
+        self.hyundai_aol_ready = False
+    self.prev_always_on_lateral = live_aol
     self.switchback_mode_enabled = self.params_memory.get_bool("SwitchbackModeEnabled")
     self._handle_favorite_traffic_mode_action(sm)
 
@@ -255,6 +268,9 @@ class StarPilotCard:
     if getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.HYUNDAI_SONATA_HYBRID:
       button_aol_supported = self.always_on_lateral_supported and bool(starpilot_toggles.lkas_allowed_for_aol)
     button_managed_aol = starpilot_toggles.always_on_lateral_lkas or (button_aol_supported and starpilot_toggles.main_cruise_aol_toggle)
+    ev9_main_aol_managed = (
+      getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.KIA_EV9 and starpilot_toggles.main_cruise_aol_toggle
+    )
     g70_main_cruise_aol_managed = (
       getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.GENESIS_G70_2020
       and starpilot_toggles.main_cruise_aol_toggle
@@ -277,14 +293,16 @@ class StarPilotCard:
 
     if button_aol_supported:
       for be, be_type in zip(carState.buttonEvents, button_event_types, strict=False):
-        if be_type == ButtonType.lkas and be.pressed and starpilot_toggles.always_on_lateral_lkas:
+        if be_type == ButtonType.lkas and be.pressed and live_aol and starpilot_toggles.always_on_lateral_lkas:
+          self.aol_rearm_required = False
           if hyundai_aol_needs_engagement:
             self.hyundai_aol_ready = True
           self.always_on_lateral_allowed = not self.always_on_lateral_allowed
           if carState.cruiseState.enabled or self.pause_lateral:
             self.pause_lateral = not self.always_on_lateral_allowed
         elif be_type == ButtonType.mainCruise and be.pressed:
-          if starpilot_toggles.main_cruise_aol_toggle:
+          if live_aol and starpilot_toggles.main_cruise_aol_toggle:
+            self.aol_rearm_required = False
             if hyundai_aol_needs_engagement:
               self.hyundai_aol_ready = True
             if g70_main_cruise_aol_managed:
@@ -294,10 +312,17 @@ class StarPilotCard:
               self.g70_main_cruise_aol_pending_frames = 0
             else:
               self.always_on_lateral_allowed = not self.always_on_lateral_allowed
+              if ev9_main_aol_managed:
+                # Stock SCC can report engagement after this press. Explicit OFF
+                # must also block normal lateral when that delayed state arrives.
+                self.pause_lateral = not self.always_on_lateral_allowed
           elif starpilot_toggles.main_cruise_slc_adopt and starpilot_toggles.speed_limit_controller:
             self.params_memory.put_bool("SLCAdoptSpeedLimit", True)
 
     cruise_available_changed = self.prev_cruise_available is not None and carState.cruiseState.available != self.prev_cruise_available
+    fresh_engagement = sm["selfdriveState"].active and not self.prev_active
+    if live_aol and (fresh_engagement or (cruise_available_changed and carState.cruiseState.available)):
+      self.aol_rearm_required = False
     ford_lateral_session_started = self.CP.brand == "ford" and (
       (cruise_available_changed and carState.cruiseState.available) or
       (carState.cruiseState.enabled and not self.prev_cruise_enabled)
@@ -316,7 +341,7 @@ class StarPilotCard:
           self.g70_main_cruise_aol_pending = False
           self.g70_main_cruise_aol_pending_frames = 0
 
-    if starpilot_toggles.always_on_lateral_main and not button_managed_aol:
+    if live_aol and starpilot_toggles.always_on_lateral_main and not button_managed_aol and not self.aol_rearm_required:
       car_fingerprint = getattr(self.CP, "carFingerprint", None)
       pcm_cruise = getattr(self.CP, "pcmCruise", False)
       if pacifica_hybrid_aol_requires_set_press(car_fingerprint, pcm_cruise):
@@ -331,7 +356,7 @@ class StarPilotCard:
 
     # On rising edge of engagement (SET press enabling lat+long), auto-enable AOL
     # so that lateral persists when braking disengages longitudinal
-    if sm["selfdriveState"].active and not self.prev_active and self.always_on_lateral_set and starpilot_toggles.always_on_lateral_lkas:
+    if live_aol and fresh_engagement and self.always_on_lateral_set and starpilot_toggles.always_on_lateral_lkas and not ev9_main_aol_managed:
       if hyundai_aol_needs_engagement:
         self.hyundai_aol_ready = True
       self.always_on_lateral_allowed = True
@@ -340,10 +365,10 @@ class StarPilotCard:
     self.prev_cruise_enabled = carState.cruiseState.enabled
     self.prev_cruise_available = carState.cruiseState.available
 
-    if not self.always_on_lateral_supported:
+    if not self.always_on_lateral_supported or not live_aol:
       self.always_on_lateral_allowed = False
 
-    self.always_on_lateral_enabled = self.always_on_lateral_allowed and self.always_on_lateral_set
+    self.always_on_lateral_enabled = live_aol and self.always_on_lateral_allowed and self.always_on_lateral_set
     self.always_on_lateral_enabled &= carState.gearShifter not in NON_DRIVING_GEARS
     self.always_on_lateral_enabled &= not hyundai_aol_needs_engagement or self.hyundai_aol_ready
     self.always_on_lateral_enabled &= sm["starpilotPlan"].lateralCheck

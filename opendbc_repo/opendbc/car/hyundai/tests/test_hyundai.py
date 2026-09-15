@@ -2501,6 +2501,7 @@ class TestHyundaiFingerprint:
     CP.openpilotLongitudinalControl = False
 
     controller = CarController(DBC[CP.carFingerprint], CP)
+    controller._ev9_initialized_angle_transports.update((0x110, 0xCB))  # Exercise ongoing authority after initialization.
     controller.frame = 1
     can_bus = CanBus(CP)
     parser = CANParser(DBC[CP.carFingerprint][Bus.pt], [("LKAS_ALT", 0)], can_bus.ACAN)
@@ -2929,6 +2930,7 @@ class TestHyundaiFingerprint:
     CP.openpilotLongitudinalControl = False
 
     controller = CarController(DBC[CP.carFingerprint], CP)
+    controller._ev9_initialized_angle_transports.update((0x110, 0xCB))  # Exercise ongoing authority after initialization.
     controller.frame = 5
     can_bus = CanBus(CP)
     parser = CANParser(DBC[CP.carFingerprint][Bus.pt], [("CAM_0x362", 0)], can_bus.ECAN)
@@ -2958,6 +2960,7 @@ class TestHyundaiFingerprint:
     CP.openpilotLongitudinalControl = False
 
     controller = CarController(DBC[CP.carFingerprint], CP)
+    controller._ev9_initialized_angle_transports.update((0x110, 0xCB))  # Exercise ongoing authority after initialization.
     controller.frame = 5
     can_bus = CanBus(CP)
     parser = CANParser(DBC[CP.carFingerprint][Bus.pt], [("LKAS_ALT", 0)], can_bus.ACAN)
@@ -3312,6 +3315,7 @@ class TestHyundaiFingerprint:
     CP.openpilotLongitudinalControl = True
 
     controller = CarController(DBC[CP.carFingerprint], CP)
+    controller._ev9_initialized_angle_transports.update((0x110, 0xCB))  # Exercise ongoing authority after initialization.
     controller.frame = 1
     controller.ecu_disable_failed = True
     controller.long_active_ecu = False
@@ -3842,6 +3846,7 @@ class TestHyundaiFingerprint:
     CP.openpilotLongitudinalControl = True
 
     controller = CarController(DBC[CP.carFingerprint], CP)
+    controller._ev9_initialized_angle_transports.update((0x110, 0xCB))  # Exercise ongoing authority after initialization.
     controller.frame = 5
     captured = {}
 

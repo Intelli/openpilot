@@ -1,3 +1,4 @@
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -49,3 +50,16 @@ def test_actual_angle_controller_saturation_timer(speed, expected):
   for _ in range(31):
     saturated = controller._check_saturation(True, cs, False, False)
   assert bool(saturated) == expected
+
+
+@pytest.mark.parametrize("platform", [CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE])
+@pytest.mark.parametrize("requested,measured,expected", [(90, 87.5, False), (90, 87.49, True), (89.99, 80, False)])
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_high_angle_tracking_boundaries_are_ev9_only(platform, requested, measured, expected, sign):
+  controller = LatControlAngle(make_cp(platform), None, 0.01)
+  cs = SimpleNamespace(vEgo=10, steeringPressed=False, steeringAngleDeg=sign * measured)
+  vm = SimpleNamespace(get_steer_from_curvature=lambda *args: math.radians(sign * requested))
+  for _ in range(31):
+    _, _, angle_log = controller.update(True, cs, vm, SimpleNamespace(roll=0, angleOffsetDeg=0),
+                                       False, 0.04, False, 0, None, None, SimpleNamespace())
+  assert angle_log.saturated == (expected and platform == CAR.KIA_EV9)

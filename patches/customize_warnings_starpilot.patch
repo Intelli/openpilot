@@ -1,14 +1,16 @@
 diff --git a/selfdrive/controls/lib/ev9_warnings.py b/selfdrive/controls/lib/ev9_warnings.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..56416fd1ef10559e1f2fdc6360fdfa38d60e613d
+index 0000000000000000000000000000000000000000..59dd325f53c5a5aecbd8d2828a693f2f6e8f0935
 --- /dev/null
 +++ b/selfdrive/controls/lib/ev9_warnings.py
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,28 @@
 +"""EV9 steering-warning scope and speed policy."""
 +import math
 +
 +from opendbc.car import structs
 +from opendbc.car.hyundai.values import CAR, HyundaiFlags
++
++EV9_HIGH_ANGLE_WARNING_DEG = 90.0
 +
 +
 +def ev9_angle_warnings_enabled(CP) -> bool:
@@ -29,34 +31,64 @@ index 0000000000000000000000000000000000000000..56416fd1ef10559e1f2fdc6360fdfa38
 +  if not ev9_angle_warnings_enabled(CP) or not hasattr(lateral_state, "steeringAngleDesiredDeg"):
 +    return True
 +  threshold = ev9_alert_speed_kph(getattr(toggles, "hkg_tuning_ev9_alerts_speed_kph", 50.0)) / 3.6
-+  return speed_mps > threshold or abs(lateral_state.steeringAngleDesiredDeg) >= 90.0
++  return speed_mps > threshold or abs(lateral_state.steeringAngleDesiredDeg) >= EV9_HIGH_ANGLE_WARNING_DEG
 diff --git a/selfdrive/controls/lib/latcontrol_angle.py b/selfdrive/controls/lib/latcontrol_angle.py
-index 0abeddcd07fb71daac7688ebaa3399400cbc40c0..37e6375c4ca9a40ea3cf212100be64b97c913232 100644
+index 0abeddcd07fb71daac7688ebaa3399400cbc40c0..509c0d84cb13c82683090414d81133e857bb6bf3 100644
 --- a/selfdrive/controls/lib/latcontrol_angle.py
 +++ b/selfdrive/controls/lib/latcontrol_angle.py
 @@ -3,6 +3,7 @@ import math
  from cereal import log
  from opendbc.car.subaru.values import CAR as SUBARU_CAR
  from openpilot.selfdrive.controls.lib.latcontrol import LatControl
-+from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_angle_warnings_enabled
++from openpilot.selfdrive.controls.lib.ev9_warnings import EV9_HIGH_ANGLE_WARNING_DEG, ev9_angle_warnings_enabled
  from openpilot.selfdrive.controls.lib.steering_saturation import STEER_ANGLE_SATURATION_THRESHOLD
  
  _ASCENT_ANGLE_TRACKING_GAIN = 0.25
-@@ -51,7 +52,7 @@ def _ascent_low_speed_angle_target(target_angle: float, previous_target: float,
+@@ -51,12 +52,14 @@ def _ascent_low_speed_angle_target(target_angle: float, previous_target: float,
  class LatControlAngle(LatControl):
    def __init__(self, CP, CI, dt):
      super().__init__(CP, CI, dt)
 -    self.sat_check_min_speed = 5.
-+    self.sat_check_min_speed = 2.5 / 3.6 if ev9_angle_warnings_enabled(CP) else 5.
++    self.is_ev9 = ev9_angle_warnings_enabled(CP)
++    self.sat_check_min_speed = 2.5 / 3.6 if self.is_ev9 else 5.
      self.use_steer_limited_by_safety = CP.brand in ("tesla", "hyundai")
      self.is_ascent = CP.carFingerprint == SUBARU_CAR.SUBARU_ASCENT_2023
      self.ascent_angle_target = None
+ 
+-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay, calibrated_pose, model_data, starpilot_toggles):
++  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited,
++             lat_delay, calibrated_pose, model_data, starpilot_toggles):
+     angle_log = log.ControlsState.LateralAngleState.new_message()
+ 
+     if not active:
+@@ -88,12 +91,19 @@ class LatControlAngle(LatControl):
+     if self.use_steer_limited_by_safety:
+       # these cars' carcontrollers calculate max lateral accel and jerk, so we can rely on carOutput for saturation
+       angle_control_saturated = steer_limited_by_safety
++      if self.is_ev9 and abs(angle_steers_des) >= EV9_HIGH_ANGLE_WARNING_DEG:
++        # The EPS can stop following a high-angle request even when the transmitted command is not clipped.
++        angle_control_saturated |= abs(angle_steers_des - CS.steeringAngleDeg) > STEER_ANGLE_SATURATION_THRESHOLD
+     else:
+       # for cars which use a method of limiting torque such as a torque signal (Nissan and Toyota)
+       # or relying on EPS (Ford Q3), carOutput does not capture maxing out torque  # TODO: this can be improved
+       angle_error = angle_steers_des - CS.steeringAngleDeg
+       angle_control_saturated = abs(angle_error) > STEER_ANGLE_SATURATION_THRESHOLD
+-    angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited))
++    if active:
++      angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited))
++    else:
++      self.reset()
++      angle_log.saturated = False
+     angle_log.steeringAngleDeg = float(CS.steeringAngleDeg)
+     angle_log.steeringAngleDesiredDeg = angle_steers_des
+     return 0, float(angle_steers_des), angle_log
 diff --git a/selfdrive/controls/tests/test_ev9_warnings.py b/selfdrive/controls/tests/test_ev9_warnings.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..af5ee3f8fdc569a4bab6d89c85495beb8d716e12
+index 0000000000000000000000000000000000000000..5a657e3d242a3c36ca4d098bdb8c8a416df81b59
 --- /dev/null
 +++ b/selfdrive/controls/tests/test_ev9_warnings.py
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,65 @@
++import math
 +from types import SimpleNamespace
 +
 +import pytest
@@ -108,8 +140,21 @@ index 0000000000000000000000000000000000000000..af5ee3f8fdc569a4bab6d89c85495beb
 +  for _ in range(31):
 +    saturated = controller._check_saturation(True, cs, False, False)
 +  assert bool(saturated) == expected
++
++
++@pytest.mark.parametrize("platform", [CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE])
++@pytest.mark.parametrize("requested,measured,expected", [(90, 87.5, False), (90, 87.49, True), (89.99, 80, False)])
++@pytest.mark.parametrize("sign", [-1, 1])
++def test_high_angle_tracking_boundaries_are_ev9_only(platform, requested, measured, expected, sign):
++  controller = LatControlAngle(make_cp(platform), None, 0.01)
++  cs = SimpleNamespace(vEgo=10, steeringPressed=False, steeringAngleDeg=sign * measured)
++  vm = SimpleNamespace(get_steer_from_curvature=lambda *args: math.radians(sign * requested))
++  for _ in range(31):
++    _, _, angle_log = controller.update(True, cs, vm, SimpleNamespace(roll=0, angleOffsetDeg=0),
++                                       False, 0.04, False, 0, None, None, SimpleNamespace())
++  assert angle_log.saturated == (expected and platform == CAR.KIA_EV9)
 diff --git a/selfdrive/selfdrived/selfdrived.py b/selfdrive/selfdrived/selfdrived.py
-index f31ec970576fc64cf1e6769edf036ccbcaf00abc..11d1ce630e065ea0bdcdf89aa0a56b930165edd7 100644
+index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..408f2d74072b02589cd348a1573b1a1963d2d796 100644
 --- a/selfdrive/selfdrived/selfdrived.py
 +++ b/selfdrive/selfdrived/selfdrived.py
 @@ -28,6 +28,7 @@ from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
@@ -120,21 +165,79 @@ index f31ec970576fc64cf1e6769edf036ccbcaf00abc..11d1ce630e065ea0bdcdf89aa0a56b93
  
  from openpilot.system.version import get_build_metadata
  from openpilot.system.hardware import HARDWARE
-@@ -772,7 +773,8 @@ class SelfdriveD:
-       turning = abs(desired_lateral_accel) > 1.0
-       commanded_torque_at_max = commanded_torque_at_max_for_saturation(self.CP, lac.output)
-       # TODO: lac.saturated includes speed and other checks, should be pulled out
+@@ -755,31 +756,7 @@ class SelfdriveD:
+       if self.cruise_mismatch_counter > int(6. / DT_CTRL):
+         self.events.add(EventName.cruiseMismatch)
+ 
+-    # Send a "steering required alert" if saturation count has reached the limit
+-    if CS.steeringPressed:
+-      self.last_steering_pressed_frame = self.sm.frame
+-    recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
+-    controlstate = self.sm['controlsState']
+-    lac = getattr(controlstate.lateralControlState, controlstate.lateralControlState.which())
+-    if lac.active and not recent_steer_pressed and not self.CP.notCar:
+-      clipped_speed = max(CS.vEgo, 0.3)
+-      actual_lateral_accel = controlstate.curvature * (clipped_speed**2)
+-      desired_lateral_accel = self.sm['modelV2'].action.desiredCurvature * (clipped_speed**2)
+-      undershooting = abs(desired_lateral_accel) / abs(1e-3 + actual_lateral_accel) > 1.2
+-      turning = abs(desired_lateral_accel) > 1.0
+-      commanded_torque_at_max = commanded_torque_at_max_for_saturation(self.CP, lac.output)
+-      # TODO: lac.saturated includes speed and other checks, should be pulled out
 -      if undershooting and turning and (lac.saturated or commanded_torque_at_max):
+-        now = time.monotonic()
+-        cooldown_active = switchback_mode_enabled and switchback_mode_cooldown > 0.0
+-        if not cooldown_active or (now - self.last_steer_saturated_alert_time) >= switchback_mode_cooldown:
+-          if switchback_mode_enabled:
+-            self.last_steer_saturated_alert_time = now
+-
+-          if self.starpilot_toggles.goat_scream_alert:
+-            self.starpilot_events.add(StarPilotEventName.goatSteerSaturated)
+-          else:
+-            self.events.add(EventName.steerSaturated)
++    self.update_steering_saturation_events(CS, switchback_mode_enabled, switchback_mode_cooldown)
+ 
+     # Check for FCW
+     stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
+@@ -851,6 +828,34 @@ class SelfdriveD:
+       or getattr(self.starpilot_toggles, "conditional_chill_mode", False)
+       else self.experimental_mode or self.sm['starpilotPlan'].experimentalMode))
+ 
++  def update_steering_saturation_events(self, CS, switchback_mode_enabled=False, switchback_mode_cooldown=0.0):
++    # Send a "steering required alert" if saturation count has reached the limit
++    if CS.steeringPressed:
++      self.last_steering_pressed_frame = self.sm.frame
++    recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
++    controlstate = self.sm['controlsState']
++    lac = getattr(controlstate.lateralControlState, controlstate.lateralControlState.which())
++    if lac.active and not recent_steer_pressed and not self.CP.notCar:
++      clipped_speed = max(CS.vEgo, 0.3)
++      actual_lateral_accel = controlstate.curvature * (clipped_speed**2)
++      desired_lateral_accel = self.sm['modelV2'].action.desiredCurvature * (clipped_speed**2)
++      undershooting = abs(desired_lateral_accel) / abs(1e-3 + actual_lateral_accel) > 1.2
++      turning = abs(desired_lateral_accel) > 1.0
++      commanded_torque_at_max = commanded_torque_at_max_for_saturation(self.CP, lac.output)
++      # TODO: lac.saturated includes speed and other checks, should be pulled out
 +      if (undershooting and turning and (lac.saturated or commanded_torque_at_max) and
 +          steering_saturation_warning_allowed(self.CP, lac, CS.vEgo, self.starpilot_toggles)):
-         now = time.monotonic()
-         cooldown_active = switchback_mode_enabled and switchback_mode_cooldown > 0.0
-         if not cooldown_active or (now - self.last_steer_saturated_alert_time) >= switchback_mode_cooldown:
++        now = time.monotonic()
++        cooldown_active = switchback_mode_enabled and switchback_mode_cooldown > 0.0
++        if not cooldown_active or (now - self.last_steer_saturated_alert_time) >= switchback_mode_cooldown:
++          if switchback_mode_enabled:
++            self.last_steer_saturated_alert_time = now
++
++          if self.starpilot_toggles.goat_scream_alert:
++            self.starpilot_events.add(StarPilotEventName.goatSteerSaturated)
++          else:
++            self.events.add(EventName.steerSaturated)
++
+   def data_sample(self):
+     _car_state = messaging.recv_one(self.car_state_sock)
+     CS = _car_state.carState if _car_state else self.CS_prev
 diff --git a/starpilot/common/starpilot_variables.py b/starpilot/common/starpilot_variables.py
-index 907a43832f77819b93e72cf2912923b85d04b4fd..30553429def030067370c8d72cc491901113a8d7 100644
+index ba28f3c75038757af68992db9bb1f9572e1cab8f..9402973be90f7401b190a39b96beb098744c9b11 100644
 --- a/starpilot/common/starpilot_variables.py
 +++ b/starpilot/common/starpilot_variables.py
-@@ -51,6 +51,7 @@ from openpilot.starpilot.common.accel_profile import (
+@@ -50,6 +50,7 @@ from openpilot.starpilot.common.accel_profile import (
    normalize_deceleration_profile,
    parse_custom_accel_profile_curve,
  )
@@ -142,7 +245,7 @@ index 907a43832f77819b93e72cf2912923b85d04b4fd..30553429def030067370c8d72cc49190
  from openpilot.starpilot.common.longitudinal_personality_profiles import (
    PERSONALITY_PROFILES_PARAM,
    is_truck_fingerprint,
-@@ -1185,6 +1186,8 @@ class StarPilotVariables:
+@@ -1183,6 +1184,8 @@ class StarPilotVariables:
      toggle.lane_change_jerk_factor = min(1.0, j_req * 1.3 / 5.0)
      toggle.lane_change_time_max = 10.0 + (10 - pace) * 2.0 / 9.0
  

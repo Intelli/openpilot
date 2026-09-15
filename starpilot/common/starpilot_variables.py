@@ -199,6 +199,7 @@ CANCEL_BUTTON_MAPPINGS = (
 )
 
 AOL_LKAS_MIGRATION_KEY = "AOLLKASMigratedToButtonControl"
+EV9_MAIN_AOL_MIGRATION_KEY = "EV9MainCruiseAOLMigrated"
 FORD_LKAS_MIGRATION_KEY = "FordLKASButtonControlMigrated"
 
 
@@ -453,6 +454,20 @@ def migrate_ford_lkas_button_default(car_make: str, params: Params | None = None
   return True
 
 
+def migrate_ev9_main_cruise_aol(car_model: str, params: Params | None = None) -> bool:
+  params = params or Params(return_defaults=True)
+  if car_model != HYUNDAI_CAR.KIA_EV9 or params.get_bool(EV9_MAIN_AOL_MIGRATION_KEY):
+    return False
+
+  if (params.get_bool("AlwaysOnLateral") and
+      params.get_int("LKASButtonControl") == BUTTON_FUNCTIONS["AOL_TOGGLE"] and
+      params.get_int("MainCruiseButtonControl") == BUTTON_FUNCTIONS["NOTHING"]):
+    params.put_int("MainCruiseButtonControl", BUTTON_FUNCTIONS["AOL_TOGGLE"])
+
+  params.put_bool(EV9_MAIN_AOL_MIGRATION_KEY, True)
+  return True
+
+
 class StarPilotVariables:
   def __init__(self):
     self.params = Params(return_defaults=True)
@@ -673,6 +688,7 @@ class StarPilotVariables:
     toggle.car_make = CP.brand
     migrate_ford_lkas_button_default(toggle.car_make, self.params)
     toggle.car_model = CP.carFingerprint
+    migrate_ev9_main_cruise_aol(toggle.car_model, self.params)
     toggle.disable_openpilot_long = self.get_value("DisableOpenpilotLongitudinal", condition=not alpha_longitudinal)
     friction = CP.lateralTuning.torque.friction
     if not math.isfinite(friction):
@@ -872,7 +888,9 @@ class StarPilotVariables:
       toggle.always_on_lateral and toggle.lkas_allowed_for_aol and lkas_button_assigned_to_aol and not toggle.ford_lkas_aol_toggle
     )
     toggle.always_on_lateral_main = toggle.always_on_lateral and not prohibited_main_aol
-    toggle.always_on_lateral_pause_speed = self.get_value("PauseAOLOnBrake", cast=float, condition=toggle.always_on_lateral)
+    toggle.always_on_lateral_pause_speed = self.get_value(
+      "PauseAOLOnBrake", cast=float, condition=toggle.always_on_lateral, conversion=CV.MPH_TO_MS,
+    )
 
     main_cruise_button_control = self.get_button_function("MainCruiseButtonControl")
     toggle.main_cruise_aol_toggle = _main_cruise_aol_allowed(main_cruise_button_control)

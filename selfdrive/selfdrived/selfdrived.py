@@ -759,32 +759,7 @@ class SelfdriveD:
       if self.cruise_mismatch_counter > int(6. / DT_CTRL):
         self.events.add(EventName.cruiseMismatch)
 
-    # Send a "steering required alert" if saturation count has reached the limit
-    if CS.steeringPressed:
-      self.last_steering_pressed_frame = self.sm.frame
-    recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
-    controlstate = self.sm['controlsState']
-    lac = getattr(controlstate.lateralControlState, controlstate.lateralControlState.which())
-    if lac.active and not recent_steer_pressed and not self.CP.notCar:
-      clipped_speed = max(CS.vEgo, 0.3)
-      actual_lateral_accel = controlstate.curvature * (clipped_speed**2)
-      desired_lateral_accel = self.sm['modelV2'].action.desiredCurvature * (clipped_speed**2)
-      undershooting = abs(desired_lateral_accel) / abs(1e-3 + actual_lateral_accel) > 1.2
-      turning = abs(desired_lateral_accel) > 1.0
-      commanded_torque_at_max = commanded_torque_at_max_for_saturation(self.CP, lac.output)
-      # TODO: lac.saturated includes speed and other checks, should be pulled out
-      if (undershooting and turning and (lac.saturated or commanded_torque_at_max) and
-          steering_saturation_warning_allowed(self.CP, lac, CS.vEgo, self.starpilot_toggles)):
-        now = time.monotonic()
-        cooldown_active = switchback_mode_enabled and switchback_mode_cooldown > 0.0
-        if not cooldown_active or (now - self.last_steer_saturated_alert_time) >= switchback_mode_cooldown:
-          if switchback_mode_enabled:
-            self.last_steer_saturated_alert_time = now
-
-          if self.starpilot_toggles.goat_scream_alert:
-            self.starpilot_events.add(StarPilotEventName.goatSteerSaturated)
-          else:
-            self.events.add(EventName.steerSaturated)
+    self.update_steering_saturation_events(CS, switchback_mode_enabled, switchback_mode_cooldown)
 
     # Check for FCW
     stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
@@ -855,6 +830,34 @@ class SelfdriveD:
       self.sm['starpilotPlan'].experimentalMode if not REPLAY or self.starpilot_toggles.conditional_experimental_mode
       or getattr(self.starpilot_toggles, "conditional_chill_mode", False)
       else self.experimental_mode or self.sm['starpilotPlan'].experimentalMode))
+
+  def update_steering_saturation_events(self, CS, switchback_mode_enabled=False, switchback_mode_cooldown=0.0):
+    # Send a "steering required alert" if saturation count has reached the limit
+    if CS.steeringPressed:
+      self.last_steering_pressed_frame = self.sm.frame
+    recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
+    controlstate = self.sm['controlsState']
+    lac = getattr(controlstate.lateralControlState, controlstate.lateralControlState.which())
+    if lac.active and not recent_steer_pressed and not self.CP.notCar:
+      clipped_speed = max(CS.vEgo, 0.3)
+      actual_lateral_accel = controlstate.curvature * (clipped_speed**2)
+      desired_lateral_accel = self.sm['modelV2'].action.desiredCurvature * (clipped_speed**2)
+      undershooting = abs(desired_lateral_accel) / abs(1e-3 + actual_lateral_accel) > 1.2
+      turning = abs(desired_lateral_accel) > 1.0
+      commanded_torque_at_max = commanded_torque_at_max_for_saturation(self.CP, lac.output)
+      # TODO: lac.saturated includes speed and other checks, should be pulled out
+      if (undershooting and turning and (lac.saturated or commanded_torque_at_max) and
+          steering_saturation_warning_allowed(self.CP, lac, CS.vEgo, self.starpilot_toggles)):
+        now = time.monotonic()
+        cooldown_active = switchback_mode_enabled and switchback_mode_cooldown > 0.0
+        if not cooldown_active or (now - self.last_steer_saturated_alert_time) >= switchback_mode_cooldown:
+          if switchback_mode_enabled:
+            self.last_steer_saturated_alert_time = now
+
+          if self.starpilot_toggles.goat_scream_alert:
+            self.starpilot_events.add(StarPilotEventName.goatSteerSaturated)
+          else:
+            self.events.add(EventName.steerSaturated)
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
