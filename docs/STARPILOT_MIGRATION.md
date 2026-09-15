@@ -9,11 +9,11 @@ the stable `firestar5683/StarPilot` install from the unstable `firestar5683/Dom`
 install. We fetch only `refs/heads/StarPilot`.
 
 The first snapshot is `c3e4ec630f41c4baa43254a90f718abd1bf764a1`.
-`starpilot-upstream.json` records its commit and Git tree. Outside the explicitly
-preserved maintenance files, application code and shipped assets match upstream.
-No Intelli patches have been applied, including the previous EV9-only deployment
-restriction and custom steering/tuning changes. The baseline uses StarPilot's own
-vehicle support and behavior.
+`starpilot-upstream.json` records its commit and Git tree. The initial import
+matched upstream outside the explicitly preserved maintenance files. Migrated
+custom defaults and EV9 Edition changes are now recorded in enabled patches;
+historical steering/tuning patches remain disabled. The baseline uses StarPilot's
+own vehicle support and behavior.
 
 `opendbc_repo/`, `panda/`, and the other bundled dependencies are ordinary files
 from that same snapshot. `opendbc` links to `opendbc_repo/opendbc`. Make future
@@ -65,10 +65,11 @@ bytes directly.
 
 All 17 patches that were enabled before migration now have the `.temp-disabled`
 suffix. The six previously disabled patches retain their `.disabled` names.
-Historical patch contents are unchanged. One new enabled patch,
-`custom_defaults_starpilot.patch`, records the supported custom defaults.
-`./apply_patch.sh` skips it when those changes are already applied. Re-enable individual reviewed patches by
-renaming them to end in `.patch`.
+Historical patch contents are unchanged. Enabled `custom_defaults_starpilot.patch`
+and `ev9_edition_starpilot.patch` record the migrated defaults and EV9 Edition
+changes. The defaults include completion of training version `0.2.0`, matching
+the old custom-defaults patch. `./apply_patch.sh` skips changes already applied.
+Re-enable individual reviewed patches by renaming them to end in `.patch`.
 
 The root helpers now support both patch locations. Application discovers enabled
 root patches first, then vehicle patches, and adds `opendbc_repo/` to standalone
@@ -93,8 +94,28 @@ Original helper copies are historical reference; do not run archived scripts.
 3. The publisher commits the built output to **`ev9-prebuilt`**, recording
    `Source-Commit: <ev9-dev SHA>`. It appends history and propagates file removals.
 4. The existing workflow on **`master`** reacts to build success and runs the
-   updated source-sync helper from `ev9-dev`. That helper copies the source tree
-   recorded by the latest published build into a new **`ev9`** commit.
+   deployment-sync helper from `ev9-dev`. That helper copies the exact tree from
+   **`ev9-prebuilt`**, including rebuilt binaries and the `prebuilt` marker, into
+   a new **`ev9`** commit. It preserves `ev9` history and records both
+   `Source-Commit: <ev9-dev SHA>` and `Build-Commit: <ev9-prebuilt SHA>`.
+
+Install **`Intelli/ev9`** on the device. Its files match the published GitHub
+build; `ev9-dev` is for development. The sync helper validates build provenance
+and the `prebuilt` marker before promotion. Repeating a promotion with the same
+tree and provenance makes no new commit; a new build/source is recorded even
+when its file contents are identical.
+
+Do not copy the `ev9-dev` source tree directly to the install branch. Upstream
+ships tracked native binaries and a `prebuilt` marker, which disables device
+compilation. A source-only promotion can therefore display updated Python UI
+while still loading old compiled code. In particular, `common/params_keys.h`
+defaults are compiled into `common/params_pyx.so` and must be rebuilt together.
+
+Custom defaults initialize missing settings. Existing `/data/params/d` values
+win over `/cache/starpilot/params/d` cached values, which win over compiled
+defaults. Installing a corrected build does not overwrite saved preferences or
+a saved training-completion value. Change any retained values explicitly when
+upgrading an existing installation; uninstall is not a reliable defaults reset.
 
 The workflow file and display name remain `sunnypilot-build-prebuilt.yaml` and
 `sunnypilot prebuilt action` solely because the default-branch workflow subscribes
@@ -111,7 +132,7 @@ and old Sunnypilot jobs do not run in this fork.
 
 Local integration checks cover snapshot conversion, maintenance preservation,
 collision refusal, legacy LFS/hooks, deployment history, source SHA propagation,
-file removals and promotion of the published source. They use temporary Git
+file removals and promotion of the exact published build. They use temporary Git
 repositories and never publish to GitHub.
 
 The initial migration build succeeded on GitHub. Future deployments continue to

@@ -1,0 +1,1118 @@
+[
+    {
+        "command": "clang++ -o common/params.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq common/params.cc",
+        "directory": "/work",
+        "file": "/work/common/params.cc",
+        "output": "/work/common/params.o"
+    },
+    {
+        "command": "clang++ -o common/swaglog.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq common/swaglog.cc",
+        "directory": "/work",
+        "file": "/work/common/swaglog.cc",
+        "output": "/work/common/swaglog.o"
+    },
+    {
+        "command": "clang++ -o common/util.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq common/util.cc",
+        "directory": "/work",
+        "file": "/work/common/util.cc",
+        "output": "/work/common/util.o"
+    },
+    {
+        "command": "clang++ -o common/watchdog.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq common/watchdog.cc",
+        "directory": "/work",
+        "file": "/work/common/watchdog.cc",
+        "output": "/work/common/watchdog.o"
+    },
+    {
+        "command": "clang++ -o common/ratekeeper.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq common/ratekeeper.cc",
+        "directory": "/work",
+        "file": "/work/common/ratekeeper.cc",
+        "output": "/work/common/ratekeeper.o"
+    },
+    {
+        "command": "clang++ -o common/clutil.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq common/clutil.cc",
+        "directory": "/work",
+        "file": "/work/common/clutil.cc",
+        "output": "/work/common/clutil.o"
+    },
+    {
+        "command": "clang++ -o common/params_pyx.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-#warnings -Wno-shadow -Wno-deprecated-declarations -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq -I/usr/include/python3.12 -I.venv-linux-arm64/lib/python3.12/site-packages/numpy/_core/include common/params_pyx.cpp",
+        "directory": "/work",
+        "file": "/work/common/params_pyx.cpp",
+        "output": "/work/common/params_pyx.o"
+    },
+    {
+        "command": "clang++ -o common/transformations/orientation.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq common/transformations/orientation.cc",
+        "directory": "/work",
+        "file": "/work/common/transformations/orientation.cc",
+        "output": "/work/common/transformations/orientation.o"
+    },
+    {
+        "command": "clang++ -o common/transformations/coordinates.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq common/transformations/coordinates.cc",
+        "directory": "/work",
+        "file": "/work/common/transformations/coordinates.cc",
+        "output": "/work/common/transformations/coordinates.o"
+    },
+    {
+        "command": "clang++ -o common/transformations/transformations.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-#warnings -Wno-shadow -Wno-deprecated-declarations -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq -I/usr/include/python3.12 -I.venv-linux-arm64/lib/python3.12/site-packages/numpy/_core/include common/transformations/transformations.cpp",
+        "directory": "/work",
+        "file": "/work/common/transformations/transformations.cpp",
+        "output": "/work/common/transformations/transformations.o"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/ipc.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/ipc.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/ipc.cc",
+        "output": "/work/msgq_repo/msgq/ipc.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/event.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/event.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/event.cc",
+        "output": "/work/msgq_repo/msgq/event.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/impl_zmq.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/impl_zmq.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/impl_zmq.cc",
+        "output": "/work/msgq_repo/msgq/impl_zmq.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/impl_msgq.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/impl_msgq.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/impl_msgq.cc",
+        "output": "/work/msgq_repo/msgq/impl_msgq.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/impl_fake.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/impl_fake.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/impl_fake.cc",
+        "output": "/work/msgq_repo/msgq/impl_fake.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/msgq.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/msgq.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/msgq.cc",
+        "output": "/work/msgq_repo/msgq/msgq.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/ipc_pyx.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-#warnings -Wno-shadow -Wno-deprecated-declarations -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq -I/usr/include/python3.12 -I.venv-linux-arm64/lib/python3.12/site-packages/numpy/_core/include msgq_repo/msgq/ipc_pyx.cpp",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/ipc_pyx.cpp",
+        "output": "/work/msgq_repo/msgq/ipc_pyx.o"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/visionipc/visionipc.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/visionipc/visionipc.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/visionipc/visionipc.cc",
+        "output": "/work/msgq_repo/msgq/visionipc/visionipc.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/visionipc/visionipc_server.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/visionipc/visionipc_server.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/visionipc/visionipc_server.cc",
+        "output": "/work/msgq_repo/msgq/visionipc/visionipc_server.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/visionipc/visionipc_client.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/visionipc/visionipc_client.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/visionipc/visionipc_client.cc",
+        "output": "/work/msgq_repo/msgq/visionipc/visionipc_client.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/visionipc/visionbuf.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/visionipc/visionbuf.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/visionipc/visionbuf.cc",
+        "output": "/work/msgq_repo/msgq/visionipc/visionbuf.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/visionipc/visionbuf_ion.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DSWAGLOG=\"\\\"common/swaglog.h\\\"\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq msgq_repo/msgq/visionipc/visionbuf_ion.cc",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/visionipc/visionbuf_ion.cc",
+        "output": "/work/msgq_repo/msgq/visionipc/visionbuf_ion.os"
+    },
+    {
+        "command": "clang++ -o msgq_repo/msgq/visionipc/visionipc_pyx.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-#warnings -Wno-shadow -Wno-deprecated-declarations -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq -I/usr/include/python3.12 -I.venv-linux-arm64/lib/python3.12/site-packages/numpy/_core/include msgq_repo/msgq/visionipc/visionipc_pyx.cpp",
+        "directory": "/work",
+        "file": "/work/msgq_repo/msgq/visionipc/visionipc_pyx.cpp",
+        "output": "/work/msgq_repo/msgq/visionipc/visionipc_pyx.o"
+    },
+    {
+        "command": "clang++ -o cereal/gen/cpp/log.capnp.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq cereal/gen/cpp/log.capnp.c++",
+        "directory": "/work",
+        "file": "/work/cereal/gen/cpp/log.capnp.c++",
+        "output": "/work/cereal/gen/cpp/log.capnp.o"
+    },
+    {
+        "command": "clang++ -o cereal/gen/cpp/car.capnp.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq cereal/gen/cpp/car.capnp.c++",
+        "directory": "/work",
+        "file": "/work/cereal/gen/cpp/car.capnp.c++",
+        "output": "/work/cereal/gen/cpp/car.capnp.o"
+    },
+    {
+        "command": "clang++ -o cereal/gen/cpp/legacy.capnp.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq cereal/gen/cpp/legacy.capnp.c++",
+        "directory": "/work",
+        "file": "/work/cereal/gen/cpp/legacy.capnp.c++",
+        "output": "/work/cereal/gen/cpp/legacy.capnp.o"
+    },
+    {
+        "command": "clang++ -o cereal/gen/cpp/custom.capnp.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq cereal/gen/cpp/custom.capnp.c++",
+        "directory": "/work",
+        "file": "/work/cereal/gen/cpp/custom.capnp.c++",
+        "output": "/work/cereal/gen/cpp/custom.capnp.o"
+    },
+    {
+        "command": "clang++ -o cereal/messaging/bridge.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq cereal/messaging/bridge.cc",
+        "directory": "/work",
+        "file": "/work/cereal/messaging/bridge.cc",
+        "output": "/work/cereal/messaging/bridge.o"
+    },
+    {
+        "command": "clang++ -o cereal/messaging/msgq_to_zmq.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq cereal/messaging/msgq_to_zmq.cc",
+        "directory": "/work",
+        "file": "/work/cereal/messaging/msgq_to_zmq.cc",
+        "output": "/work/cereal/messaging/msgq_to_zmq.o"
+    },
+    {
+        "command": "clang++ -o cereal/messaging/socketmaster.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq cereal/messaging/socketmaster.cc",
+        "directory": "/work",
+        "file": "/work/cereal/messaging/socketmaster.cc",
+        "output": "/work/cereal/messaging/socketmaster.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32f4/board/obj/pandastartup_stm32f413xx.o -c panda/board/stm32f4/startup_stm32f413xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32f4/startup_stm32f413xx.s",
+        "output": "/work/panda/board/stm32f4/board/obj/pandastartup_stm32f413xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/pandarsa.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/pandarsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/pandasha.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/pandasha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/pandabootstub.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/pandabootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/pandamain.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/pandamain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/panda_h7startup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/panda_h7startup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7rsa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7rsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7sha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7sha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7bootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_h7bootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7main.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_h7main.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32f4/board/obj/panda_remotestartup_stm32f413xx.o -c panda/board/stm32f4/startup_stm32f413xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32f4/startup_stm32f413xx.s",
+        "output": "/work/panda/board/stm32f4/board/obj/panda_remotestartup_stm32f413xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_remotersa.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_remotersa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_remotesha.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_remotesha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_remotebootstub.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_remotebootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_remotemain.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_remotemain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/panda_h7_remotestartup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/panda_h7_remotestartup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_remotersa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_remotersa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_remotesha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_remotesha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_remotebootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_h7_remotebootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_remotemain.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_h7_remotemain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32f4/board/obj/panda_hkg_remotestartup_stm32f413xx.o -c panda/board/stm32f4/startup_stm32f413xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32f4/startup_stm32f413xx.s",
+        "output": "/work/panda/board/stm32f4/board/obj/panda_hkg_remotestartup_stm32f413xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_hkg_remotersa.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_hkg_remotersa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_hkg_remotesha.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_hkg_remotesha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_hkg_remotebootstub.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_hkg_remotebootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_hkg_remotemain.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_hkg_remotemain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/panda_h7_hkg_remotestartup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/panda_h7_hkg_remotestartup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_hkg_remotersa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_hkg_remotersa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_hkg_remotesha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_hkg_remotesha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_hkg_remotebootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_h7_hkg_remotebootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_hkg_remotemain.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_h7_hkg_remotemain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32f4/board/obj/panda_can_ignition_onlystartup_stm32f413xx.o -c panda/board/stm32f4/startup_stm32f413xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32f4/startup_stm32f413xx.s",
+        "output": "/work/panda/board/stm32f4/board/obj/panda_can_ignition_onlystartup_stm32f413xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_can_ignition_onlyrsa.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_can_ignition_onlyrsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_can_ignition_onlysha.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_can_ignition_onlysha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_can_ignition_onlybootstub.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_can_ignition_onlybootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_can_ignition_onlymain.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_can_ignition_onlymain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/panda_h7_can_ignition_onlystartup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/panda_h7_can_ignition_onlystartup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_can_ignition_onlyrsa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_can_ignition_onlyrsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_can_ignition_onlysha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_can_ignition_onlysha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_can_ignition_onlybootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_h7_can_ignition_onlybootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_can_ignition_onlymain.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_h7_can_ignition_onlymain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32f4/board/obj/panda_remote_can_ignition_onlystartup_stm32f413xx.o -c panda/board/stm32f4/startup_stm32f413xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32f4/startup_stm32f413xx.s",
+        "output": "/work/panda/board/stm32f4/board/obj/panda_remote_can_ignition_onlystartup_stm32f413xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_remote_can_ignition_onlyrsa.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_remote_can_ignition_onlyrsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_remote_can_ignition_onlysha.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_remote_can_ignition_onlysha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_remote_can_ignition_onlybootstub.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_remote_can_ignition_onlybootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_remote_can_ignition_onlymain.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_remote_can_ignition_onlymain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/panda_h7_remote_can_ignition_onlystartup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/panda_h7_remote_can_ignition_onlystartup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_remote_can_ignition_onlyrsa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_remote_can_ignition_onlyrsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_remote_can_ignition_onlysha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_remote_can_ignition_onlysha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_remote_can_ignition_onlybootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_h7_remote_can_ignition_onlybootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_remote_can_ignition_onlymain.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_GM_REMOTE_START_C9 -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_h7_remote_can_ignition_onlymain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32f4/board/obj/panda_hkg_remote_can_ignition_onlystartup_stm32f413xx.o -c panda/board/stm32f4/startup_stm32f413xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32f4/startup_stm32f413xx.s",
+        "output": "/work/panda/board/stm32f4/board/obj/panda_hkg_remote_can_ignition_onlystartup_stm32f413xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_hkg_remote_can_ignition_onlyrsa.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_hkg_remote_can_ignition_onlyrsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_hkg_remote_can_ignition_onlysha.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_hkg_remote_can_ignition_onlysha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_hkg_remote_can_ignition_onlybootstub.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_hkg_remote_can_ignition_onlybootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_hkg_remote_can_ignition_onlymain.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_hkg_remote_can_ignition_onlymain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/panda_h7_hkg_remote_can_ignition_onlystartup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/panda_h7_hkg_remote_can_ignition_onlystartup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_hkg_remote_can_ignition_onlyrsa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_hkg_remote_can_ignition_onlyrsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_hkg_remote_can_ignition_onlysha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_hkg_remote_can_ignition_onlysha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_hkg_remote_can_ignition_onlybootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_h7_hkg_remote_can_ignition_onlybootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_hkg_remote_can_ignition_onlymain.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_HKG_REMOTE_START -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_h7_hkg_remote_can_ignition_onlymain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32f4/board/obj/panda_tesla_wakestartup_stm32f413xx.o -c panda/board/stm32f4/startup_stm32f413xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32f4/startup_stm32f413xx.s",
+        "output": "/work/panda/board/stm32f4/board/obj/panda_tesla_wakestartup_stm32f413xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_tesla_wakersa.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_tesla_wakersa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_tesla_wakesha.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_tesla_wakesha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_tesla_wakebootstub.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_tesla_wakebootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_tesla_wakemain.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_tesla_wakemain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/panda_h7_tesla_wakestartup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/panda_h7_tesla_wakestartup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_tesla_wakersa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_tesla_wakersa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_tesla_wakesha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_tesla_wakesha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_tesla_wakebootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_h7_tesla_wakebootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_tesla_wakemain.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_h7_tesla_wakemain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32f4/board/obj/panda_tesla_wake_can_ignition_onlystartup_stm32f413xx.o -c panda/board/stm32f4/startup_stm32f413xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32f4/startup_stm32f413xx.s",
+        "output": "/work/panda/board/stm32f4/board/obj/panda_tesla_wake_can_ignition_onlystartup_stm32f413xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_tesla_wake_can_ignition_onlyrsa.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_tesla_wake_can_ignition_onlyrsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_tesla_wake_can_ignition_onlysha.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_tesla_wake_can_ignition_onlysha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_tesla_wake_can_ignition_onlybootstub.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_tesla_wake_can_ignition_onlybootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_tesla_wake_can_ignition_onlymain.o -c -mcpu=cortex-m4 -mhard-float -DSTM32F4 -DSTM32F413xx -Iboard/stm32f4/inc -mfpu=fpv4-sp-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32f4/stm32f4_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_tesla_wake_can_ignition_onlymain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/panda_h7_tesla_wake_can_ignition_onlystartup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/panda_h7_tesla_wake_can_ignition_onlystartup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_tesla_wake_can_ignition_onlyrsa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_tesla_wake_can_ignition_onlyrsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_h7_tesla_wake_can_ignition_onlysha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_h7_tesla_wake_can_ignition_onlysha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_tesla_wake_can_ignition_onlybootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_h7_tesla_wake_can_ignition_onlybootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_h7_tesla_wake_can_ignition_onlymain.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_TESLA_WAKE_ON_CAN -DPANDA_IGNORE_IGNITION_LINE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/main.c",
+        "output": "/work/panda/board/board/obj/panda_h7_tesla_wake_can_ignition_onlymain.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_JUNGLE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/panda_jungle_h7startup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/panda_jungle_h7startup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_jungle_h7rsa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_JUNGLE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/panda_jungle_h7rsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/panda_jungle_h7sha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_JUNGLE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/panda_jungle_h7sha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/panda_jungle_h7bootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_JUNGLE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/panda_jungle_h7bootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/jungle/board/obj/panda_jungle_h7main.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_JUNGLE -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/jungle/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/jungle/main.c",
+        "output": "/work/panda/board/jungle/board/obj/panda_jungle_h7main.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_BODY -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -o panda/board/stm32h7/board/obj/body_h7startup_stm32h7x5xx.o -c panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "directory": "/work",
+        "file": "/work/panda/board/stm32h7/startup_stm32h7x5xx.s",
+        "output": "/work/panda/board/stm32h7/board/obj/body_h7startup_stm32h7x5xx.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/body_h7rsa.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_BODY -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/rsa.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/rsa.c",
+        "output": "/work/panda/crypto/board/obj/body_h7rsa.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/crypto/board/obj/body_h7sha.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_BODY -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/crypto/sha.c",
+        "directory": "/work",
+        "file": "/work/panda/crypto/sha.c",
+        "output": "/work/panda/crypto/board/obj/body_h7sha.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/board/obj/body_h7bootstub.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_BODY -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -DBOOTSTUB -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/bootstub.c",
+        "directory": "/work",
+        "file": "/work/panda/board/bootstub.c",
+        "output": "/work/panda/board/board/obj/body_h7bootstub.o"
+    },
+    {
+        "command": "arm-none-eabi-gcc -o panda/board/body/board/obj/body_h7main.o -c -mcpu=cortex-m7 -mhard-float -DSTM32H7 -DSTM32H725xx -Iboard/stm32h7/inc -mfpu=fpv5-d16 -DPANDA_BODY -DALLOW_DEBUG -Wall -Wextra -Wstrict-prototypes -Werror -mlittle-endian -mthumb -nostdlib -fno-builtin -std=gnu11 -fmax-errors=1 -Tpanda/board/stm32h7/stm32h7x5_flash.ld -fsingle-precision-constant -Os -g -Ipanda -Ipanda/board/stm32f4/inc -Ipanda/board/stm32h7/inc -Iopendbc_repo panda/board/body/main.c",
+        "directory": "/work",
+        "file": "/work/panda/board/body/main.c",
+        "output": "/work/panda/board/body/board/obj/body_h7main.o"
+    },
+    {
+        "command": "clang++ -o rednose/helpers/ekf_load.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq rednose/helpers/ekf_load.cc",
+        "directory": "/work",
+        "file": "/work/rednose/helpers/ekf_load.cc",
+        "output": "/work/rednose/helpers/ekf_load.os"
+    },
+    {
+        "command": "clang++ -o rednose/helpers/ekf_sym.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq rednose/helpers/ekf_sym.cc",
+        "directory": "/work",
+        "file": "/work/rednose/helpers/ekf_sym.cc",
+        "output": "/work/rednose/helpers/ekf_sym.os"
+    },
+    {
+        "command": "clang++ -o rednose/helpers/ekf_sym_pyx.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-#warnings -Wno-shadow -Wno-deprecated-declarations -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq -I/usr/include/python3.12 -I.venv-linux-arm64/lib/python3.12/site-packages/numpy/_core/include rednose/helpers/ekf_sym_pyx.cpp",
+        "directory": "/work",
+        "file": "/work/rednose/helpers/ekf_sym_pyx.cpp",
+        "output": "/work/rednose/helpers/ekf_sym_pyx.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/logger.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/logger.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/logger.cc",
+        "output": "/work/system/loggerd/logger.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/zstd_writer.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/zstd_writer.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/zstd_writer.cc",
+        "output": "/work/system/loggerd/zstd_writer.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/video_writer.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/video_writer.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/video_writer.cc",
+        "output": "/work/system/loggerd/video_writer.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/encoder/encoder.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/encoder/encoder.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/encoder/encoder.cc",
+        "output": "/work/system/loggerd/encoder/encoder.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/encoder/v4l_encoder.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/encoder/v4l_encoder.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/encoder/v4l_encoder.cc",
+        "output": "/work/system/loggerd/encoder/v4l_encoder.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/encoder/jpeg_encoder.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/encoder/jpeg_encoder.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/encoder/jpeg_encoder.cc",
+        "output": "/work/system/loggerd/encoder/jpeg_encoder.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/clip_encoder.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/clip_encoder.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/clip_encoder.cc",
+        "output": "/work/system/loggerd/clip_encoder.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/encoder/v4l_decoder.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/encoder/v4l_decoder.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/encoder/v4l_decoder.cc",
+        "output": "/work/system/loggerd/encoder/v4l_decoder.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/loggerd.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/loggerd.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/loggerd.cc",
+        "output": "/work/system/loggerd/loggerd.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/encoderd.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/encoderd.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/encoderd.cc",
+        "output": "/work/system/loggerd/encoderd.o"
+    },
+    {
+        "command": "clang++ -o system/loggerd/bootlog.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/loggerd/bootlog.cc",
+        "directory": "/work",
+        "file": "/work/system/loggerd/bootlog.cc",
+        "output": "/work/system/loggerd/bootlog.o"
+    },
+    {
+        "command": "clang++ -o system/camerad/cameras/camera_qcom2.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/camerad/cameras/camera_qcom2.cc",
+        "directory": "/work",
+        "file": "/work/system/camerad/cameras/camera_qcom2.cc",
+        "output": "/work/system/camerad/cameras/camera_qcom2.o"
+    },
+    {
+        "command": "clang++ -o system/camerad/cameras/camera_common.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/camerad/cameras/camera_common.cc",
+        "directory": "/work",
+        "file": "/work/system/camerad/cameras/camera_common.cc",
+        "output": "/work/system/camerad/cameras/camera_common.o"
+    },
+    {
+        "command": "clang++ -o system/camerad/cameras/spectra.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/camerad/cameras/spectra.cc",
+        "directory": "/work",
+        "file": "/work/system/camerad/cameras/spectra.cc",
+        "output": "/work/system/camerad/cameras/spectra.o"
+    },
+    {
+        "command": "clang++ -o system/camerad/cameras/cdm.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/camerad/cameras/cdm.cc",
+        "directory": "/work",
+        "file": "/work/system/camerad/cameras/cdm.cc",
+        "output": "/work/system/camerad/cameras/cdm.o"
+    },
+    {
+        "command": "clang++ -o system/camerad/sensors/ar0231.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/camerad/sensors/ar0231.cc",
+        "directory": "/work",
+        "file": "/work/system/camerad/sensors/ar0231.cc",
+        "output": "/work/system/camerad/sensors/ar0231.o"
+    },
+    {
+        "command": "clang++ -o system/camerad/sensors/ox03c10.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/camerad/sensors/ox03c10.cc",
+        "directory": "/work",
+        "file": "/work/system/camerad/sensors/ox03c10.cc",
+        "output": "/work/system/camerad/sensors/ox03c10.o"
+    },
+    {
+        "command": "clang++ -o system/camerad/sensors/os04c10.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/camerad/sensors/os04c10.cc",
+        "directory": "/work",
+        "file": "/work/system/camerad/sensors/os04c10.cc",
+        "output": "/work/system/camerad/sensors/os04c10.o"
+    },
+    {
+        "command": "clang++ -o system/camerad/main.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq system/camerad/main.cc",
+        "directory": "/work",
+        "file": "/work/system/camerad/main.cc",
+        "output": "/work/system/camerad/main.o"
+    },
+    {
+        "command": "clang++ -o third_party/json11/json11.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unqualified-std-cast-call -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq third_party/json11/json11.cpp",
+        "directory": "/work",
+        "file": "/work/third_party/json11/json11.cpp",
+        "output": "/work/third_party/json11/json11.o"
+    },
+    {
+        "command": "clang++ -o third_party/kaitai/kaitaistream.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DKS_STR_ENCODING_NONE -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq third_party/kaitai/kaitaistream.cpp",
+        "directory": "/work",
+        "file": "/work/third_party/kaitai/kaitaistream.cpp",
+        "output": "/work/third_party/kaitai/kaitaistream.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/pandad/panda.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/pandad/panda.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/pandad/panda.cc",
+        "output": "/work/selfdrive/pandad/panda.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/pandad/panda_comms.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/pandad/panda_comms.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/pandad/panda_comms.cc",
+        "output": "/work/selfdrive/pandad/panda_comms.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/pandad/spi.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/pandad/spi.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/pandad/spi.cc",
+        "output": "/work/selfdrive/pandad/spi.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/pandad/main.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/pandad/main.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/pandad/main.cc",
+        "output": "/work/selfdrive/pandad/main.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/pandad/pandad.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/pandad/pandad.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/pandad/pandad.cc",
+        "output": "/work/selfdrive/pandad/pandad.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/pandad/panda_safety.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/pandad/panda_safety.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/pandad/panda_safety.cc",
+        "output": "/work/selfdrive/pandad/panda_safety.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/pandad/can_list_to_can_capnp.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/pandad/can_list_to_can_capnp.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/pandad/can_list_to_can_capnp.cc",
+        "output": "/work/selfdrive/pandad/can_list_to_can_capnp.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/pandad/pandad_api_impl.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-#warnings -Wno-shadow -Wno-deprecated-declarations -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq -I/usr/include/python3.12 -I.venv-linux-arm64/lib/python3.12/site-packages/numpy/_core/include selfdrive/pandad/pandad_api_impl.cpp",
+        "directory": "/work",
+        "file": "/work/selfdrive/pandad/pandad_api_impl.cpp",
+        "output": "/work/selfdrive/pandad/pandad_api_impl.o"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_solver_lat.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_solver_lat.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_solver_lat.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_solver_lat.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_model/lat_expl_ode_fun.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_model/lat_expl_ode_fun.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_model/lat_expl_ode_fun.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_model/lat_expl_ode_fun.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_model/lat_expl_vde_forw.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_model/lat_expl_vde_forw.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_model/lat_expl_vde_forw.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_model/lat_expl_vde_forw.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_fun.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_fun.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_fun.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_fun.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_fun_jac_ut_xt.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_fun_jac_ut_xt.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_fun_jac_ut_xt.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_fun_jac_ut_xt.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_hess.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_hess.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_hess.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_hess.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_fun.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_fun.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_fun.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_fun.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_fun_jac_ut_xt.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_fun_jac_ut_xt.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_fun_jac_ut_xt.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_fun_jac_ut_xt.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_hess.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_hess.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_hess.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_e_hess.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_fun.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_fun.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_fun.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_fun.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_fun_jac_ut_xt.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_fun_jac_ut_xt.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_fun_jac_ut_xt.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_fun_jac_ut_xt.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_hess.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_hess.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_hess.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/lat_cost/lat_cost_y_0_hess.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_ocp_solver_pyx.o -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-#warnings -Wno-shadow -Wno-deprecated-declarations -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq -I/usr/include/python3.12 -I.venv-linux-arm64/lib/python3.12/site-packages/numpy/_core/include selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_ocp_solver_pyx.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_ocp_solver_pyx.c",
+        "output": "/work/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_ocp_solver_pyx.o"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_solver_long.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_solver_long.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_solver_long.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_solver_long.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_model/long_expl_ode_fun.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_model/long_expl_ode_fun.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_model/long_expl_ode_fun.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_model/long_expl_ode_fun.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_model/long_expl_vde_forw.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_model/long_expl_vde_forw.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_model/long_expl_vde_forw.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_model/long_expl_vde_forw.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_fun.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_fun.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_fun.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_fun.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_fun_jac_ut_xt.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_fun_jac_ut_xt.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_fun_jac_ut_xt.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_fun_jac_ut_xt.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_hess.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_hess.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_hess.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_hess.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_fun.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_fun.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_fun.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_fun.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_fun_jac_ut_xt.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_fun_jac_ut_xt.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_fun_jac_ut_xt.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_fun_jac_ut_xt.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_hess.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_hess.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_hess.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_e_hess.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_fun.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_fun.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_fun.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_fun.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_fun_jac_ut_xt.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_fun_jac_ut_xt.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_fun_jac_ut_xt.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_fun_jac_ut_xt.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_hess.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_hess.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_hess.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_cost/long_cost_y_0_hess.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_constraints/long_constr_h_fun.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_constraints/long_constr_h_fun.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_constraints/long_constr_h_fun.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_constraints/long_constr_h_fun.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_constraints/long_constr_h_fun_jac_uxt_zt.os -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DACADOS_WITH_QPOASES -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-unused -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_constraints/long_constr_h_fun_jac_uxt_zt.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_constraints/long_constr_h_fun_jac_uxt_zt.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/long_constraints/long_constr_h_fun_jac_uxt_zt.os"
+    },
+    {
+        "command": "clang -o selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.o -c -std=gnu11 -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-#warnings -Wno-shadow -Wno-deprecated-declarations -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq -I/usr/include/python3.12 -I.venv-linux-arm64/lib/python3.12/site-packages/numpy/_core/include selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.c",
+        "directory": "/work",
+        "file": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.c",
+        "output": "/work/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/locationd/models/generated/pose.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/locationd/models/generated/pose.cpp",
+        "directory": "/work",
+        "file": "/work/selfdrive/locationd/models/generated/pose.cpp",
+        "output": "/work/selfdrive/locationd/models/generated/pose.os"
+    },
+    {
+        "command": "clang++ -o selfdrive/locationd/models/generated/car.os -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -fPIC -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/locationd/models/generated/car.cpp",
+        "directory": "/work",
+        "file": "/work/selfdrive/locationd/models/generated/car.cpp",
+        "output": "/work/selfdrive/locationd/models/generated/car.os"
+    },
+    {
+        "command": "clang++ -o selfdrive/modeld/models/commonmodel.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DTRANSFORM_PATH=\\\"selfdrive/modeld/transforms/transform.cl\\\" -DLOADYUV_PATH=\\\"selfdrive/modeld/transforms/loadyuv.cl\\\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/modeld/models/commonmodel.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/modeld/models/commonmodel.cc",
+        "output": "/work/selfdrive/modeld/models/commonmodel.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/modeld/transforms/loadyuv.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DTRANSFORM_PATH=\\\"selfdrive/modeld/transforms/transform.cl\\\" -DLOADYUV_PATH=\\\"selfdrive/modeld/transforms/loadyuv.cl\\\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/modeld/transforms/loadyuv.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/modeld/transforms/loadyuv.cc",
+        "output": "/work/selfdrive/modeld/transforms/loadyuv.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/modeld/transforms/transform.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DTRANSFORM_PATH=\\\"selfdrive/modeld/transforms/transform.cl\\\" -DLOADYUV_PATH=\\\"selfdrive/modeld/transforms/loadyuv.cl\\\" -g0 -fPIC -O2 -Wunused -Werror -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq selfdrive/modeld/transforms/transform.cc",
+        "directory": "/work",
+        "file": "/work/selfdrive/modeld/transforms/transform.cc",
+        "output": "/work/selfdrive/modeld/transforms/transform.o"
+    },
+    {
+        "command": "clang++ -o selfdrive/modeld/models/commonmodel_pyx.o -c -std=c++1z -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -DTRANSFORM_PATH=\\\"selfdrive/modeld/transforms/transform.cl\\\" -DLOADYUV_PATH=\\\"selfdrive/modeld/transforms/loadyuv.cl\\\" -g0 -fPIC -O2 -Wunused -Wshadow -Wno-unknown-warning-option -Wno-inconsistent-missing-override -Wno-c99-designator -Wno-reorder-init-list -Wno-vla-cxx-extension -D__TICI__ -DQCOM2 -mcpu=cortex-a57 -Wno-#warnings -Wno-shadow -Wno-deprecated-declarations -I.venv-linux-arm64/lib/python3.12/site-packages/capnproto/install/include -I.venv-linux-arm64/lib/python3.12/site-packages/ffmpeg/install/include -Ithird_party/opencl/include -I/opt/tici-sysroot/usr/local/include -I/opt/tici-sysroot/usr/include -I/opt/tici-sysroot/usr/include/aarch64-linux-gnu -I. -Ithird_party/acados/include -Ithird_party/acados/include/blasfeo/include -Ithird_party/acados/include/hpipm/include -Ithird_party/catch2/include -Ithird_party/libyuv/include -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party -Imsgq -I/usr/include/python3.12 -I.venv-linux-arm64/lib/python3.12/site-packages/numpy/_core/include selfdrive/modeld/models/commonmodel_pyx.cpp",
+        "directory": "/work",
+        "file": "/work/selfdrive/modeld/models/commonmodel_pyx.cpp",
+        "output": "/work/selfdrive/modeld/models/commonmodel_pyx.o"
+    }
+]

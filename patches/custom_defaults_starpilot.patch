@@ -1,7 +1,16 @@
 diff --git a/common/params_keys.h b/common/params_keys.h
-index 7e6ecc9f288f61650b50852d50caf2ef86d09800..c8958da205c5767ca7b06ee221ff61b1305149cf 100644
+index 7e6ecc9f288f61650b50852d50caf2ef86d09800..3b912a5d5cb5f02356b3dea9fbcd285fd7b893e4 100644
 --- a/common/params_keys.h
 +++ b/common/params_keys.h
+@@ -29,7 +29,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"CarParamsCache", {CLEAR_ON_MANAGER_START, BYTES}},
+     {"CarParamsPersistent", {PERSISTENT, BYTES}},
+     {"CarParamsPrevRoute", {PERSISTENT, BYTES}},
+-    {"CompletedTrainingVersion", {PERSISTENT, STRING, "0"}},
++    {"CompletedTrainingVersion", {PERSISTENT, STRING, "0.2.0"}},
+     {"ControlsReady", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
+     {"CurrentBootlog", {PERSISTENT, STRING}},
+     {"CurrentRoute", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, STRING}},
 @@ -78,7 +78,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"IsEngaged", {PERSISTENT, BOOL}},
      {"IsLdwEnabled", {PERSISTENT, BOOL}},

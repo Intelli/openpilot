@@ -3,8 +3,8 @@
 ## Repository & Upstream
 - Develop in `ev9-dev` in `https://github.com/Intelli/openpilot` at `/Volumes/2TB/Documents/GitHub/openpilot`.
 - Stable upstream is `https://github.com/firestar5683/StarPilot`, branch **`StarPilot`**. `Dom` is upstream development and is not our sync target.
-- `starpilot-upstream.json` records the imported commit/tree. Application source currently matches that snapshot; historical Intelli patches are retained but **not applied**.
-- Target `ev9-dev` for development PRs. `master` is GitHub's default branch and hosts the source-sync trigger. `ev9` is generated source; `ev9-prebuilt` is generated deployment output.
+- `starpilot-upstream.json` records the imported baseline commit/tree. Migrated Intelli customizations are recorded in enabled patches; historical disabled patches remain unapplied.
+- Target `ev9-dev` for development PRs. `master` is GitHub's default branch and hosts the deployment-sync trigger. `ev9-prebuilt` holds the GitHub build output; `ev9` is the install branch and receives that exact built tree.
 
 ## Project Structure & opendbc Routing
 - Core: `selfdrive/`, `system/`, `common/`, `cereal/`, `starpilot/`, `panda/`, `tools/`, `docs/`.
@@ -22,7 +22,7 @@
 - Preserve the explicit maintenance paths listed in `sync-upstream.sh`; do not add application paths to that list to hide a customization from upstream sync.
 - Root patch helpers support both `patches/` (repository-relative diffs) and `patches/opendbc/` (diffs relative to `opendbc_repo/`).
 - The 17 formerly enabled patches now end in `.patch.temp-disabled`. The six already-disabled patches retain their previous `.disabled` names. Neither suffix is selected by the apply helper, even by explicit filename.
-- `./apply_patch.sh` replays enabled `.patch` files from the root patch directory, then the vehicle directory, alphabetically within each. The enabled `custom_defaults_starpilot.patch` records the supported custom defaults; already-applied patches are skipped. `--check` checks each against the current tree without applying it.
+- `./apply_patch.sh` replays enabled `.patch` files from the root patch directory, then the vehicle directory, alphabetically within each. Enabled patches record the migrated custom defaults and EV9 Edition changes; already-applied patches are skipped. `--check` checks each against the current tree without applying it.
 - `./apply_patch.sh opendbc/<name.patch>` prefixes vehicle paths with `opendbc_repo/`. `tools/opendbc-patches/apply.sh` is a vehicle-only compatibility wrapper.
 - Normal application leaves staging unchanged and stops on failure. `--3way` (also `apply_patch_conflicts.sh`) explicitly allows staging and conflict markers.
 - `./create_patch.sh <name>` exports staged source edits as a forward patch. Use `opendbc/<name>` for vehicle-only exports. It does not sync, replay, stage, commit or push.
@@ -35,7 +35,9 @@
 - The workflow retains the display name `sunnypilot prebuilt action` because the existing `.github/workflows/ev9-sync.yaml` on `master` listens for it. Coordinate changes to both before renaming it.
 - Build uses StarPilot's `scripts/laptop_device_build.sh build-image`, `setup-sysroot-agnos`, then `./build`. No standalone opendbc checkout or Sunnypilot artifact overlay participates.
 - `release/ci/publish.sh` publishes the built tree to `ev9-prebuilt` with a `Source-Commit` trailer. It uses the existing `PREBUILT_PUSH_TOKEN` in the `ev9-dev` environment.
-- After success, the workflow on `master` runs `tools/ci/sync_ev9_branch.sh`. It copies the source tree recorded by the published build into a new commit on `ev9`, preserving that branch's history.
+- After success, the workflow on `master` runs `tools/ci/sync_ev9_branch.sh` from `ev9-dev`. It copies the exact `ev9-prebuilt` tree into a new commit on `ev9`, preserving that branch's history and recording `Source-Commit` and `Build-Commit` trailers.
+- Promote compiled artifacts with their source. Imported upstream binaries and the `prebuilt` marker remain tracked in `ev9-dev`; copying that source tree to `ev9` would ship stale native code while skipping device compilation. Defaults in `common/params_keys.h` require the rebuilt `common/params_pyx.so`.
+- Defaults initialize missing settings only. Active `/data/params/d` values take precedence over cached `/cache/starpilot/params/d` values and compiled defaults; an update does not reset existing preferences.
 - Keep the GitHub build as the deployment gate. Do not add a separate test gate unless requested. Sync/publish CI scripts push remote branches; do not run them against production as local checks.
 
 ## Local Development & Verification

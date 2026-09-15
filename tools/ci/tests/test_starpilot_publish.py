@@ -1,4 +1,4 @@
-"""Exercise deployment and source promotion against an isolated local Git remote."""
+"""Exercise deployment and built-artifact promotion against an isolated local Git remote."""
 import os
 from pathlib import Path
 import subprocess
@@ -24,9 +24,16 @@ class TestStarPilotPublish:
     self.git("init", "--initial-branch=ev9-dev", str(self.source))
     self.git("remote", "add", "origin", str(self.remote), cwd=self.source)
     (self.source / "source.txt").write_text("baseline")
-    self.commit("baseline")
+    (self.source / "common").mkdir()
+    (self.source / "common/params_pyx.so").write_text("stale upstream extension")
+    (self.source / "common/params_keys.h").write_text("old defaults")
+    (self.source / "manager.py").write_text("old Python")
+    (self.source / "obsolete-target.txt").write_text("remove on promotion")
+    self.baseline = self.commit("baseline")
     self.git("push", "origin", "HEAD:ev9", cwd=self.source)
     (self.source / "source.txt").write_text("published")
+    (self.source / "common/params_keys.h").write_text("EV9 defaults")
+    (self.source / "manager.py").write_text("EV9 Python")
     self.published = self.commit("published")
     (self.source / "source.txt").write_text("not built yet")
     self.newer = self.commit("newer")
@@ -53,6 +60,10 @@ class TestStarPilotPublish:
     output.mkdir()
     (output / "prebuilt").touch()
     (output / filename).write_text("unchanged binary")
+    (output / "common").mkdir()
+    (output / "common/params_pyx.so").write_text("rebuilt extension with EV9 defaults")
+    for path in ("common/params_keys.h", "manager.py", "source.txt"):
+      (output / path).write_text(self.git("show", f"{self.published}:{path}", cwd=self.source))
     self.run_command("bash", str(ROOT / "release/ci/publish.sh"), str(output), sha)
     return self.git("--git-dir", str(self.remote), "rev-parse", "ev9-prebuilt")
 
@@ -65,23 +76,47 @@ class TestStarPilotPublish:
   def test_identical_payload_updates_provenance_and_promotes_only_built_source(self):
     first = self.publish(self.published)
     self.sync()
-    assert self.remote_tree('ev9') == self.remote_tree(self.published)
+    first_prod = self.git("--git-dir", str(self.remote), "rev-parse", "ev9")
+    assert self.remote_tree('ev9') == self.remote_tree(first)
+    assert self.remote_tree('ev9') != self.remote_tree(self.published)
+    assert self.git("--git-dir", str(self.remote), "rev-parse", f"{first_prod}^") == self.baseline
+    assert self.git("--git-dir", str(self.remote), "show", "ev9:common/params_pyx.so") == "rebuilt extension with EV9 defaults"
+    assert self.git("--git-dir", str(self.remote), "show", "ev9:common/params_keys.h") == "EV9 defaults"
+    assert self.git("--git-dir", str(self.remote), "show", "ev9:manager.py") == "EV9 Python"
+    assert self.git("--git-dir", str(self.remote), "show", "ev9:source.txt") == "published"
+    files = self.git("--git-dir", str(self.remote), "ls-tree", "-r", "--name-only", "ev9").splitlines()
+    assert "prebuilt" in files and "obsolete-target.txt" not in files
+    message = self.git("--git-dir", str(self.remote), "log", "-1", "--format=%B", "ev9")
+    assert f"Source-Commit: {self.published}" in message
+    assert f"Build-Commit: {first}" in message
+    assert self.git("--git-dir", str(self.remote), "log", "-1", "--format=%(trailers:key=Source-Commit,valueonly)", "ev9") == self.published
+    assert self.git("--git-dir", str(self.remote), "log", "-1", "--format=%(trailers:key=Build-Commit,valueonly)", "ev9") == first
     assert self.remote_tree('ev9') != self.remote_tree('ev9-dev')
     second = self.publish(self.newer)
     assert first != second
     assert self.remote_tree(first) == self.remote_tree(second)
     assert self.publish(self.newer) == second
     self.sync()
-    assert self.remote_tree('ev9') == self.remote_tree('ev9-dev')
+    assert self.remote_tree('ev9') == self.remote_tree(second)
+    assert self.git("--git-dir", str(self.remote), "rev-parse", "ev9^") == first_prod
+    message = self.git("--git-dir", str(self.remote), "log", "-1", "--format=%B", "ev9")
+    assert f"Source-Commit: {self.newer}" in message
+    assert f"Build-Commit: {second}" in message
     head = self.git("--git-dir", str(self.remote), "rev-parse", "ev9")
     self.sync()
     assert self.git('--git-dir', str(self.remote), 'rev-parse', 'ev9') == head
 
   def test_publish_removes_obsolete_files_and_preserves_history(self):
     first = self.publish(self.published, "obsolete")
+    self.sync()
+    first_prod = self.git("--git-dir", str(self.remote), "rev-parse", "ev9")
     second = self.publish(self.newer, "replacement")
     assert self.git('--git-dir', str(self.remote), 'rev-parse', f'{second}^') == first
-    assert self.git('--git-dir', str(self.remote), 'ls-tree', '--name-only', second) == 'prebuilt\nreplacement'
+    files = self.git('--git-dir', str(self.remote), 'ls-tree', '-r', '--name-only', second).splitlines()
+    assert "obsolete" not in files and "replacement" in files and "prebuilt" in files
+    self.sync()
+    assert self.remote_tree("ev9") == self.remote_tree(second)
+    assert self.git("--git-dir", str(self.remote), "rev-parse", "ev9^") == first_prod
 
   def test_sync_rejects_unknown_source(self):
     self.publish("a" * 40)
@@ -89,3 +124,37 @@ class TestStarPilotPublish:
     with pytest.raises(subprocess.CalledProcessError):
       self.sync()
     assert self.remote_tree('ev9') == before
+
+  @pytest.mark.parametrize("case", ["invalid", "missing", "nonancestor", "no_marker"])
+  def test_rejects_invalid_build_without_changing_production(self, case):
+    self.publish(self.published)
+    self.git("fetch", "origin", "ev9-prebuilt", cwd=self.source)
+    parent = self.git("rev-parse", "FETCH_HEAD", cwd=self.source)
+    tree = self.git("rev-parse", f"{parent}^{{tree}}", cwd=self.source)
+    source = self.published
+    if case == "nonancestor":
+      source = self.git("commit-tree", tree, "-m", "unrelated source", cwd=self.source)
+    if case == "no_marker":
+      # This source tree has no prebuilt marker, despite valid source provenance.
+      tree = self.git("rev-parse", f"{self.published}^{{tree}}", cwd=self.source)
+    message = "missing provenance" if case == "missing" else f"build\n\nSource-Commit: {'not-a-sha' if case == 'invalid' else source}"
+    build = self.git("commit-tree", tree, "-p", parent, "-m", message, cwd=self.source)
+    self.git("push", "origin", f"{build}:ev9-prebuilt", cwd=self.source)
+    before = self.git("--git-dir", str(self.remote), "rev-parse", "ev9")
+    with pytest.raises(subprocess.CalledProcessError):
+      self.sync()
+    assert self.git("--git-dir", str(self.remote), "rev-parse", "ev9") == before
+
+  def test_same_tree_and_source_new_build_updates_build_provenance(self):
+    first = self.publish(self.published)
+    self.sync()
+    previous_prod = self.git("--git-dir", str(self.remote), "rev-parse", "ev9")
+    self.git("fetch", "origin", "ev9-prebuilt", cwd=self.source)
+    tree = self.git("rev-parse", "FETCH_HEAD^{tree}", cwd=self.source)
+    second = self.git("commit-tree", tree, "-p", first, "-m", f"rebuild\n\nSource-Commit: {self.published}", cwd=self.source)
+    self.git("push", "origin", f"{second}:ev9-prebuilt", cwd=self.source)
+    self.sync()
+    assert self.git("--git-dir", str(self.remote), "rev-parse", "ev9") != previous_prod
+    assert self.remote_tree("ev9") == tree
+    message = self.git("--git-dir", str(self.remote), "log", "-1", "--format=%B", "ev9")
+    assert f"Build-Commit: {second}" in message
