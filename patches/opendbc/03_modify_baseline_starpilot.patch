@@ -69,7 +69,7 @@ index d7cfa094c71bb4f5af660c4b52e73f11cf054ec5..cde38bb24f5918c638e803b18ea291c8
    CANFD_ANGLE_STEERING = 1024
    NON_SCC = 4096
 diff --git a/opendbc/safety/modes/hyundai_canfd.h b/opendbc/safety/modes/hyundai_canfd.h
-index 6dc25b733f4d21bc97750c344c6cf2a6c00251cf..f7cc74a8095de6d42a579269168b6717408b42c5 100644
+index 6dc25b733f4d21bc97750c344c6cf2a6c00251cf..48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb 100644
 --- a/opendbc/safety/modes/hyundai_canfd.h
 +++ b/opendbc/safety/modes/hyundai_canfd.h
 @@ -65,6 +65,7 @@
@@ -102,16 +102,22 @@ index 6dc25b733f4d21bc97750c344c6cf2a6c00251cf..f7cc74a8095de6d42a579269168b6717
  
    static const CanMsg HYUNDAI_CANFD_LKA_STEERING_TX_MSGS[] = {
      HYUNDAI_CANFD_LKA_STEERING_COMMON_TX_MSGS(0, 1)
-@@ -479,7 +482,11 @@ static safety_config hyundai_canfd_init(uint16_t param) {
+@@ -479,7 +482,17 @@ static safety_config hyundai_canfd_init(uint16_t param) {
      {0x7C4, 2, 8, .check_relay = true},  /* camera support frame */ \
      {0xEA, 2, 24, .check_relay = true},  /* MDPS support frame */ \
  
 -  hyundai_common_init(param);
-+  // Bit 256 retains its FCEV meaning outside this explicit CAN-FD EV angle context.
-+  // Remove the EV9 alias before common decoding so it cannot enable FCEV gas handling.
++  // EV9 bit 256 identifies the vehicle, and bit 128 selects LKAS_ALT.
++  // Neither may enable the common FCEV or main-button-latches-LKAS features.
 +  hyundai_canfd_ev9 = GET_FLAG(param, HYUNDAI_PARAM_CANFD_EV9) &&
 +                      GET_FLAG(param, HYUNDAI_PARAM_CANFD_ANGLE_STEERING) && GET_FLAG(param, HYUNDAI_PARAM_EV_GAS);
-+  hyundai_common_init(hyundai_canfd_ev9 ? (param & (uint16_t)~HYUNDAI_PARAM_CANFD_EV9) : param);
++  const uint16_t ev9_common_aliases = HYUNDAI_PARAM_CANFD_EV9 | HYUNDAI_PARAM_CANFD_LKA_STEERING_ALT;
++  hyundai_common_init(hyundai_canfd_ev9 ? (param & (uint16_t)~ev9_common_aliases) : param);
++  if (hyundai_canfd_ev9 && !hyundai_longitudinal) {
++    // Stock SCC publishes main availability independently of cruise engagement.
++    // Do not XOR that received state between SCC frames when the main button is pressed.
++    hyundai_aol_main_lkas_sync = true;
++  }
  
    gen_crc_lookup_table_16(0x1021, hyundai_canfd_crc_lut);
    hyundai_canfd_alt_buttons = GET_FLAG(param, HYUNDAI_PARAM_CANFD_ALT_BUTTONS);

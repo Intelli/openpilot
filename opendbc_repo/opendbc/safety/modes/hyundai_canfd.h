@@ -100,7 +100,14 @@ static bool hyundai_canfd_lka_alt_openpilot_allowed(void) {
          (!hyundai_ev_gas_signal || hyundai_canfd_lka_alt_drive_gear);
 }
 
+static bool hyundai_canfd_ev9_lkas_owned(void) {
+  return hyundai_canfd_ev9 && hyundai_canfd_lka_steering_alt && !hyundai_canfd_ccnc_angle_long;
+}
+
 static bool hyundai_canfd_lka_alt_stock_forwarding(void) {
+  if (hyundai_canfd_ev9_lkas_owned()) {
+    return false;
+  }
   return hyundai_canfd_lka_steering_alt && hyundai_canfd_angle_steering && !hyundai_canfd_lka_alt_openpilot_allowed();
 }
 
@@ -276,6 +283,10 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
     if (hyundai_canfd_angle_steering) {
       const int lkas_angle_active = (msg->data[9] >> 4U) & 0x3U;
       const bool steer_angle_req = lkas_angle_active != 1;
+      // Continuous inactive EV9 LKAS traffic does not grant permission to actuate.
+      if (hyundai_canfd_ev9_lkas_owned() && steer_angle_req && !hyundai_canfd_lka_alt_openpilot_allowed()) {
+        tx = false;
+      }
 
       int desired_angle = (msg->data[11] << 6U) | (msg->data[10] >> 2U);
       desired_angle = to_signed(desired_angle, 14);
@@ -488,11 +499,17 @@ static safety_config hyundai_canfd_init(uint16_t param) {
     {0x7C4, 2, 8, .check_relay = true},  /* camera support frame */ \
     {0xEA, 2, 24, .check_relay = true},  /* MDPS support frame */ \
 
-  // Bit 256 retains its FCEV meaning outside this explicit CAN-FD EV angle context.
-  // Remove the EV9 alias before common decoding so it cannot enable FCEV gas handling.
+  // EV9 bit 256 identifies the vehicle, and bit 128 selects LKAS_ALT.
+  // Neither may enable the common FCEV or main-button-latches-LKAS features.
   hyundai_canfd_ev9 = GET_FLAG(param, HYUNDAI_PARAM_CANFD_EV9) &&
                       GET_FLAG(param, HYUNDAI_PARAM_CANFD_ANGLE_STEERING) && GET_FLAG(param, HYUNDAI_PARAM_EV_GAS);
-  hyundai_common_init(hyundai_canfd_ev9 ? (param & (uint16_t)~HYUNDAI_PARAM_CANFD_EV9) : param);
+  const uint16_t ev9_common_aliases = HYUNDAI_PARAM_CANFD_EV9 | HYUNDAI_PARAM_CANFD_LKA_STEERING_ALT;
+  hyundai_common_init(hyundai_canfd_ev9 ? (param & (uint16_t)~ev9_common_aliases) : param);
+  if (hyundai_canfd_ev9 && !hyundai_longitudinal) {
+    // Stock SCC publishes main availability independently of cruise engagement.
+    // Do not XOR that received state between SCC frames when the main button is pressed.
+    hyundai_aol_main_lkas_sync = true;
+  }
 
   gen_crc_lookup_table_16(0x1021, hyundai_canfd_crc_lut);
   hyundai_canfd_alt_buttons = GET_FLAG(param, HYUNDAI_PARAM_CANFD_ALT_BUTTONS);

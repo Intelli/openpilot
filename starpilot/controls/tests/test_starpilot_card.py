@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from cereal import log
 
 from opendbc.car.chrysler.values import CAR as CHRYSLER_CAR
 
@@ -52,6 +53,12 @@ class FakeSM(dict):
   def __init__(self, *args, updated=None, **kwargs):
     super().__init__(*args, **kwargs)
     self.updated = updated or {}
+    self.valid = {"liveCalibration": True}
+    self.alive = {"liveCalibration": True}
+    self.freq_ok = {"liveCalibration": True}
+
+  def all_checks(self, services):
+    return all(self.valid[s] and self.alive[s] and self.freq_ok[s] for s in services)
 
 
 def make_sm():
@@ -60,7 +67,7 @@ def make_sm():
     "selfdriveState": SimpleNamespace(active=False, alertType=[], experimentalMode=False),
     "starpilotSelfdriveState": SimpleNamespace(alertType=[]),
     "starpilotPlan": SimpleNamespace(lateralCheck=True),
-    "liveCalibration": SimpleNamespace(calPerc=100),
+    "liveCalibration": SimpleNamespace(calPerc=100, calStatus=log.LiveCalibrationData.Status.calibrated),
   }, updated={"starpilotPlan": False})
 
 
@@ -277,6 +284,125 @@ def make_car_state(available=False, enabled=False, button_events=None, brake_pre
 
 def make_wrapped_button_event(button_type, pressed):
   return SimpleNamespace(type=SimpleNamespace(raw=int(button_type)), pressed=pressed)
+
+
+@pytest.mark.parametrize("status", ["uncalibrated", "recalibrating", "invalid"])
+@pytest.mark.parametrize("percent", [0, 1, 99, 100])
+@pytest.mark.parametrize("source", ["lkas", "main", "controller", "cruise_available"])
+def test_aol_rejects_uncalibrated_requests_without_delayed_activation(monkeypatch, tmp_path, status, percent, source):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  card = spc.StarPilotCard(
+    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9),
+    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
+  )
+  sm = make_sm()
+  sm["liveCalibration"].calPerc = percent
+  sm["liveCalibration"].calStatus = getattr(log.LiveCalibrationData.Status, status)
+  cs = make_car_state(available=True)
+  out = SimpleNamespace(distancePressed=False)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=source == "lkas",
+                         main_cruise_aol_toggle=source == "main", always_on_lateral_main=source == "cruise_available")
+
+  def request():
+    if source in ("lkas", "main"):
+      button = spc.ButtonType.lkas if source == "lkas" else spc.ButtonType.mainCruise
+      cs.buttonEvents = [SimpleNamespace(type=button, pressed=True)]
+    elif source == "controller":
+      key = spc.CONTROLLER_ACTION_COUNTERS[spc.CONTROLLER_ACTION_TOGGLE_AOL]
+      card.params_memory.put_int(key, card.params_memory.get_int(key) + 1)
+
+  request()
+  result = card.update(cs, out, sm, toggles)
+  assert not result.alwaysOnLateralAllowed
+  assert not result.alwaysOnLateralEnabled
+  cs.buttonEvents = []
+  sm["liveCalibration"].calPerc = 100
+  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
+  result = card.update(cs, out, sm, toggles)
+  assert not result.alwaysOnLateralAllowed
+  assert not result.alwaysOnLateralEnabled
+
+  if source == "cruise_available":
+    cs.cruiseState.available = False
+    card.update(cs, out, sm, toggles)
+    cs.cruiseState.available = True
+  else:
+    request()
+  card.update(cs, out, sm, toggles)
+  cs.buttonEvents = []
+  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
+
+
+@pytest.mark.parametrize("status", ["uncalibrated", "recalibrating", "invalid"])
+def test_aol_calibration_loss_discards_enabled_session(monkeypatch, tmp_path, status):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
+                           SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
+  sm = make_sm()
+  cs = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
+  out = SimpleNamespace(distancePressed=False)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True)
+  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
+  cs.buttonEvents = []
+  sm["liveCalibration"].calStatus = getattr(log.LiveCalibrationData.Status, status)
+  result = card.update(cs, out, sm, toggles)
+  assert not result.alwaysOnLateralAllowed
+  assert not result.alwaysOnLateralEnabled
+  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
+  assert not card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
+
+
+@pytest.mark.parametrize("health_field", ["valid", "alive", "freq_ok"])
+def test_aol_rejects_unhealthy_calibration_service_and_does_not_resume_automatically(monkeypatch, tmp_path, health_field):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
+                           SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
+  sm = make_sm()
+  cs = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
+  out = SimpleNamespace(distancePressed=False)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True)
+  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
+  cs.buttonEvents = []
+  getattr(sm, health_field)["liveCalibration"] = False
+  result = card.update(cs, out, sm, toggles)
+  assert not result.alwaysOnLateralAllowed
+  assert not result.alwaysOnLateralEnabled
+  getattr(sm, health_field)["liveCalibration"] = True
+  assert not card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
+
+
+def test_ev9_rejected_main_request_stays_paused_through_delayed_pcm_enable(monkeypatch, tmp_path):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  card = spc.StarPilotCard(
+    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9),
+    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
+  )
+  sm = make_sm()
+  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.uncalibrated
+  cs = make_car_state(available=True, button_events=[SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)])
+  out = SimpleNamespace(distancePressed=False)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, main_cruise_aol_toggle=True)
+  result = card.update(cs, out, sm, toggles)
+  assert result.pauseLateral
+  assert not result.alwaysOnLateralAllowed
+
+  cs.buttonEvents = []
+  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
+  cs.cruiseState.enabled = True
+  sm["selfdriveState"].active = True
+  result = card.update(cs, out, sm, toggles)
+  assert result.pauseLateral
+  assert not result.alwaysOnLateralAllowed
+  assert not result.alwaysOnLateralEnabled
+
+  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
+  result = card.update(cs, out, sm, toggles)
+  assert result.alwaysOnLateralAllowed
+  assert not result.pauseLateral
 
 
 @pytest.mark.parametrize("main_managed", [False, True])

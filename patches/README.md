@@ -31,10 +31,14 @@ already replaced its Sunnypilot implementation; it is not replayed.
 See the migration guide for deliberate adaptations and omitted legacy defaults.
 
 Steering/AOL follow-ups are incorporated into the existing custom-defaults,
-warning, drive-helper and vehicle `05`/`06` patches. They cover AOL feedback and
-button state, brake-pause units, EV9 high-angle warnings, assistance-gain recovery
-and angle-transport initialization. Numeric steering and acceleration limits are
-unchanged; see the migration guide for scope and verification.
+alerts, warning and drive-helper patches and vehicle patches `03`–`06`. They cover
+valid calibration and rejected-request handling, AOL feedback and button state,
+brake-pause units and partial-disengagement prompts, sustained EV9 steering-limit
+warnings, assistance-gain recovery, and continuous inactive LKAS traffic with
+matching Panda forwarding. Actual manual handoff is reported through an appended
+actuator telemetry field. Numeric steering and acceleration limits are unchanged;
+see the migration guide for scope and verification. Recent-device investigation
+is documented in [the drive-review workflow](../docs/RECENT_DRIVE_REVIEW.md).
 
 `assets/openpilot/` preserves custom artwork and audio. Original helpers and
 analysis assets are in `legacy-openpilot-tooling/`, with source checksums in its

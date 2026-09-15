@@ -1,16 +1,21 @@
 diff --git a/selfdrive/controls/lib/ev9_warnings.py b/selfdrive/controls/lib/ev9_warnings.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..59dd325f53c5a5aecbd8d2828a693f2f6e8f0935
+index 0000000000000000000000000000000000000000..c7d00c60bf6cbe836bbf8e48ce2acf3d1c4f54d5
 --- /dev/null
 +++ b/selfdrive/controls/lib/ev9_warnings.py
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,62 @@
 +"""EV9 steering-warning scope and speed policy."""
 +import math
++from dataclasses import dataclass
 +
 +from opendbc.car import structs
 +from opendbc.car.hyundai.values import CAR, HyundaiFlags
 +
 +EV9_HIGH_ANGLE_WARNING_DEG = 90.0
++EV9_WARNING_CLEAR_ANGLE_DEG = 85.0
++EV9_WARNING_TRACKING_GAP_DEG = 2.5
++EV9_WARNING_CLEAR_GAP_DEG = 1.0
++EV9_WARNING_PERSISTENCE_SECONDS = 0.3
 +
 +
 +def ev9_angle_warnings_enabled(CP) -> bool:
@@ -32,6 +37,35 @@ index 0000000000000000000000000000000000000000..59dd325f53c5a5aecbd8d2828a693f2f
 +    return True
 +  threshold = ev9_alert_speed_kph(getattr(toggles, "hkg_tuning_ev9_alerts_speed_kph", 50.0)) / 3.6
 +  return speed_mps > threshold or abs(lateral_state.steeringAngleDesiredDeg) >= EV9_HIGH_ANGLE_WARNING_DEG
++
++
++@dataclass
++class EV9SteeringWarning:
++  """Debounce insufficient steering independently of the generic hands-off warning."""
++  elapsed: float = 0.0
++  warning: bool = False
++  last_time: float | None = None
++
++  def update(self, *, now, active, speed, requested, measured, output, threshold_kph, manual_following=False):
++    dt = 0.01 if self.last_time is None else now - self.last_time
++    self.last_time = now
++    if not all(math.isfinite(value) for value in (now, speed, requested, measured, dt)) or dt < 0 or dt > 0.2:
++      self.elapsed, self.warning = 0.0, False
++      self.last_time = now if math.isfinite(now) else None
++      return False
++    angle_threshold = EV9_WARNING_CLEAR_ANGLE_DEG if self.warning else EV9_HIGH_ANGLE_WARNING_DEG
++    eligible = abs(requested) >= angle_threshold or speed > ev9_alert_speed_kph(threshold_kph) / 3.6
++    direction = 1.0 if requested >= 0 else -1.0
++    tracking_shortfall = direction * (requested - measured)
++    command_shortfall = direction * (requested - output) if output is not None and math.isfinite(output) else 0.0
++    gap_threshold = EV9_WARNING_CLEAR_GAP_DEG if self.warning else EV9_WARNING_TRACKING_GAP_DEG
++    insufficient = max(tracking_shortfall, command_shortfall) > gap_threshold
++    if not active or speed <= 0.3 or manual_following or not eligible or not insufficient:
++      self.elapsed, self.warning = 0.0, False
++      return False
++    self.elapsed += max(dt, 0.0)
++    self.warning |= self.elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6
++    return self.warning
 diff --git a/selfdrive/controls/lib/latcontrol_angle.py b/selfdrive/controls/lib/latcontrol_angle.py
 index 0abeddcd07fb71daac7688ebaa3399400cbc40c0..509c0d84cb13c82683090414d81133e857bb6bf3 100644
 --- a/selfdrive/controls/lib/latcontrol_angle.py
@@ -82,6 +116,173 @@ index 0abeddcd07fb71daac7688ebaa3399400cbc40c0..509c0d84cb13c82683090414d81133e8
      angle_log.steeringAngleDeg = float(CS.steeringAngleDeg)
      angle_log.steeringAngleDesiredDeg = angle_steers_des
      return 0, float(angle_steers_des), angle_log
+diff --git a/selfdrive/controls/tests/test_ev9_limit_notification.py b/selfdrive/controls/tests/test_ev9_limit_notification.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2a3a3ae832ac5f8da7a7b0a92f36b276ea58ab5c
+--- /dev/null
++++ b/selfdrive/controls/tests/test_ev9_limit_notification.py
+@@ -0,0 +1,161 @@
++from types import SimpleNamespace
++
++import pytest
++
++from cereal import car, log
++from opendbc.car.hyundai.interface import CarInterface
++from opendbc.car.hyundai.values import CAR
++from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning
++from openpilot.selfdrive.selfdrived.events import Events, ET
++from openpilot.selfdrive.selfdrived.selfdrived import SelfdriveD
++
++
++def sample(state, frame, **overrides):
++  args = dict(now=frame * 0.01, active=True, speed=2, requested=100, measured=80, output=100, threshold_kph=50)
++  args.update(overrides)
++  return state.update(**args)
++
++
++def test_persistence_and_hysteresis():
++  state = EV9SteeringWarning()
++  for frame in range(29):
++    assert not sample(state, frame)
++  assert sample(state, 29)
++  assert sample(state, 30, requested=88, measured=86, output=88)
++  assert not sample(state, 31, requested=88, measured=87, output=88)
++  assert not sample(state, 32)
++
++
++@pytest.mark.parametrize('changes', [dict(active=False), dict(speed=0), dict(requested=89), dict(measured=105),
++                                    dict(manual_following=True), dict(requested=float('nan'))])
++def test_ineligible_or_following_driver_does_not_warn(changes):
++  state = EV9SteeringWarning()
++  for frame in range(40):
++    assert not sample(state, frame, **changes)
++
++
++def test_configured_speed_policy_and_command_clip():
++  state = EV9SteeringWarning()
++  for frame in range(40):
++    result = sample(state, frame, speed=8, threshold_kph=25, requested=30, measured=30, output=20)
++  assert result
++  assert not sample(state, 40, active=False)
++
++
++def test_long_gap_resets_pending_warning():
++  state = EV9SteeringWarning()
++  for frame in range(25):
++    sample(state, frame)
++  assert not sample(state, 100)
++  assert not sample(state, 101)
++
++
++class SM(dict):
++  frame = 0
++
++
++@pytest.mark.parametrize('manual_override', [False, True])
++@pytest.mark.parametrize('healthy', [False, True])
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('pressed', [False, True])
++@pytest.mark.parametrize('manual_mode', [0, 1, 2])
++def test_slow_turn_generates_visible_audible_event_while_driver_assists(sign, pressed, manual_mode, healthy, manual_override):
++  d = SelfdriveD.__new__(SelfdriveD)
++  d.CP = CarInterface.get_non_essential_params(CAR.KIA_EV9)
++  d.events = Events()
++  d.starpilot_events = Events(starpilot=True)
++  d.last_steering_pressed_frame = 0
++  d.starpilot_toggles = SimpleNamespace(hkg_shared_autonomy_mode=manual_mode, hkg_tuning_ev9_alerts_speed_kph=50)
++  cs = car.CarState.new_message(vEgo=2, steeringAngleDeg=sign * 80, steeringPressed=pressed)
++  controls = log.ControlsState.new_message()
++  controls.lateralControlState.init('angleState')
++  controls.lateralControlState.angleState.active = True
++  controls.lateralControlState.angleState.steeringAngleDesiredDeg = sign * 100
++  output = car.CarOutput.new_message()
++  output.actuatorsOutput.steeringAngleDeg = sign * 80
++  output.actuatorsOutput.manualSteeringOverride = manual_override
++  d.sm = SM(controlsState=controls, carOutput=output)
++  d.sm.valid = {"controlsState": healthy, "carOutput": healthy}
++  for frame in range(100, 140):
++    d.sm.frame = frame
++    d.events.clear()
++    d.update_steering_saturation_events(cs)
++  assert (log.OnroadEvent.EventName.steerSaturated in d.events.names) == (not manual_override and healthy)
++  if not manual_override and healthy:
++    alerts = d.events.create_alerts([ET.WARNING], [d.CP])
++    assert len(alerts) == 1
++    assert alerts[0].alert_text_1 == 'Turn Exceeds Steering Limit'
++    assert alerts[0].audible_alert == log.SelfdriveState.AudibleAlert.promptRepeat
++    assert alerts[0].alert_size == log.SelfdriveState.AlertSize.small
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('requested,measured,output,expected', [
++  (90, 87.5, 90, False),
++  (90, 87.49, 90, True),
++  (90, 95, 90, False),  # Driver has already turned farther than requested.
++  (90, 90, 87.49, True),  # Command clipping remains visible while the driver helps.
++])
++def test_directional_tracking_and_clipping_boundaries(sign, requested, measured, output, expected):
++  state = EV9SteeringWarning()
++  for frame in range(40):
++    result = sample(state, frame, requested=sign * requested, measured=sign * measured, output=sign * output)
++  assert result == expected
++
++
++def test_bad_clock_recovers_without_carrying_persistence():
++  state = EV9SteeringWarning()
++  assert not sample(state, 0, now=float('nan'))
++  for frame in range(29):
++    assert not sample(state, frame)
++  assert sample(state, 29)
++
++
++@pytest.mark.parametrize('pressed,speed,expected', [(False, 10, True), (True, 10, False), (False, 2, False)])
++def test_other_hyundai_retains_generic_takeover_gates(pressed, speed, expected):
++  d = SelfdriveD.__new__(SelfdriveD)
++  d.CP = CarInterface.get_non_essential_params(CAR.HYUNDAI_IONIQ_5_PE)
++  d.events, d.starpilot_events = Events(), Events(starpilot=True)
++  d.last_steering_pressed_frame = 0
++  d.starpilot_toggles = SimpleNamespace(goat_scream_alert=False)
++  cs = car.CarState.new_message(vEgo=speed, steeringAngleDeg=80, steeringPressed=pressed)
++  controls = log.ControlsState.new_message(curvature=0.015)
++  controls.lateralControlState.init('angleState')
++  controls.lateralControlState.angleState.active = True
++  controls.lateralControlState.angleState.saturated = True
++  controls.lateralControlState.angleState.steeringAngleDesiredDeg = 100
++  d.sm = SM(controlsState=controls, modelV2=SimpleNamespace(action=SimpleNamespace(desiredCurvature=0.04)))
++  d.sm.frame = 1000
++  d.update_steering_saturation_events(cs)
++  assert (log.OnroadEvent.EventName.steerSaturated in d.events.names) == expected
++
++
++def test_existing_sound_selection_and_cooldown_are_preserved(monkeypatch):
++  from openpilot.selfdrive.selfdrived import selfdrived
++  d = SelfdriveD.__new__(SelfdriveD)
++  d.events, d.starpilot_events = Events(), Events(starpilot=True)
++  d.starpilot_toggles = SimpleNamespace(goat_scream_alert=True)
++  d.last_steer_saturated_alert_time = 10
++  monkeypatch.setattr(selfdrived.time, 'monotonic', lambda: 11)
++  d.add_steering_saturation_event(True, 2)
++  assert not d.events.names and not d.starpilot_events.names
++  monkeypatch.setattr(selfdrived.time, 'monotonic', lambda: 12)
++  d.add_steering_saturation_event(True, 2)
++  assert selfdrived.StarPilotEventName.goatSteerSaturated in d.starpilot_events.names
++  assert not d.events.names
++
++
++@pytest.mark.parametrize('control_type', ['pidState', 'debugState'])
++def test_startup_or_debug_control_state_resets_ev9_warning(control_type):
++  d = SelfdriveD.__new__(SelfdriveD)
++  d.CP = CarInterface.get_non_essential_params(CAR.KIA_EV9)
++  d.events, d.starpilot_events = Events(), Events(starpilot=True)
++  d.last_steering_pressed_frame = 0
++  d.starpilot_toggles = SimpleNamespace()
++  d.ev9_steering_warning = EV9SteeringWarning(elapsed=1, warning=True)
++  controls = log.ControlsState.new_message()
++  controls.lateralControlState.init(control_type)
++  d.sm = SM(controlsState=controls, carOutput=car.CarOutput.new_message())
++  d.update_steering_saturation_events(car.CarState.new_message(vEgo=10))
++  assert not d.ev9_steering_warning.warning
++  assert not d.events.names
 diff --git a/selfdrive/controls/tests/test_ev9_warnings.py b/selfdrive/controls/tests/test_ev9_warnings.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..5a657e3d242a3c36ca4d098bdb8c8a416df81b59
@@ -154,14 +355,14 @@ index 0000000000000000000000000000000000000000..5a657e3d242a3c36ca4d098bdb8c8a41
 +                                       False, 0.04, False, 0, None, None, SimpleNamespace())
 +  assert angle_log.saturated == (expected and platform == CAR.KIA_EV9)
 diff --git a/selfdrive/selfdrived/selfdrived.py b/selfdrive/selfdrived/selfdrived.py
-index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..408f2d74072b02589cd348a1573b1a1963d2d796 100644
+index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..27a8742bc26a4c2ddf2d694fd18359484fe80fc0 100644
 --- a/selfdrive/selfdrived/selfdrived.py
 +++ b/selfdrive/selfdrived/selfdrived.py
 @@ -28,6 +28,7 @@ from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
  from openpilot.selfdrive.selfdrived.state import StateMachine
  from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
  from openpilot.selfdrive.selfdrived.alert_sound import filter_forcing_stop_alert_sound
-+from openpilot.selfdrive.controls.lib.ev9_warnings import steering_saturation_warning_allowed
++from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning, ev9_angle_warnings_enabled, steering_saturation_warning_allowed
  
  from openpilot.system.version import get_build_metadata
  from openpilot.system.hardware import HARDWARE
@@ -198,7 +399,7 @@ index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..408f2d74072b02589cd348a1573b1a19
  
      # Check for FCW
      stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
-@@ -851,6 +828,34 @@ class SelfdriveD:
+@@ -851,6 +828,54 @@ class SelfdriveD:
        or getattr(self.starpilot_toggles, "conditional_chill_mode", False)
        else self.experimental_mode or self.sm['starpilotPlan'].experimentalMode))
  
@@ -209,6 +410,23 @@ index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..408f2d74072b02589cd348a1573b1a19
 +    recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
 +    controlstate = self.sm['controlsState']
 +    lac = getattr(controlstate.lateralControlState, controlstate.lateralControlState.which())
++    if ev9_angle_warnings_enabled(self.CP) and not self.CP.notCar:
++      if not hasattr(self, "ev9_steering_warning"):
++        self.ev9_steering_warning = EV9SteeringWarning()
++      output = self.sm['carOutput'].actuatorsOutput.steeringAngleDeg
++      warning_inputs_valid = all(getattr(self.sm, check, {}).get(service, True)
++                                 for check in ("valid", "alive", "freq_ok") for service in ("controlsState", "carOutput"))
++      # The controller reports actual manual handoff; numerical angle agreement also occurs at real EPS limits.
++      manual_following = getattr(self.sm['carOutput'].actuatorsOutput, "manualSteeringOverride", False)
++      warning = self.ev9_steering_warning.update(
++        now=self.sm.frame * DT_CTRL, active=lac.active and not CS.standstill and warning_inputs_valid,
++        speed=CS.vEgo, requested=getattr(lac, "steeringAngleDesiredDeg", float("nan")), measured=CS.steeringAngleDeg,
++        output=output, threshold_kph=getattr(self.starpilot_toggles, "hkg_tuning_ev9_alerts_speed_kph", 50),
++        manual_following=manual_following,
++      )
++      if warning:
++        self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
++      return
 +    if lac.active and not recent_steer_pressed and not self.CP.notCar:
 +      clipped_speed = max(CS.vEgo, 0.3)
 +      actual_lateral_accel = controlstate.curvature * (clipped_speed**2)
@@ -219,16 +437,19 @@ index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..408f2d74072b02589cd348a1573b1a19
 +      # TODO: lac.saturated includes speed and other checks, should be pulled out
 +      if (undershooting and turning and (lac.saturated or commanded_torque_at_max) and
 +          steering_saturation_warning_allowed(self.CP, lac, CS.vEgo, self.starpilot_toggles)):
-+        now = time.monotonic()
-+        cooldown_active = switchback_mode_enabled and switchback_mode_cooldown > 0.0
-+        if not cooldown_active or (now - self.last_steer_saturated_alert_time) >= switchback_mode_cooldown:
-+          if switchback_mode_enabled:
-+            self.last_steer_saturated_alert_time = now
++        self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
 +
-+          if self.starpilot_toggles.goat_scream_alert:
-+            self.starpilot_events.add(StarPilotEventName.goatSteerSaturated)
-+          else:
-+            self.events.add(EventName.steerSaturated)
++  def add_steering_saturation_event(self, switchback_mode_enabled=False, switchback_mode_cooldown=0.0):
++    now = time.monotonic()
++    cooldown_active = switchback_mode_enabled and switchback_mode_cooldown > 0.0
++    if not cooldown_active or (now - self.last_steer_saturated_alert_time) >= switchback_mode_cooldown:
++      if switchback_mode_enabled:
++        self.last_steer_saturated_alert_time = now
++
++      if getattr(self.starpilot_toggles, "goat_scream_alert", False):
++        self.starpilot_events.add(StarPilotEventName.goatSteerSaturated)
++      else:
++        self.events.add(EventName.steerSaturated)
 +
    def data_sample(self):
      _car_state = messaging.recv_one(self.car_state_sock)

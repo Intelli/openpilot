@@ -1,4 +1,31 @@
-from openpilot.selfdrive.controls.lib.drive_helpers import get_kona_non_scc_lateral_active, get_lateral_active
+from types import SimpleNamespace
+
+import pytest
+from cereal import log
+
+from openpilot.selfdrive.controls.lib.drive_helpers import get_calibrated_lateral_active, get_kona_non_scc_lateral_active, get_lateral_active
+
+
+@pytest.mark.parametrize("normal_active,aol", [(False, True), (True, False), (True, True)])
+@pytest.mark.parametrize("status,healthy,expected", [
+  ("uncalibrated", True, False), ("invalid", True, False), ("recalibrating", True, False),
+  ("calibrated", False, False), ("calibrated", True, True),
+])
+def test_final_ev9_calibration_gate_blocks_stale_aol_and_normal_requests(normal_active, aol, status, healthy, expected):
+  class CalibrationSM(dict):
+    def all_checks(self, services):
+      assert services == ['liveCalibration']
+      return healthy
+
+  sm = CalibrationSM(liveCalibration=SimpleNamespace(calStatus=getattr(log.LiveCalibrationData.Status, status), calPerc=100))
+  request = get_lateral_active(normal_active, normal_active, aol, False, False, False, False, True)
+  assert request
+  assert get_calibrated_lateral_active(request, sm) is expected
+
+
+def test_final_calibration_gate_cannot_create_a_lateral_request():
+  sm = SimpleNamespace(all_checks=lambda _: True)
+  assert not get_calibrated_lateral_active(False, sm)
 
 
 def test_get_lateral_active_requires_enabled_without_aol():

@@ -22,6 +22,7 @@ from opendbc.car.vehicle_model import VehicleModel
 from openpilot.selfdrive.controls.lib.drive_helpers import (
   MAX_LATERAL_JERK,
   clip_curvature,
+  get_calibrated_lateral_active,
   get_kona_non_scc_lateral_active,
   get_lateral_active,
   update_lateral_fault_latch,
@@ -544,6 +545,10 @@ class Controls:
                                         CS.steerFaultTemporary, CS.steerFaultPermanent,
                                         standstill, self.CP.steerAtStandstill,
                                         self.sm['starpilotPlan'].lateralCheck)
+    if self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9:
+      # AOL and normal soft-disabling state can both retain a lateral request.
+      # Neither may actuate using incomplete, invalid, or stale calibration.
+      CC.latActive = get_calibrated_lateral_active(CC.latActive, self.sm)
     # EcuDisableFailed is set when car started in READY mode (ECU disable was rejected)
     # Disable longitudinal so stock ACC works instead
     self.update_ecu_disable_failed()

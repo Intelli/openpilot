@@ -604,6 +604,7 @@ class CarController(CarControllerBase):
 
   def update(self, CC, CS, now_nanos, starpilot_toggles):
     actuators = CC.actuators
+    manual_steering_override = False
     hud_control = CC.hudControl
     lka_icon, lfa_icon = self._update_dash_icon_state(CC)
 
@@ -672,6 +673,8 @@ class CarController(CarControllerBase):
           v_ego=v_ego_raw, desired_angle=desired_angle, measured_angle=measured_steering_angle,
           steer_threshold=self.params.STEER_THRESHOLD,
         )
+        manual_steering_override = bool(angle_lat_active and handoff.manual_override and
+                                        CS.out.gearShifter == structs.CarState.GearShifter.drive and not CS.out.standstill)
         # Keep the ramp history independent of the temporary manual-override scaling.
         self.apply_torque_base_last = compute_torque_reduction_gain(
           CS.out.steeringTorque, v_ego_raw, angle_lat_active, self.apply_torque_base_last,
@@ -830,6 +833,7 @@ class CarController(CarControllerBase):
                                             stopping, hud_control, actuators, CS, CC, lka_icon, lfa_icon))
 
     new_actuators = actuators.as_builder()
+    new_actuators.manualSteeringOverride = manual_steering_override
     if self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
       new_actuators.steeringAngleDeg = self.apply_angle_last if self.CP.carFingerprint == CAR.KIA_EV9 else apply_angle
       new_actuators.torque = 0
@@ -996,6 +1000,16 @@ class CarController(CarControllerBase):
     forward_stock_lkas = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and angle_lkas_alt and (
       angle_lkas_alt_standstill_handoff or not (drive_gear and (CC.latActive or CC.enabled))
     )
+    ev9_lkas_owned = self.CP.carFingerprint == CAR.KIA_EV9 and angle_lkas_alt and not ccnc_angle_long
+    if ev9_lkas_owned:
+      # Keep one continuous steering stream, including when software engagement is refused or OFF.
+      # Panda retains ownership of LKAS_ALT independently of its actuation permissions.
+      forward_stock_lkas = False
+      steering_msg_active = bool(steering_msg_active and drive_gear and not CS.out.standstill)
+      if not steering_msg_active:
+        apply_angle = float(np.clip(CS.mdps_steering_angle, -self.params.ANGLE_LIMITS.STEER_ANGLE_MAX, self.params.ANGLE_LIMITS.STEER_ANGLE_MAX))
+        apply_torque = self.apply_torque_last = self.apply_torque_base_last = 0.0
+        self.apply_angle_last = self.angle_filter.x = apply_angle
     preserve_stock_lfa_status = preserve_stock_canfd_lfa_status(self.CP.carFingerprint)
     angle_transport = 0xCB if ccnc_angle_long else 0x110
     sends_angle = ccnc_angle_long or not forward_stock_lkas
@@ -1040,6 +1054,8 @@ class CarController(CarControllerBase):
     suppress_lfa = bool(lka_steering)
     if angle_lkas_alt and self.CP.carFingerprint != CAR.KIA_SPORTAGE_HEV_2026:
       suppress_lfa = bool(lka_steering and drive_gear and (CC.latActive or (ccnc_angle_long and CC.enabled)))
+    if ev9_lkas_owned:
+      suppress_lfa = bool(lka_steering)
     if self.frame % 5 == 0 and suppress_lfa:
       can_sends.append(hyundaicanfd.create_suppress_lfa(self.packer, self.CAN, CS.lfa_block_msg,
                                                         self.CP.flags & HyundaiFlags.CANFD_LKA_STEERING_ALT))

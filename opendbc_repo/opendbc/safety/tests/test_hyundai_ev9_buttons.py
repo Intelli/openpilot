@@ -18,8 +18,8 @@ def test_ev9_stock_acc_main_allows_aol_during_braking_without_cruise_engagement(
   assert not case.safety.get_controls_allowed()
 
   case._rx(case._button_msg(0, main_button=1))
-  if not main_initially_on:
-    assert case.safety.get_aol_allowed()
+  # A button edge cannot invent main availability or invert the last SCC report.
+  assert case.safety.get_aol_allowed() == main_initially_on
   case._rx(case._button_msg(0, main_button=0))
   # Stock SCC continues reporting main availability while ACCMode remains zero.
   case._rx(case.packer.make_can_msg_safety("SCC_CONTROL", case.SCC_BUS, {"MainMode_ACC": 1, "ACCMode": 0}))

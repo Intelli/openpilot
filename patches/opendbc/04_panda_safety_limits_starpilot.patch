@@ -31,10 +31,25 @@ index 96cc056f15cae0020c45bd8ca1880d73982a070e..723f994826be53ca68868ba72bb0539b
    const float fudged_speed = SAFETY_MAX((vehicle_speed.min / VEHICLE_SPEED_FACTOR) - 1.0, 1.0);
    const float curvature_factor = get_curvature_factor(fudged_speed, params);
 diff --git a/opendbc/safety/modes/hyundai_canfd.h b/opendbc/safety/modes/hyundai_canfd.h
-index f7cc74a8095de6d42a579269168b6717408b42c5..07750ce81bc5377c8efabba273767a75ca14e6c6 100644
+index 48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb..9dc7d7701160556923a77ca2a2deadb5c2a9ea49 100644
 --- a/opendbc/safety/modes/hyundai_canfd.h
 +++ b/opendbc/safety/modes/hyundai_canfd.h
-@@ -224,9 +224,15 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+@@ -100,7 +100,14 @@ static bool hyundai_canfd_lka_alt_openpilot_allowed(void) {
+          (!hyundai_ev_gas_signal || hyundai_canfd_lka_alt_drive_gear);
+ }
+ 
++static bool hyundai_canfd_ev9_lkas_owned(void) {
++  return hyundai_canfd_ev9 && hyundai_canfd_lka_steering_alt && !hyundai_canfd_ccnc_angle_long;
++}
++
+ static bool hyundai_canfd_lka_alt_stock_forwarding(void) {
++  if (hyundai_canfd_ev9_lkas_owned()) {
++    return false;
++  }
+   return hyundai_canfd_lka_steering_alt && hyundai_canfd_angle_steering && !hyundai_canfd_lka_alt_openpilot_allowed();
+ }
+ 
+@@ -224,9 +231,15 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
      .min_valid_request_rt_interval = 810000,  // 810ms; a ~10% buffer on cutting every 90 frames
      .has_steer_req_tolerance = true,
    };
@@ -50,3 +65,14 @@ index f7cc74a8095de6d42a579269168b6717408b42c5..07750ce81bc5377c8efabba273767a75
      .frequency = 100U,
    };
    const AngleSteeringParams HYUNDAI_CANFD_ANGLE_STEERING_PARAMS = {
+@@ -270,6 +283,10 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+     if (hyundai_canfd_angle_steering) {
+       const int lkas_angle_active = (msg->data[9] >> 4U) & 0x3U;
+       const bool steer_angle_req = lkas_angle_active != 1;
++      // Continuous inactive EV9 LKAS traffic does not grant permission to actuate.
++      if (hyundai_canfd_ev9_lkas_owned() && steer_angle_req && !hyundai_canfd_lka_alt_openpilot_allowed()) {
++        tx = false;
++      }
+ 
+       int desired_angle = (msg->data[11] << 6U) | (msg->data[10] >> 2U);
+       desired_angle = to_signed(desired_angle, 14);

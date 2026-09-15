@@ -375,6 +375,7 @@ struct CarControl {
     torqueOutputCan @8: Float32;   # value sent over can to the car
     speed @6: Float32;  # m/s
     lateralControlMode @9: LateralControlMode;
+    manualSteeringOverride @10: Bool;  # controller is following the driver's manual steering request
 
     enum LongControlState @0xe40f3a917d908282{
       off @0;
