@@ -713,10 +713,10 @@ index 0000000000000000000000000000000000000000..e5c3b901bb553a6077c53e76b8372f2e
 +  assert not case._tx(case._angle_cmd_msg(0, enabled=True))
 diff --git a/opendbc/safety/tests/test_hyundai_ev9_controller.py b/opendbc/safety/tests/test_hyundai_ev9_controller.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..b50d2bde683fe120a2658a7e7ab8a414bcf481e7
+index 0000000000000000000000000000000000000000..628fc5ff8199d873ab33e1f59c6b8df59cc44578
 --- /dev/null
 +++ b/opendbc/safety/tests/test_hyundai_ev9_controller.py
-@@ -0,0 +1,484 @@
+@@ -0,0 +1,488 @@
 +"""Verify complete EV9 controller output against native Panda safety hooks."""
 +
 +import pytest
@@ -904,7 +904,7 @@ index 0000000000000000000000000000000000000000..b50d2bde683fe120a2658a7e7ab8a414
 +      frame += 1
 +
 +
-+def check_controller_sequence(direct, samples, manual):
++def check_controller_sequence(direct, samples, manual, hands_on_samples=None):
 +  c, cs, cc, toggles = setup_controller(direct)
 +  toggles.hkg_shared_autonomy_mode = int(manual)
 +  cs.out.vEgoRaw = cs.out.vEgo = 30 / 3.6
@@ -925,7 +925,8 @@ index 0000000000000000000000000000000000000000..b50d2bde683fe120a2658a7e7ab8a414
 +    cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = angle
 +    cs.out.steeringTorque = torque
 +    cs.out.steeringPressed = torque >= 175
-+    cs.hands_on_steering_grip = 3 if manual else 0
++    hands_on = bool(manual) if hands_on_samples is None else hands_on_samples[frame]
++    cs.hands_on_steering_grip = 3 if hands_on else 0
 +    cs.hands_on_steering_ts_nanos = now
 +    cc.actuators.steeringAngleDeg = angle
 +    for _ in range(6):
@@ -941,12 +942,16 @@ index 0000000000000000000000000000000000000000..b50d2bde683fe120a2658a7e7ab8a414
 +
 +
 +@pytest.mark.parametrize("direct", [False, True])
-+def test_gain_recovery_preserves_prompt_reduction(direct):
-+  samples = [(0, 200)] * 3 + [(0, 134)] * 60 + [(0, 200)]
-+  gains = check_controller_sequence(direct, samples, False)
++@pytest.mark.parametrize("mode", [0, 1, 2])
++def test_gain_recovery_preserves_prompt_reduction(direct, mode):
++  samples = [(100, 200)] * 3 + [(100, 134)] * 60 + [(100, 200)]
++  gains = check_controller_sequence(direct, samples, mode, [True] * 3 + [False] * 60 + [True])
 +  assert gains[0] == pytest.approx(0.1)
-+  assert gains[3] == pytest.approx(0.104)
-+  assert max(b - a for a, b in zip(gains, gains[1:], strict=False)) <= 0.0040001
++  if mode == 0:
++    assert gains[3] == pytest.approx(0.516)  # Restore the independently ramped base immediately, as in Sunnypilot.
++  else:
++    assert gains[3] == pytest.approx(0.104)
++    assert max(b - a for a, b in zip(gains, gains[1:], strict=False)) <= 0.0040001
 +  assert gains[-2] > 0.3
 +  assert gains[-1] == pytest.approx(0.1)
 +
@@ -1055,8 +1060,7 @@ index 0000000000000000000000000000000000000000..b50d2bde683fe120a2658a7e7ab8a414
 +  cs.out.steeringTorque = 0
 +  cs.out.steeringPressed = False
 +  c.update(cc.as_reader(), cs, 3_010_000_000, toggles)
-+  assert c.apply_torque_last == pytest.approx(0.104)
-+  assert c.apply_torque_base_last > c.apply_torque_last
++  assert c.apply_torque_last == pytest.approx(c.apply_torque_base_last)
 +  for frame in range(200):
 +    c.update(cc.as_reader(), cs, 3_020_000_000 + frame * 10_000_000, toggles)
 +  assert c.apply_torque_last == pytest.approx(c.apply_torque_base_last)

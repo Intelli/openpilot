@@ -185,7 +185,7 @@ def test_ev9_steering_stream_ownership_across_application_and_vehicle_states():
       frame += 1
 
 
-def check_controller_sequence(direct, samples, manual):
+def check_controller_sequence(direct, samples, manual, hands_on_samples=None):
   c, cs, cc, toggles = setup_controller(direct)
   toggles.hkg_shared_autonomy_mode = int(manual)
   cs.out.vEgoRaw = cs.out.vEgo = 30 / 3.6
@@ -206,7 +206,8 @@ def check_controller_sequence(direct, samples, manual):
     cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = angle
     cs.out.steeringTorque = torque
     cs.out.steeringPressed = torque >= 175
-    cs.hands_on_steering_grip = 3 if manual else 0
+    hands_on = bool(manual) if hands_on_samples is None else hands_on_samples[frame]
+    cs.hands_on_steering_grip = 3 if hands_on else 0
     cs.hands_on_steering_ts_nanos = now
     cc.actuators.steeringAngleDeg = angle
     for _ in range(6):
@@ -222,12 +223,16 @@ def check_controller_sequence(direct, samples, manual):
 
 
 @pytest.mark.parametrize("direct", [False, True])
-def test_gain_recovery_preserves_prompt_reduction(direct):
-  samples = [(0, 200)] * 3 + [(0, 134)] * 60 + [(0, 200)]
-  gains = check_controller_sequence(direct, samples, False)
+@pytest.mark.parametrize("mode", [0, 1, 2])
+def test_gain_recovery_preserves_prompt_reduction(direct, mode):
+  samples = [(100, 200)] * 3 + [(100, 134)] * 60 + [(100, 200)]
+  gains = check_controller_sequence(direct, samples, mode, [True] * 3 + [False] * 60 + [True])
   assert gains[0] == pytest.approx(0.1)
-  assert gains[3] == pytest.approx(0.104)
-  assert max(b - a for a, b in zip(gains, gains[1:], strict=False)) <= 0.0040001
+  if mode == 0:
+    assert gains[3] == pytest.approx(0.516)  # Restore the independently ramped base immediately, as in Sunnypilot.
+  else:
+    assert gains[3] == pytest.approx(0.104)
+    assert max(b - a for a, b in zip(gains, gains[1:], strict=False)) <= 0.0040001
   assert gains[-2] > 0.3
   assert gains[-1] == pytest.approx(0.1)
 
@@ -336,8 +341,7 @@ def test_effort_override_does_not_corrupt_base_ramp():
   cs.out.steeringTorque = 0
   cs.out.steeringPressed = False
   c.update(cc.as_reader(), cs, 3_010_000_000, toggles)
-  assert c.apply_torque_last == pytest.approx(0.104)
-  assert c.apply_torque_base_last > c.apply_torque_last
+  assert c.apply_torque_last == pytest.approx(c.apply_torque_base_last)
   for frame in range(200):
     c.update(cc.as_reader(), cs, 3_020_000_000 + frame * 10_000_000, toggles)
   assert c.apply_torque_last == pytest.approx(c.apply_torque_base_last)

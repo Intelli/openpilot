@@ -20,7 +20,7 @@ index a0d3fad8a4684f1afea2cb0246da1211789940ae..ee7e3f658eac0198bd67f02abd7cd632
      enum LongControlState @0xe40f3a917d908282{
        off @0;
 diff --git a/opendbc/car/hyundai/carcontroller.py b/opendbc/car/hyundai/carcontroller.py
-index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..230e8051ba071ab0b3aa47846203044e09d8542a 100644
+index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f19c596a7 100644
 --- a/opendbc/car/hyundai/carcontroller.py
 +++ b/opendbc/car/hyundai/carcontroller.py
 @@ -1,4 +1,4 @@
@@ -133,7 +133,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..230e8051ba071ab0b3aa47846203044e
          # Match Panda's 1 m/s speed tolerance so a shrinking absolute limit stays inside its jerk envelope.
          safety_v_ego = max(v_ego_raw - 1.0, 1.0)
          max_angle_delta = min(get_max_angle_delta_vm(safety_v_ego, self.BASELINE_VM, self.params),
-@@ -611,14 +665,46 @@ class CarController(CarControllerBase):
+@@ -611,14 +665,48 @@ class CarController(CarControllerBase):
                                      self.apply_angle_last - max_angle_delta,
                                      self.apply_angle_last + max_angle_delta))
  
@@ -165,7 +165,9 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..230e8051ba071ab0b3aa47846203044e
 +          self.angle_filter.x = apply_angle
 +        else:
 +          self._ev9_manual.allow_manual_request(False, False)
-+        apply_torque = limit_gain_recovery(apply_torque, self.apply_torque_last)
++        # Mode 0 restores its base assistance immediately after torque override, matching Sunnypilot.
++        if self.ev9_angle_config.shared_autonomy_mode != 0:
++          apply_torque = limit_gain_recovery(apply_torque, self.apply_torque_last)
 +      else:
 +        apply_torque = compute_torque_reduction_gain(CS.out.steeringTorque, v_ego_raw, angle_lat_active, self.apply_torque_last)
 +        apply_steer_req = angle_lat_active and apply_torque != 0.0
@@ -182,7 +184,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..230e8051ba071ab0b3aa47846203044e
  
        self.apply_angle_last = apply_angle
        if not angle_lat_active:
-@@ -747,8 +833,9 @@ class CarController(CarControllerBase):
+@@ -747,8 +835,9 @@ class CarController(CarControllerBase):
                                              stopping, hud_control, actuators, CS, CC, lka_icon, lfa_icon))
  
      new_actuators = actuators.as_builder()
@@ -193,7 +195,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..230e8051ba071ab0b3aa47846203044e
        new_actuators.torque = 0
        new_actuators.torqueOutputCan = 0
      else:
-@@ -900,7 +987,7 @@ class CarController(CarControllerBase):
+@@ -900,7 +989,7 @@ class CarController(CarControllerBase):
      ccnc_angle_long = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and \
        self.CP.flags & HyundaiFlags.CCNC and angle_lkas_alt and self.long_active_ecu
      steering_msg_active = apply_steer_req
@@ -202,7 +204,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..230e8051ba071ab0b3aa47846203044e
        # Angle LKAS_ALT cars fault if the angle-steering status drops inactive during torque limiting.
        # Hold the angle status active while lateral is active; VM/safety limits handle actuation.
        steering_msg_active = CC.latActive
-@@ -913,7 +1000,31 @@ class CarController(CarControllerBase):
+@@ -913,7 +1002,31 @@ class CarController(CarControllerBase):
      forward_stock_lkas = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and angle_lkas_alt and (
        angle_lkas_alt_standstill_handoff or not (drive_gear and (CC.latActive or CC.enabled))
      )
@@ -234,7 +236,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..230e8051ba071ab0b3aa47846203044e
      if not forward_stock_lkas and not ccnc_angle_long:
        can_sends.extend(hyundaicanfd.create_steering_messages(self.packer, self.CP, self.CAN, CC.enabled,
                                                               steering_msg_active, apply_torque, apply_angle,
-@@ -922,6 +1033,8 @@ class CarController(CarControllerBase):
+@@ -922,6 +1035,8 @@ class CarController(CarControllerBase):
                                                               lka_icon=lka_icon,
                                                               longitudinal_active=lfa_longitudinal_active))
      direct_steering_active = ccnc_angle_long and drive_gear and CC.latActive and self.direct_angle_request_allowed and not CS.angle_steering_fault
@@ -243,7 +245,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..230e8051ba071ab0b3aa47846203044e
      inactive_steering_angle = float(np.clip(CS.angle_steering_angle,
                                              -self.params.ANGLE_LIMITS.STEER_ANGLE_MAX,
                                              self.params.ANGLE_LIMITS.STEER_ANGLE_MAX)) if ccnc_angle_long else 0.0
-@@ -934,11 +1047,15 @@ class CarController(CarControllerBase):
+@@ -934,11 +1049,15 @@ class CarController(CarControllerBase):
      if ccnc_angle_long and not drive_gear:
        can_sends.extend(hyundaicanfd.create_inactive_angle_steering_messages(self.packer, self.CAN,
                                                                               inactive_steering_angle))
