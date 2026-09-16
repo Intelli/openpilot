@@ -10,14 +10,6 @@ EV9_WARNING_CLEAR_ANGLE_DEG = 85.0
 EV9_WARNING_TRACKING_GAP_DEG = 2.5
 EV9_WARNING_CLEAR_GAP_DEG = 1.0
 EV9_WARNING_PERSISTENCE_SECONDS = 0.3
-EV9_HANDS_ON_MAX_AGE_NS = 300_000_000
-
-
-def ev9_warning_hands_on(CS, now_nanos):
-  timestamp = getattr(CS, "handsOnWheelTimestamp", 0)
-  fresh_touch = (getattr(CS, "handsOnWheel", False) and timestamp > 0 and
-                 0 <= now_nanos - timestamp <= EV9_HANDS_ON_MAX_AGE_NS)
-  return bool(fresh_touch or CS.steeringPressed)
 
 
 def ev9_angle_warnings_enabled(CP) -> bool:
@@ -43,14 +35,14 @@ class EV9SteeringWarning:
   last_time: float | None = None
 
   def update(self, *, now, active, speed, requested, measured, output, threshold_kph,
-             controller_saturated=False, manual_following=False, hands_on=False):
+             controller_saturated=False, manual_following=False, steering_pressed=False, recent_steer_pressed=False):
     dt = 0.01 if self.last_time is None else now - self.last_time
     self.last_time = now
     if not all(math.isfinite(value) for value in (now, speed, requested, measured, dt)) or dt < 0 or dt > 0.2:
       self.elapsed, self.ready_elapsed, self.warning = 0.0, 0.0, False
       self.last_time = now if math.isfinite(now) else None
       return False
-    if not active or speed <= 0.3 or manual_following or hands_on:
+    if not active or speed <= 0.3 or manual_following or steering_pressed:
       self.elapsed, self.ready_elapsed, self.warning = 0.0, 0.0, False
       return False
     # Rearm after suppression, in parallel with the controller's saturation timer and independent of angle/speed eligibility.
@@ -65,6 +57,7 @@ class EV9SteeringWarning:
     self.elapsed = self.elapsed + dt if eligible and insufficient else 0.0
     # Controller saturation already includes its persistence timer, including curvature limiting.
     controller_ready = controller_saturated and self.ready_elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6
-    self.warning = eligible and (controller_ready or
-                                (insufficient and (self.warning or self.elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6)))
+    # Recover saturation during the legacy two-second driver-input holdoff, without arming warning hysteresis.
+    self.warning = not recent_steer_pressed and eligible and (
+      controller_ready or (insufficient and (self.warning or self.elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6)))
     return self.warning
