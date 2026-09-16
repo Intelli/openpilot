@@ -470,7 +470,7 @@ index 0000000000000000000000000000000000000000..c364ea885bf0648502476cb4382694e8
 +    values[attribute] = int(max(minimum, min(value, maximum)))
 +  return values
 diff --git a/starpilot/common/starpilot_variables.py b/starpilot/common/starpilot_variables.py
-index 9402973be90f7401b190a39b96beb098744c9b11..c15c03099d7345a1e254bd40805e2753a6f07535 100644
+index 6a0dc692a91e3d4b627acd7dac94137e74078d43..6bb525b554cc526882b04e9d68161c89bfa96211 100644
 --- a/starpilot/common/starpilot_variables.py
 +++ b/starpilot/common/starpilot_variables.py
 @@ -29,6 +29,7 @@ from openpilot.common.params import Params
@@ -620,7 +620,7 @@ index 0000000000000000000000000000000000000000..7cd470c777a8775b29907e06e54e7ac9
 +  config = EV9AngleConfig.from_toggles(spv.get_starpilot_toggles({'starpilotPlan': SimpleNamespace(starpilotToggles=payload)}))
 +  assert config.limit_speed_mps == pytest.approx(30 / 3.6)
 diff --git a/starpilot/common/tests/test_starpilot_variables.py b/starpilot/common/tests/test_starpilot_variables.py
-index dd1d71e80bada04c785e53f18316b1c0b11af8b2..99bf60e4eb5db376f5808a723ee011ee1bcee73e 100644
+index dd1d71e80bada04c785e53f18316b1c0b11af8b2..80a4820725d781e6a8f893660dae06f4fa28f93d 100644
 --- a/starpilot/common/tests/test_starpilot_variables.py
 +++ b/starpilot/common/tests/test_starpilot_variables.py
 @@ -1,5 +1,7 @@
@@ -852,8 +852,8 @@ index dd1d71e80bada04c785e53f18316b1c0b11af8b2..99bf60e4eb5db376f5808a723ee011ee
 +  assert raw_params.get("HasAcceptedTerms") is None
 +  assert raw_params.get("DeviceShutdown") is None
 +  assert params.get("HasAcceptedTerms") == terms_version == "2"
-+  assert params.get_int("DeviceShutdown") == spv.DEVICE_SHUTDOWN_DEFAULT_HOURS == 1
-+  assert spv.device_shutdown_seconds(params.get_int("DeviceShutdown")) == 3600
++  assert params.get_int("DeviceShutdown") == spv.DEVICE_SHUTDOWN_DEFAULT_HOURS == 2
++  assert spv.device_shutdown_seconds(params.get_int("DeviceShutdown")) == 2 * 3600
 +
 +  raw_params.put("HasAcceptedTerms", "0")
 +  raw_params.put_int("DeviceShutdown", 6)
@@ -886,7 +886,7 @@ index dd1d71e80bada04c785e53f18316b1c0b11af8b2..99bf60e4eb5db376f5808a723ee011ee
 +    variables.update()
 +    assert variables.starpilot_toggles.is_metric is display_metric
 +    assert variables.starpilot_toggles.minimum_lane_change_speed == pytest.approx((saved_speed or 20) * CV.MPH_TO_MS)
-+    assert variables.starpilot_toggles.device_shutdown_time == 3600
++    assert variables.starpilot_toggles.device_shutdown_time == 2 * 3600
 +
 +
  def test_favorite_button_flags_map_to_three_slots():

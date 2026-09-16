@@ -202,6 +202,12 @@ LEGACY_LATERAL_METHOD_API_PREFIX = "/api/" + "".join(("f", "t", "m"))
 VASM_CONFIGURATION_KEYS = {"VASMEnabled", "VASMConfidenceThreshold", "VASMSmoothSeconds", "VASMAnnotationConfig"}
 PIP_PREVIEW_CONFIGURATION_KEYS = {"PIPPreviewEnabled", "PIPPreviewMask", "PIPPreviewShowOnBlinker", "PIPPreviewShowOnBSM", "PIPPreviewInvert"}
 MODEL_SMOOTHING_KEYS = {"LatSmoothSeconds", "LongSmoothSeconds"}
+EV9_STEERING_PARAM_RANGES = {
+  "HkgSharedAutonomyMode": (0, 2),  # Legacy mode 2 is displayed and saved as On (1).
+  "HkgTuningAngleOverrideEffortPercent": (10, 100),
+  "HkgTuningAngleCustomLimitMaxSpeedKph": (10, 40),
+  "HkgTuningEv9AlertsSpeedKph": (10, 50),
+}
 GALAXY_DEVELOPER_ONLY_KEYS = {"TurnSteeringLimitMuteSpeed"}
 PULSE_GLIDE_BUTTON_KEYS = {
   "CancelButtonControl", "DistanceButtonControl",
@@ -3559,6 +3565,23 @@ def _safe_params_get_bool(key, default=False):
   except Exception:
     return bool(default)
 
+def _ev9_steering_settings_editable():
+  # Validate live state again when a confirmed browser edit reaches the server.
+  if (_safe_params_get_live_raw("IsOnroad") not in (False, 0, "0", b"0") or
+      _safe_params_get_live_raw("IsOffroad") not in (True, 1, "1", b"1")):
+    return False
+  cp_bytes = _safe_params_get_live_raw("CarParamsPersistent")
+  if cp_bytes:
+    try:
+      from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_angle_warnings_enabled
+      with car.CarParams.from_bytes(cp_bytes) as cp:
+        if cp.carFingerprint not in ("", "MOCK"):
+          return ev9_angle_warnings_enabled(cp)
+    except Exception:
+      return False
+  return _safe_params_get_live_raw("CarModel") in ("KIA_EV9", b"KIA_EV9")
+
+
 def _personality_settings_write_locked():
   return _safe_params_get_bool("IsOnroad", default=True) or not _safe_params_get_bool("IsOffroad", default=False)
 
@@ -3947,6 +3970,8 @@ def _get_current_param_value(key, value_type, defaults_lookup=None):
       defaults_lookup = _get_default_param_values()
     raw_value = defaults_lookup.get(key)
   value = _coerce_param_value(raw_value, value_type)
+  if key == "HkgSharedAutonomyMode" and value == 2:
+    return 1
   if key in ("Model", "DrivingModel") and isinstance(value, str):
     return canonical_model_key(value)
   return value
@@ -4712,6 +4737,10 @@ def _reset_troubleshoot_section(section_id):
     if ((is_onroad and key in blocked_onroad_keys) or
         (personality_writes_locked and key in PERSONALITY_PARKED_PARAM_KEYS)):
       skipped_keys.append({"key": key, "reason": "blocked until required off-road state is confirmed"})
+      continue
+
+    if key in EV9_STEERING_PARAM_RANGES and not _ev9_steering_settings_editable():
+      skipped_keys.append({"key": key, "reason": "requires an EV9 and confirmed off-road state"})
       continue
 
     if key not in default_values:
@@ -6252,6 +6281,14 @@ def setup(app):
       allowed_keys, _ = _get_param_type_info()
       if key not in allowed_keys:
         return jsonify({"error": f"Parameter '{key}' is not editable."}), 403
+
+      if key in EV9_STEERING_PARAM_RANGES:
+        if not _ev9_steering_settings_editable():
+          return jsonify({"error": "EV9 steering settings require an EV9 and confirmed off-road state."}), 403
+        minimum, maximum = EV9_STEERING_PARAM_RANGES[key]
+        if type(val) is not int or not minimum <= val <= maximum:
+          return jsonify({"error": f"{key} must be an integer from {minimum} to {maximum}."}), 400
+        str_val = str(1 if key == "HkgSharedAutonomyMode" and val == 2 else val)
 
       if key == "CustomPersonalities":
         if type(data["value"]) is not bool:

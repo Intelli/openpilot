@@ -1,11 +1,12 @@
 diff --git a/selfdrive/ui/layouts/settings/starpilot/ev9_settings.py b/selfdrive/ui/layouts/settings/starpilot/ev9_settings.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..69d4b5562a32dcf919d05a3c6949f75bd96a1784
+index 0000000000000000000000000000000000000000..9eec57b160cc2050b6d839c6f520e8a13d35dfd0
 --- /dev/null
 +++ b/selfdrive/ui/layouts/settings/starpilot/ev9_settings.py
-@@ -0,0 +1,14 @@
+@@ -0,0 +1,26 @@
 +"""Vehicle and offroad guards for EV9 steering settings."""
-+from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_angle_warnings_enabled
++from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_alert_speed_kph, ev9_angle_warnings_enabled
++from openpilot.starpilot.common.ev9_tuning import read_ev9_tuning
 +
 +
 +def ev9_settings_visible(cp, started, selected_model):
@@ -18,21 +19,30 @@ index 0000000000000000000000000000000000000000..69d4b5562a32dcf919d05a3c6949f75b
 +
 +def ev9_settings_editable(cp, started, selected_model):
 +  return not started and ev9_settings_visible(cp, started, selected_model)
++
++
++def ev9_setting_value(params, key):
++  if key == "HkgTuningEv9AlertsSpeedKph":
++    return int(ev9_alert_speed_kph(params.get(key)))
++  attributes = {
++    "HkgSharedAutonomyMode": "hkg_shared_autonomy_mode",
++    "HkgTuningAngleOverrideEffortPercent": "hkg_tuning_angle_override_effort_percent",
++    "HkgTuningAngleCustomLimitMaxSpeedKph": "hkg_tuning_angle_custom_limit_max_speed_kph",
++  }
++  return read_ev9_tuning(params)[attributes[key]]
 diff --git a/selfdrive/ui/layouts/settings/starpilot/lateral.py b/selfdrive/ui/layouts/settings/starpilot/lateral.py
-index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..8f15215f4f7bace8fd165d1a96020ef98f045f6b 100644
+index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..b5382b9c28245bb53985d5a8b3309f200d2afa31 100644
 --- a/selfdrive/ui/layouts/settings/starpilot/lateral.py
 +++ b/selfdrive/ui/layouts/settings/starpilot/lateral.py
-@@ -1,6 +1,9 @@
+@@ -1,6 +1,7 @@
  from __future__ import annotations
  
  from openpilot.system.hardware import HARDWARE
-+from openpilot.starpilot.common.ev9_tuning import read_ev9_tuning
-+from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_alert_speed_kph
-+from openpilot.selfdrive.ui.layouts.settings.starpilot.ev9_settings import ev9_settings_visible, ev9_settings_editable
++from openpilot.selfdrive.ui.layouts.settings.starpilot.ev9_settings import ev9_setting_value, ev9_settings_visible, ev9_settings_editable
  from openpilot.selfdrive.ui.lib.starpilot_state import starpilot_state
  from openpilot.system.ui.lib.application import gui_app
  from openpilot.system.ui.lib.multilang import tr, tr_noop
-@@ -10,7 +13,6 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import _SettingsPag
+@@ -10,7 +11,6 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import _SettingsPag
  from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
    DEFAULT_PANEL_STYLE,
    AetherSettingsView,
@@ -40,7 +50,7 @@ index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..8f15215f4f7bace8fd165d1a96020ef9
    ParentToggle,
    SettingRow,
    SettingSection,
-@@ -43,38 +45,6 @@ def _sync_parent(params, parent_key, child_keys):
+@@ -43,38 +43,6 @@ def _sync_parent(params, parent_key, child_keys):
        params.put_bool(parent_key, False)
  
  
@@ -79,7 +89,7 @@ index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..8f15215f4f7bace8fd165d1a96020ef9
  # ═══════════════════════════════════════════════════════════════
  # StarPilotLateralLayout — controller
  # ═══════════════════════════════════════════════════════════════
-@@ -322,12 +292,6 @@ class StarPilotLateralLayout(_SettingsPage):
+@@ -322,12 +290,6 @@ class StarPilotLateralLayout(_SettingsPage):
        ),
      ]
  
@@ -92,7 +102,7 @@ index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..8f15215f4f7bace8fd165d1a96020ef9
      p = self._params
      pt_behavior = ParentToggle(
        label="Always On Lateral",
-@@ -340,23 +304,32 @@ class StarPilotLateralLayout(_SettingsPage):
+@@ -340,23 +302,32 @@ class StarPilotLateralLayout(_SettingsPage):
      pt_advanced = self._make_parent("AdvancedLateralTune", "Advanced Lateral Tuning",
        "Fine-tune steering response and auto-tuning.")
  
@@ -139,7 +149,7 @@ index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..8f15215f4f7bace8fd165d1a96020ef9
      self._sub_panels["advanced"] = AetherSettingsView(
        self,
        [SettingSection(title="", rows=self._advanced_rows)],
-@@ -367,6 +340,61 @@ class StarPilotLateralLayout(_SettingsPage):
+@@ -367,6 +338,54 @@ class StarPilotLateralLayout(_SettingsPage):
      )
      self._wire_sub_panels()
  
@@ -152,14 +162,7 @@ index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..8f15215f4f7bace8fd165d1a96020ef9
 +    return ev9_settings_editable(ui_state.CP, ui_state.started, self._params.get("CarModel"))
 +
 +  def _ev9_value(self, key):
-+    if key == "HkgTuningEv9AlertsSpeedKph":
-+      return int(ev9_alert_speed_kph(self._params.get(key)))
-+    attributes = {
-+      "HkgSharedAutonomyMode": "hkg_shared_autonomy_mode",
-+      "HkgTuningAngleOverrideEffortPercent": "hkg_tuning_angle_override_effort_percent",
-+      "HkgTuningAngleCustomLimitMaxSpeedKph": "hkg_tuning_angle_custom_limit_max_speed_kph",
-+    }
-+    return read_ev9_tuning(self._params)[attributes[key]]
++    return ev9_setting_value(self._params, key)
 +
 +  def _ev9_set_manual(self, enabled):
 +    if self._ev9_editable():
@@ -201,12 +204,117 @@ index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..8f15215f4f7bace8fd165d1a96020ef9
    def _on_pause_lateral_speed_clicked(self):
      def on_speed_close(res, val):
        if res == DialogResult.CONFIRM:
+diff --git a/selfdrive/ui/mici/layouts/settings/ev9.py b/selfdrive/ui/mici/layouts/settings/ev9.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..11fce1bd94620f8d357db80d75ee9f2df1fc061c
+--- /dev/null
++++ b/selfdrive/ui/mici/layouts/settings/ev9.py
+@@ -0,0 +1,70 @@
++from openpilot.selfdrive.ui.layouts.settings.starpilot.ev9_settings import ev9_setting_value, ev9_settings_editable, ev9_settings_visible
++from openpilot.selfdrive.ui.lib.ui_param_cache import shared_ui_params
++from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle
++from openpilot.selfdrive.ui.mici.widgets.dialog import BigMultiOptionDialog
++from openpilot.selfdrive.ui.ui_state import ui_state
++from openpilot.starpilot.common.starpilot_variables import update_starpilot_toggles
++from openpilot.system.ui.lib.application import gui_app
++from openpilot.system.ui.widgets.scroller import NavScroller
++
++
++class EV9SteeringLayoutMici(NavScroller):
++  def __init__(self):
++    super().__init__()
++    self._params = shared_ui_params()
++    self._manual = BigToggle("improved manual control", toggle_callback=self._set_manual)
++    self._manual.set_enabled(self._editable)
++    self._controls = []
++    for key, title, maximum, step, unit in (
++      ("HkgTuningAngleOverrideEffortPercent", "steering override effort", 100, 10, "%"),
++      ("HkgTuningAngleCustomLimitMaxSpeedKph", "EV9 limits speed", 40, 1, " km/h"),
++      ("HkgTuningEv9AlertsSpeedKph", "EV9 alert speed", 50, 1, " km/h"),
++    ):
++      button = BigButton(title)
++      button.set_enabled(self._editable)
++      button.set_click_callback(lambda k=key, m=maximum, s=step, u=unit: self._select_value(k, m, s, u))
++      self._controls.append((key, unit, button))
++    self._scroller.add_widgets([self._manual, *(button for _, _, button in self._controls)])
++
++  def visible(self):
++    return ev9_settings_visible(ui_state.CP, ui_state.started, self._params.get("CarModel"))
++
++  def _editable(self):
++    return ev9_settings_editable(ui_state.CP, ui_state.started, self._params.get("CarModel"))
++
++  def _set_manual(self, enabled):
++    if self._editable():
++      self._params.put_int("HkgSharedAutonomyMode", int(enabled))
++      update_starpilot_toggles()
++    self._refresh()
++
++  def _select_value(self, key, maximum, step, unit):
++    if not self._editable():
++      return
++    current = ev9_setting_value(self._params, key)
++    # Preserve an existing in-range value even if it falls between UI steps.
++    values = sorted(set(range(10, maximum + 1, step)) | {current})
++    options = {f"{value}{unit}": value for value in values}
++
++    def on_confirm():
++      if self._editable():
++        self._params.put_int(key, options[dialog.get_selected_option()])
++        update_starpilot_toggles()
++      self._refresh()
++
++    dialog = BigMultiOptionDialog(options=list(options), default=f"{current}{unit}", right_btn_callback=on_confirm)
++    gui_app.push_widget(dialog)
++
++  def _refresh(self):
++    self._manual.set_checked(ev9_setting_value(self._params, "HkgSharedAutonomyMode") != 0)
++    self._manual.set_value("hands-on handoff" if self._editable() else "turn vehicle off to adjust")
++    for key, unit, button in self._controls:
++      button.set_value(f"{ev9_setting_value(self._params, key)}{unit}")
++
++  def show_event(self):
++    super().show_event()
++    self._refresh()
++
++  def _update_state(self):
++    super()._update_state()
++    self._refresh()
+diff --git a/selfdrive/ui/mici/layouts/settings/vehicle.py b/selfdrive/ui/mici/layouts/settings/vehicle.py
+index 3c20c952e16ef77d5f20022a5bdefeacbf4fdaad..d3c338c61801f69058a7d0e7b318a9418310a1ce 100644
+--- a/selfdrive/ui/mici/layouts/settings/vehicle.py
++++ b/selfdrive/ui/mici/layouts/settings/vehicle.py
+@@ -2,6 +2,7 @@ from openpilot.common.params import Params
+ from openpilot.system.ui.widgets.scroller import NavScroller
+ from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigParamControl
+ from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigMultiOptionDialog
++from openpilot.selfdrive.ui.mici.layouts.settings.ev9 import EV9SteeringLayoutMici
+ from openpilot.selfdrive.ui.lib.fingerprint_catalog import (
+   FingerprintModelOption,
+   format_fingerprint_value,
+@@ -195,11 +196,14 @@ class VehicleLayoutMici(NavScroller):
+     fingerprint_btn = BigButton("fingerprint", "",gui_app.texture("icons_mici/settings/vehicle/fingerprint.png", 58, 64))
+     fingerprint_btn.set_click_callback(lambda: gui_app.push_widget(fingerprint_panel))
+ 
+-    vehicle_specific_widgets = tuple()
++    ev9_panel = EV9SteeringLayoutMici()
++    ev9_btn = BigButton("EV9 steering")
++    ev9_btn.set_visible(ev9_panel.visible)
++    ev9_btn.set_click_callback(lambda: gui_app.push_widget(ev9_panel))
+ 
+     self._scroller.add_widgets([
+       fingerprint_btn,
+-      *vehicle_specific_widgets
++      ev9_btn,
+     ])
+ 
+     self._font_medium = gui_app.font(FontWeight.MEDIUM)
 diff --git a/selfdrive/ui/tests/test_ev9_settings.py b/selfdrive/ui/tests/test_ev9_settings.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..223c26176d1a7f68e9ed0358c46632865cd194bf
+index 0000000000000000000000000000000000000000..7085e12522d62de24c4143502611089b55f7580f
 --- /dev/null
 +++ b/selfdrive/ui/tests/test_ev9_settings.py
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,148 @@
 +from types import SimpleNamespace
 +
 +import pytest
@@ -300,11 +408,147 @@ index 0000000000000000000000000000000000000000..223c26176d1a7f68e9ed0358c4663286
 +  assert [row.get_value() for row in rows[1:]] == ["10%", "40 km/h", "50 km/h"]
 +  values["HkgSharedAutonomyMode"] = "2"
 +  assert rows[0].get_state()
++
++
++def test_mici_controls_preserve_values_and_recheck_vehicle_state(monkeypatch, lateral_module):
++  import importlib.util
++  import sys
++  from pathlib import Path
++
++  dialogs = []
++  state = SimpleNamespace(CP=cp(), started=False)
++
++  def make_dialog(**kwargs):
++    dialog = SimpleNamespace(**kwargs)
++    dialog.get_selected_option = lambda: "20%"
++    dialogs.append(dialog)
++    return dialog
++
++  for name, module in {
++    "openpilot.selfdrive.ui.mici.widgets.button": SimpleNamespace(BigButton=object, BigToggle=object),
++    "openpilot.selfdrive.ui.mici.widgets.dialog": SimpleNamespace(BigMultiOptionDialog=make_dialog),
++    "openpilot.system.ui.widgets.scroller": SimpleNamespace(NavScroller=object),
++    "openpilot.selfdrive.ui.ui_state": SimpleNamespace(ui_state=state),
++  }.items():
++    monkeypatch.setitem(sys.modules, name, module)
++  path = Path(__file__).parents[1] / "mici/layouts/settings/ev9.py"
++  spec = importlib.util.spec_from_file_location("ev9_test_mici", path)
++  module = importlib.util.module_from_spec(spec)
++  spec.loader.exec_module(module)
++  layout = module.EV9SteeringLayoutMici.__new__(module.EV9SteeringLayoutMici)
++  updates = []
++  monkeypatch.setattr(module, "update_starpilot_toggles", lambda: updates.append(True))
++  key = "HkgTuningAngleOverrideEffortPercent"
++  values = {"CarModel": "KIA_EV9", "HkgSharedAutonomyMode": "2", key: "15"}
++  layout._params = SimpleNamespace(get=values.get, put_int=values.__setitem__)
++  checked = []
++  layout._manual = SimpleNamespace(set_checked=checked.append, set_value=lambda value: None)
++  layout._controls = []
++  layout._refresh()
++  assert checked[-1] is True
++  layout._select_value(key, 100, 10, "%")
++  assert dialogs[0].default == "15%" and "15%" in dialogs[0].options
++  state.started = True
++  dialogs[0].right_btn_callback()
++  layout._set_manual(False)
++  layout._select_value(key, 100, 10, "%")
++  assert values[key] == "15" and values["HkgSharedAutonomyMode"] == "2" and len(dialogs) == 1
++  assert updates == []
++  state.started = False
++  state.CP = cp("OTHER")
++  dialogs[0].right_btn_callback()
++  assert values[key] == "15"
++  state.CP = cp()
++  dialogs[0].right_btn_callback()
++  layout._set_manual(False)
++  assert values[key] == 20 and values["HkgSharedAutonomyMode"] == 0
++  assert len(updates) == 2
 diff --git a/starpilot/common/assets/device_settings_layout.json b/starpilot/common/assets/device_settings_layout.json
-index 0ee696c875649466664f9ee2f05eb9029f09d4f2..3237ee3c00b1ffb8ce457618f29e45fed76bd8bd 100644
+index 0ee696c875649466664f9ee2f05eb9029f09d4f2..ec5c5b8987fdf8b12b404ea242e14e33fdfb538e 100644
 --- a/starpilot/common/assets/device_settings_layout.json
 +++ b/starpilot/common/assets/device_settings_layout.json
-@@ -195,14 +195,13 @@
+@@ -17,6 +17,80 @@
+     "name": "Lateral (Steering)",
+     "icon": "bi-arrows-move",
+     "params": [
++      {
++        "key": "HkgSharedAutonomyMode",
++        "label": "Improved Manual Control",
++        "description": "Hands-on steering input hands control to you at or below the EV9 limits speed. Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off. Turn vehicle off to adjust.",
++        "data_type": "int",
++        "ui_type": "dropdown",
++        "settings_tier": "simple",
++        "visible_when_key": "CarModel",
++        "visible_when_values": [
++          "KIA_EV9"
++        ],
++        "requires_offroad": true,
++        "options": [
++          {
++            "value": 0,
++            "label": "Off"
++          },
++          {
++            "value": 1,
++            "label": "On"
++          }
++        ]
++      },
++      {
++        "key": "HkgTuningAngleOverrideEffortPercent",
++        "label": "Steering Override Effort",
++        "description": "Lower values ease manual steering override. 100% applies no additional effort reduction. Turn vehicle off to adjust.",
++        "data_type": "int",
++        "ui_type": "numeric",
++        "settings_tier": "simple",
++        "visible_when_key": "CarModel",
++        "visible_when_values": [
++          "KIA_EV9"
++        ],
++        "requires_offroad": true,
++        "min": 10,
++        "max": 100,
++        "step": 10,
++        "unit": "%"
++      },
++      {
++        "key": "HkgTuningAngleCustomLimitMaxSpeedKph",
++        "label": "EV9 Limits Speed",
++        "description": "Higher steering limits and manual-control entry apply at or below this speed. Turn vehicle off to adjust.",
++        "data_type": "int",
++        "ui_type": "numeric",
++        "settings_tier": "simple",
++        "visible_when_key": "CarModel",
++        "visible_when_values": [
++          "KIA_EV9"
++        ],
++        "requires_offroad": true,
++        "min": 10,
++        "max": 40,
++        "step": 1,
++        "unit": " km/h"
++      },
++      {
++        "key": "HkgTuningEv9AlertsSpeedKph",
++        "label": "EV9 Alert Speed",
++        "description": "Warn about steering saturation above this speed. Desired steering angles of 90° or more can still warn below it. Turn vehicle off to adjust.",
++        "data_type": "int",
++        "ui_type": "numeric",
++        "settings_tier": "simple",
++        "visible_when_key": "CarModel",
++        "visible_when_values": [
++          "KIA_EV9"
++        ],
++        "requires_offroad": true,
++        "min": 10,
++        "max": 50,
++        "step": 1,
++        "unit": " km/h"
++      },
+       {
+         "key": "AdvancedLateralTune",
+         "label": "Advanced Lateral Tuning",
+@@ -195,14 +269,13 @@
        {
          "key": "MinimumLaneChangeSpeed",
          "label": "Minimum Lane Change Speed",
@@ -321,8 +565,23 @@ index 0ee696c875649466664f9ee2f05eb9029f09d4f2..3237ee3c00b1ffb8ce457618f29e45fe
          "parent_key": "LaneChanges",
          "settings_tier": "simple"
        },
+@@ -2653,6 +2726,14 @@
+         "is_parent_toggle": true,
+         "settings_tier": "simple"
+       },
++      {
++        "key": "EV9Path",
++        "label": "EV9 Path",
++        "description": "Use the EV9 driving path appearance on any vehicle. Overrides rainbow, acceleration and custom path colors while enabled; your saved appearance choices are preserved.",
++        "data_type": "bool",
++        "ui_type": "toggle",
++        "settings_tier": "simple"
++      },
+       {
+         "key": "AccelerationPath",
+         "label": "Acceleration Path",
 diff --git a/starpilot/system/the_galaxy/tests/test_device_settings_layout.py b/starpilot/system/the_galaxy/tests/test_device_settings_layout.py
-index e5753b877d9abd493af74b7539de7ee6d553811e..15ebd5f458ea51ac2a5bb93ad2b5c84168fff76c 100644
+index e5753b877d9abd493af74b7539de7ee6d553811e..8ee768367ce3321bc9f56eec3fd042dc0b49d7f0 100644
 --- a/starpilot/system/the_galaxy/tests/test_device_settings_layout.py
 +++ b/starpilot/system/the_galaxy/tests/test_device_settings_layout.py
 @@ -155,7 +155,7 @@ def test_ford_lateral_controls_are_ford_only_and_galaxy_only():
@@ -330,7 +589,7 @@ index e5753b877d9abd493af74b7539de7ee6d553811e..15ebd5f458ea51ac2a5bb93ad2b5c841
    device_shutdown = _params_by_section(_layout())["Device & Data"]["DeviceShutdown"]
  
 -  assert _declared_default("DeviceShutdown") == "6"
-+  assert _declared_default("DeviceShutdown") == "1"
++  assert _declared_default("DeviceShutdown") == "2"
    assert device_shutdown["min"] == 1
    assert device_shutdown["max"] == 30
    assert device_shutdown["step"] == 1
@@ -348,3 +607,163 @@ index e5753b877d9abd493af74b7539de7ee6d553811e..15ebd5f458ea51ac2a5bb93ad2b5c841
      "CESpeed", "CESpeedLead", "CESignalSpeed",
      "CustomCruise", "CustomCruiseLong", "SetSpeedOffset", "PulseGlideSpeedDelta",
      "Offset1", "Offset2", "Offset3", "Offset4", "Offset5", "Offset6", "Offset7",
+@@ -501,3 +505,25 @@ def test_pip_preview_is_under_driving_screen_widgets_and_configured_only_in_gala
+     REPO_ROOT / "selfdrive/ui/layouts/settings/starpilot/appearance.py",
+   )
+   assert all("PIPPreview" not in path.read_text(encoding="utf-8") for path in physical_settings)
++
++
++def test_ev9_controls_are_shared_simple_offroad_settings():
++  rows = {param["key"]: param for section in json.loads(LAYOUT_PATH.read_text()) for param in section["params"]}
++  ranges = {
++    "HkgTuningAngleOverrideEffortPercent": (10, 100, 10, "%"),
++    "HkgTuningAngleCustomLimitMaxSpeedKph": (10, 40, 1, " km/h"),
++    "HkgTuningEv9AlertsSpeedKph": (10, 50, 1, " km/h"),
++  }
++  for key in (*ranges, "HkgSharedAutonomyMode"):
++    row = rows[key]
++    assert row["data_type"] == "int"
++    assert row["settings_tier"] == "simple"
++    assert row["requires_offroad"] is True
++    assert row["visible_when_key"] == "CarModel"
++    assert row["visible_when_values"] == ["KIA_EV9"]
++    assert "device_types" not in row and "parent_key" not in row
++  for key, expected in ranges.items():
++    assert tuple(rows[key][field] for field in ("min", "max", "step", "unit")) == expected
++  assert rows["HkgSharedAutonomyMode"]["options"] == [{"value": 0, "label": "Off"}, {"value": 1, "label": "On"}]
++  assert rows["EV9Path"]["ui_type"] == "toggle"
++  assert not any(key in rows["EV9Path"] for key in ("requires_offroad", "visible_when_key", "parent_key", "device_types"))
+diff --git a/starpilot/system/the_galaxy/tests/test_navigation_params.py b/starpilot/system/the_galaxy/tests/test_navigation_params.py
+index b81a830a7defd6845a348aeab1b5eca6581ef958..4422dba8d96a9d75609777608592e12852013940 100644
+--- a/starpilot/system/the_galaxy/tests/test_navigation_params.py
++++ b/starpilot/system/the_galaxy/tests/test_navigation_params.py
+@@ -824,3 +824,53 @@ def test_curve_speed_controller_reset_rejected_onroad(monkeypatch):
+   assert response.get_json()["error"] == "Curve Speed Controller data can only be reset while parked."
+   assert fake_params.writes == []
+   assert fake_params.removals == []
++
++
++def test_ev9_settings_validate_live_vehicle_road_state_and_values(monkeypatch):
++  keys = the_galaxy.EV9_STEERING_PARAM_RANGES
++  for device in ("tici", "mici"):
++    client, fake = _params_client(monkeypatch, {"CarModel": "KIA_EV9", "IsOnroad": False, "IsOffroad": True}, device)
++    monkeypatch.setattr(the_galaxy, "_params_live_raw", fake)
++    monkeypatch.setattr(the_galaxy, "_get_param_type_info", lambda: (set(keys) | {"EV9Path"}, dict.fromkeys(keys, int)))
++    for key, (minimum, maximum) in keys.items():
++      for value in (minimum, maximum):
++        assert client.put("/api/params", json={"key": key, "value": value}).status_code == 200
++        assert fake.values[key] == str(1 if key == "HkgSharedAutonomyMode" and value == 2 else value)
++      for value in (minimum - 1, maximum + 1, True, 1.5, "1"):
++        assert client.put("/api/params", json={"key": key, "value": value}).status_code == 400
++    effort = "HkgTuningAngleOverrideEffortPercent"
++    assert client.put("/api/params", json={"key": effort, "value": 15}).status_code == 200
++    for state in ({"IsOnroad": True}, {"IsOffroad": False}, {"IsOnroad": None}, {"CarModel": "OTHER"},
++                  {"CarParamsPersistent": b"invalid"}):
++      fake.values.update({"IsOnroad": False, "IsOffroad": True, "CarModel": "KIA_EV9", "CarParamsPersistent": None})
++      fake.values.update(state)
++      for key in keys:
++        assert client.put("/api/params", json={"key": key, "value": 1}).status_code == 403
++      assert client.put("/api/params", json={"key": "EV9Path", "value": True}).status_code == 200
++
++
++def test_ev9_manual_control_legacy_mode_displays_on(monkeypatch):
++  fake = WritableFakeParams({"HkgSharedAutonomyMode": "2"})
++  monkeypatch.setattr(the_galaxy, "_params_live_raw", fake)
++  assert the_galaxy._get_current_param_value("HkgSharedAutonomyMode", int) == 1
++  assert fake.values["HkgSharedAutonomyMode"] == "2"
++
++
++def test_ev9_galaxy_detected_vehicle_takes_precedence(monkeypatch):
++  from contextlib import nullcontext
++  from types import SimpleNamespace
++
++  # This server suite stubs cereal; the shared capability predicate has its own native tests.
++  cp = SimpleNamespace(carFingerprint="OTHER", angle_capable=True)
++  monkeypatch.setattr(the_galaxy.car, "CarParams", SimpleNamespace(from_bytes=lambda _: nullcontext(cp)), raising=False)
++  monkeypatch.setitem(sys.modules, "openpilot.selfdrive.controls.lib.ev9_warnings", SimpleNamespace(
++    ev9_angle_warnings_enabled=lambda value: value.carFingerprint == "KIA_EV9" and value.angle_capable,
++  ))
++  fake = WritableFakeParams({"CarModel": "KIA_EV9", "CarParamsPersistent": b"detected", "IsOnroad": False, "IsOffroad": True})
++  monkeypatch.setattr(the_galaxy, "_params_live_raw", fake)
++  assert not the_galaxy._ev9_steering_settings_editable()
++  cp.carFingerprint = "KIA_EV9"
++  fake.values["CarModel"] = "OTHER"
++  assert the_galaxy._ev9_steering_settings_editable()
++  cp.angle_capable = False
++  assert not the_galaxy._ev9_steering_settings_editable()
+diff --git a/starpilot/system/the_galaxy/the_galaxy.py b/starpilot/system/the_galaxy/the_galaxy.py
+index aff105e91ded995162fb640ca23c5a0bfb57c956..b829fdb53564afbcec5f0623589a75c2c4a10bde 100644
+--- a/starpilot/system/the_galaxy/the_galaxy.py
++++ b/starpilot/system/the_galaxy/the_galaxy.py
+@@ -202,6 +202,12 @@ LEGACY_LATERAL_METHOD_API_PREFIX = "/api/" + "".join(("f", "t", "m"))
+ VASM_CONFIGURATION_KEYS = {"VASMEnabled", "VASMConfidenceThreshold", "VASMSmoothSeconds", "VASMAnnotationConfig"}
+ PIP_PREVIEW_CONFIGURATION_KEYS = {"PIPPreviewEnabled", "PIPPreviewMask", "PIPPreviewShowOnBlinker", "PIPPreviewShowOnBSM", "PIPPreviewInvert"}
+ MODEL_SMOOTHING_KEYS = {"LatSmoothSeconds", "LongSmoothSeconds"}
++EV9_STEERING_PARAM_RANGES = {
++  "HkgSharedAutonomyMode": (0, 2),  # Legacy mode 2 is displayed and saved as On (1).
++  "HkgTuningAngleOverrideEffortPercent": (10, 100),
++  "HkgTuningAngleCustomLimitMaxSpeedKph": (10, 40),
++  "HkgTuningEv9AlertsSpeedKph": (10, 50),
++}
+ GALAXY_DEVELOPER_ONLY_KEYS = {"TurnSteeringLimitMuteSpeed"}
+ PULSE_GLIDE_BUTTON_KEYS = {
+   "CancelButtonControl", "DistanceButtonControl",
+@@ -3559,6 +3565,23 @@ def _safe_params_get_bool(key, default=False):
+   except Exception:
+     return bool(default)
+ 
++def _ev9_steering_settings_editable():
++  # Validate live state again when a confirmed browser edit reaches the server.
++  if (_safe_params_get_live_raw("IsOnroad") not in (False, 0, "0", b"0") or
++      _safe_params_get_live_raw("IsOffroad") not in (True, 1, "1", b"1")):
++    return False
++  cp_bytes = _safe_params_get_live_raw("CarParamsPersistent")
++  if cp_bytes:
++    try:
++      from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_angle_warnings_enabled
++      with car.CarParams.from_bytes(cp_bytes) as cp:
++        if cp.carFingerprint not in ("", "MOCK"):
++          return ev9_angle_warnings_enabled(cp)
++    except Exception:
++      return False
++  return _safe_params_get_live_raw("CarModel") in ("KIA_EV9", b"KIA_EV9")
++
++
+ def _personality_settings_write_locked():
+   return _safe_params_get_bool("IsOnroad", default=True) or not _safe_params_get_bool("IsOffroad", default=False)
+ 
+@@ -3947,6 +3970,8 @@ def _get_current_param_value(key, value_type, defaults_lookup=None):
+       defaults_lookup = _get_default_param_values()
+     raw_value = defaults_lookup.get(key)
+   value = _coerce_param_value(raw_value, value_type)
++  if key == "HkgSharedAutonomyMode" and value == 2:
++    return 1
+   if key in ("Model", "DrivingModel") and isinstance(value, str):
+     return canonical_model_key(value)
+   return value
+@@ -4714,6 +4739,10 @@ def _reset_troubleshoot_section(section_id):
+       skipped_keys.append({"key": key, "reason": "blocked until required off-road state is confirmed"})
+       continue
+ 
++    if key in EV9_STEERING_PARAM_RANGES and not _ev9_steering_settings_editable():
++      skipped_keys.append({"key": key, "reason": "requires an EV9 and confirmed off-road state"})
++      continue
++
+     if key not in default_values:
+       skipped_keys.append({"key": key, "reason": "default unavailable"})
+       continue
+@@ -6253,6 +6282,14 @@ def setup(app):
+       if key not in allowed_keys:
+         return jsonify({"error": f"Parameter '{key}' is not editable."}), 403
+ 
++      if key in EV9_STEERING_PARAM_RANGES:
++        if not _ev9_steering_settings_editable():
++          return jsonify({"error": "EV9 steering settings require an EV9 and confirmed off-road state."}), 403
++        minimum, maximum = EV9_STEERING_PARAM_RANGES[key]
++        if type(val) is not int or not minimum <= val <= maximum:
++          return jsonify({"error": f"{key} must be an integer from {minimum} to {maximum}."}), 400
++        str_val = str(1 if key == "HkgSharedAutonomyMode" and val == 2 else val)
++
+       if key == "CustomPersonalities":
+         if type(data["value"]) is not bool:
+           return jsonify({"error": "CustomPersonalities must be a JSON boolean."}), 400

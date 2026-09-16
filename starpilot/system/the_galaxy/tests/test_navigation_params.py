@@ -824,3 +824,53 @@ def test_curve_speed_controller_reset_rejected_onroad(monkeypatch):
   assert response.get_json()["error"] == "Curve Speed Controller data can only be reset while parked."
   assert fake_params.writes == []
   assert fake_params.removals == []
+
+
+def test_ev9_settings_validate_live_vehicle_road_state_and_values(monkeypatch):
+  keys = the_galaxy.EV9_STEERING_PARAM_RANGES
+  for device in ("tici", "mici"):
+    client, fake = _params_client(monkeypatch, {"CarModel": "KIA_EV9", "IsOnroad": False, "IsOffroad": True}, device)
+    monkeypatch.setattr(the_galaxy, "_params_live_raw", fake)
+    monkeypatch.setattr(the_galaxy, "_get_param_type_info", lambda: (set(keys) | {"EV9Path"}, dict.fromkeys(keys, int)))
+    for key, (minimum, maximum) in keys.items():
+      for value in (minimum, maximum):
+        assert client.put("/api/params", json={"key": key, "value": value}).status_code == 200
+        assert fake.values[key] == str(1 if key == "HkgSharedAutonomyMode" and value == 2 else value)
+      for value in (minimum - 1, maximum + 1, True, 1.5, "1"):
+        assert client.put("/api/params", json={"key": key, "value": value}).status_code == 400
+    effort = "HkgTuningAngleOverrideEffortPercent"
+    assert client.put("/api/params", json={"key": effort, "value": 15}).status_code == 200
+    for state in ({"IsOnroad": True}, {"IsOffroad": False}, {"IsOnroad": None}, {"CarModel": "OTHER"},
+                  {"CarParamsPersistent": b"invalid"}):
+      fake.values.update({"IsOnroad": False, "IsOffroad": True, "CarModel": "KIA_EV9", "CarParamsPersistent": None})
+      fake.values.update(state)
+      for key in keys:
+        assert client.put("/api/params", json={"key": key, "value": 1}).status_code == 403
+      assert client.put("/api/params", json={"key": "EV9Path", "value": True}).status_code == 200
+
+
+def test_ev9_manual_control_legacy_mode_displays_on(monkeypatch):
+  fake = WritableFakeParams({"HkgSharedAutonomyMode": "2"})
+  monkeypatch.setattr(the_galaxy, "_params_live_raw", fake)
+  assert the_galaxy._get_current_param_value("HkgSharedAutonomyMode", int) == 1
+  assert fake.values["HkgSharedAutonomyMode"] == "2"
+
+
+def test_ev9_galaxy_detected_vehicle_takes_precedence(monkeypatch):
+  from contextlib import nullcontext
+  from types import SimpleNamespace
+
+  # This server suite stubs cereal; the shared capability predicate has its own native tests.
+  cp = SimpleNamespace(carFingerprint="OTHER", angle_capable=True)
+  monkeypatch.setattr(the_galaxy.car, "CarParams", SimpleNamespace(from_bytes=lambda _: nullcontext(cp)), raising=False)
+  monkeypatch.setitem(sys.modules, "openpilot.selfdrive.controls.lib.ev9_warnings", SimpleNamespace(
+    ev9_angle_warnings_enabled=lambda value: value.carFingerprint == "KIA_EV9" and value.angle_capable,
+  ))
+  fake = WritableFakeParams({"CarModel": "KIA_EV9", "CarParamsPersistent": b"detected", "IsOnroad": False, "IsOffroad": True})
+  monkeypatch.setattr(the_galaxy, "_params_live_raw", fake)
+  assert not the_galaxy._ev9_steering_settings_editable()
+  cp.carFingerprint = "KIA_EV9"
+  fake.values["CarModel"] = "OTHER"
+  assert the_galaxy._ev9_steering_settings_editable()
+  cp.angle_capable = False
+  assert not the_galaxy._ev9_steering_settings_editable()

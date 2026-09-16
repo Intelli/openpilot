@@ -1,5 +1,8 @@
 # Intelli patch workflow
 
+For the cumulative behavior changes from stock StarPilot, see the
+[EV9 Edition changelog](CHANGELOG.md).
+
 Historical patch contents are preserved; **none are applied to the initial
 stable StarPilot baseline**. Upstream sync and GitHub builds do not replay them.
 
@@ -29,6 +32,10 @@ driver monitoring and power management remain `.temp-disabled` by request. The o
 patch is archived as `.migrated` because the StarPilot build/publish tooling has
 already replaced its Sunnypilot implementation; it is not replayed.
 See the migration guide for current EV9 behavior and patch ownership.
+
+`ui_options_starpilot.patch` exposes the four EV9 steering controls on C3/C3X,
+C4 and Galaxy, plus EV9 Path in Galaxy. The device path controls/renderers remain
+in `custom_model_ui_starpilot.patch`.
 
 Steering/AOL follow-ups are incorporated into the existing custom-defaults,
 alerts, warning and drive-helper patches and vehicle patches `03`–`06`. They cover

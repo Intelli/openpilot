@@ -155,7 +155,7 @@ def test_ford_lateral_controls_are_ford_only_and_galaxy_only():
 def test_device_shutdown_uses_literal_hours():
   device_shutdown = _params_by_section(_layout())["Device & Data"]["DeviceShutdown"]
 
-  assert _declared_default("DeviceShutdown") == "1"
+  assert _declared_default("DeviceShutdown") == "2"
   assert device_shutdown["min"] == 1
   assert device_shutdown["max"] == 30
   assert device_shutdown["step"] == 1
@@ -505,3 +505,25 @@ def test_pip_preview_is_under_driving_screen_widgets_and_configured_only_in_gala
     REPO_ROOT / "selfdrive/ui/layouts/settings/starpilot/appearance.py",
   )
   assert all("PIPPreview" not in path.read_text(encoding="utf-8") for path in physical_settings)
+
+
+def test_ev9_controls_are_shared_simple_offroad_settings():
+  rows = {param["key"]: param for section in json.loads(LAYOUT_PATH.read_text()) for param in section["params"]}
+  ranges = {
+    "HkgTuningAngleOverrideEffortPercent": (10, 100, 10, "%"),
+    "HkgTuningAngleCustomLimitMaxSpeedKph": (10, 40, 1, " km/h"),
+    "HkgTuningEv9AlertsSpeedKph": (10, 50, 1, " km/h"),
+  }
+  for key in (*ranges, "HkgSharedAutonomyMode"):
+    row = rows[key]
+    assert row["data_type"] == "int"
+    assert row["settings_tier"] == "simple"
+    assert row["requires_offroad"] is True
+    assert row["visible_when_key"] == "CarModel"
+    assert row["visible_when_values"] == ["KIA_EV9"]
+    assert "device_types" not in row and "parent_key" not in row
+  for key, expected in ranges.items():
+    assert tuple(rows[key][field] for field in ("min", "max", "step", "unit")) == expected
+  assert rows["HkgSharedAutonomyMode"]["options"] == [{"value": 0, "label": "Off"}, {"value": 1, "label": "On"}]
+  assert rows["EV9Path"]["ui_type"] == "toggle"
+  assert not any(key in rows["EV9Path"] for key in ("requires_offroad", "visible_when_key", "parent_key", "device_types"))

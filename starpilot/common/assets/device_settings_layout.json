@@ -18,6 +18,80 @@
     "icon": "bi-arrows-move",
     "params": [
       {
+        "key": "HkgSharedAutonomyMode",
+        "label": "Improved Manual Control",
+        "description": "Hands-on steering input hands control to you at or below the EV9 limits speed. Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off. Turn vehicle off to adjust.",
+        "data_type": "int",
+        "ui_type": "dropdown",
+        "settings_tier": "simple",
+        "visible_when_key": "CarModel",
+        "visible_when_values": [
+          "KIA_EV9"
+        ],
+        "requires_offroad": true,
+        "options": [
+          {
+            "value": 0,
+            "label": "Off"
+          },
+          {
+            "value": 1,
+            "label": "On"
+          }
+        ]
+      },
+      {
+        "key": "HkgTuningAngleOverrideEffortPercent",
+        "label": "Steering Override Effort",
+        "description": "Lower values ease manual steering override. 100% applies no additional effort reduction. Turn vehicle off to adjust.",
+        "data_type": "int",
+        "ui_type": "numeric",
+        "settings_tier": "simple",
+        "visible_when_key": "CarModel",
+        "visible_when_values": [
+          "KIA_EV9"
+        ],
+        "requires_offroad": true,
+        "min": 10,
+        "max": 100,
+        "step": 10,
+        "unit": "%"
+      },
+      {
+        "key": "HkgTuningAngleCustomLimitMaxSpeedKph",
+        "label": "EV9 Limits Speed",
+        "description": "Higher steering limits and manual-control entry apply at or below this speed. Turn vehicle off to adjust.",
+        "data_type": "int",
+        "ui_type": "numeric",
+        "settings_tier": "simple",
+        "visible_when_key": "CarModel",
+        "visible_when_values": [
+          "KIA_EV9"
+        ],
+        "requires_offroad": true,
+        "min": 10,
+        "max": 40,
+        "step": 1,
+        "unit": " km/h"
+      },
+      {
+        "key": "HkgTuningEv9AlertsSpeedKph",
+        "label": "EV9 Alert Speed",
+        "description": "Warn about steering saturation above this speed. Desired steering angles of 90° or more can still warn below it. Turn vehicle off to adjust.",
+        "data_type": "int",
+        "ui_type": "numeric",
+        "settings_tier": "simple",
+        "visible_when_key": "CarModel",
+        "visible_when_values": [
+          "KIA_EV9"
+        ],
+        "requires_offroad": true,
+        "min": 10,
+        "max": 50,
+        "step": 1,
+        "unit": " km/h"
+      },
+      {
         "key": "AdvancedLateralTune",
         "label": "Advanced Lateral Tuning",
         "description": "Advanced steering control changes to fine-tune how openpilot drives.",
@@ -2650,6 +2724,14 @@
         "data_type": "bool",
         "ui_type": "toggle",
         "is_parent_toggle": true,
+        "settings_tier": "simple"
+      },
+      {
+        "key": "EV9Path",
+        "label": "EV9 Path",
+        "description": "Use the EV9 driving path appearance on any vehicle. Overrides rainbow, acceleration and custom path colors while enabled; your saved appearance choices are preserved.",
+        "data_type": "bool",
+        "ui_type": "toggle",
         "settings_tier": "simple"
       },
       {

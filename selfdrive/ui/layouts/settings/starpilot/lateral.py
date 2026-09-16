@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from openpilot.system.hardware import HARDWARE
-from openpilot.starpilot.common.ev9_tuning import read_ev9_tuning
-from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_alert_speed_kph
-from openpilot.selfdrive.ui.layouts.settings.starpilot.ev9_settings import ev9_settings_visible, ev9_settings_editable
+from openpilot.selfdrive.ui.layouts.settings.starpilot.ev9_settings import ev9_setting_value, ev9_settings_visible, ev9_settings_editable
 from openpilot.selfdrive.ui.lib.starpilot_state import starpilot_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr, tr_noop
@@ -349,14 +347,7 @@ class StarPilotLateralLayout(_SettingsPage):
     return ev9_settings_editable(ui_state.CP, ui_state.started, self._params.get("CarModel"))
 
   def _ev9_value(self, key):
-    if key == "HkgTuningEv9AlertsSpeedKph":
-      return int(ev9_alert_speed_kph(self._params.get(key)))
-    attributes = {
-      "HkgSharedAutonomyMode": "hkg_shared_autonomy_mode",
-      "HkgTuningAngleOverrideEffortPercent": "hkg_tuning_angle_override_effort_percent",
-      "HkgTuningAngleCustomLimitMaxSpeedKph": "hkg_tuning_angle_custom_limit_max_speed_kph",
-    }
-    return read_ev9_tuning(self._params)[attributes[key]]
+    return ev9_setting_value(self._params, key)
 
   def _ev9_set_manual(self, enabled):
     if self._ev9_editable():
