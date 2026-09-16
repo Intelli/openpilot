@@ -3,7 +3,7 @@ import math
 from cereal import log
 from opendbc.car.subaru.values import CAR as SUBARU_CAR
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
-from openpilot.selfdrive.controls.lib.ev9_warnings import EV9_HIGH_ANGLE_WARNING_DEG, ev9_angle_warnings_enabled
+from openpilot.selfdrive.controls.lib.ev9_warnings import EV9_HIGH_ANGLE_WARNING_DEG, ev9_angle_warnings_enabled, ev9_driver_steering_pressed
 from openpilot.selfdrive.controls.lib.steering_saturation import STEER_ANGLE_SATURATION_THRESHOLD
 
 _ASCENT_ANGLE_TRACKING_GAIN = 0.25
@@ -59,7 +59,7 @@ class LatControlAngle(LatControl):
     self.ascent_angle_target = None
 
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited,
-             lat_delay, calibrated_pose, model_data, starpilot_toggles):
+             lat_delay, calibrated_pose, model_data, starpilot_toggles, *, now_nanos=0):
     angle_log = log.ControlsState.LateralAngleState.new_message()
 
     if not active:
@@ -100,7 +100,8 @@ class LatControlAngle(LatControl):
       angle_error = angle_steers_des - CS.steeringAngleDeg
       angle_control_saturated = abs(angle_error) > STEER_ANGLE_SATURATION_THRESHOLD
     if active:
-      angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited))
+      steering_pressed = ev9_driver_steering_pressed(CS, now_nanos) if self.is_ev9 else CS.steeringPressed
+      angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited, steering_pressed))
     else:
       self.reset()
       angle_log.saturated = False

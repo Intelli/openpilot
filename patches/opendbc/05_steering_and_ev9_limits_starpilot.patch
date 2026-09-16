@@ -1,5 +1,5 @@
 diff --git a/opendbc/car/car.capnp b/opendbc/car/car.capnp
-index a0d3fad8a4684f1afea2cb0246da1211789940ae..ee7e3f658eac0198bd67f02abd7cd6326341c2ec 100644
+index a0d3fad8a4684f1afea2cb0246da1211789940ae..d4c6741671f888b4118cd4958556596b92547708 100644
 --- a/opendbc/car/car.capnp
 +++ b/opendbc/car/car.capnp
 @@ -190,6 +190,8 @@ struct CarState {
@@ -7,7 +7,7 @@ index a0d3fad8a4684f1afea2cb0246da1211789940ae..ee7e3f658eac0198bd67f02abd7cd632
    steeringTorqueEps @27 :Float32;  # Native CAN units, only needed on cars where it's used for control
    steeringPressed @9 :Bool;        # is the user overring the steering wheel?
 +  handsOnWheel @61 :Bool;         # valid capacitive touch/grip indication; check its timestamp for freshness
-+  handsOnWheelTimestamp @62 :UInt64; # monotonic nanoseconds of the hands-on sensor sample
++  handsOnWheelTimestamp @62 :UInt64; # monotonic nanoseconds of a valid hands-on sensor sample; zero when unavailable/invalid
    steeringDisengage @58 :Bool;     # more force than steeringPressed, disengages for applicable brands
    steerFaultTemporary @35 :Bool;
    steerFaultPermanent @36 :Bool;
@@ -20,7 +20,7 @@ index a0d3fad8a4684f1afea2cb0246da1211789940ae..ee7e3f658eac0198bd67f02abd7cd632
      enum LongControlState @0xe40f3a917d908282{
        off @0;
 diff --git a/opendbc/car/hyundai/carcontroller.py b/opendbc/car/hyundai/carcontroller.py
-index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f19c596a7 100644
+index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..867719fa73a556cc98e60dc0e4fc0733989b8a72 100644
 --- a/opendbc/car/hyundai/carcontroller.py
 +++ b/opendbc/car/hyundai/carcontroller.py
 @@ -1,4 +1,4 @@
@@ -34,7 +34,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f
  from opendbc.car.hyundai.hyundaicanfd import CanBus
  from opendbc.car.hyundai.lead_data import CanLeadDataState
 +from opendbc.car.hyundai.ev9 import (EV9AngleConfig, EV9ManualControlState, EV9_HIGH_LATERAL_LIMIT, EV9_PANDA_LIMIT_SPEED_MPS,
-+                                   apply_override_gain, ev9_hands_on, limit_gain_recovery)
++                                   apply_override_gain, ev9_hands_off, ev9_hands_on, limit_gain_recovery)
  from opendbc.car.hyundai.values import HyundaiFlags, HyundaiSafetyFlags, HyundaiStarPilotFlags, Buttons, CarControllerParams, CAR, CANFD_ANGLE_LONGITUDINAL_CAR, \
                                          CANFD_RADAR_ECU_KEEPALIVE_CAR, CANFD_ALT_BUTTONS_RESUME_CAR, kia_ev6_gt_line_longitudinal_tuning, \
                                          KIA_EV6_GT_LINE_LONG_TUNING_TESTING_GROUND_ID
@@ -133,7 +133,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f
          # Match Panda's 1 m/s speed tolerance so a shrinking absolute limit stays inside its jerk envelope.
          safety_v_ego = max(v_ego_raw - 1.0, 1.0)
          max_angle_delta = min(get_max_angle_delta_vm(safety_v_ego, self.BASELINE_VM, self.params),
-@@ -611,14 +665,48 @@ class CarController(CarControllerBase):
+@@ -611,14 +665,53 @@ class CarController(CarControllerBase):
                                      self.apply_angle_last - max_angle_delta,
                                      self.apply_angle_last + max_angle_delta))
  
@@ -153,7 +153,12 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f
 +        self.apply_torque_base_last = compute_torque_reduction_gain(
 +          CS.out.steeringTorque, v_ego_raw, angle_lat_active, self.apply_torque_base_last,
 +        ) if angle_lat_active else 0.0
-+        apply_torque = apply_override_gain(self.apply_torque_base_last, handoff.override_active, self.ev9_angle_config.override_effort_scale)
++        # Column torque can oscillate without driver contact. Keep native torque reduction,
++        # but do not repeatedly apply the custom low-effort cut during confirmed hands-off driving.
++        hands_off = self.ev9_angle_config.shared_autonomy_mode == 0 and ev9_hands_off(
++          getattr(CS, "hands_on_steering_grip", None) != 0, getattr(CS, "hands_on_steering_ts_nanos", 0), now_nanos)
++        apply_torque = apply_override_gain(self.apply_torque_base_last, handoff.override_active and not hands_off,
++                                          self.ev9_angle_config.override_effort_scale)
 +        apply_steer_req = angle_lat_active
 +        if handoff.manual_override:
 +          # Following the wheel with active control must still satisfy both angle/rate envelopes.
@@ -184,7 +189,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f
  
        self.apply_angle_last = apply_angle
        if not angle_lat_active:
-@@ -747,8 +835,9 @@ class CarController(CarControllerBase):
+@@ -747,8 +840,9 @@ class CarController(CarControllerBase):
                                              stopping, hud_control, actuators, CS, CC, lka_icon, lfa_icon))
  
      new_actuators = actuators.as_builder()
@@ -195,7 +200,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f
        new_actuators.torque = 0
        new_actuators.torqueOutputCan = 0
      else:
-@@ -900,7 +989,7 @@ class CarController(CarControllerBase):
+@@ -900,7 +994,7 @@ class CarController(CarControllerBase):
      ccnc_angle_long = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and \
        self.CP.flags & HyundaiFlags.CCNC and angle_lkas_alt and self.long_active_ecu
      steering_msg_active = apply_steer_req
@@ -204,7 +209,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f
        # Angle LKAS_ALT cars fault if the angle-steering status drops inactive during torque limiting.
        # Hold the angle status active while lateral is active; VM/safety limits handle actuation.
        steering_msg_active = CC.latActive
-@@ -913,7 +1002,31 @@ class CarController(CarControllerBase):
+@@ -913,7 +1007,31 @@ class CarController(CarControllerBase):
      forward_stock_lkas = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and angle_lkas_alt and (
        angle_lkas_alt_standstill_handoff or not (drive_gear and (CC.latActive or CC.enabled))
      )
@@ -236,7 +241,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f
      if not forward_stock_lkas and not ccnc_angle_long:
        can_sends.extend(hyundaicanfd.create_steering_messages(self.packer, self.CP, self.CAN, CC.enabled,
                                                               steering_msg_active, apply_torque, apply_angle,
-@@ -922,6 +1035,8 @@ class CarController(CarControllerBase):
+@@ -922,6 +1040,8 @@ class CarController(CarControllerBase):
                                                               lka_icon=lka_icon,
                                                               longitudinal_active=lfa_longitudinal_active))
      direct_steering_active = ccnc_angle_long and drive_gear and CC.latActive and self.direct_angle_request_allowed and not CS.angle_steering_fault
@@ -245,7 +250,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f
      inactive_steering_angle = float(np.clip(CS.angle_steering_angle,
                                              -self.params.ANGLE_LIMITS.STEER_ANGLE_MAX,
                                              self.params.ANGLE_LIMITS.STEER_ANGLE_MAX)) if ccnc_angle_long else 0.0
-@@ -934,11 +1049,15 @@ class CarController(CarControllerBase):
+@@ -934,11 +1054,15 @@ class CarController(CarControllerBase):
      if ccnc_angle_long and not drive_gear:
        can_sends.extend(hyundaicanfd.create_inactive_angle_steering_messages(self.packer, self.CAN,
                                                                               inactive_steering_angle))
@@ -262,7 +267,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..53365da150dfdb3e020183710816787f
        can_sends.append(hyundaicanfd.create_suppress_lfa(self.packer, self.CAN, CS.lfa_block_msg,
                                                          self.CP.flags & HyundaiFlags.CANFD_LKA_STEERING_ALT))
 diff --git a/opendbc/car/hyundai/carstate.py b/opendbc/car/hyundai/carstate.py
-index 40d68e42b372a79dbf86756749fa22d0f29d2dc0..8d7ba25ed8b2c73c012cc92e178de1919de9311c 100644
+index 40d68e42b372a79dbf86756749fa22d0f29d2dc0..1ea110c425df9ee04d7e7b37377463d4f2a68bd2 100644
 --- a/opendbc/car/hyundai/carstate.py
 +++ b/opendbc/car/hyundai/carstate.py
 @@ -95,6 +95,9 @@ class CarState(CarStateBase):
@@ -275,7 +280,7 @@ index 40d68e42b372a79dbf86756749fa22d0f29d2dc0..8d7ba25ed8b2c73c012cc92e178de191
      self.sonata_hybrid_lkas_source = None
      self.sonata_hybrid_lkas_sources = {
        "bcm": 0,
-@@ -514,6 +517,13 @@ class CarState(CarStateBase):
+@@ -514,6 +517,14 @@ class CarState(CarStateBase):
      ret.standstill = cp.vl["WHEEL_SPEEDS"]["WHL_SpdFLVal"] <= STANDSTILL_THRESHOLD and cp.vl["WHEEL_SPEEDS"]["WHL_SpdFRVal"] <= STANDSTILL_THRESHOLD and \
                       cp.vl["WHEEL_SPEEDS"]["WHL_SpdRLVal"] <= STANDSTILL_THRESHOLD and cp.vl["WHEEL_SPEEDS"]["WHL_SpdRRVal"] <= STANDSTILL_THRESHOLD
  
@@ -283,13 +288,14 @@ index 40d68e42b372a79dbf86756749fa22d0f29d2dc0..8d7ba25ed8b2c73c012cc92e178de191
 +      self.hands_on_steering_grip = cp.vl["HOD_FD_01_100ms"]["HOD_Dir_Status"]
 +      self.hands_on_steering_ts_nanos = cp.ts_nanos["HOD_FD_01_100ms"]["HOD_Dir_Status"]
 +      ret.handsOnWheel = self.hands_on_steering_grip in (1, 2, 3, 4)
-+      ret.handsOnWheelTimestamp = self.hands_on_steering_ts_nanos
++      # Reserved statuses must not look like a fresh, confirmed hands-off sample.
++      ret.handsOnWheelTimestamp = self.hands_on_steering_ts_nanos if self.hands_on_steering_grip in (0, 1, 2, 3, 4) else 0
 +      self.mdps_steering_angle = cp.vl["MDPS"]["STEERING_ANGLE"]
 +
      ret.steeringRateDeg = cp.vl["STEERING_SENSORS"]["STEERING_RATE"]
      ret.steeringAngleDeg = cp.vl["STEERING_SENSORS"]["STEERING_ANGLE"]
      ret.steeringTorque = cp.vl["MDPS"]["STEERING_COL_TORQUE"]
-@@ -652,7 +662,8 @@ class CarState(CarStateBase):
+@@ -652,7 +663,8 @@ class CarState(CarStateBase):
      return ret, fp_ret
  
    def get_can_parsers_canfd(self, CP):
@@ -301,10 +307,10 @@ index 40d68e42b372a79dbf86756749fa22d0f29d2dc0..8d7ba25ed8b2c73c012cc92e178de191
        msgs.append(("CRUISE_BUTTONS_ALT", 50))
 diff --git a/opendbc/car/hyundai/ev9.py b/opendbc/car/hyundai/ev9.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..7e748602566022a2db36a2532251033d24ed2449
+index 0000000000000000000000000000000000000000..698592ce8004ee41fbfe79c0c28df5ad8964b35d
 --- /dev/null
 +++ b/opendbc/car/hyundai/ev9.py
-@@ -0,0 +1,159 @@
+@@ -0,0 +1,164 @@
 +"""EV9 angle-control configuration and manual handoff; no persistent parameter I/O."""
 +from collections.abc import Mapping
 +from dataclasses import dataclass
@@ -361,6 +367,11 @@ index 0000000000000000000000000000000000000000..7e748602566022a2db36a2532251033d
 +def ev9_hands_on(raw, timestamp, now_nanos) -> bool:
 +  """HOD 1/2 = touch, 3/4 = grip; reserved, missing and stale samples are not intent."""
 +  return raw in (1, 2, 3, 4) and timestamp > 0 and 0 <= now_nanos - timestamp <= 300_000_000
++
++
++def ev9_hands_off(hands_on, timestamp, now_nanos) -> bool:
++  """Only a fresh, valid no-contact sample rules out driver contact."""
++  return not hands_on and timestamp > 0 and 0 <= now_nanos - timestamp <= 300_000_000
 +
 +
 +def apply_override_gain(base_gain: float, override_active: bool, effort_scale: float) -> float:

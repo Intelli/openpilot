@@ -56,6 +56,11 @@ def ev9_hands_on(raw, timestamp, now_nanos) -> bool:
   return raw in (1, 2, 3, 4) and timestamp > 0 and 0 <= now_nanos - timestamp <= 300_000_000
 
 
+def ev9_hands_off(hands_on, timestamp, now_nanos) -> bool:
+  """Only a fresh, valid no-contact sample rules out driver contact."""
+  return not hands_on and timestamp > 0 and 0 <= now_nanos - timestamp <= 300_000_000
+
+
 def apply_override_gain(base_gain: float, override_active: bool, effort_scale: float) -> float:
   if not override_active:
     return base_gain

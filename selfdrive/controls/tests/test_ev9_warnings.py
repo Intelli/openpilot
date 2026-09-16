@@ -34,6 +34,18 @@ def test_actual_angle_controller_saturation_timer(speed, expected):
   assert bool(saturated) == expected
 
 
+@pytest.mark.parametrize("platform,expected", [(CAR.KIA_EV9, True), (CAR.HYUNDAI_IONIQ_5_PE, False)])
+def test_fresh_no_contact_torque_does_not_block_ev9_controller_saturation(platform, expected):
+  controller = LatControlAngle(make_cp(platform), None, 0.01)
+  cs = SimpleNamespace(vEgo=20, steeringPressed=True, steeringAngleDeg=30,
+                       handsOnWheel=False, handsOnWheelTimestamp=1_000_000_000)
+  vm = SimpleNamespace(get_steer_from_curvature=lambda *args: math.radians(30))
+  for _ in range(31):
+    _, _, angle_log = controller.update(True, cs, vm, SimpleNamespace(roll=0, angleOffsetDeg=0),
+                                       True, 0.04, False, 0, None, None, SimpleNamespace(), now_nanos=1_000_000_000)
+  assert angle_log.saturated == expected
+
+
 @pytest.mark.parametrize("platform", [CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE])
 @pytest.mark.parametrize("requested,measured,expected", [(90, 87.5, False), (90, 87.49, True), (89.99, 80, False)])
 @pytest.mark.parametrize("sign", [-1, 1])

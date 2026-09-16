@@ -1,5 +1,5 @@
 diff --git a/selfdrive/controls/controlsd.py b/selfdrive/controls/controlsd.py
-index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..b844f70cb18dc135d2656be9b4106e37aa99e3e5 100644
+index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..413363e80a88a33b7e4b439755786840cd5dffc8 100644
 --- a/selfdrive/controls/controlsd.py
 +++ b/selfdrive/controls/controlsd.py
 @@ -15,12 +15,14 @@ from opendbc.car.car_helpers import interfaces
@@ -29,7 +29,7 @@ index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..b844f70cb18dc135d2656be9b4106e37
      # EcuDisableFailed is set when car started in READY mode (ECU disable was rejected)
      # Disable longitudinal so stock ACC works instead
      self.update_ecu_disable_failed()
-@@ -782,8 +788,12 @@ class Controls:
+@@ -782,18 +788,25 @@ class Controls:
            jerk_factor = self.lc_arrest_jerk_factor + rise_alpha * (jerk_factor - self.lc_arrest_jerk_factor)
        self.lc_arrest_jerk_factor = jerk_factor
  
@@ -43,7 +43,21 @@ index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..b844f70cb18dc135d2656be9b4106e37
      lat_smooth_seconds = get_control_lateral_smooth_seconds(self.CP.brand, CS.vEgo, self.CP.lateralSmoothSeconds)
      lat_delay = self.sm["liveDelay"].lateralDelay + lat_smooth_seconds
  
-@@ -875,7 +885,7 @@ class Controls:
+     actuators.curvature = self.desired_curvature
++    angle_kwargs = {}
++    if isinstance(self.LaC, LatControlAngle):
++      angle_kwargs["now_nanos"] = self.sm.logMonoTime['selfdriveState'] if REPLAY else time.monotonic_ns()
+     steer, lateral_output, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+                                                      self.steer_limited_by_safety, self.desired_curvature,
+                                                      curvature_limited, lat_delay,
+                                                      self.calibrated_pose,
+                                                      self.sm['modelV2'],
+-                                                     self.starpilot_toggles)
++                                                     self.starpilot_toggles, **angle_kwargs)
+     actuators.torque = float(steer)
+     if self.CP.steerControlType == car.CarParams.SteerControlType.curvatureDEPRECATED:
+       actuators.curvature = float(lateral_output)
+@@ -875,7 +888,7 @@ class Controls:
        hudControl.leftLaneDepart = self.sm['driverAssistance'].leftLaneDeparture
        hudControl.rightLaneDepart = self.sm['driverAssistance'].rightLaneDeparture
  
@@ -52,7 +66,7 @@ index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..b844f70cb18dc135d2656be9b4106e37
        CO = self.sm['carOutput']
        if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
          output_healthy = (
-@@ -889,6 +899,8 @@ class Controls:
+@@ -889,6 +902,8 @@ class Controls:
          )
        else:
          self.steer_limited_by_safety = abs(CC.actuators.torque - CO.actuatorsOutput.torque) > 1e-2
@@ -61,6 +75,33 @@ index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..b844f70cb18dc135d2656be9b4106e37
  
      # TODO: both controlsState and carControl valids should be set by
      #       sm.all_checks(), but this creates a circular dependency
+diff --git a/selfdrive/controls/lib/desire_helper.py b/selfdrive/controls/lib/desire_helper.py
+index 8d1330b4987b0c8ce7e8cd733f5872a2a996f9aa..a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22 100644
+--- a/selfdrive/controls/lib/desire_helper.py
++++ b/selfdrive/controls/lib/desire_helper.py
+@@ -3,6 +3,7 @@ import json
+ import numpy as np
+ 
+ from cereal import log
++from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
+ from openpilot.common.constants import CV
+ from openpilot.common.params import Params
+ from openpilot.common.realtime import DT_MDL
+@@ -332,8 +333,13 @@ class DesireHelper:
+ 
+     self.prev_one_blinker = one_blinker
+ 
++    ev9_signal_turn = getattr(starpilot_toggles, "car_model", None) == HYUNDAI_CAR.KIA_EV9
++    signal_side_blocked = (carstate.leftBlinker and carstate.leftBlindspot) or (carstate.rightBlinker and carstate.rightBlindspot)
++    # Preserve the EV9 driver's signal intent through predicted stops, as in Sunnypilot.
++    # A detected object on the requested side still vetoes the turn.
++    signal_turn_allowed = not signal_side_blocked if ev9_signal_turn else not self.turn_stop_hold
+     if lateral_active and one_blinker and below_lane_change_speed and not carstate.standstill \
+-        and starpilot_toggles.use_turn_desires and not self.turn_stop_hold:
++        and starpilot_toggles.use_turn_desires and signal_turn_allowed:
+       self.turn_direction = TurnDirection.turnLeft if carstate.leftBlinker else TurnDirection.turnRight
+       self.desire = TURN_DESIRES[self.turn_direction]
+     else:
 diff --git a/selfdrive/controls/lib/drive_helpers.py b/selfdrive/controls/lib/drive_helpers.py
 index 8a2a1881f874dcc673a63fc6f4fdeb51d77348a0..0ef74d6e19dc066512381aea90d7f927e2ac527c 100644
 --- a/selfdrive/controls/lib/drive_helpers.py
@@ -224,6 +265,50 @@ index 0000000000000000000000000000000000000000..054adf1890311007d9d671de690b7a7a
 +  result, limited = clip_curvature(10, 0.03, 0.035, 0, lat_accel_factor=0.5, ev9_angle_limit_speed_mps=40 / 3.6)
 +  assert result == 0.03  # Preserve an existing curve, prohibit further growth.
 +  assert not limited
+diff --git a/selfdrive/controls/tests/test_navigation_desires.py b/selfdrive/controls/tests/test_navigation_desires.py
+index 13128651ed9982725eb70968398666aa86697ece..1b5ad4ceddaaaf053991cac74bea213999f9291d 100644
+--- a/selfdrive/controls/tests/test_navigation_desires.py
++++ b/selfdrive/controls/tests/test_navigation_desires.py
+@@ -1,6 +1,8 @@
+ from types import SimpleNamespace
+ 
++import pytest
+ from cereal import log
++from opendbc.car.hyundai.values import CAR
+ 
+ from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper, LaneChangeDirection, LaneChangeState
+ 
+@@ -521,6 +523,30 @@ def test_turn_desire_released_after_stop_completes():
+   assert helper.desire == log.Desire.turnRight
+ 
+ 
++@pytest.mark.parametrize("side", ["left", "right"])
++def test_ev9_signal_turn_survives_predicted_stop_with_aol_only(side):
++  helper = DesireHelper()
++  helper._update_nav_params = lambda: None
++  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=True, nav_desires_allowed=False)
++  cs = make_car_state(vEgo=5.0, cruiseState=SimpleNamespace(enabled=False), **{side + "Blinker": True})
++  expected = log.Desire.turnLeft if side == "left" else log.Desire.turnRight
++  for plan in (make_plan(redLight=True), make_plan(), make_plan(forcingStop=True), make_plan(stopSignConfirmed=True)):
++    helper.update(cs, True, 0.0, plan, toggles, controls_enabled=False)
++    assert helper.desire == expected
++
++
++@pytest.mark.parametrize("guard", ["inactive", "standstill", "speed", "disabled", "both_signals", "same_blindspot", "opposite_blindspot"])
++def test_ev9_signal_turn_keeps_readiness_and_blindspot_guards(guard):
++  helper = DesireHelper()
++  helper._update_nav_params = lambda: None
++  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=guard != "disabled", nav_desires_allowed=False)
++  cs = make_car_state(vEgo=10.0 if guard == "speed" else 5.0, rightBlinker=True,
++                      standstill=guard == "standstill", leftBlinker=guard == "both_signals",
++                      rightBlindspot=guard == "same_blindspot", leftBlindspot=guard == "opposite_blindspot")
++  helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=True), toggles)
++  assert helper.desire == (log.Desire.turnRight if guard == "opposite_blindspot" else log.Desire.none)
++
++
+ def test_nav_desires_disabled_leave_desire_unchanged():
+   helper = DesireHelper()
+   helper._update_nav_params = lambda: None
 diff --git a/selfdrive/controls/tests/test_steering_saturation_publish.py b/selfdrive/controls/tests/test_steering_saturation_publish.py
 index 0d7623483dacab3a092361bfe0523643a5aef62b..79ddf8b03700e02f7858badd633983d470f08a81 100644
 --- a/selfdrive/controls/tests/test_steering_saturation_publish.py

@@ -10,7 +10,7 @@ StarPilot `.patch` files. Their unchanged originals end in `.patch.migrated`;
 `tap_detection_debug.patch.disabled` keeps its original name and remains inactive.
 `origin.json` records original paths, source commit/URLs and SHA-256 checksums,
 with updated archive locations. See the [migration guide](../../docs/STARPILOT_MIGRATION.md#ev9-vehicle-migrations)
-for behavior and remaining application integration.
+for current vehicle behavior and application integration.
 
 ## Supported helpers
 

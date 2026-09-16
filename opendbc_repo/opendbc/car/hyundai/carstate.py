@@ -521,7 +521,8 @@ class CarState(CarStateBase):
       self.hands_on_steering_grip = cp.vl["HOD_FD_01_100ms"]["HOD_Dir_Status"]
       self.hands_on_steering_ts_nanos = cp.ts_nanos["HOD_FD_01_100ms"]["HOD_Dir_Status"]
       ret.handsOnWheel = self.hands_on_steering_grip in (1, 2, 3, 4)
-      ret.handsOnWheelTimestamp = self.hands_on_steering_ts_nanos
+      # Reserved statuses must not look like a fresh, confirmed hands-off sample.
+      ret.handsOnWheelTimestamp = self.hands_on_steering_ts_nanos if self.hands_on_steering_grip in (0, 1, 2, 3, 4) else 0
       self.mdps_steering_angle = cp.vl["MDPS"]["STEERING_ANGLE"]
 
     ret.steeringRateDeg = cp.vl["STEERING_SENSORS"]["STEERING_RATE"]

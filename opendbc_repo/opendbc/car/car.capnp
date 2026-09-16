@@ -191,7 +191,7 @@ struct CarState {
   steeringTorqueEps @27 :Float32;  # Native CAN units, only needed on cars where it's used for control
   steeringPressed @9 :Bool;        # is the user overring the steering wheel?
   handsOnWheel @61 :Bool;         # valid capacitive touch/grip indication; check its timestamp for freshness
-  handsOnWheelTimestamp @62 :UInt64; # monotonic nanoseconds of the hands-on sensor sample
+  handsOnWheelTimestamp @62 :UInt64; # monotonic nanoseconds of a valid hands-on sensor sample; zero when unavailable/invalid
   steeringDisengage @58 :Bool;     # more force than steeringPressed, disengages for applicable brands
   steerFaultTemporary @35 :Bool;
   steerFaultPermanent @36 :Bool;

@@ -12,7 +12,7 @@ from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.lead_data import CanLeadDataState
 from opendbc.car.hyundai.ev9 import (EV9AngleConfig, EV9ManualControlState, EV9_HIGH_LATERAL_LIMIT, EV9_PANDA_LIMIT_SPEED_MPS,
-                                   apply_override_gain, ev9_hands_on, limit_gain_recovery)
+                                   apply_override_gain, ev9_hands_off, ev9_hands_on, limit_gain_recovery)
 from opendbc.car.hyundai.values import HyundaiFlags, HyundaiSafetyFlags, HyundaiStarPilotFlags, Buttons, CarControllerParams, CAR, CANFD_ANGLE_LONGITUDINAL_CAR, \
                                         CANFD_RADAR_ECU_KEEPALIVE_CAR, CANFD_ALT_BUTTONS_RESUME_CAR, kia_ev6_gt_line_longitudinal_tuning, \
                                         KIA_EV6_GT_LINE_LONG_TUNING_TESTING_GROUND_ID
@@ -679,7 +679,12 @@ class CarController(CarControllerBase):
         self.apply_torque_base_last = compute_torque_reduction_gain(
           CS.out.steeringTorque, v_ego_raw, angle_lat_active, self.apply_torque_base_last,
         ) if angle_lat_active else 0.0
-        apply_torque = apply_override_gain(self.apply_torque_base_last, handoff.override_active, self.ev9_angle_config.override_effort_scale)
+        # Column torque can oscillate without driver contact. Keep native torque reduction,
+        # but do not repeatedly apply the custom low-effort cut during confirmed hands-off driving.
+        hands_off = self.ev9_angle_config.shared_autonomy_mode == 0 and ev9_hands_off(
+          getattr(CS, "hands_on_steering_grip", None) != 0, getattr(CS, "hands_on_steering_ts_nanos", 0), now_nanos)
+        apply_torque = apply_override_gain(self.apply_torque_base_last, handoff.override_active and not hands_off,
+                                          self.ev9_angle_config.override_effort_scale)
         apply_steer_req = angle_lat_active
         if handoff.manual_override:
           # Following the wheel with active control must still satisfy both angle/rate envelopes.

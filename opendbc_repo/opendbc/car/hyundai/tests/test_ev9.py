@@ -8,7 +8,7 @@ from opendbc.can import CANPacker
 from opendbc.car import Bus, gen_empty_fingerprint
 from opendbc.car.hyundai.carcontroller import get_baseline_safety_cp
 from opendbc.car.hyundai.carstate import CarState
-from opendbc.car.hyundai.ev9 import EV9AngleConfig, EV9ManualControlState, apply_override_gain, ev9_hands_on
+from opendbc.car.hyundai.ev9 import EV9AngleConfig, EV9ManualControlState, apply_override_gain, ev9_hands_off, ev9_hands_on
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai.tests.test_hyundai import get_test_toggles
 from opendbc.car.hyundai.values import CAR, DBC, HyundaiSafetyFlags
@@ -128,7 +128,7 @@ def test_interface_ev9_safety_flag_and_baseline(platform):
     assert baseline.steerRatio == pytest.approx(16.0)
 
 
-@pytest.mark.parametrize("raw", [0, 1, 2, 3, 4, 5])
+@pytest.mark.parametrize("raw", [0, 1, 2, 3, 4, 5, 6, 7])
 def test_hod_can_decode_timestamp_and_freshness(raw):
   cp = CarInterface.get_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], False, False, False, None)
   fpcp = CarInterface.get_starpilot_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], cp, get_test_toggles())
@@ -144,12 +144,14 @@ def test_hod_can_decode_timestamp_and_freshness(raw):
   parser.update([(1_000_000_000, [msg])])
   parsed, _ = state.update_canfd(parsers)
   assert parsed.handsOnWheel == (1 <= raw <= 4)
-  assert parsed.handsOnWheelTimestamp == 1_000_000_000
+  assert parsed.handsOnWheelTimestamp == (1_000_000_000 if raw <= 4 else 0)
   assert state.hands_on_steering_grip == raw
   assert state.hands_on_steering_ts_nanos == 1_000_000_000
   for age in (0, 299_999_999, 300_000_000):
     assert ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_000_000_000 + age) == (1 <= raw <= 4)
+    assert ev9_hands_off(parsed.handsOnWheel, parsed.handsOnWheelTimestamp, 1_000_000_000 + age) == (raw == 0)
   assert not ev9_hands_on(raw, state.hands_on_steering_ts_nanos, 1_300_000_001)
+  assert not ev9_hands_off(parsed.handsOnWheel, parsed.handsOnWheelTimestamp, 1_300_000_001)
 
 
 def test_hod_not_registered_for_other_platform():
