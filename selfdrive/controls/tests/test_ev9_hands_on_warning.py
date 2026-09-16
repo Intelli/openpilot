@@ -5,6 +5,7 @@ import pytest
 from cereal import car, log
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai.values import CAR
+from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_driver_steering_pressed
 from openpilot.selfdrive.selfdrived import selfdrived
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
 from openpilot.selfdrive.selfdrived.events import Events
@@ -13,6 +14,26 @@ from openpilot.selfdrive.selfdrived.state import StateMachine
 
 class SM(dict):
   frame = 300
+
+
+@pytest.mark.parametrize('timestamp,contact,expected', [
+  (1_000_000_000, False, False), (1_000_000_000, True, True),
+  (699_999_999, False, True), (1_000_000_001, False, True), (0, False, True),
+])
+def test_only_fresh_explicit_no_contact_rejects_torque_input(timestamp, contact, expected):
+  cs = car.CarState.new_message(steeringPressed=True, handsOnWheel=contact, handsOnWheelTimestamp=timestamp)
+  assert ev9_driver_steering_pressed(cs, 1_000_000_000) == expected
+
+
+def test_replay_uses_recorded_car_state_time_for_contact_freshness(monkeypatch):
+  monkeypatch.setattr(selfdrived, 'REPLAY', True)
+  d = selfdrived.SelfdriveD.__new__(selfdrived.SelfdriveD)
+  d.CP = CarInterface.get_non_essential_params(CAR.KIA_EV9)
+  d.car_state_mono_time = 1_000_000_000
+  cs = car.CarState.new_message(steeringPressed=True, handsOnWheel=False, handsOnWheelTimestamp=1_000_000_000)
+  assert not d.steering_pressed_for_warning(cs)
+  d.car_state_mono_time += 300_000_001
+  assert d.steering_pressed_for_warning(cs)
 
 
 @pytest.mark.parametrize('frames_since_input,expected', [(0, True), (199, True), (200, False)])
@@ -50,14 +71,16 @@ def test_torque_clears_cached_banner_and_sound_for_two_seconds(monkeypatch, goat
   controls.lateralControlState.init('angleState')
   controls.lateralControlState.angleState.active = True
   controls.lateralControlState.angleState.saturated = controller_saturated
-  controls.lateralControlState.angleState.steeringAngleDesiredDeg = 120
+  requested = 30 if controller_saturated else 120
+  controls.lateralControlState.angleState.steeringAngleDesiredDeg = requested
   output = car.CarOutput.new_message()
-  output.actuatorsOutput.steeringAngleDeg = 90
+  output.actuatorsOutput.steeringAngleDeg = requested if controller_saturated else 90
   d.sm = SM(controlsState=controls, carOutput=output, starpilotPlan=SimpleNamespace(forcingStop=False),
             modelV2=SimpleNamespace(action=SimpleNamespace(desiredCurvature=0.04)))
   published = {}
   d.pm = SimpleNamespace(send=lambda service, message: published.update({service: message}))
-  cs = car.CarState.new_message(vEgo=10, steeringAngleDeg=80)
+  cs = car.CarState.new_message(vEgo=20 if controller_saturated else 10,
+                                steeringAngleDeg=requested if controller_saturated else 80)
 
   def tick(extra_event=None):
     d.sm.frame += 1
@@ -76,6 +99,15 @@ def test_torque_clears_cached_banner_and_sound_for_two_seconds(monkeypatch, goat
     alert = tick()
   assert alert.alertType.endswith('SteerSaturated/warning') if goat else alert.alertType == 'steerSaturated/warning'
   assert alert.alertSound.raw != 0
+
+  # EPS torque pulses with fresh explicit no-contact must not clear the alert or restart the holdoff.
+  for frame in range(30):
+    cs.steeringPressed = frame % 2 == 0
+    cs.handsOnWheelTimestamp = now[0]
+    assert tick().alertSound.raw != 0
+    assert d.ev9_steering_warning.warning
+    assert d.last_steering_pressed_frame == 0
+  cs.steeringPressed = False
 
   # Fresh capacitive contact alone must not suppress the warning.
   cs.handsOnWheel = True

@@ -28,7 +28,7 @@ from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 from openpilot.selfdrive.selfdrived.alert_sound import filter_forcing_stop_alert_sound
-from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning, ev9_angle_warnings_enabled
+from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning, ev9_angle_warnings_enabled, ev9_driver_steering_pressed
 
 from openpilot.system.version import get_build_metadata
 from openpilot.system.hardware import HARDWARE
@@ -833,7 +833,8 @@ class SelfdriveD:
 
   def update_steering_saturation_events(self, CS, switchback_mode_enabled=False, switchback_mode_cooldown=0.0):
     # Send a "steering required alert" if saturation count has reached the limit
-    if CS.steeringPressed:
+    steering_pressed = self.steering_pressed_for_warning(CS)
+    if steering_pressed:
       self.last_steering_pressed_frame = self.sm.frame
     recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
     controlstate = self.sm['controlsState']
@@ -860,7 +861,7 @@ class SelfdriveD:
         speed=CS.vEgo, requested=getattr(lac, "steeringAngleDesiredDeg", float("nan")), measured=CS.steeringAngleDeg,
         output=output, threshold_kph=getattr(self.starpilot_toggles, "hkg_tuning_ev9_alerts_speed_kph", 50),
         controller_saturated=controller_saturated, manual_following=manual_following,
-        steering_pressed=CS.steeringPressed, recent_steer_pressed=recent_steer_pressed,
+        steering_pressed=steering_pressed, recent_steer_pressed=recent_steer_pressed,
       )
       if warning:
         self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
@@ -876,9 +877,15 @@ class SelfdriveD:
       if undershooting and turning and (lac.saturated or commanded_torque_at_max):
         self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
 
+  def steering_pressed_for_warning(self, CS):
+    if not ev9_angle_warnings_enabled(self.CP):
+      return CS.steeringPressed
+    now_nanos = getattr(self, "car_state_mono_time", 0) if REPLAY else time.monotonic_ns()
+    return ev9_driver_steering_pressed(CS, now_nanos)
+
   def ev9_warning_suppressed_by_driver(self, CS):
     return ev9_angle_warnings_enabled(self.CP) and (
-      CS.steeringPressed or (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0)
+      self.steering_pressed_for_warning(CS) or (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0)
 
   def add_steering_saturation_event(self, switchback_mode_enabled=False, switchback_mode_cooldown=0.0):
     now = time.monotonic()
@@ -894,6 +901,8 @@ class SelfdriveD:
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
+    if _car_state is not None:
+      self.car_state_mono_time = _car_state.logMonoTime
     CS = _car_state.carState if _car_state else self.CS_prev
 
     self.sm.update(0)

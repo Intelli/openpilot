@@ -205,7 +205,7 @@ def check_controller_sequence(direct, samples, manual, hands_on_samples=None):
     now = 1_000_000_000 + frame * 10_000_000
     cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = angle
     cs.out.steeringTorque = torque
-    cs.out.steeringPressed = torque >= 175
+    cs.out.steeringPressed = abs(torque) >= 175
     hands_on = bool(manual) if hands_on_samples is None else hands_on_samples[frame]
     cs.hands_on_steering_grip = 3 if hands_on else 0
     cs.hands_on_steering_ts_nanos = now
@@ -235,6 +235,31 @@ def test_gain_recovery_preserves_prompt_reduction(direct, mode):
     assert max(b - a for a, b in zip(gains, gains[1:], strict=False)) <= 0.0040001
   assert gains[-2] > 0.3
   assert gains[-1] == pytest.approx(0.1)
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_hands_off_torque_cycles_keep_native_gain_and_manual_takeover(direct):
+  # Alternating column torque during hands-off turning must not repeatedly trigger
+  # the extra 10% override cut. Exercise transmitted frames and native Panda limits.
+  torques = [250, 100, -250, -100] * 10
+  gains = check_controller_sequence(direct, [(100, t) for t in torques] + [(100, 250)], 0, [False] * len(torques) + [True])
+  assert min(gains[:-1]) > 0.4
+  assert max(b - a for a, b in zip(gains, gains[1:], strict=False)) <= 0.0040001
+  assert gains[-1] == pytest.approx(0.1)  # Contact + torque still reduces effort promptly.
+
+
+@pytest.mark.parametrize("raw,age", [(0, 0), (3, 0), (0, 300_000_001), (0, -1), (5, 0), (6, 0), (7, 0)])
+def test_only_confirmed_hands_off_bypasses_custom_effort(raw, age):
+  c, cs, cc, toggles = setup_controller(False)
+  c.apply_torque_base_last = c.apply_torque_last = 0.5
+  cs.out.steeringTorque = 250
+  cs.out.steeringPressed = True
+  cs.hands_on_steering_grip = raw
+  cs.hands_on_steering_ts_nanos = 1_000_000_000 - age
+  c.update(cc.as_reader(), cs, 1_000_000_000, toggles)
+  expected = c.apply_torque_base_last if raw == 0 and age == 0 else 0.1
+  assert c.apply_torque_last == pytest.approx(expected)
+  assert cs.out.steeringPressed  # Shared vehicle/safety telemetry is not rewritten.
 
 
 @pytest.mark.parametrize("direct", [False, True])

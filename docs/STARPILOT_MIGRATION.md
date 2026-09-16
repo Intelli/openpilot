@@ -1,420 +1,163 @@
-# Stable StarPilot migration
+# StarPilot maintenance and EV9 behavior
 
-## Baseline
+## Source and workflow
 
-This repository now carries the stable `StarPilot` branch from
-[firestar5683/StarPilot](https://github.com/firestar5683/StarPilot/tree/StarPilot).
-Upstream's [installation documentation](https://wiki.firestar.link/) distinguishes
-the stable `firestar5683/StarPilot` install from the unstable `firestar5683/Dom`
-install. We fetch only `refs/heads/StarPilot`.
+- Develop on `ev9-dev`. Stable upstream is `firestar5683/StarPilot`, branch
+  **`StarPilot`**; `Dom` is not the sync target. [starpilot-upstream.json](../starpilot-upstream.json)
+  records the imported commit/tree.
+- Edit vehicle code under `opendbc_repo/opendbc/` (`opendbc` is a symlink).
+  Dependencies are tracked files. The standalone Intelli/opendbc checkout is
+  historical reference only.
+- Save application edits before `./sync-upstream.sh --check` / `--allow`.
+  `--allow` replaces and stages the upstream source, including previously
+  committed customizations. It never replays patches, commits or pushes.
+- Restore customizations with `./apply_patch.sh`, then review source and patches
+  together. Replay root patches alphabetically, then numbered vehicle patches.
+  See [the patch workflow](../patches/README.md) for export/update commands and
+  [AGENTS.md](../AGENTS.md) for development and build instructions.
+- This guide, the patch archive and maintenance tooling are preserved by sync.
+  Application changes belong in patches, not the sync preservation list.
 
-The first snapshot is `c3e4ec630f41c4baa43254a90f718abd1bf764a1`.
-`starpilot-upstream.json` records its commit and Git tree. The initial import
-matched upstream outside the explicitly preserved maintenance files. Migrated
-custom defaults, EV9 Edition, settings UI, EV9 control/warning integration and the
-six vehicle migrations are now recorded in enabled patches. Deferred features
-remain disabled.
+## Patch ownership
 
-`opendbc_repo/`, `panda/`, and the other bundled dependencies are ordinary files
-from that same snapshot. `opendbc` links to `opendbc_repo/opendbc`. Make future
-vehicle edits here; the standalone Intelli/opendbc repository is no longer a
-dependency. Its local checkout and remote repository have been left available
-as historical references.
+Only files ending in `.patch` are enabled. Historical `.migrated`,
+`.temp-disabled` and `.disabled` originals remain unchanged and unapplied.
+Lane centering, driver monitoring and power management remain deferred.
+The old prebuilt patch was replaced by maintained build tooling.
+Archived helpers under `patches/legacy-openpilot-tooling/` and
+`tools/opendbc-patches/legacy/` are reference only; do not run them.
 
-## Importing another stable snapshot
-
-From the repository root:
-
-```sh
-./sync-upstream.sh --check
-./sync-upstream.sh --allow
-```
-
-The first command fetches the stable branch and shows differences against HEAD.
-The second replaces application files and stages the resulting source tree and
-provenance. Review and commit it on `ev9-dev` when ready. Neither command commits,
-pushes, builds or applies patches. `./update.sh` accepts the same arguments.
-Without `--allow`, a changed upstream commit is reported without importing it.
-
-The script refuses application edits, an active merge/rebase, dirty submodules,
-or untracked/ignored files that the import would overwrite. It preserves the
-maintenance paths listed in the script. A sync replaces even previously committed
-application customizations; restoring selected patches is a separate reviewed
-step. Snapshot imports preserve Intelli's branch history without merging upstream
-history. Only the latest upstream snapshot is fetched, limiting binary-history
-downloads.
-
-On the first conversion, old submodule checkouts are moved intact to
-`.git/starpilot-backups/<timestamp>-<pid>/`, with their paths and previous main
-commit recorded. Their relative `.git` pointers are usable again after restoring
-the original paths. This is a local recovery copy, not part of the published repo.
-The import bypasses legacy LFS filters and checkout hooks to restore upstream
-bytes directly.
-
-## Preserved work
-
-| Location | Contents |
+| Root patch (`patches/`) | Current scope |
 | --- | --- |
-| Root `apply_patch*.sh`, `create_patch*.sh`, `update_patch.sh` | Unified replay and staged forward-patch export helpers |
-| `patches/*.patch*` | Application patches and unchanged `.migrated` / `.temp-disabled` archives; pre-existing disabled suffixes are unchanged |
-| `patches/assets/openpilot/` | Custom lock artwork and audio for future patch porting |
-| `patches/legacy-openpilot-tooling/` | Original patch and sync/update helpers, guidance, custom analysis assets and checksums |
-| `patches/opendbc/` | Numbered StarPilot vehicle patches and unchanged historical originals |
-| `tools/opendbc-patches/legacy/` | Original standalone helpers and guidance |
-| `tools/opendbc-patches/origin.json` | Standalone source commit and archive checksums |
-
-The 17 patches enabled before migration were initially paused with the
-`.temp-disabled` suffix. After a port, its unchanged original uses `.migrated` and
-a new `.patch` records the reviewed StarPilot implementation. The six previously
-disabled patches retain their `.disabled` names. Only files ending in `.patch`
-are enabled. `./apply_patch.sh` skips changes already applied.
-
-### Application migration status
-
-| Enabled patch | Scope |
-| --- | --- |
-| `build_config_starpilot.patch` | Explicit editable-install import root, avoiding traversal of uv's temporary build cache |
-| `custom_defaults_starpilot.patch` | Supported StarPilot defaults, EV9 manual fingerprint, completed training `0.2.0`, four Hkg defaults |
-| `ev9_edition_starpilot.patch` | EV9 Edition branding and EV9-only control restriction; already migrated before these ports |
-| `boot_logo_ev9_edition.patch` | EV9 Edition boot JPEG and startup/theme references to the new image |
-| `settings_ui_starpilot.patch` | Shared flat settings layout and larger, clearer controls |
-| `drive_helpers_starpilot.patch` | EV9 tuning broadcast and upper-level curvature integration |
-| `customize_warnings_starpilot.patch` | EV9-specific steering warning thresholds |
-| `alerts_starpilot.patch` | Compact EV9 alert presentation and translucent normal banners |
-| `custom_model_ui_starpilot.patch` | Ocean-blue/rainbow/warning EV9 path gradients and optional appearance control |
-| `ui_options_starpilot.patch` | Flat Steering page and four relevant EV9 controls |
-
-The original `custom_defaults`, `ev9_edition` and `prebuilt` archives now use
-`.migrated` too. Their existing StarPilot replacements were reviewed rather than
-reapplied. The prebuilt replacement is maintained CI tooling, preserved by sync,
-so it does not need another enabled application patch. Its old Sunnypilot binary
-overlay, LFS exceptions and auxiliary workflows are obsolete in this monorepo.
-
-The custom-defaults port covers supported settings. StarPilot already enables
-road-name and blind-spot visualization. Its native blind-spot/lane-change handling
-is retained. Legacy auto-lock credentials, quickboot/power bookkeeping, unused
-Hkg gains and smoothing knobs, and advanced lane-centering defaults are not
-registered. Terms acceptance uses the old `HasAcceptedTerms=2` default, and
-offroad shutdown defaults to one hour (the supported range remains 1–30 hours).
-The shared turn/lane-change threshold defaults to 20 mph, or 32.18688 km/h,
-regardless of vehicle display units. The setting is explicitly in mph in both
-device and Galaxy controls. This matches the old effective threshold: the old
-controller capped the configured 25 mph turn setting at 20 mph.
-StarPilot's native additive speed-offset defaults and blind-spot timing are
-retained by request; no percentage offset or extra clearance delay is added.
-Existing saved preferences
-are preserved, including native RainbowPath settings. The new EV9Path preference
-selects the migrated effect without changing those saved path-color choices.
-
-Three originals remain `.temp-disabled` by request: `lane_centering`,
-`driver_monitoring` and `power_management`.
-All previously `.disabled` archives remain unchanged.
-
-The root helpers now support both patch locations. Application discovers enabled
-root patches first, then vehicle patches, and adds `opendbc_repo/` to standalone
-vehicle paths. Create exports staged source. Update reconstructs original file
-versions from the existing patch’s Git blob IDs and compares them with the index
-(HEAD versions when nothing is staged), preserving committed original hunks and
-the existing suffix. Its default scope includes existing patch paths and newly
-staged source files; `-- PATH...` overrides scope and `--base <ref>` selects an
-explicit baseline. Maintenance files are excluded. Empty, malformed or missing-
-preimage exports leave the patch unchanged. Exporters do not sync, modify source,
-stage, commit or push. Neither sync nor CI invokes these helpers.
-See [the patch guide](../patches/README.md) for examples and scope selection.
-Original helper copies are historical reference; do not run archived scripts.
+| `build_config_starpilot.patch` | Explicit editable-install import root; prevents Hatchling from walking uv's temporary cache |
+| `custom_defaults_starpilot.patch` | Supported defaults, EV9 fingerprint, parameter registration and button migration |
+| `ev9_edition_starpilot.patch` | Branding and EV9-only control restriction |
+| `boot_logo_ev9_edition.patch` | Boot artwork and references |
+| `settings_ui_starpilot.patch` | Shared flat settings layout |
+| `drive_helpers_starpilot.patch` | EV9 tuning broadcast, curvature integration, calibration and always-on lateral (AOL) state |
+| `customize_warnings_starpilot.patch` | Steering-warning policy and driver-input suppression |
+| `alerts_starpilot.patch` | Compact alerts and silent braking while AOL steering continues |
+| `custom_model_ui_starpilot.patch` | EV9 path colors and appearance toggle |
+| `ui_options_starpilot.patch` | Flat Steering page and EV9 controls |
 
 ## EV9 vehicle migrations
 
-All six formerly enabled opendbc patches have been ported into the bundled tree.
-Replay these numbered patches in order; each builds on the preceding source:
-
-| Patch in `patches/opendbc/` | Migrated behavior |
+| Vehicle patch (`patches/opendbc/`) | Current scope |
 | --- | --- |
-| `01_customize_warnings_starpilot.patch` | Steering saturation warning timer of 0.3 seconds |
-| `02_door_signals_starpilot.patch` | CAN-FD door-open detection includes all four doors |
-| `03_modify_baseline_starpilot.patch` | EV9 controller and Panda vehicle models; other platforms retain StarPilot's model |
-| `04_panda_safety_limits_starpilot.patch` | EV9-only low-speed limits: 4.2 m/s² lateral acceleration and 4.2 m/s³ lateral jerk |
-| `05_steering_and_ev9_limits_starpilot.patch` | Controller limits, override-effort tuning, HOD sensing and manual handoff |
-| `06_ev9_tests_starpilot.patch` | Python behavior and native Panda CAN regression coverage |
+| `01_customize_warnings_starpilot.patch` | 0.3-second steering-saturation timer |
+| `02_door_signals_starpilot.patch` | All four CAN-FD doors |
+| `03_modify_baseline_starpilot.patch` | EV9 vehicle model, safety identification and flag decoding |
+| `04_panda_safety_limits_starpilot.patch` | EV9 numeric safety limits and stock-LKAS forwarding ownership |
+| `05_steering_and_ev9_limits_starpilot.patch` | Controller limits, override effort, HOD and manual handoff |
+| `06_ev9_tests_starpilot.patch` | Vehicle/controller/native-safety regression tests |
 
-Panda identifies EV9 using safety bit 256 together with EV-gas and angle-steering
-flags. Bit 256 retains its FCEV meaning outside that context and is removed before
-common gas decoding on EV9. This avoids consuming StarPilot's existing AOL flag.
+### Limits and steering ownership
 
-The application's higher-limit threshold defaults to 40 km/h (10–40 km/h range).
-The native consumer retains a 32 km/h fallback for absent broadcasts. Panda's
-independent gate retains the original calculation: `max(measured_speed - 1, 1)`
-at or below `42 / 3.6 + 0.1` m/s, approximately 45.96 km/h measured speed. This is
-a step, not the 50 km/h gate assumed by the old test patch. Above the applicable
-gate, the standard road-roll-adjusted limits apply. Controller outputs respect
-both envelopes, including when a configured controller threshold exceeds Panda's.
-An empty angle/rate intersection sends inactive measured-angle control.
+- Preserve the historical EV9 steering envelopes; longitudinal acceleration uses
+  StarPilot defaults. Low-speed lateral acceleration/jerk limits are 4.2 m/s²
+  and 4.2 m/s³. Upper-level curvature uses the matching symmetric envelope below
+  the configured threshold; controller and Panda checks still apply.
+- The application threshold defaults to 40 km/h; the vehicle consumer falls back
+  to 32 km/h without a broadcast. Panda independently uses
+  `max(measured_speed - 1, 1) <= 42 / 3.6 + 0.1` (m/s), approximately 45.96 km/h
+  measured speed. Above the applicable gate, standard limits apply.
+- Ordinary clipping keeps steering active at the nearest valid command. An empty
+  angle/rate intersection requires inactive control, as in Sunnypilot. A blanket
+  hold at the last angle would bypass these checks.
+- EV9 stock-LKAS traffic stays continuous while inactive, with measured angle and
+  zero gain. Panda blocks duplicate factory steering traffic independently of
+  the AOL latch; active commands still require permission and valid limits.
+  Use the MDPS angle selected by Panda: `STEERING_ANGLE` for stock-LKAS and
+  `STEERING_ANGLE_2` for direct angle control, not the public SAS angle.
+- EV9 safety identification uses bit 256 with EV-gas and angle-steering flags.
+  EV9 alias bits must be removed before common flag decoding; bit 128 also
+  selects LKAS_ALT and must not accidentally enable the common LKAS latch.
+- With Improved Manual Control off (mode 0), torque-override release immediately
+  restores the current base assistance. Fresh HOD no-contact bypasses only the
+  custom override-effort cut; native torque-dependent gain reduction still applies.
+  Contact or unavailable HOD retains torque-only override behavior. This deliberately
+  differs from Sunnypilot mode 0 to avoid hands-off gain cycling. Modes 1/2 retain
+  gradual recovery and their touch-plus-torque handoff, dwell and reentry guards.
+  HOD samples expire after 300 ms; reserved statuses publish a zero timestamp.
+  Global `steeringPressed` and Panda inputs remain unchanged.
 
-Manual handoff requires fresh HOD touch/grip (raw 1–4, no older than 300 ms) and
-driver torque. Missing, reserved and stale HOD values do not count as intent. The
-legacy torque hysteresis, entry-only speed gate, one-second low-demand release,
-two-second reentry guard, 0.1-second grip dwell and 90°/15° high-angle hysteresis
-are preserved. High-angle hold respects gear, fault and angle/rate checks. The
-request state reaches both LKAS_ALT and direct `0xCB` steering messages.
-EV9 controller measurements match Panda's selected MDPS signal: `STEERING_ANGLE`
-for LKAS control with stock longitudinal, and `STEERING_ANGLE_2` for direct angle
-control. The public CarState angle continues to use `STEERING_SENSORS`; its offset
-or timing differences must not enter inactive handoff commands. Regression tests
-cover distinct sensor angles, independent SAS updates and return from handoff.
+### Settings and engagement
 
-### EV9 application integration
+| Parameter | Application default / supported range |
+| --- | --- |
+| `HkgTuningAngleCustomLimitMaxSpeedKph` | 40 km/h / 10–40 |
+| `HkgTuningAngleOverrideEffortPercent` | 10% / 10–100 |
+| `HkgSharedAutonomyMode` | 0/off; 1/on; legacy 2 also enables handoff |
+| `HkgTuningEv9AlertsSpeedKph` | 50 km/h / 10–50 |
 
-`drive_helpers_starpilot.patch` connects persistent settings to StarPilot's toggle
-broadcast and the native `EV9AngleConfig` consumer. Startup car identification
-reads current persisted values over cached broadcasts, including `ForceFingerprint`
-and the selected `CarModel`. Startup overrides use a separate snapshot so they
-cannot modify the cached broadcast consumed by realtime callers, which do no
-parameter-file I/O. Vehicle consumers gate behavior on the actual EV9
-angle-steering CarParams.
+The four EV9 controls live under Steering → EV9 Steering; changes are offroad-only.
+Runtime consumers use the toggle broadcast, not parameter-file I/O. Persisted
+startup identity/settings take precedence over cached broadcasts. Active
+`/data/params/d` values override `/cache/starpilot/params/d` and compiled defaults;
+updates initialize missing values and do not reset saved preferences.
 
-| Toggle attribute | Parameter | Application default / range |
-| --- | --- | --- |
-| `hkg_tuning_angle_custom_limit_max_speed_kph` | `HkgTuningAngleCustomLimitMaxSpeedKph` | 40 km/h; 10–40 |
-| `hkg_tuning_angle_override_effort_percent` | `HkgTuningAngleOverrideEffortPercent` | 10%; 10–100 |
-| `hkg_shared_autonomy_mode` | `HkgSharedAutonomyMode` | 0/off; 1 and legacy 2 enable handoff |
+The top-left Driving Assist/main-cruise button toggles AOL through StarPilot's
+button assignments and keeps its factory cruise behavior. The one-time EV9
+migration assigns it only when AOL is enabled, LKAS already toggles AOL and
+main/cruise has no assignment; explicit assignments are preserved.
+`PauseAOLOnBrake=0` keeps lateral steering active when braking. A normal cruise
+transition while healthy AOL steering continues has no disengagement sound,
+banner or HUD cue; faults and full disengagement retain their alerts.
 
-Registry defaults belong to `custom_defaults_starpilot.patch`. Existing saved
-values take precedence, with malformed values falling back and values clamped to
-the supported UI ranges. The legacy aliases and conservative missing-broadcast
-fallback remain supported inside opendbc.
+AOL requires healthy, completed calibration. A refused activation or loss of
+calibration discards the session and requires a fresh accepted request. Delayed
+stock-cruise engagement cannot undo an explicit button OFF. Stock SCC availability
+supplies main permission without requiring actual cruise engagement.
 
-Below the configured threshold, upper-level EV9 curvature limiting uses the same
-symmetric 4.2 m/s² envelope as the controller, without roll compensation or the
-generic curvature cap. Existing lane-change comfort shaping remains active.
-Above it, and on other cars or torque control, StarPilot behavior is unchanged.
-The downstream controller/Panda intersection still limits actual steering.
-`customize_warnings_starpilot.patch` gives EV9 angle steering a sustained
-tracking-error/command-clipping warning for requests of at least 90°, detailed
-below. The historical controller-saturation path retains its angle-or-speed
-gate, using `HkgTuningEv9AlertsSpeedKph` (default 50 km/h, range 10–50).
-Steering torque detection suppresses both paths through the legacy two-second holdoff. StarPilot's
-Switchback cooldown and sound selection still apply. High-angle warnings remain
-available at low speed. Other cars and torque controllers retain their existing behavior.
-The former startup-master exception is unnecessary: normal StarPilot startup
-already uses its custom startup event, while unsupported-car guards remain.
-`alerts_starpilot.patch` uses compact EV9 distraction and steering-limit banners,
-retaining event timing, priority and sounds. This changes presentation only; driver
-monitoring logic remains unchanged. Normal EV9 banners use 50% black opacity in
-both device renderers. Steering-limit warnings remain visible with Hide Alerts
-enabled. Other vehicles retain their original presentation.
-`ui_options_starpilot.patch` adds four controls directly under Steering → EV9
-Steering: Improved Manual Control, Steering Override Effort, EV9 Limits Speed
-and EV9 Alert Speed. The controls use the ranges/defaults above and fixed km/h
-units for both speed thresholds. Legacy handoff mode 2 displays as enabled;
-toggling on writes canonical mode 1. Actual EV9 angle CarParams are required,
-with selected-EV9 fallback before initial identification while offroad. Writes
-are blocked while onroad, including if a slider was opened before starting.
-Cached UI parameter writes use StarPilot's existing broadcast notification.
+EV9 Force Turn Desires follows the signal through predicted-stop conditions, as
+in Sunnypilot. It requires active lateral control, movement, one signal, speed
+below the configured lane-change threshold and no same-side blind-spot detection.
 
-This patch also owns the Steering page's previously migrated flat layout;
-its hunks were moved out of `settings_ui_starpilot.patch` so both patches can
-independently recognize already-applied changes. The previous layout remains.
-The legacy separate lane-turn range control is omitted; StarPilot's shared
-threshold preserves the old effective cutoff. Path styling uses a separate EV9 Path toggle instead
-of renaming the native Rainbow Path control.
+### Steering warnings
 
-### Steering and AOL follow-up fixes
+Two paths feed the EV9 steering-limit alert:
 
-Use [the recent-drive review workflow](RECENT_DRIVE_REVIEW.md) to find the latest
-uploaded route, verify the build that ran, and separate sampled log evidence
-from native reproductions and confirmed vehicle behavior.
+1. **Historical controller saturation:** retain the controller's saturation timer,
+   turning/acceleration-undershoot checks, and absolute requested angle ≥90° **or** speed
+   above the configured alert threshold. Saturation can mature before eligibility;
+   eligibility does not start another 0.3-second wait.
+2. **Additional tracking shortfall:** absolute request ≥90° and directional measured-angle
+   or command shortfall >2.5° for 0.3 seconds. Clearing hysteresis uses 85°/1°.
+   Speed alone cannot qualify this additional path.
 
-The imported StarPilot baseline already contained the stock-LKAS forwarding
-handoff, overlapping bit-128 meanings and a calibration percentage check that
-allowed AOL at 1%. Our EV9 main-button integration exposed a controller/Panda
-ownership mismatch: the controller could stop sending while Panda still blocked
-factory steering traffic. The fixes below keep the EV9 inactive stream continuous
-and require completed calibration. This identifies an inherited integration
-defect; it does not establish the same dashboard warning on unmodified StarPilot
-or on other vehicles without testing those configurations.
+Torque input suppresses both through the legacy two-second holdoff, clearing
+visible/audible warnings, unless fresh valid HOD explicitly reports no contact.
+The angle controller's saturation timer uses the same qualified input. Capacitive
+touch alone does not suppress warnings; unknown/stale HOD falls back to torque.
+Timers recover during the holdoff without arming hysteresis. Inactive steering,
+standstill, unhealthy inputs and actual manual handoff reset the warning.
+`manualSteeringOverride` telemetry distinguishes handoff from normal angle clipping.
+StarPilot's sound selection and Switchback cooldown remain in use. These warning
+thresholds do not impose a universal 90° steering-command limit.
 
-The existing enabled patches record the steering and AOL fixes:
+### Path appearance
 
-- `drive_helpers_starpilot.patch` refreshes command-limit feedback whenever lateral
-  control is active, including AOL-only operation, and clears it when inactive.
-  AOL requires healthy, completed, valid calibration. Rejected requests and loss
-  of calibration discard the old AOL session. The EV9 also checks calibration at
-  the final lateral-control decision and keeps a refused main-button request
-  paused until a fresh accepted activation. Delayed stock-cruise engagement
-  cannot undo an explicit main-button OFF. Disabling the live AOL setting clears
-  its session; re-enabling the setting requires a new request.
-- `customize_warnings_starpilot.patch` gives the EV9 a separate insufficient-
-  steering warning: a requested angle of at least 90 degrees plus directional
-  tracking error/command clipping above 2.5 degrees for 0.3 seconds. This branch
-  uses angle/error hysteresis (85 degrees / 1 degree); speed alone cannot qualify it.
-  The historical controller-saturation path retains the angle-or-speed gate,
-  requested lateral acceleration above 1 m/s² and the actual-acceleration
-  undershoot check. Its existing saturation timer can mature before angle/speed
-  eligibility, without another persistence delay when eligibility begins.
-  Inactive steering, standstill, unhealthy inputs or actual manual handoff reset
-  the warning. `steeringPressed` suppresses it through the legacy two-second
-  holdoff and clears an already-displayed warning and sound. Capacitive touch
-  alone does not suppress it. Persistence recovers during the holdoff without
-  arming warning hysteresis. Switchback cooldown and selected alert sound still apply. This is a
-  warning policy, not a new universal 90-degree command cap; numeric steering
-  envelopes remain authoritative.
-- `alerts_starpilot.patch` retains the compact EV9 steering-limit banner and
-  audible prompt. Braking that ends normal engagement while AOL steering remains
-  active is silent, with no banner or HUD cue. Both pedal and simultaneous
-  PCM-disable events use this distinction only while current control, calibration,
-  gear and communication checks confirm steering continues. Faults, explicit
-  cancellation, paused/inactive steering and full disengagement
-  retain their original alerts.
-- `custom_defaults_starpilot.patch` registers `PauseAOLOnBrake` as an integer speed.
-  Its UI value is mph and its runtime value is converted to m/s; zero preserves
-  AOL while braking. A one-time EV9 migration assigns main/cruise to AOL toggle
-  only when AOL is enabled, LKAS is already assigned to AOL and main/cruise has no
-  assigned action. Existing explicit main-button assignments are preserved.
-- Vehicle patch `05_steering_and_ev9_limits_starpilot.patch` restores the current
-  base assistance immediately after torque override when Improved Manual Control
-  is off (mode 0), matching Sunnypilot. Modes 1 and 2 retain gradual recovery
-  after override reduction. It requires ten consecutive safe samples
-  before manual-handoff reentry after an invalid angle/rate sample. EV9 stock-LKAS
-  transport sends a continuous stream, using measured-angle, zero-gain inactive
-  messages when steering is off, refused, stationary or outside Drive. The first
-  command initializes angle history before activation. Inactive sound/damping
-  fields match the former Sunnypilot protocol. Factory cruise traffic is retained.
-  The appended `CarControl.Actuators.manualSteeringOverride` log field reports
-  actual controller handoff, so a matching requested/output angle at a real limit
-  is not mistaken for intentional manual control. Appended `CarState.handsOnWheel`
-  and `handsOnWheelTimestamp` fields carry the capacitive sensor indication and
-  its monotonic sample time for warning suppression without treating old sensor
-  data as current driver contact.
-- Vehicle patch `03_modify_baseline_starpilot.patch` removes CAN-FD EV9 alias bits before common flag
-  decoding so LKAS_ALT cannot accidentally enable the main-button LKAS latch.
-  With stock cruise, received SCC main availability supplies main permission;
-  button presses do not briefly invert it between SCC messages. This preserves
-  rearming after calibration refusal without requiring actual cruise engagement.
-- Vehicle patch `04_panda_safety_limits_starpilot.patch` owns the EV9 stock-LKAS
-  forwarding contract independently of the AOL permission latch. It blocks the
-  duplicate factory steering stream while allowing the valid inactive software
-  stream; active commands still require existing permissions, motion, Drive and
-  numeric envelope checks.
-- Vehicle patch `06_ev9_tests_starpilot.patch` records controller/native-safety
-  regressions, including continuous inactive traffic through refused calibration,
-  button OFF, braking, standstill and gear changes, and unauthorized active-command
-  rejection. Root patches include calibration, partial-disengagement and warning
-  pipeline regressions. Saturation tests exercise both steering transports and
-  directions around the configured speed threshold, holding the closest valid
-  boundary for consecutive commands through native Panda checks.
+EV9 Path uses animated blue, acceleration rainbow and alert-red fills in both
+device renderers; it preserves saved native path-color choices when disabled.
+Geometry and adjacent blind-spot overlays remain native StarPilot behavior.
+Blind-spot red can appear without an alert and is independent of the EV9 alert fill.
 
-Ordinary angle clipping keeps the steering request active. The historical
-Sunnypilot controller also released when acceleration and angle-rate limits left
-no valid command; a blanket hold would violate that contract. Low assistance
-from the configured driver-override effort can also feel like release without
-the request becoming inactive. Check actual command activity, gain, driver torque
-and safety rejection counters before changing this behavior. Sampled qlogs may
-miss short transitions; use full-rate rlogs for an unresolved isolated release.
+## Build, deployment and verification
 
-These changes retain the numeric steering envelopes and StarPilot's longitudinal
-acceleration limits. Host checks exercise current Python plus freshly compiled
-native safety code; device binaries are not replaced with host builds. Enabled
-patches must replay from the recorded baseline and reproduce the affected source
-paths exactly. These checks do not replace the GitHub device build (including
-Panda/schema rebuilds) or on-vehicle validation.
+Use `ev9-dev` → GitHub device build → `ev9-prebuilt` → `ev9`. Install `Intelli/ev9`.
+`ev9-prebuilt` holds one parentless built snapshot with a `Source-Commit` trailer;
+`ev9` preserves deployment history and records `Source-Commit` and `Build-Commit`.
+Promote the exact built tree: tracked AGNOS binaries and `prebuilt` make source-only
+promotion unsafe. Parameter/schema/native changes must ship with rebuilt binaries.
 
-### EV9 path appearance
+The build workflow retains the name `sunnypilot prebuilt action` because the
+workflow on `master` subscribes to it; coordinate both when renaming. The GitHub
+build remains the deployment gate. Do not run publishing scripts as local checks.
 
-`custom_model_ui_starpilot.patch` adds one shared gradient provider used by both
-C3X and mici model renderers. Normal active steering shows animated ocean blue;
-positive measured acceleration fades into the old rainbow effect (0.25 m/s² on,
-0.15 m/s² off, 0.5-second fade in and 1-second fade out). Relevant steering,
-collision and driver-attention alerts override the fill with red, held for
-0.5 seconds after the alert and blended back over 1 second. Standard and StarPilot
-alert channels are checked, including alternate steering-saturation alerts.
-
-Fresh carControl.latActive determines steering activity, including always-on
-lateral. Inactive steering uses a subdued gray fill; warning red has priority.
-Invalid, stale, future-dated or previous-drive input is ignored. Animation updates
-once per path draw, independently of model-message updates. Toggling off, starting
-a new drive, missing geometry or a long frame gap resets the animation state.
-
-Path geometry, Dynamic Path width, lane/road lines, outlines and adjacent blind-
-spot overlays remain in StarPilot's existing rendering pipeline. The shared
-helper returns colors and performs no drawing or vehicle-control changes.
-
-EV9 Path appears under Appearance's Model & Path Visualization settings and in
-the mici visuals page. It overrides Rainbow Path, Acceleration Path and the main
-Path Color while enabled; their saved values are preserved and the controls
-explain the override. Turning EV9 Path off restores those choices. The new key
-is enabled by default in `custom_defaults_starpilot.patch`, with stock value off;
-a saved EV9Path preference always takes precedence.
-
-Regression tests live in `opendbc_repo/opendbc/car/hyundai/tests/test_ev9.py` and
-`opendbc_repo/opendbc/safety/tests/test_hyundai_ev9*.py`, with corresponding updates
-to existing Hyundai tests. They exercise real CAN packing/parsing, controller
-output and native Panda hooks, including one-tick limit violations and stale
-stock commands during manual handoff. Native safety tests require rebuilding
-`libsafety.so` for the test host; the tracked AGNOS binary cannot run on macOS.
-
-## Build and deployment branches
-
-1. Push a reviewed source commit to **`ev9-dev`**.
-2. The GitHub build checks out that exact SHA on an ARM Ubuntu runner. It uses
-   StarPilot's device container, extracts a sysroot from upstream's AGNOS image,
-   and runs `./build`. The upstream build clears native build signatures and
-   recreates `prebuilt` only after success.
-3. The publisher commits the built output to **`ev9-prebuilt`**, recording
-   `Source-Commit: <ev9-dev SHA>`. This branch contains one parentless commit for
-   the latest build. The publisher replaces only this branch with an explicit
-   force-with-lease against the fetched tip, so a concurrent publication is not
-   overwritten. Each snapshot contains only the current build's files.
-4. The existing workflow on **`master`** reacts to build success and runs the
-   deployment-sync helper from `ev9-dev`. That helper copies the exact tree from
-   **`ev9-prebuilt`**, including rebuilt binaries and the `prebuilt` marker, into
-   a new **`ev9`** commit. It preserves `ev9` history and records both
-   `Source-Commit: <ev9-dev SHA>` and `Build-Commit: <ev9-prebuilt SHA>`.
-
-Install **`Intelli/ev9`** on the device. Its files match the published GitHub
-build; `ev9-dev` is for development. The sync helper validates build provenance
-and the `prebuilt` marker before promotion. Repeating a promotion with the same
-tree and provenance makes no new commit; a new build/source is recorded even
-when its file contents are identical.
-
-Publishing an identical snapshot for the same source is also a no-op once
-`ev9-prebuilt` has a single root commit. The first publication after switching
-from the earlier history-preserving publisher replaces its history even if the
-payload is unchanged. `ev9-dev` retains development history and `ev9` retains
-deployment history. Old build-commit IDs may eventually be pruned from Git;
-previously deployed files remain available through `ev9` history.
-
-Do not copy the `ev9-dev` source tree directly to the install branch. Upstream
-ships tracked native binaries and a `prebuilt` marker, which disables device
-compilation. A source-only promotion can therefore display updated Python UI
-while still loading old compiled code. In particular, `common/params_keys.h`
-defaults are compiled into `common/params_pyx.so` and must be rebuilt together.
-
-Custom defaults initialize missing settings. Existing `/data/params/d` values
-win over `/cache/starpilot/params/d` cached values, which win over compiled
-defaults. Installing a corrected build does not overwrite saved preferences or
-a saved training-completion value. Change any retained values explicitly when
-upgrading an existing installation; uninstall is not a reliable defaults reset.
-
-The workflow file and display name remain `sunnypilot-build-prebuilt.yaml` and
-`sunnypilot prebuilt action` solely because the default-branch workflow subscribes
-to that name. The implementation builds StarPilot. Renaming it later requires
-updating the subscription on `master` at the same time.
-
-The existing `PREBUILT_PUSH_TOKEN` and `ev9-dev` GitHub environment remain in use.
-No separate test gate was added. The build uses bundled opendbc and publishes its
-own compiled output; the former Sunnypilot prebuilt download/overlay is removed.
-Other inherited root workflows were retired so that upstream-owner automation
-and old Sunnypilot jobs do not run in this fork.
-
-## Verification and scope
-
-Local integration checks cover snapshot conversion, maintenance preservation,
-collision refusal, legacy LFS/hooks, deployment history, source SHA propagation,
-file removals and promotion of the exact published build. They use temporary Git
-repositories and never publish to GitHub.
-
-The initial migration build succeeded on GitHub. Future deployments continue to
-use the GitHub build workflow.
-Local Python dependencies and compiled extensions also need to follow StarPilot's
-lockfile for native development; the old Sunnypilot environment is not proof of a
-working native build.
+Use focused tests for changed behavior. Host-native extensions and `libsafety.so`
+must be built separately from tracked AGNOS binaries. Verify enabled patches replay
+from the recorded baseline and reproduce their affected source files; current-tree
+`./apply_patch.sh --check` alone does not simulate dependent replay.
+For device issues, follow [the recent-drive review workflow](RECENT_DRIVE_REVIEW.md)
+to verify the recorded build/settings and inspect full-rate logs when needed.
+Host checks do not replace the GitHub device build or on-vehicle validation.

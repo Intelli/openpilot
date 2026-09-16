@@ -28,13 +28,14 @@ EV9 settings controls, and the EV9 animated path effect. Only lane centering,
 driver monitoring and power management remain `.temp-disabled` by request. The old prebuilt
 patch is archived as `.migrated` because the StarPilot build/publish tooling has
 already replaced its Sunnypilot implementation; it is not replayed.
-See the migration guide for deliberate adaptations and omitted legacy defaults.
+See the migration guide for current EV9 behavior and patch ownership.
 
 Steering/AOL follow-ups are incorporated into the existing custom-defaults,
 alerts, warning and drive-helper patches and vehicle patches `03`–`06`. They cover
 valid calibration and rejected-request handling, AOL feedback and button state,
 brake-pause units and silent brake transitions while steering continues, sustained
-EV9 steering-limit warnings with the legacy torque-input holdoff, historical assistance-gain recovery when Improved Manual Control is off,
+EV9 steering-limit warnings with a contact-qualified torque-input holdoff, hands-off assistance stability,
+and signal-driven EV9 turn desires through predicted stops,
 and continuous inactive LKAS traffic with
 matching Panda forwarding. Actual manual handoff is reported through an appended
 actuator telemetry field; capacitive hands-on state includes its sample timestamp.

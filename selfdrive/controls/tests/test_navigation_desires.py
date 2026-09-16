@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
+import pytest
 from cereal import log
+from opendbc.car.hyundai.values import CAR
 
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper, LaneChangeDirection, LaneChangeState
 
@@ -519,6 +521,30 @@ def test_turn_desire_released_after_stop_completes():
 
   helper.update(make_car_state(vEgo=2.0, rightBlinker=True), True, 0.0, make_plan(), toggles)
   assert helper.desire == log.Desire.turnRight
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_ev9_signal_turn_survives_predicted_stop_with_aol_only(side):
+  helper = DesireHelper()
+  helper._update_nav_params = lambda: None
+  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=True, nav_desires_allowed=False)
+  cs = make_car_state(vEgo=5.0, cruiseState=SimpleNamespace(enabled=False), **{side + "Blinker": True})
+  expected = log.Desire.turnLeft if side == "left" else log.Desire.turnRight
+  for plan in (make_plan(redLight=True), make_plan(), make_plan(forcingStop=True), make_plan(stopSignConfirmed=True)):
+    helper.update(cs, True, 0.0, plan, toggles, controls_enabled=False)
+    assert helper.desire == expected
+
+
+@pytest.mark.parametrize("guard", ["inactive", "standstill", "speed", "disabled", "both_signals", "same_blindspot", "opposite_blindspot"])
+def test_ev9_signal_turn_keeps_readiness_and_blindspot_guards(guard):
+  helper = DesireHelper()
+  helper._update_nav_params = lambda: None
+  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=guard != "disabled", nav_desires_allowed=False)
+  cs = make_car_state(vEgo=10.0 if guard == "speed" else 5.0, rightBlinker=True,
+                      standstill=guard == "standstill", leftBlinker=guard == "both_signals",
+                      rightBlindspot=guard == "same_blindspot", leftBlindspot=guard == "opposite_blindspot")
+  helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=True), toggles)
+  assert helper.desire == (log.Desire.turnRight if guard == "opposite_blindspot" else log.Desire.none)
 
 
 def test_nav_desires_disabled_leave_desire_unchanged():

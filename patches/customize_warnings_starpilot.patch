@@ -1,14 +1,15 @@
 diff --git a/selfdrive/controls/lib/ev9_warnings.py b/selfdrive/controls/lib/ev9_warnings.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..0bc3ef7c46a9206646da8f8c12ecb06f5f0e8312
+index 0000000000000000000000000000000000000000..aed92754081ffbc9bb503e431c76467f15009e2a
 --- /dev/null
 +++ b/selfdrive/controls/lib/ev9_warnings.py
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,72 @@
 +"""EV9 steering-warning scope and speed policy."""
 +import math
 +from dataclasses import dataclass
 +
 +from opendbc.car import structs
++from opendbc.car.hyundai.ev9 import ev9_hands_off
 +from opendbc.car.hyundai.values import CAR, HyundaiFlags
 +
 +EV9_HIGH_ANGLE_WARNING_DEG = 90.0
@@ -16,6 +17,12 @@ index 0000000000000000000000000000000000000000..0bc3ef7c46a9206646da8f8c12ecb06f
 +EV9_WARNING_TRACKING_GAP_DEG = 2.5
 +EV9_WARNING_CLEAR_GAP_DEG = 1.0
 +EV9_WARNING_PERSISTENCE_SECONDS = 0.3
++
++
++def ev9_driver_steering_pressed(CS, now_nanos) -> bool:
++  """Keep torque-only suppression unless fresh HOD explicitly reports no contact."""
++  return CS.steeringPressed and not ev9_hands_off(getattr(CS, "handsOnWheel", False),
++                                                getattr(CS, "handsOnWheelTimestamp", 0), now_nanos)
 +
 +
 +def ev9_angle_warnings_enabled(CP) -> bool:
@@ -69,15 +76,32 @@ index 0000000000000000000000000000000000000000..0bc3ef7c46a9206646da8f8c12ecb06f
 +    self.warning = not recent_steer_pressed and eligible and (
 +      controller_ready or (high_angle and insufficient and (self.warning or self.elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6)))
 +    return self.warning
+diff --git a/selfdrive/controls/lib/latcontrol.py b/selfdrive/controls/lib/latcontrol.py
+index ed6bafe04f188c7f04f93fc89b604e09df31c1c0..025289fc7db4f6006d4b620988afb0f7039e8176 100644
+--- a/selfdrive/controls/lib/latcontrol.py
++++ b/selfdrive/controls/lib/latcontrol.py
+@@ -23,9 +23,10 @@ class LatControl(ABC):
+   def reset(self):
+     self.sat_time = 0.
+ 
+-  def _check_saturation(self, saturated, CS, steer_limited_by_safety, curvature_limited):
++  def _check_saturation(self, saturated, CS, steer_limited_by_safety, curvature_limited, steering_pressed=None):
++    steering_pressed = CS.steeringPressed if steering_pressed is None else steering_pressed
+     # Saturated only if control output is not being limited by car torque/angle rate limits
+-    if (saturated or curvature_limited) and CS.vEgo > self.sat_check_min_speed and not steer_limited_by_safety and not CS.steeringPressed:
++    if (saturated or curvature_limited) and CS.vEgo > self.sat_check_min_speed and not steer_limited_by_safety and not steering_pressed:
+       self.sat_time += self.dt
+     else:
+       self.sat_time -= self.dt
 diff --git a/selfdrive/controls/lib/latcontrol_angle.py b/selfdrive/controls/lib/latcontrol_angle.py
-index 0abeddcd07fb71daac7688ebaa3399400cbc40c0..509c0d84cb13c82683090414d81133e857bb6bf3 100644
+index 0abeddcd07fb71daac7688ebaa3399400cbc40c0..3ef16d2f5032a1935cd60541043e6698ff42ea81 100644
 --- a/selfdrive/controls/lib/latcontrol_angle.py
 +++ b/selfdrive/controls/lib/latcontrol_angle.py
 @@ -3,6 +3,7 @@ import math
  from cereal import log
  from opendbc.car.subaru.values import CAR as SUBARU_CAR
  from openpilot.selfdrive.controls.lib.latcontrol import LatControl
-+from openpilot.selfdrive.controls.lib.ev9_warnings import EV9_HIGH_ANGLE_WARNING_DEG, ev9_angle_warnings_enabled
++from openpilot.selfdrive.controls.lib.ev9_warnings import EV9_HIGH_ANGLE_WARNING_DEG, ev9_angle_warnings_enabled, ev9_driver_steering_pressed
  from openpilot.selfdrive.controls.lib.steering_saturation import STEER_ANGLE_SATURATION_THRESHOLD
  
  _ASCENT_ANGLE_TRACKING_GAIN = 0.25
@@ -94,11 +118,11 @@ index 0abeddcd07fb71daac7688ebaa3399400cbc40c0..509c0d84cb13c82683090414d81133e8
  
 -  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay, calibrated_pose, model_data, starpilot_toggles):
 +  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited,
-+             lat_delay, calibrated_pose, model_data, starpilot_toggles):
++             lat_delay, calibrated_pose, model_data, starpilot_toggles, *, now_nanos=0):
      angle_log = log.ControlsState.LateralAngleState.new_message()
  
      if not active:
-@@ -88,12 +91,19 @@ class LatControlAngle(LatControl):
+@@ -88,12 +91,20 @@ class LatControlAngle(LatControl):
      if self.use_steer_limited_by_safety:
        # these cars' carcontrollers calculate max lateral accel and jerk, so we can rely on carOutput for saturation
        angle_control_saturated = steer_limited_by_safety
@@ -112,7 +136,8 @@ index 0abeddcd07fb71daac7688ebaa3399400cbc40c0..509c0d84cb13c82683090414d81133e8
        angle_control_saturated = abs(angle_error) > STEER_ANGLE_SATURATION_THRESHOLD
 -    angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited))
 +    if active:
-+      angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited))
++      steering_pressed = ev9_driver_steering_pressed(CS, now_nanos) if self.is_ev9 else CS.steeringPressed
++      angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited, steering_pressed))
 +    else:
 +      self.reset()
 +      angle_log.saturated = False
@@ -121,10 +146,10 @@ index 0abeddcd07fb71daac7688ebaa3399400cbc40c0..509c0d84cb13c82683090414d81133e8
      return 0, float(angle_steers_des), angle_log
 diff --git a/selfdrive/controls/tests/test_ev9_hands_on_warning.py b/selfdrive/controls/tests/test_ev9_hands_on_warning.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..b97dc364b8918f136201ff01092fc617ffd9a1e8
+index 0000000000000000000000000000000000000000..9abffb6cce78e8a72c884fcb1f205057347e25de
 --- /dev/null
 +++ b/selfdrive/controls/tests/test_ev9_hands_on_warning.py
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,145 @@
 +from types import SimpleNamespace
 +
 +import pytest
@@ -132,6 +157,7 @@ index 0000000000000000000000000000000000000000..b97dc364b8918f136201ff01092fc617
 +from cereal import car, log
 +from opendbc.car.hyundai.interface import CarInterface
 +from opendbc.car.hyundai.values import CAR
++from openpilot.selfdrive.controls.lib.ev9_warnings import ev9_driver_steering_pressed
 +from openpilot.selfdrive.selfdrived import selfdrived
 +from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
 +from openpilot.selfdrive.selfdrived.events import Events
@@ -140,6 +166,26 @@ index 0000000000000000000000000000000000000000..b97dc364b8918f136201ff01092fc617
 +
 +class SM(dict):
 +  frame = 300
++
++
++@pytest.mark.parametrize('timestamp,contact,expected', [
++  (1_000_000_000, False, False), (1_000_000_000, True, True),
++  (699_999_999, False, True), (1_000_000_001, False, True), (0, False, True),
++])
++def test_only_fresh_explicit_no_contact_rejects_torque_input(timestamp, contact, expected):
++  cs = car.CarState.new_message(steeringPressed=True, handsOnWheel=contact, handsOnWheelTimestamp=timestamp)
++  assert ev9_driver_steering_pressed(cs, 1_000_000_000) == expected
++
++
++def test_replay_uses_recorded_car_state_time_for_contact_freshness(monkeypatch):
++  monkeypatch.setattr(selfdrived, 'REPLAY', True)
++  d = selfdrived.SelfdriveD.__new__(selfdrived.SelfdriveD)
++  d.CP = CarInterface.get_non_essential_params(CAR.KIA_EV9)
++  d.car_state_mono_time = 1_000_000_000
++  cs = car.CarState.new_message(steeringPressed=True, handsOnWheel=False, handsOnWheelTimestamp=1_000_000_000)
++  assert not d.steering_pressed_for_warning(cs)
++  d.car_state_mono_time += 300_000_001
++  assert d.steering_pressed_for_warning(cs)
 +
 +
 +@pytest.mark.parametrize('frames_since_input,expected', [(0, True), (199, True), (200, False)])
@@ -177,14 +223,16 @@ index 0000000000000000000000000000000000000000..b97dc364b8918f136201ff01092fc617
 +  controls.lateralControlState.init('angleState')
 +  controls.lateralControlState.angleState.active = True
 +  controls.lateralControlState.angleState.saturated = controller_saturated
-+  controls.lateralControlState.angleState.steeringAngleDesiredDeg = 120
++  requested = 30 if controller_saturated else 120
++  controls.lateralControlState.angleState.steeringAngleDesiredDeg = requested
 +  output = car.CarOutput.new_message()
-+  output.actuatorsOutput.steeringAngleDeg = 90
++  output.actuatorsOutput.steeringAngleDeg = requested if controller_saturated else 90
 +  d.sm = SM(controlsState=controls, carOutput=output, starpilotPlan=SimpleNamespace(forcingStop=False),
 +            modelV2=SimpleNamespace(action=SimpleNamespace(desiredCurvature=0.04)))
 +  published = {}
 +  d.pm = SimpleNamespace(send=lambda service, message: published.update({service: message}))
-+  cs = car.CarState.new_message(vEgo=10, steeringAngleDeg=80)
++  cs = car.CarState.new_message(vEgo=20 if controller_saturated else 10,
++                                steeringAngleDeg=requested if controller_saturated else 80)
 +
 +  def tick(extra_event=None):
 +    d.sm.frame += 1
@@ -203,6 +251,15 @@ index 0000000000000000000000000000000000000000..b97dc364b8918f136201ff01092fc617
 +    alert = tick()
 +  assert alert.alertType.endswith('SteerSaturated/warning') if goat else alert.alertType == 'steerSaturated/warning'
 +  assert alert.alertSound.raw != 0
++
++  # EPS torque pulses with fresh explicit no-contact must not clear the alert or restart the holdoff.
++  for frame in range(30):
++    cs.steeringPressed = frame % 2 == 0
++    cs.handsOnWheelTimestamp = now[0]
++    assert tick().alertSound.raw != 0
++    assert d.ev9_steering_warning.warning
++    assert d.last_steering_pressed_frame == 0
++  cs.steeringPressed = False
 +
 +  # Fresh capacitive contact alone must not suppress the warning.
 +  cs.handsOnWheel = True
@@ -486,10 +543,10 @@ index 0000000000000000000000000000000000000000..2e49e7cdd95847197ff275d7aa4ee3cf
 +  assert not d.events.names
 diff --git a/selfdrive/controls/tests/test_ev9_warnings.py b/selfdrive/controls/tests/test_ev9_warnings.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..577b119e8ea1919cea111fc161a954089fce0574
+index 0000000000000000000000000000000000000000..496d145708c2d7f6356c814f637e6c9d6a3d6357
 --- /dev/null
 +++ b/selfdrive/controls/tests/test_ev9_warnings.py
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,59 @@
 +import math
 +from types import SimpleNamespace
 +
@@ -526,6 +583,18 @@ index 0000000000000000000000000000000000000000..577b119e8ea1919cea111fc161a95408
 +  assert bool(saturated) == expected
 +
 +
++@pytest.mark.parametrize("platform,expected", [(CAR.KIA_EV9, True), (CAR.HYUNDAI_IONIQ_5_PE, False)])
++def test_fresh_no_contact_torque_does_not_block_ev9_controller_saturation(platform, expected):
++  controller = LatControlAngle(make_cp(platform), None, 0.01)
++  cs = SimpleNamespace(vEgo=20, steeringPressed=True, steeringAngleDeg=30,
++                       handsOnWheel=False, handsOnWheelTimestamp=1_000_000_000)
++  vm = SimpleNamespace(get_steer_from_curvature=lambda *args: math.radians(30))
++  for _ in range(31):
++    _, _, angle_log = controller.update(True, cs, vm, SimpleNamespace(roll=0, angleOffsetDeg=0),
++                                       True, 0.04, False, 0, None, None, SimpleNamespace(), now_nanos=1_000_000_000)
++  assert angle_log.saturated == expected
++
++
 +@pytest.mark.parametrize("platform", [CAR.KIA_EV9, CAR.HYUNDAI_IONIQ_5_PE])
 +@pytest.mark.parametrize("requested,measured,expected", [(90, 87.5, False), (90, 87.49, True), (89.99, 80, False)])
 +@pytest.mark.parametrize("sign", [-1, 1])
@@ -538,14 +607,14 @@ index 0000000000000000000000000000000000000000..577b119e8ea1919cea111fc161a95408
 +                                       False, 0.04, False, 0, None, None, SimpleNamespace())
 +  assert angle_log.saturated == (expected and platform == CAR.KIA_EV9)
 diff --git a/selfdrive/selfdrived/selfdrived.py b/selfdrive/selfdrived/selfdrived.py
-index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..dc1dca08bf816710b0e51488bc1bbdde6ba31e77 100644
+index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..3ec936ec9b7d7d1680fc79eb19a9a83659b7d5fa 100644
 --- a/selfdrive/selfdrived/selfdrived.py
 +++ b/selfdrive/selfdrived/selfdrived.py
 @@ -28,6 +28,7 @@ from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
  from openpilot.selfdrive.selfdrived.state import StateMachine
  from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
  from openpilot.selfdrive.selfdrived.alert_sound import filter_forcing_stop_alert_sound
-+from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning, ev9_angle_warnings_enabled
++from openpilot.selfdrive.controls.lib.ev9_warnings import EV9SteeringWarning, ev9_angle_warnings_enabled, ev9_driver_steering_pressed
  
  from openpilot.system.version import get_build_metadata
  from openpilot.system.hardware import HARDWARE
@@ -582,13 +651,14 @@ index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..dc1dca08bf816710b0e51488bc1bbdde
  
      # Check for FCW
      stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
-@@ -851,6 +828,67 @@ class SelfdriveD:
+@@ -851,8 +828,78 @@ class SelfdriveD:
        or getattr(self.starpilot_toggles, "conditional_chill_mode", False)
        else self.experimental_mode or self.sm['starpilotPlan'].experimentalMode))
  
 +  def update_steering_saturation_events(self, CS, switchback_mode_enabled=False, switchback_mode_cooldown=0.0):
 +    # Send a "steering required alert" if saturation count has reached the limit
-+    if CS.steeringPressed:
++    steering_pressed = self.steering_pressed_for_warning(CS)
++    if steering_pressed:
 +      self.last_steering_pressed_frame = self.sm.frame
 +    recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
 +    controlstate = self.sm['controlsState']
@@ -615,7 +685,7 @@ index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..dc1dca08bf816710b0e51488bc1bbdde
 +        speed=CS.vEgo, requested=getattr(lac, "steeringAngleDesiredDeg", float("nan")), measured=CS.steeringAngleDeg,
 +        output=output, threshold_kph=getattr(self.starpilot_toggles, "hkg_tuning_ev9_alerts_speed_kph", 50),
 +        controller_saturated=controller_saturated, manual_following=manual_following,
-+        steering_pressed=CS.steeringPressed, recent_steer_pressed=recent_steer_pressed,
++        steering_pressed=steering_pressed, recent_steer_pressed=recent_steer_pressed,
 +      )
 +      if warning:
 +        self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
@@ -631,9 +701,15 @@ index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..dc1dca08bf816710b0e51488bc1bbdde
 +      if undershooting and turning and (lac.saturated or commanded_torque_at_max):
 +        self.add_steering_saturation_event(switchback_mode_enabled, switchback_mode_cooldown)
 +
++  def steering_pressed_for_warning(self, CS):
++    if not ev9_angle_warnings_enabled(self.CP):
++      return CS.steeringPressed
++    now_nanos = getattr(self, "car_state_mono_time", 0) if REPLAY else time.monotonic_ns()
++    return ev9_driver_steering_pressed(CS, now_nanos)
++
 +  def ev9_warning_suppressed_by_driver(self, CS):
 +    return ev9_angle_warnings_enabled(self.CP) and (
-+      CS.steeringPressed or (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0)
++      self.steering_pressed_for_warning(CS) or (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0)
 +
 +  def add_steering_saturation_event(self, switchback_mode_enabled=False, switchback_mode_cooldown=0.0):
 +    now = time.monotonic()
@@ -649,8 +725,12 @@ index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..dc1dca08bf816710b0e51488bc1bbdde
 +
    def data_sample(self):
      _car_state = messaging.recv_one(self.car_state_sock)
++    if _car_state is not None:
++      self.car_state_mono_time = _car_state.logMonoTime
      CS = _car_state.carState if _car_state else self.CS_prev
-@@ -909,6 +947,11 @@ class SelfdriveD:
+ 
+     self.sm.update(0)
+@@ -909,6 +956,11 @@ class SelfdriveD:
      alerts = self.events.create_alerts(self.state_machine.current_alert_types, [self.CP, CS, self.sm, self.is_metric,
                                                                                  self.state_machine.soft_disable_timer, pers,
                                                                                  self.starpilot_toggles])
@@ -662,7 +742,7 @@ index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..dc1dca08bf816710b0e51488bc1bbdde
      self.AM.add_many(self.sm.frame, alerts)
      self.AM.process_alerts(self.sm.frame, clear_event_types)
  
-@@ -918,6 +961,9 @@ class SelfdriveD:
+@@ -918,6 +970,9 @@ class SelfdriveD:
      starpilot_alerts = self.starpilot_events.create_alerts(starpilot_alert_types, [self.CP, CS, self.sm, self.is_metric,
                                                                                                      self.state_machine.soft_disable_timer, pers,
                                                                                                      self.starpilot_toggles])

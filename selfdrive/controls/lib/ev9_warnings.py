@@ -3,6 +3,7 @@ import math
 from dataclasses import dataclass
 
 from opendbc.car import structs
+from opendbc.car.hyundai.ev9 import ev9_hands_off
 from opendbc.car.hyundai.values import CAR, HyundaiFlags
 
 EV9_HIGH_ANGLE_WARNING_DEG = 90.0
@@ -10,6 +11,12 @@ EV9_WARNING_CLEAR_ANGLE_DEG = 85.0
 EV9_WARNING_TRACKING_GAP_DEG = 2.5
 EV9_WARNING_CLEAR_GAP_DEG = 1.0
 EV9_WARNING_PERSISTENCE_SECONDS = 0.3
+
+
+def ev9_driver_steering_pressed(CS, now_nanos) -> bool:
+  """Keep torque-only suppression unless fresh HOD explicitly reports no contact."""
+  return CS.steeringPressed and not ev9_hands_off(getattr(CS, "handsOnWheel", False),
+                                                getattr(CS, "handsOnWheelTimestamp", 0), now_nanos)
 
 
 def ev9_angle_warnings_enabled(CP) -> bool:

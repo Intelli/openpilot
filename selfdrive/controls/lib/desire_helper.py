@@ -3,6 +3,7 @@ import json
 import numpy as np
 
 from cereal import log
+from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
@@ -332,8 +333,13 @@ class DesireHelper:
 
     self.prev_one_blinker = one_blinker
 
+    ev9_signal_turn = getattr(starpilot_toggles, "car_model", None) == HYUNDAI_CAR.KIA_EV9
+    signal_side_blocked = (carstate.leftBlinker and carstate.leftBlindspot) or (carstate.rightBlinker and carstate.rightBlindspot)
+    # Preserve the EV9 driver's signal intent through predicted stops, as in Sunnypilot.
+    # A detected object on the requested side still vetoes the turn.
+    signal_turn_allowed = not signal_side_blocked if ev9_signal_turn else not self.turn_stop_hold
     if lateral_active and one_blinker and below_lane_change_speed and not carstate.standstill \
-        and starpilot_toggles.use_turn_desires and not self.turn_stop_hold:
+        and starpilot_toggles.use_turn_desires and signal_turn_allowed:
       self.turn_direction = TurnDirection.turnLeft if carstate.leftBlinker else TurnDirection.turnRight
       self.desire = TURN_DESIRES[self.turn_direction]
     else:
