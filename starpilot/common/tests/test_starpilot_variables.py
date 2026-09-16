@@ -490,8 +490,8 @@ def test_compiled_terms_and_shutdown_defaults_preserve_saved_preferences(tmp_pat
   assert raw_params.get("HasAcceptedTerms") is None
   assert raw_params.get("DeviceShutdown") is None
   assert params.get("HasAcceptedTerms") == terms_version == "2"
-  assert params.get_int("DeviceShutdown") == spv.DEVICE_SHUTDOWN_DEFAULT_HOURS == 1
-  assert spv.device_shutdown_seconds(params.get_int("DeviceShutdown")) == 3600
+  assert params.get_int("DeviceShutdown") == spv.DEVICE_SHUTDOWN_DEFAULT_HOURS == 2
+  assert spv.device_shutdown_seconds(params.get_int("DeviceShutdown")) == 2 * 3600
 
   raw_params.put("HasAcceptedTerms", "0")
   raw_params.put_int("DeviceShutdown", 6)
@@ -524,7 +524,7 @@ def test_lane_change_threshold_stays_in_mph_when_display_units_change(monkeypatc
     variables.update()
     assert variables.starpilot_toggles.is_metric is display_metric
     assert variables.starpilot_toggles.minimum_lane_change_speed == pytest.approx((saved_speed or 20) * CV.MPH_TO_MS)
-    assert variables.starpilot_toggles.device_shutdown_time == 3600
+    assert variables.starpilot_toggles.device_shutdown_time == 2 * 3600
 
 
 def test_favorite_button_flags_map_to_three_slots():

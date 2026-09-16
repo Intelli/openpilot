@@ -2,6 +2,7 @@ from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigParamControl
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigMultiOptionDialog
+from openpilot.selfdrive.ui.mici.layouts.settings.ev9 import EV9SteeringLayoutMici
 from openpilot.selfdrive.ui.lib.fingerprint_catalog import (
   FingerprintModelOption,
   format_fingerprint_value,
@@ -195,11 +196,14 @@ class VehicleLayoutMici(NavScroller):
     fingerprint_btn = BigButton("fingerprint", "",gui_app.texture("icons_mici/settings/vehicle/fingerprint.png", 58, 64))
     fingerprint_btn.set_click_callback(lambda: gui_app.push_widget(fingerprint_panel))
 
-    vehicle_specific_widgets = tuple()
+    ev9_panel = EV9SteeringLayoutMici()
+    ev9_btn = BigButton("EV9 steering")
+    ev9_btn.set_visible(ev9_panel.visible)
+    ev9_btn.set_click_callback(lambda: gui_app.push_widget(ev9_panel))
 
     self._scroller.add_widgets([
       fingerprint_btn,
-      *vehicle_specific_widgets
+      ev9_btn,
     ])
 
     self._font_medium = gui_app.font(FontWeight.MEDIUM)

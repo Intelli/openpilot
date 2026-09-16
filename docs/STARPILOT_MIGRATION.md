@@ -93,7 +93,9 @@ Archived helpers under `patches/legacy-openpilot-tooling/` and
 | `HkgSharedAutonomyMode` | 0/off; 1/on; legacy 2 also enables handoff |
 | `HkgTuningEv9AlertsSpeedKph` | 50 km/h / 10–50 |
 
-The four EV9 controls live under Steering → EV9 Steering; changes are offroad-only.
+The four EV9 controls are offroad-only: Steering → EV9 Steering on C3/C3X,
+Settings → Vehicle → EV9 Steering on C4, and Galaxy → Lateral (Steering).
+EV9 Path is also available in both device UIs and Galaxy → Visual (Display & UI).
 Runtime consumers use the toggle broadcast, not parameter-file I/O. Persisted
 startup identity/settings take precedence over cached broadcasts. Active
 `/data/params/d` values override `/cache/starpilot/params/d` and compiled defaults;

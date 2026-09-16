@@ -91,3 +91,58 @@ def test_rows_defaults_and_legacy_manual_mode(monkeypatch, lateral_module):
   assert [row.get_value() for row in rows[1:]] == ["10%", "40 km/h", "50 km/h"]
   values["HkgSharedAutonomyMode"] = "2"
   assert rows[0].get_state()
+
+
+def test_mici_controls_preserve_values_and_recheck_vehicle_state(monkeypatch, lateral_module):
+  import importlib.util
+  import sys
+  from pathlib import Path
+
+  dialogs = []
+  state = SimpleNamespace(CP=cp(), started=False)
+
+  def make_dialog(**kwargs):
+    dialog = SimpleNamespace(**kwargs)
+    dialog.get_selected_option = lambda: "20%"
+    dialogs.append(dialog)
+    return dialog
+
+  for name, module in {
+    "openpilot.selfdrive.ui.mici.widgets.button": SimpleNamespace(BigButton=object, BigToggle=object),
+    "openpilot.selfdrive.ui.mici.widgets.dialog": SimpleNamespace(BigMultiOptionDialog=make_dialog),
+    "openpilot.system.ui.widgets.scroller": SimpleNamespace(NavScroller=object),
+    "openpilot.selfdrive.ui.ui_state": SimpleNamespace(ui_state=state),
+  }.items():
+    monkeypatch.setitem(sys.modules, name, module)
+  path = Path(__file__).parents[1] / "mici/layouts/settings/ev9.py"
+  spec = importlib.util.spec_from_file_location("ev9_test_mici", path)
+  module = importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(module)
+  layout = module.EV9SteeringLayoutMici.__new__(module.EV9SteeringLayoutMici)
+  updates = []
+  monkeypatch.setattr(module, "update_starpilot_toggles", lambda: updates.append(True))
+  key = "HkgTuningAngleOverrideEffortPercent"
+  values = {"CarModel": "KIA_EV9", "HkgSharedAutonomyMode": "2", key: "15"}
+  layout._params = SimpleNamespace(get=values.get, put_int=values.__setitem__)
+  checked = []
+  layout._manual = SimpleNamespace(set_checked=checked.append, set_value=lambda value: None)
+  layout._controls = []
+  layout._refresh()
+  assert checked[-1] is True
+  layout._select_value(key, 100, 10, "%")
+  assert dialogs[0].default == "15%" and "15%" in dialogs[0].options
+  state.started = True
+  dialogs[0].right_btn_callback()
+  layout._set_manual(False)
+  layout._select_value(key, 100, 10, "%")
+  assert values[key] == "15" and values["HkgSharedAutonomyMode"] == "2" and len(dialogs) == 1
+  assert updates == []
+  state.started = False
+  state.CP = cp("OTHER")
+  dialogs[0].right_btn_callback()
+  assert values[key] == "15"
+  state.CP = cp()
+  dialogs[0].right_btn_callback()
+  layout._set_manual(False)
+  assert values[key] == 20 and values["HkgSharedAutonomyMode"] == 0
+  assert len(updates) == 2
