@@ -13,23 +13,23 @@ from openpilot.selfdrive.selfdrived.selfdrived import SelfdriveD
 
 
 def sample(state, frame, **overrides):
-  args = dict(now=frame * 0.01, active=True, speed=2, requested=100, measured=80, output=100, threshold_kph=50)
+  args = dict(now=frame * 0.01, active=True, speed=2, requested=120, measured=80, output=120, threshold_kph=50)
   args.update(overrides)
   return state.update(**args)
 
 
-@pytest.mark.parametrize('requested,measured', [(88, 87), (84.9, 80)])
+@pytest.mark.parametrize('requested,measured', [(118, 117), (114.89, 110)])
 def test_persistence_and_hysteresis(requested, measured):
   state = EV9SteeringWarning()
   for frame in range(29):
     assert not sample(state, frame)
   assert sample(state, 29)
-  assert sample(state, 30, requested=88, measured=86, output=88)
+  assert sample(state, 30, requested=118, measured=116, output=118)
   assert not sample(state, 31, speed=60 / 3.6, requested=requested, measured=measured, output=requested)
   assert not sample(state, 32)
 
 
-@pytest.mark.parametrize('changes', [dict(active=False), dict(speed=0), dict(requested=89), dict(measured=105),
+@pytest.mark.parametrize('changes', [dict(active=False), dict(speed=0), dict(requested=89), dict(measured=125),
                                     dict(manual_following=True), dict(requested=float('nan'))])
 def test_ineligible_or_following_driver_does_not_warn(changes):
   state = EV9SteeringWarning()
@@ -149,7 +149,7 @@ def test_slow_turn_generates_visible_audible_event_respects_driver_contact(sign,
   controls = log.ControlsState.new_message()
   controls.lateralControlState.init('angleState')
   controls.lateralControlState.angleState.active = True
-  controls.lateralControlState.angleState.steeringAngleDesiredDeg = sign * 100
+  controls.lateralControlState.angleState.steeringAngleDesiredDeg = sign * 120
   output = car.CarOutput.new_message()
   output.actuatorsOutput.steeringAngleDeg = sign * 80
   output.actuatorsOutput.manualSteeringOverride = manual_override
@@ -170,10 +170,10 @@ def test_slow_turn_generates_visible_audible_event_respects_driver_contact(sign,
 
 @pytest.mark.parametrize('sign', [-1, 1])
 @pytest.mark.parametrize('requested,measured,output,expected', [
-  (90, 87.5, 90, False),
-  (90, 87.49, 90, True),
-  (90, 95, 90, False),  # Driver has already turned farther than requested.
-  (90, 90, 87.49, True),  # Command clipping remains visible while the driver helps.
+  (119.9, 117.4, 119.9, False),
+  (119.9, 117.39, 119.9, True),
+  (119.9, 125, 119.9, False),  # Driver has already turned farther than requested.
+  (119.9, 119.9, 117.39, True),  # Command clipping remains visible while the driver helps.
 ])
 def test_directional_tracking_and_clipping_boundaries(sign, requested, measured, output, expected):
   state = EV9SteeringWarning()
@@ -238,3 +238,20 @@ def test_startup_or_debug_control_state_resets_ev9_warning(control_type):
   d.update_steering_saturation_events(car.CarState.new_message(vEgo=10))
   assert not d.ev9_steering_warning.warning
   assert not d.events.names
+
+
+@pytest.mark.parametrize('requested,expected', [(90, False), (119.89, False), (119.9, True), (-119.9, True)])
+def test_tracking_warning_has_independent_high_angle_entry(requested, expected):
+  state = EV9SteeringWarning()
+  for frame in range(30):
+    result = sample(state, frame, speed=60 / 3.6, requested=requested, measured=0, output=requested)
+  assert result == expected
+
+
+def test_controller_warning_does_not_arm_tracking_hysteresis():
+  state = EV9SteeringWarning()
+  for frame in range(30):
+    sample(state, frame, requested=90, controller_saturated=True)
+  assert state.warning
+  for frame in range(30, 70):
+    assert not sample(state, frame, requested=118, measured=100, output=118)

@@ -68,11 +68,6 @@ def apply_override_gain(base_gain: float, override_active: bool, effort_scale: f
   return min(1.0, max(0.10, round(base_gain * scale / 0.004) * 0.004))
 
 
-def limit_gain_recovery(gain: float, previous_gain: float) -> float:
-  """Reduce assistance immediately; restore it at the normal gain ramp above the EPS floor."""
-  return min(gain, max(0.10, previous_gain + 0.004))
-
-
 @dataclass(frozen=True)
 class EV9ManualControlOutput:
   override_active: bool = False

@@ -1,9 +1,9 @@
 diff --git a/selfdrive/controls/lib/ev9_warnings.py b/selfdrive/controls/lib/ev9_warnings.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..aed92754081ffbc9bb503e431c76467f15009e2a
+index 0000000000000000000000000000000000000000..032b806551af4a54ae8b67ca2baffcab27f5fd68
 --- /dev/null
 +++ b/selfdrive/controls/lib/ev9_warnings.py
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,78 @@
 +"""EV9 steering-warning scope and speed policy."""
 +import math
 +from dataclasses import dataclass
@@ -14,6 +14,8 @@ index 0000000000000000000000000000000000000000..aed92754081ffbc9bb503e431c76467f
 +
 +EV9_HIGH_ANGLE_WARNING_DEG = 90.0
 +EV9_WARNING_CLEAR_ANGLE_DEG = 85.0
++EV9_TRACKING_WARNING_ANGLE_DEG = 119.9
++EV9_TRACKING_WARNING_CLEAR_ANGLE_DEG = 114.9
 +EV9_WARNING_TRACKING_GAP_DEG = 2.5
 +EV9_WARNING_CLEAR_GAP_DEG = 1.0
 +EV9_WARNING_PERSISTENCE_SECONDS = 0.3
@@ -45,6 +47,7 @@ index 0000000000000000000000000000000000000000..aed92754081ffbc9bb503e431c76467f
 +  elapsed: float = 0.0
 +  ready_elapsed: float = 0.0
 +  warning: bool = False
++  tracking_warning: bool = False
 +  last_time: float | None = None
 +
 +  def update(self, *, now, active, speed, requested, measured, output, threshold_kph,
@@ -52,29 +55,32 @@ index 0000000000000000000000000000000000000000..aed92754081ffbc9bb503e431c76467f
 +    dt = 0.01 if self.last_time is None else now - self.last_time
 +    self.last_time = now
 +    if not all(math.isfinite(value) for value in (now, speed, requested, measured, dt)) or dt < 0 or dt > 0.2:
-+      self.elapsed, self.ready_elapsed, self.warning = 0.0, 0.0, False
++      self.elapsed, self.ready_elapsed, self.warning, self.tracking_warning = 0.0, 0.0, False, False
 +      self.last_time = now if math.isfinite(now) else None
 +      return False
 +    if not active or speed <= 0.3 or manual_following or steering_pressed:
-+      self.elapsed, self.ready_elapsed, self.warning = 0.0, 0.0, False
++      self.elapsed, self.ready_elapsed, self.warning, self.tracking_warning = 0.0, 0.0, False, False
 +      return False
 +    # Rearm after suppression, in parallel with the controller's saturation timer and independent of angle/speed eligibility.
 +    self.ready_elapsed = min(self.ready_elapsed + dt, EV9_WARNING_PERSISTENCE_SECONDS)
 +    angle_threshold = EV9_WARNING_CLEAR_ANGLE_DEG if self.warning else EV9_HIGH_ANGLE_WARNING_DEG
 +    high_angle = abs(requested) >= angle_threshold
 +    eligible = high_angle or speed > ev9_alert_speed_kph(threshold_kph) / 3.6
++    tracking_threshold = EV9_TRACKING_WARNING_CLEAR_ANGLE_DEG if self.tracking_warning else EV9_TRACKING_WARNING_ANGLE_DEG
++    tracking_angle = abs(requested) >= tracking_threshold
 +    direction = 1.0 if requested >= 0 else -1.0
 +    tracking_shortfall = direction * (requested - measured)
 +    command_shortfall = direction * (requested - output) if output is not None and math.isfinite(output) else 0.0
-+    gap_threshold = EV9_WARNING_CLEAR_GAP_DEG if self.warning else EV9_WARNING_TRACKING_GAP_DEG
++    gap_threshold = EV9_WARNING_CLEAR_GAP_DEG if self.tracking_warning else EV9_WARNING_TRACKING_GAP_DEG
 +    insufficient = max(tracking_shortfall, command_shortfall) > gap_threshold
 +    # Tracking error alone is only a high-angle warning; the speed gate requires qualified controller saturation.
-+    self.elapsed = self.elapsed + dt if high_angle and insufficient else 0.0
++    self.elapsed = self.elapsed + dt if tracking_angle and insufficient else 0.0
 +    # Controller saturation already includes its persistence timer, including curvature limiting.
 +    controller_ready = controller_saturated and self.ready_elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6
 +    # Recover saturation during the legacy two-second driver-input holdoff, without arming warning hysteresis.
-+    self.warning = not recent_steer_pressed and eligible and (
-+      controller_ready or (high_angle and insufficient and (self.warning or self.elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6)))
++    self.tracking_warning = not recent_steer_pressed and tracking_angle and insufficient and (
++      self.tracking_warning or self.elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6)
++    self.warning = not recent_steer_pressed and ((eligible and controller_ready) or self.tracking_warning)
 +    return self.warning
 diff --git a/selfdrive/controls/lib/latcontrol.py b/selfdrive/controls/lib/latcontrol.py
 index ed6bafe04f188c7f04f93fc89b604e09df31c1c0..025289fc7db4f6006d4b620988afb0f7039e8176 100644
@@ -297,10 +303,10 @@ index 0000000000000000000000000000000000000000..9abffb6cce78e8a72c884fcb1f205057
 +  assert d.ev9_warning_suppressed_by_driver(car.CarState.new_message(steeringPressed=True)) == (platform == CAR.KIA_EV9)
 diff --git a/selfdrive/controls/tests/test_ev9_limit_notification.py b/selfdrive/controls/tests/test_ev9_limit_notification.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..2e49e7cdd95847197ff275d7aa4ee3cf995b7420
+index 0000000000000000000000000000000000000000..701cdf86142f535380085f809432713c4db81f3d
 --- /dev/null
 +++ b/selfdrive/controls/tests/test_ev9_limit_notification.py
-@@ -0,0 +1,240 @@
+@@ -0,0 +1,257 @@
 +import math
 +from types import SimpleNamespace
 +
@@ -316,23 +322,23 @@ index 0000000000000000000000000000000000000000..2e49e7cdd95847197ff275d7aa4ee3cf
 +
 +
 +def sample(state, frame, **overrides):
-+  args = dict(now=frame * 0.01, active=True, speed=2, requested=100, measured=80, output=100, threshold_kph=50)
++  args = dict(now=frame * 0.01, active=True, speed=2, requested=120, measured=80, output=120, threshold_kph=50)
 +  args.update(overrides)
 +  return state.update(**args)
 +
 +
-+@pytest.mark.parametrize('requested,measured', [(88, 87), (84.9, 80)])
++@pytest.mark.parametrize('requested,measured', [(118, 117), (114.89, 110)])
 +def test_persistence_and_hysteresis(requested, measured):
 +  state = EV9SteeringWarning()
 +  for frame in range(29):
 +    assert not sample(state, frame)
 +  assert sample(state, 29)
-+  assert sample(state, 30, requested=88, measured=86, output=88)
++  assert sample(state, 30, requested=118, measured=116, output=118)
 +  assert not sample(state, 31, speed=60 / 3.6, requested=requested, measured=measured, output=requested)
 +  assert not sample(state, 32)
 +
 +
-+@pytest.mark.parametrize('changes', [dict(active=False), dict(speed=0), dict(requested=89), dict(measured=105),
++@pytest.mark.parametrize('changes', [dict(active=False), dict(speed=0), dict(requested=89), dict(measured=125),
 +                                    dict(manual_following=True), dict(requested=float('nan'))])
 +def test_ineligible_or_following_driver_does_not_warn(changes):
 +  state = EV9SteeringWarning()
@@ -452,7 +458,7 @@ index 0000000000000000000000000000000000000000..2e49e7cdd95847197ff275d7aa4ee3cf
 +  controls = log.ControlsState.new_message()
 +  controls.lateralControlState.init('angleState')
 +  controls.lateralControlState.angleState.active = True
-+  controls.lateralControlState.angleState.steeringAngleDesiredDeg = sign * 100
++  controls.lateralControlState.angleState.steeringAngleDesiredDeg = sign * 120
 +  output = car.CarOutput.new_message()
 +  output.actuatorsOutput.steeringAngleDeg = sign * 80
 +  output.actuatorsOutput.manualSteeringOverride = manual_override
@@ -473,10 +479,10 @@ index 0000000000000000000000000000000000000000..2e49e7cdd95847197ff275d7aa4ee3cf
 +
 +@pytest.mark.parametrize('sign', [-1, 1])
 +@pytest.mark.parametrize('requested,measured,output,expected', [
-+  (90, 87.5, 90, False),
-+  (90, 87.49, 90, True),
-+  (90, 95, 90, False),  # Driver has already turned farther than requested.
-+  (90, 90, 87.49, True),  # Command clipping remains visible while the driver helps.
++  (119.9, 117.4, 119.9, False),
++  (119.9, 117.39, 119.9, True),
++  (119.9, 125, 119.9, False),  # Driver has already turned farther than requested.
++  (119.9, 119.9, 117.39, True),  # Command clipping remains visible while the driver helps.
 +])
 +def test_directional_tracking_and_clipping_boundaries(sign, requested, measured, output, expected):
 +  state = EV9SteeringWarning()
@@ -541,6 +547,23 @@ index 0000000000000000000000000000000000000000..2e49e7cdd95847197ff275d7aa4ee3cf
 +  d.update_steering_saturation_events(car.CarState.new_message(vEgo=10))
 +  assert not d.ev9_steering_warning.warning
 +  assert not d.events.names
++
++
++@pytest.mark.parametrize('requested,expected', [(90, False), (119.89, False), (119.9, True), (-119.9, True)])
++def test_tracking_warning_has_independent_high_angle_entry(requested, expected):
++  state = EV9SteeringWarning()
++  for frame in range(30):
++    result = sample(state, frame, speed=60 / 3.6, requested=requested, measured=0, output=requested)
++  assert result == expected
++
++
++def test_controller_warning_does_not_arm_tracking_hysteresis():
++  state = EV9SteeringWarning()
++  for frame in range(30):
++    sample(state, frame, requested=90, controller_saturated=True)
++  assert state.warning
++  for frame in range(30, 70):
++    assert not sample(state, frame, requested=118, measured=100, output=118)
 diff --git a/selfdrive/controls/tests/test_ev9_warnings.py b/selfdrive/controls/tests/test_ev9_warnings.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..496d145708c2d7f6356c814f637e6c9d6a3d6357

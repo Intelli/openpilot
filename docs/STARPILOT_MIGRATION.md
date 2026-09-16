@@ -77,7 +77,10 @@ Archived helpers under `patches/legacy-openpilot-tooling/` and
   custom override-effort cut; native torque-dependent gain reduction still applies.
   Contact or unavailable HOD retains torque-only override behavior. This deliberately
   differs from Sunnypilot mode 0 to avoid hands-off gain cycling. Modes 1/2 retain
-  gradual recovery and their touch-plus-torque handoff, dwell and reentry guards.
+  their touch-plus-torque handoff, dwell and reentry guards, preserve independent
+  base assistance during manual handoff, and restore it immediately on release.
+  Inactive manual commands still transmit zero gain; disengagement and invalid
+  overall angle envelopes reset the base assistance.
   HOD samples expire after 300 ms; reserved statuses publish a zero timestamp.
   Global `steeringPressed` and Panda inputs remain unchanged.
 
@@ -121,8 +124,8 @@ Two paths feed the EV9 steering-limit alert:
    turning/acceleration-undershoot checks, and absolute requested angle ≥90° **or** speed
    above the configured alert threshold. Saturation can mature before eligibility;
    eligibility does not start another 0.3-second wait.
-2. **Additional tracking shortfall:** absolute request ≥90° and directional measured-angle
-   or command shortfall >2.5° for 0.3 seconds. Clearing hysteresis uses 85°/1°.
+2. **Additional tracking shortfall:** absolute request ≥119.9° and directional measured-angle
+   or command shortfall >2.5° for 0.3 seconds. Clearing hysteresis uses 114.9°/1°.
    Speed alone cannot qualify this additional path.
 
 Torque input suppresses both through the legacy two-second holdoff, clearing
