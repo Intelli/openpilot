@@ -48,16 +48,18 @@ class EV9SteeringWarning:
     # Rearm after suppression, in parallel with the controller's saturation timer and independent of angle/speed eligibility.
     self.ready_elapsed = min(self.ready_elapsed + dt, EV9_WARNING_PERSISTENCE_SECONDS)
     angle_threshold = EV9_WARNING_CLEAR_ANGLE_DEG if self.warning else EV9_HIGH_ANGLE_WARNING_DEG
-    eligible = abs(requested) >= angle_threshold or speed > ev9_alert_speed_kph(threshold_kph) / 3.6
+    high_angle = abs(requested) >= angle_threshold
+    eligible = high_angle or speed > ev9_alert_speed_kph(threshold_kph) / 3.6
     direction = 1.0 if requested >= 0 else -1.0
     tracking_shortfall = direction * (requested - measured)
     command_shortfall = direction * (requested - output) if output is not None and math.isfinite(output) else 0.0
     gap_threshold = EV9_WARNING_CLEAR_GAP_DEG if self.warning else EV9_WARNING_TRACKING_GAP_DEG
     insufficient = max(tracking_shortfall, command_shortfall) > gap_threshold
-    self.elapsed = self.elapsed + dt if eligible and insufficient else 0.0
+    # Tracking error alone is only a high-angle warning; the speed gate requires qualified controller saturation.
+    self.elapsed = self.elapsed + dt if high_angle and insufficient else 0.0
     # Controller saturation already includes its persistence timer, including curvature limiting.
     controller_ready = controller_saturated and self.ready_elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6
     # Recover saturation during the legacy two-second driver-input holdoff, without arming warning hysteresis.
     self.warning = not recent_steer_pressed and eligible and (
-      controller_ready or (insufficient and (self.warning or self.elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6)))
+      controller_ready or (high_angle and insufficient and (self.warning or self.elapsed >= EV9_WARNING_PERSISTENCE_SECONDS - 1e-6)))
     return self.warning

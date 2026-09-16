@@ -34,7 +34,8 @@ Steering/AOL follow-ups are incorporated into the existing custom-defaults,
 alerts, warning and drive-helper patches and vehicle patches `03`–`06`. They cover
 valid calibration and rejected-request handling, AOL feedback and button state,
 brake-pause units and silent brake transitions while steering continues, sustained
-EV9 steering-limit warnings with fresh hands-on suppression, assistance-gain recovery, and continuous inactive LKAS traffic with
+EV9 steering-limit warnings with the legacy torque-input holdoff, historical assistance-gain recovery when Improved Manual Control is off,
+and continuous inactive LKAS traffic with
 matching Panda forwarding. Actual manual handoff is reported through an appended
 actuator telemetry field; capacitive hands-on state includes its sample timestamp.
 Numeric steering and acceleration limits are unchanged;

@@ -18,13 +18,14 @@ def sample(state, frame, **overrides):
   return state.update(**args)
 
 
-def test_persistence_and_hysteresis():
+@pytest.mark.parametrize('requested,measured', [(88, 87), (84.9, 80)])
+def test_persistence_and_hysteresis(requested, measured):
   state = EV9SteeringWarning()
   for frame in range(29):
     assert not sample(state, frame)
   assert sample(state, 29)
   assert sample(state, 30, requested=88, measured=86, output=88)
-  assert not sample(state, 31, requested=88, measured=87, output=88)
+  assert not sample(state, 31, speed=60 / 3.6, requested=requested, measured=measured, output=requested)
   assert not sample(state, 32)
 
 
@@ -36,11 +37,13 @@ def test_ineligible_or_following_driver_does_not_warn(changes):
     assert not sample(state, frame, **changes)
 
 
-def test_configured_speed_policy_and_command_clip():
+@pytest.mark.parametrize('controller_saturated', [False, True])
+def test_configured_speed_gate_requires_controller_saturation(controller_saturated):
   state = EV9SteeringWarning()
   for frame in range(40):
-    result = sample(state, frame, speed=8, threshold_kph=25, requested=30, measured=30, output=20)
-  assert result
+    result = sample(state, frame, speed=8, threshold_kph=25, requested=30, measured=20, output=20,
+                    controller_saturated=controller_saturated)
+  assert result == controller_saturated
   assert not sample(state, 40, active=False)
 
 
@@ -49,12 +52,12 @@ def test_configured_speed_policy_and_command_clip():
   (2.5, 50, 89.9, False), (2.5, 50, 90, True), (2.5, 50, -90, True),
   (25, 25, 30, False), (25.1, 25, 30, True),
 ])
-def test_active_warning_speed_and_angle_boundaries(speed_kph, threshold_kph, requested, expected):
+def test_controller_saturation_speed_and_angle_boundaries(speed_kph, threshold_kph, requested, expected):
   state = EV9SteeringWarning()
   measured = requested - (20 if requested > 0 else -20)
   for frame in range(30):
     result = sample(state, frame, speed=speed_kph / 3.6, requested=requested, measured=measured,
-                    output=requested, threshold_kph=threshold_kph)
+                    output=requested, threshold_kph=threshold_kph, controller_saturated=True)
   assert result == expected
 
 

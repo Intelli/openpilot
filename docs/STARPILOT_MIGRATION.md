@@ -189,9 +189,10 @@ generic curvature cap. Existing lane-change comfort shaping remains active.
 Above it, and on other cars or torque control, StarPilot behavior is unchanged.
 The downstream controller/Panda intersection still limits actual steering.
 `customize_warnings_starpilot.patch` gives EV9 angle steering a sustained
-tracking-error/command-clipping warning, detailed below. Below or at
-`HkgTuningEv9AlertsSpeedKph` (default 50 km/h, range 10–50), it requires at least
-90° desired steering. Fresh hands-on detection suppresses this warning. StarPilot's
+tracking-error/command-clipping warning for requests of at least 90°, detailed
+below. The historical controller-saturation path retains its angle-or-speed
+gate, using `HkgTuningEv9AlertsSpeedKph` (default 50 km/h, range 10–50).
+Steering torque detection suppresses both paths through the legacy two-second holdoff. StarPilot's
 Switchback cooldown and sound selection still apply. High-angle warnings remain
 available at low speed. Other cars and torque controllers retain their existing behavior.
 The former startup-master exception is unnecessary: normal StarPilot startup
@@ -243,15 +244,18 @@ The existing enabled patches record the steering and AOL fixes:
   cannot undo an explicit main-button OFF. Disabling the live AOL setting clears
   its session; re-enabling the setting requires a new request.
 - `customize_warnings_starpilot.patch` gives the EV9 a separate insufficient-
-  steering warning: a requested angle of at least 90 degrees, or speed above the
-  configured EV9 alert threshold, plus directional tracking error/command
-  clipping above 2.5 degrees for 0.3 seconds. It clears with angle/error hysteresis
-  (85 degrees / 1 degree), inactive steering, standstill, unhealthy inputs or
-  actual manual handoff. A fresh capacitive touch/grip sample (at most 300 ms old)
-  or steering torque detected through `steeringPressed` suppresses and resets
-  the warning. Taking the wheel also clears an already-displayed warning and
-  stops its sound; hands-off operation must satisfy the persistence period again.
-  Stale or future-dated touch samples cannot suppress it. Switchback cooldown and selected alert sound still apply. This is a
+  steering warning: a requested angle of at least 90 degrees plus directional
+  tracking error/command clipping above 2.5 degrees for 0.3 seconds. This branch
+  uses angle/error hysteresis (85 degrees / 1 degree); speed alone cannot qualify it.
+  The historical controller-saturation path retains the angle-or-speed gate,
+  requested lateral acceleration above 1 m/s² and the actual-acceleration
+  undershoot check. Its existing saturation timer can mature before angle/speed
+  eligibility, without another persistence delay when eligibility begins.
+  Inactive steering, standstill, unhealthy inputs or actual manual handoff reset
+  the warning. `steeringPressed` suppresses it through the legacy two-second
+  holdoff and clears an already-displayed warning and sound. Capacitive touch
+  alone does not suppress it. Persistence recovers during the holdoff without
+  arming warning hysteresis. Switchback cooldown and selected alert sound still apply. This is a
   warning policy, not a new universal 90-degree command cap; numeric steering
   envelopes remain authoritative.
 - `alerts_starpilot.patch` retains the compact EV9 steering-limit banner and
@@ -266,8 +270,10 @@ The existing enabled patches record the steering and AOL fixes:
   AOL while braking. A one-time EV9 migration assigns main/cruise to AOL toggle
   only when AOL is enabled, LKAS is already assigned to AOL and main/cruise has no
   assigned action. Existing explicit main-button assignments are preserved.
-- Vehicle patch `05_steering_and_ev9_limits_starpilot.patch` restores assistance
-  gradually after override reduction and requires ten consecutive safe samples
+- Vehicle patch `05_steering_and_ev9_limits_starpilot.patch` restores the current
+  base assistance immediately after torque override when Improved Manual Control
+  is off (mode 0), matching Sunnypilot. Modes 1 and 2 retain gradual recovery
+  after override reduction. It requires ten consecutive safe samples
   before manual-handoff reentry after an invalid angle/rate sample. EV9 stock-LKAS
   transport sends a continuous stream, using measured-angle, zero-gain inactive
   messages when steering is off, refused, stationary or outside Drive. The first

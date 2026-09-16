@@ -691,7 +691,9 @@ class CarController(CarControllerBase):
           self.angle_filter.x = apply_angle
         else:
           self._ev9_manual.allow_manual_request(False, False)
-        apply_torque = limit_gain_recovery(apply_torque, self.apply_torque_last)
+        # Mode 0 restores its base assistance immediately after torque override, matching Sunnypilot.
+        if self.ev9_angle_config.shared_autonomy_mode != 0:
+          apply_torque = limit_gain_recovery(apply_torque, self.apply_torque_last)
       else:
         apply_torque = compute_torque_reduction_gain(CS.out.steeringTorque, v_ego_raw, angle_lat_active, self.apply_torque_last)
         apply_steer_req = angle_lat_active and apply_torque != 0.0
