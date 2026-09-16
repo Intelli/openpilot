@@ -182,6 +182,7 @@ def test_ev9_steering_stream_ownership_across_application_and_vehicle_states():
       if not active:
         assert values["ADAS_ACIAnglTqRedcGainVal"] == 0
         assert values["ADAS_StrAnglReqVal"] == pytest.approx(angle)
+        assert c.apply_torque_base_last == 0
       frame += 1
 
 
@@ -224,17 +225,16 @@ def check_controller_sequence(direct, samples, manual, hands_on_samples=None):
 
 @pytest.mark.parametrize("direct", [False, True])
 @pytest.mark.parametrize("mode", [0, 1, 2])
-def test_gain_recovery_preserves_prompt_reduction(direct, mode):
-  samples = [(100, 200)] * 3 + [(100, 134)] * 60 + [(100, 200)]
+@pytest.mark.parametrize("angle", [30, 100])
+def test_gain_recovery_preserves_prompt_reduction(direct, mode, angle):
+  samples = [(angle, 200)] * 3 + [(angle, 134)] * 60 + [(angle, 200)]
   gains = check_controller_sequence(direct, samples, mode, [True] * 3 + [False] * 60 + [True])
-  assert gains[0] == pytest.approx(0.1)
-  if mode == 0:
-    assert gains[3] == pytest.approx(0.516)  # Restore the independently ramped base immediately, as in Sunnypilot.
-  else:
-    assert gains[3] == pytest.approx(0.104)
-    assert max(b - a for a, b in zip(gains, gains[1:], strict=False)) <= 0.0040001
+  handoff_gain = 0.0 if mode and angle < 90 else 0.1
+  assert gains[0] == pytest.approx(handoff_gain)
+  # Both inactive and active manual handoffs retain the base ramp, as in Sunnypilot.
+  assert gains[3] == pytest.approx(0.516)
   assert gains[-2] > 0.3
-  assert gains[-1] == pytest.approx(0.1)
+  assert gains[-1] == pytest.approx(0.1)  # Effort reduction is immediate, even during the manual reentry guard.
 
 
 @pytest.mark.parametrize("direct", [False, True])
@@ -266,10 +266,12 @@ def test_only_confirmed_hands_off_bypasses_custom_effort(raw, age):
 @pytest.mark.parametrize("sign", [-1, 1])
 def test_manual_envelope_reentry_requires_stable_samples(direct, sign):
   angles = [90.1, 92.5, 92.5, 94.9, 94.9] + [94.9] * 10
-  gains = check_controller_sequence(direct, [(angle * sign, 200) for angle in angles], True)
+  samples = [(angle * sign, 200) for angle in angles] + [(94.9 * sign, 134)]
+  gains = check_controller_sequence(direct, samples, True, [True] * len(angles) + [False])
   assert gains[0] == pytest.approx(0.1)
   assert gains[1:13] == [0.0] * 12
-  assert gains[13:] == pytest.approx([0.1, 0.1])
+  assert gains[13:15] == pytest.approx([0.1, 0.1])
+  assert gains[-1] > 0.5  # Manual-follow envelope denial must not erase the independent base ramp.
 
 
 @pytest.mark.parametrize("direct", [False, True])
@@ -308,6 +310,7 @@ def test_actual_outgoing_handoff_native_safety(direct, manual, angle, expected_a
 @pytest.mark.parametrize("guard", ["park", "fault", "empty_envelope"])
 def test_direct_manual_does_not_revive_guard(guard):
   c, cs, cc, toggles = setup_controller(True)
+  c.apply_torque_base_last = c.apply_torque_last = 0.5
   toggles.hkg_shared_autonomy_mode = 1
   cs.out.steeringTorque = 200
   cs.out.steeringPressed = True
@@ -323,6 +326,7 @@ def test_direct_manual_does_not_revive_guard(guard):
   assert_steering_payloads(c, msgs, False)
   assert not c.direct_angle_request_allowed
   assert c.apply_torque_last == 0
+  assert c.apply_torque_base_last == 0
   assert not c._ev9_manual.manual_latched
   assert any(m[0] == 0xCB for m in msgs)
 
@@ -469,6 +473,7 @@ def test_divergent_sensor_manual_handoff_and_recovery(direct, sign):
   cc.latActive = False
   actuators, _ = c.update(cc.as_reader(), cs, now + 10_000_000, toggles)
   assert not actuators.manualSteeringOverride
+  assert c.apply_torque_base_last == c.apply_torque_last == 0
 
 
 @pytest.mark.parametrize('direct', [False, True])

@@ -157,6 +157,36 @@ only specific parsed fault signals produce StarPilot fault events.
   may still be needed to establish an OEM warning's exact cause.
 - Commit synthetic regression tests and reusable instructions, not route data.
 
+## Evaluate tuning candidates offline
+
+1. Reproduce logged commands with the recorded build/settings before comparing
+   changes. Quantify baseline error against CAN quantization. Trace the full
+   path: model action, controlsd modifiers, angle conversion, vehicle filtering,
+   limits, transmitted angle/gain and measured response. Upstream request
+   oscillation may disappear in the vehicle filter.
+2. Select contiguous valid intervals using preceding samples and explicit age
+   limits. Separate driver contact, engagement transitions, speed and turn angle.
+   Report coverage: long straight sections can hide poor high-angle behavior.
+   Preserve each candidate's own filter/limiter state; label one-step replays
+   that instead restart from recorded state. Use elapsed time for integrals.
+3. Change one connected parameter at a time. Compare command lag, reversals,
+   assistance loss and clipping together; lower variation can simply mean less
+   steering. Preserve driver-override reductions and existing safety envelopes.
+4. If fitting a vehicle-response model, hold out whole maneuvers and another
+   drive, select parameters only on training data, and compare against simple
+   prediction baselines. Check turn-only errors and parameter consistency.
+   Supplying recorded future commands still does not validate how different
+   commands would change torque, vehicle motion or future model predictions.
+5. State native safety-check scope precisely. Forced permission, fixed gain or
+   refreshed measurement histories test only conditional command acceptance,
+   not complete Panda behavior or engagement transitions. Keep exploratory
+   scripts/results private; promote only useful, small regression cases.
+
+Validate the current fix on a matching new drive before stacking speculative
+tuning changes. An unestimated `liveDelay` fallback is not a measured actuator
+delay, and a fitted response model needs independent validation before it can
+rank physical steering improvements.
+
 Report the build/route reviewed, confirmed facts, separately labeled causal
 inferences, remaining gaps and tests performed. For fixes, follow the
 [patch workflow](../patches/README.md) and
