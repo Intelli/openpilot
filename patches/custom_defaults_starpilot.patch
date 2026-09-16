@@ -1,5 +1,5 @@
 diff --git a/common/params_keys.h b/common/params_keys.h
-index 7e6ecc9f288f61650b50852d50caf2ef86d09800..9716373d53e278fbc9d16517a294269242df0294 100644
+index 7e6ecc9f288f61650b50852d50caf2ef86d09800..6e966fa5c222fcd8f6572142a8c890811cb35195 100644
 --- a/common/params_keys.h
 +++ b/common/params_keys.h
 @@ -29,7 +29,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -77,11 +77,13 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..9716373d53e278fbc9d16517a2942692
      {"HideAlerts", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"HideChangingLanesBanner", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
      {"HideDistanceProfileBanner", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
-@@ -458,7 +459,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -457,8 +458,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"LaneChanges", {PERSISTENT, BOOL, "1", "1", 0, SETTINGS_SIMPLE}},
      {"LaneChangeCloseGap", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
      {"LaneChangeCloseGapSeconds", {PERSISTENT, FLOAT, "0.6", "0.6", 1, SETTINGS_SIMPLE}},
-     {"LaneChangeSmoothing", {PERSISTENT, INT, "5", "10", 1, SETTINGS_SIMPLE}},
+-    {"LaneChangeSmoothing", {PERSISTENT, INT, "5", "10", 1, SETTINGS_SIMPLE}},
 -    {"LaneChangeTime", {PERSISTENT, FLOAT, "1.0", "0.0", 1, SETTINGS_SIMPLE}},
++    {"LaneChangeSmoothing", {PERSISTENT, INT, "10", "10", 1, SETTINGS_SIMPLE}},
 +    {"LaneChangeTime", {PERSISTENT, FLOAT, "0.05", "0.0", 1, SETTINGS_SIMPLE}},
      {"LaneDetectionWidth", {PERSISTENT, FLOAT, "0.0", "0.0", 1, SETTINGS_SIMPLE}},
      {"LaneLinesColor", {PERSISTENT, STRING, "", "", 2, SETTINGS_SIMPLE}},
