@@ -646,6 +646,16 @@ class CarState(CarStateBase):
     fp_ret = custom.StarPilotCarState.new_message()
     fp_ret.dashboardSpeedLimit = calculate_canfd_speed_limit(self.CP, self.FPCP, cp, cp_cam, speed_factor)
 
+    # Same power-state bit as egmp_in_ready_state(), continuously decoded for display only.
+    # ts_nanos advances only for checksum/counter-accepted samples. Retain that source
+    # timestamp across empty updates; the UI also checks its age before using the value.
+    # card publishes overall CAN validity separately; do not read cp.can_valid here
+    # because that property advances the parser's control-validity debounce.
+    if (self.CP.carFingerprint == CAR.KIA_EV9 and
+        cp.ts_nanos["ACCELERATOR"]["EV9_READY"] > 0 and len(cp.vl_raw["ACCELERATOR"]) == 32):
+      fp_ret.vehicleReady = bool(cp.vl["ACCELERATOR"]["EV9_READY"])
+      fp_ret.vehicleReadyTimestamp = cp.ts_nanos["ACCELERATOR"]["EV9_READY"]
+
     if self.CP.flags & HyundaiFlags.EV:
       drive_mode = cp.vl["DRIVE_MODE_EV"]["DRIVE_MODE"]
       fp_ret.ecoGear = (drive_mode == 4)

@@ -302,7 +302,7 @@ struct StarPilotCarState {
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(f35cc4560bbf6ec2, 2, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(f35cc4560bbf6ec2, 3, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -1225,6 +1225,10 @@ public:
 
   inline bool getPulseAndGlide() const;
 
+  inline bool getVehicleReady() const;
+
+  inline  ::uint64_t getVehicleReadyTimestamp() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -1345,6 +1349,12 @@ public:
 
   inline bool getPulseAndGlide();
   inline void setPulseAndGlide(bool value);
+
+  inline bool getVehicleReady();
+  inline void setVehicleReady(bool value);
+
+  inline  ::uint64_t getVehicleReadyTimestamp();
+  inline void setVehicleReadyTimestamp( ::uint64_t value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -4664,6 +4674,34 @@ inline bool StarPilotCarState::Builder::getPulseAndGlide() {
 inline void StarPilotCarState::Builder::setPulseAndGlide(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<68>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool StarPilotCarState::Reader::getVehicleReady() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<69>() * ::capnp::ELEMENTS);
+}
+
+inline bool StarPilotCarState::Builder::getVehicleReady() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<69>() * ::capnp::ELEMENTS);
+}
+inline void StarPilotCarState::Builder::setVehicleReady(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<69>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t StarPilotCarState::Reader::getVehicleReadyTimestamp() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t StarPilotCarState::Builder::getVehicleReadyTimestamp() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+inline void StarPilotCarState::Builder::setVehicleReadyTimestamp( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS, value);
 }
 
 inline  ::int16_t StarPilotDeviceState::Reader::getFreeSpace() const {

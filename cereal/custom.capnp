@@ -110,6 +110,8 @@ struct StarPilotCarState @0xf35cc4560bbf6ec2 {
   accelHardCruise @28 :Bool;  # current/releasing accel cruise button came from GM hard-press signal
   decelHardCruise @29 :Bool;  # current/releasing decel cruise button came from GM hard-press signal
   pulseAndGlide @30 :Bool;  # developer-only wheel-button pulse-and-glide mode is enabled
+  vehicleReady @31 :Bool;  # EV9 power READY; meaningful only with a fresh vehicleReadyTimestamp
+  vehicleReadyTimestamp @32 :UInt64;  # accepted source CAN monotonic ns; zero means unknown
 }
 
 struct StarPilotDeviceState @0xda96579883444c35 {
