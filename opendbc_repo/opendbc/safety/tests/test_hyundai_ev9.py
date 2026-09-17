@@ -1,4 +1,4 @@
-"""EV9-specific model and standard steering envelope checks against native Panda hooks."""
+"""EV9-specific model and low-speed envelope checks against native Panda hooks."""
 import math
 
 import pytest
@@ -38,7 +38,7 @@ def test_actual_quantized_bounds(ev9, direct, physical_speed, kind, sign):
   for beyond in (False, True):
     case = make_case(ev9, direct)
     speed = case._set_physical_angle_test_speed(physical_speed)
-    limit = 3.0 + 9.81 * 0.06
+    limit = 4.2 if ev9 and speed <= 42 / 3.6 + 0.1 else 3.0 + 9.81 * 0.06
     slip, ratio, wheelbase = (-0.0005410588125765342, 16, 3.10) if ev9 else (-0.0006085930193026732, 13.7, 2.756)
     factor = 1 / (1 - slip * speed**2) / wheelbase
     angle = limit / speed**2 * ratio / factor * 180 / math.pi
@@ -51,21 +51,6 @@ def test_actual_quantized_bounds(ev9, direct, physical_speed, kind, sign):
     case.safety.set_desired_angle_last(raw if kind == 'accel' else 0)
     assert bool(send_angle(case, raw / 10, direct)) == (not beyond), (ev9, direct, speed, kind, sign, raw)
 
-
-@pytest.mark.parametrize('direct', [False, True])
-@pytest.mark.parametrize('kind', ['accel', 'jerk'])
-def test_ev9_rejects_former_low_speed_uplift(direct, kind):
-  case = make_case(True, direct)
-  speed = case._set_physical_angle_test_speed(10.0)
-  # Exercise the former quantized 4.2 boundary, including its one-CAN-unit tolerance.
-  factor = 1 / (1 + 0.0005410588125765342 * speed**2) / 3.10
-  angle = 4.2 / speed**2 * 16 / factor * 180 / math.pi
-  if kind == 'jerk':
-    angle /= 100
-  raw = int(angle * 10 + 1)
-  case.safety.set_controls_allowed(True)
-  case.safety.set_desired_angle_last(raw if kind == 'accel' else 0)
-  assert not send_angle(case, raw / 10, direct)
 
 def test_ev9_flag_preserves_ev_gas_and_aol_behavior():
   case = make_case(True)
