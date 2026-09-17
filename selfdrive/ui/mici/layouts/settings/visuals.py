@@ -98,7 +98,9 @@ class VisualsLayoutMici(NavScroller):
     self._stock_confidence_ball_btn = BigParamControl("stock confidence ball", "StockConfidenceBallWidget")
     self._torque_bar_btn = BigParamControl("torque bar", "EnableTorqueBarWidget")
     self._ev9_path_btn = BigParamControl("EV9 path", "EV9Path")
-    self._ev9_path_btn.set_value("blue cruise / rainbow accel / red warnings")
+    self._ev9_path_btn.set_value("blue cruise / rainbow accel")
+    self._path_warning_btn = BigParamControl("Path Warning Highlighting", "PathWarningHighlight")
+    self._path_warning_btn.set_value("red path for warnings")
     self._rainbow_path_btn = BigParamControl("rainbow road", "RainbowPath")
     self._lead_indicator_btn = LeadIndicatorBigButton()
     self._lead_info_btn = LeadInfoBigButton()
@@ -114,6 +116,7 @@ class VisualsLayoutMici(NavScroller):
       self._stock_confidence_ball_btn,
       self._torque_bar_btn,
       self._ev9_path_btn,
+      self._path_warning_btn,
       self._rainbow_path_btn,
       self._lead_indicator_btn,
       self._lead_info_btn,
@@ -132,6 +135,10 @@ class VisualsLayoutMici(NavScroller):
     self._refresh()
 
   def _refresh(self):
+    self._path_warning_btn.refresh()
+    model_ui = self._path_warning_btn.params.get_bool("ModelUI", default=True)
+    self._path_warning_btn.set_enabled(model_ui)
+    self._path_warning_btn.set_value("red path for warnings" if model_ui else "enable Model UI in Galaxy")
     ev9_path = self._ev9_path_btn.params.get_bool("EV9Path")
     self._ev9_path_btn.set_checked(ev9_path)
     self._rainbow_path_btn.set_enabled(not ev9_path)

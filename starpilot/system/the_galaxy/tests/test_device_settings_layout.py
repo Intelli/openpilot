@@ -526,4 +526,8 @@ def test_ev9_controls_are_shared_simple_offroad_settings():
     assert tuple(rows[key][field] for field in ("min", "max", "step", "unit")) == expected
   assert rows["HkgSharedAutonomyMode"]["options"] == [{"value": 0, "label": "Off"}, {"value": 1, "label": "On"}]
   assert rows["EV9Path"]["ui_type"] == "toggle"
+  assert _declared_default("EV9Path") == _declared_default("PathWarningHighlight") == "1"
+  assert rows["PathWarningHighlight"]["ui_type"] == "toggle"
+  assert rows["PathWarningHighlight"]["parent_key"] == "ModelUI"
+  assert "device_types" not in rows["PathWarningHighlight"]
   assert not any(key in rows["EV9Path"] for key in ("requires_offroad", "visible_when_key", "parent_key", "device_types"))

@@ -6,11 +6,8 @@ import pyray as rl
 
 from openpilot.system.ui.lib.shader_polygon import Gradient
 
-HAZARD_PREFIXES = ("steerSaturated", "aeb", "stockAeb", "fcw", "driverDistracted", "driverUnresponsive", "manualRestart")
-STARPILOT_HAZARDS = {"goatSteerSaturated", "firefoxSteerSaturated", "thisIsFineSteerSaturated"}
 
-
-def ev9_path_state(sm, started_frame: int, now: float) -> tuple[float, bool, bool]:
+def ev9_path_state(sm, started_frame: int, now: float) -> tuple[float, bool]:
   def fresh(service):
     return (sm.valid.get(service, False) and sm.alive.get(service, False) and
             sm.recv_frame.get(service, -1) >= started_frame and 0 <= now - sm.recv_time.get(service, 0.0) <= 1.0)
@@ -18,12 +15,7 @@ def ev9_path_state(sm, started_frame: int, now: float) -> tuple[float, bool, boo
   acceleration = float(sm["carState"].aEgo) if fresh("carState") else 0.0
   # latActive includes always-on lateral, unlike the ACC engagement flag.
   active = bool(fresh("carState") and fresh("carControl") and sm["carControl"].latActive)
-  hazard = False
-  for service in ("selfdriveState", "starpilotSelfdriveState"):
-    if fresh(service):
-      event = str(sm[service].alertType).split("/", 1)[0]
-      hazard |= event.startswith(HAZARD_PREFIXES) or event in STARPILOT_HAZARDS
-  return acceleration if math.isfinite(acceleration) else 0.0, active, hazard
+  return acceleration if math.isfinite(acceleration) else 0.0, active
 
 
 def _color(h, s, l, a):
@@ -40,8 +32,6 @@ class EV9Path:
   ACCEL_STOP_THRESHOLD = 0.15
   ACCEL_FADE_IN_SECONDS = 0.5
   ACCEL_FADE_OUT_SECONDS = 1.0
-  HAZARD_HOLD_SECONDS = 0.5
-  HAZARD_FADE_SECONDS = 1.0
   OCEAN_STOPS = (
     (0.00, 206.0, 0.70, 0.32, 0.85),
     (0.35, 202.0, 0.72, 0.40, 0.75),
@@ -57,13 +47,11 @@ class EV9Path:
     self._active = False
     self._accel_presence = 0.0
     self._accel_state = False
-    self._hazard_mix = 0.0
-    self._hazard_hold = 0.0
     self._wave_phase = 0.0
     self._rainbow_phase_shift = 0.0
     self._rainbow_wave_phase = 0.0
 
-  def update(self, *, now: float, acceleration: float, active: bool, hazard: bool):
+  def update(self, *, now: float, acceleration: float, active: bool):
     elapsed = 0.0 if self._last_update_time is None else now - self._last_update_time
     if elapsed < 0 or elapsed > 1.0:
       self.reset()
@@ -91,14 +79,6 @@ class EV9Path:
       self._accel_state = False
       self._wave_phase = self._rainbow_phase_shift = self._rainbow_wave_phase = 0.0
 
-    if hazard:
-      self._hazard_mix = 1.0
-      self._hazard_hold = self.HAZARD_HOLD_SECONDS
-    else:
-      held = min(self._hazard_hold, dt)
-      self._hazard_hold -= held
-      self._hazard_mix = max(0.0, self._hazard_mix - (dt - held) / self.HAZARD_FADE_SECONDS)
-
   def _ocean_color(self, position):
     hue, saturation, lightness, alpha = self.OCEAN_STOPS[-1][1:]
     for left, right in zip(self.OCEAN_STOPS, self.OCEAN_STOPS[1:], strict=False):
@@ -124,11 +104,9 @@ class EV9Path:
 
   def get_gradient(self) -> Gradient:
     stops = [i / 8 for i in range(9)]
-    red = (rl.Color(115, 0, 0, 209), rl.Color(199, 36, 36, 173), rl.Color(235, 115, 115, 140))
     colors = []
     for position in stops:
       base = _blend(self._ocean_color(position), self._rainbow_color(position), self._accel_presence) if self._active else \
         rl.Color(150, 150, 150, round(80 * (1 - position)))
-      hazard_color = _blend(red[0], red[1], position * 2) if position <= 0.5 else _blend(red[1], red[2], position * 2 - 1)
-      colors.append(_blend(base, hazard_color, self._hazard_mix))
+      colors.append(base)
     return Gradient(start=(0.0, 1.0), end=(0.0, 0.0), colors=colors, stops=stops)
