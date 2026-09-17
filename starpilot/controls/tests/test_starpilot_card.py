@@ -499,6 +499,143 @@ def test_ev9_main_aol_off_wins_over_delayed_stock_cruise_engagement(monkeypatch,
   assert not result.pauseLateral
 
 
+@pytest.fixture
+def ev9_op_long_buttons(monkeypatch, tmp_path):
+  from opendbc.car.hyundai.carstate import CarState
+  from opendbc.car.interfaces import CarStateBase
+
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  cp = SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9,
+                       openpilotLongitudinalControl=True, pcmCruise=False)
+  card = spc.StarPilotCard(cp, SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
+  hyundai_state = SimpleNamespace(CP=cp, main_cruise_on=False)
+  cs, sm = make_car_state(), make_sm()
+  out = SimpleNamespace(distancePressed=False)
+  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, main_cruise_aol_toggle=True)
+
+  def step(button_type=None, pressed=True, available=True):
+    cs.buttonEvents = [] if button_type is None else [SimpleNamespace(type=button_type, pressed=pressed)]
+    # Match card.py ordering: CarState applies the press before StarPilotCard.
+    cs.cruiseState.available = available
+    if cp.openpilotLongitudinalControl:
+      cs.cruiseState.available = CarState.update_main_cruise(hyundai_state, cs)
+    cs.buttonEnable = CarStateBase.update_button_enable(hyundai_state, cs.buttonEvents)
+    return card.update(cs, out, sm, toggles)
+
+  return cp, cs, sm, step
+
+
+@pytest.mark.parametrize("lkas_first", [False, True])
+def test_ev9_op_long_main_arms_aol_without_inverting_prior_lkas(ev9_op_long_buttons, lkas_first):
+  _, cs, sm, step = ev9_op_long_buttons
+  if lkas_first:
+    assert step(spc.ButtonType.lkas).alwaysOnLateralAllowed
+    assert not cs.cruiseState.available
+  result = step(spc.ButtonType.mainCruise)
+  assert cs.cruiseState.available
+  assert not cs.buttonEnable  # Main arms cruise; SET/RES still engages longitudinal.
+  assert result.alwaysOnLateralAllowed
+  assert result.alwaysOnLateralEnabled
+  assert not result.pauseLateral
+  step(spc.ButtonType.mainCruise, pressed=False)
+  step(spc.ButtonType.decelCruise)
+  step(spc.ButtonType.decelCruise, pressed=False)
+  assert cs.buttonEnable
+  sm["selfdriveState"].active = True
+  assert step().alwaysOnLateralEnabled
+
+  result = step(spc.ButtonType.mainCruise)
+  assert not cs.cruiseState.available
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+
+
+@pytest.mark.parametrize("enable_button", [spc.ButtonType.accelCruise, spc.ButtonType.decelCruise])
+def test_ev9_op_long_lkas_off_survives_set_resume_and_main_off(ev9_op_long_buttons, enable_button):
+  _, cs, sm, step = ev9_op_long_buttons
+  step(spc.ButtonType.mainCruise)
+  assert not cs.cruiseState.enabled  # Cruise is armed, but ACC_REQ is still false.
+  result = step(spc.ButtonType.lkas)
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+  assert cs.cruiseState.available  # LKAS does not disarm cruise.
+  step(enable_button)
+  step(enable_button, pressed=False)
+  assert cs.buttonEnable
+  sm["selfdriveState"].active = True
+  result = step()
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+
+  result = step(spc.ButtonType.mainCruise)
+  assert not cs.cruiseState.available
+  assert not result.alwaysOnLateralAllowed  # Main OFF cannot turn steering back on.
+  assert result.pauseLateral
+  result = step(spc.ButtonType.lkas)
+  assert result.alwaysOnLateralAllowed
+  assert not result.pauseLateral
+  assert not cs.cruiseState.available
+
+
+@pytest.mark.parametrize("status", ["uncalibrated", "invalid"])
+def test_ev9_op_long_refused_main_requires_fresh_main_on(ev9_op_long_buttons, status):
+  _, cs, sm, step = ev9_op_long_buttons
+  sm["liveCalibration"].calStatus = getattr(log.LiveCalibrationData.Status, status)
+  result = step(spc.ButtonType.mainCruise)
+  assert cs.cruiseState.available
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
+  step(spc.ButtonType.decelCruise)
+  step(spc.ButtonType.decelCruise, pressed=False)
+  assert cs.buttonEnable
+  sm["selfdriveState"].active = True
+  result = step()
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+
+  result = step(spc.ButtonType.mainCruise)
+  assert not cs.cruiseState.available
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+  step(spc.ButtonType.mainCruise, pressed=False)
+  result = step(spc.ButtonType.mainCruise)
+  assert cs.cruiseState.available
+  assert result.alwaysOnLateralAllowed
+  assert not result.pauseLateral
+
+
+def test_ev9_op_long_main_fault_refusal_does_not_enable_after_fault_clears(ev9_op_long_buttons):
+  _, cs, _, step = ev9_op_long_buttons
+  result = step(spc.ButtonType.mainCruise, available=False)
+  assert not cs.cruiseState.available
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+  result = step()
+  assert cs.cruiseState.available
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+
+
+def test_ev9_main_uses_stock_toggle_after_runtime_long_fallback(ev9_op_long_buttons):
+  cp, cs, _, step = ev9_op_long_buttons
+  step(spc.ButtonType.mainCruise)
+  step(spc.ButtonType.mainCruise, pressed=False)
+  # ECU-disable fallback mutates the existing CP after StarPilotCard construction.
+  cp.openpilotLongitudinalControl = False
+  cp.pcmCruise = True
+  result = step(spc.ButtonType.mainCruise)
+  assert cs.cruiseState.available  # Received stock main remains available.
+  assert not cs.buttonEnable
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+  step(spc.ButtonType.mainCruise, pressed=False)
+  result = step(spc.ButtonType.mainCruise)
+  assert result.alwaysOnLateralAllowed
+  assert not result.pauseLateral
+
+
 @pytest.mark.parametrize(
   ("car_fingerprint", "expect_normalized_release"),
   (

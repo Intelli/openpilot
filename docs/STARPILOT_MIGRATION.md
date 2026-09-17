@@ -101,10 +101,17 @@ startup identity/settings take precedence over cached broadcasts. Active
 `/data/params/d` values override `/cache/starpilot/params/d` and compiled defaults;
 updates initialize missing values and do not reset saved preferences.
 
-The top-left Driving Assist/main-cruise button toggles AOL through StarPilot's
-button assignments and keeps its factory cruise behavior. The one-time EV9
+The top-left Driving Assist/main-cruise button controls AOL through StarPilot's
+button assignments and keeps its factory cruise behavior with stock ACC. The one-time EV9
 migration assigns it only when AOL is enabled, LKAS already toggles AOL and
 main/cruise has no assignment; explicit assignments are preserved.
+With OP longitudinal actually enabled, each main press sets AOL to the resulting
+cruise readiness: main ON requests AOL ON and main OFF requests AOL OFF. This
+avoids inverting AOL after independent LKAS presses or a refused calibration
+request. SET/RES engages longitudinal without overriding an explicit steering OFF,
+including LKAS OFF while cruise is only armed. Calibration and cruise faults can
+refuse activation; later recovery alone does not enable AOL. Runtime fallback to
+stock ACC restores the stock-mode button behavior.
 `PauseAOLOnBrake=0` keeps lateral steering active when braking. A normal cruise
 transition while healthy AOL steering continues has no disengagement sound,
 banner or HUD cue; faults and full disengagement retain their alerts.

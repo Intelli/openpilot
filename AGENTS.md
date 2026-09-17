@@ -42,6 +42,7 @@
 - Keep the GitHub build as the deployment gate. Do not add a separate test gate unless requested. Sync/publish CI scripts push remote branches; do not run them against production as local checks.
 
 ## Local Development & Verification
+- For a C3X update request, follow `docs/C3X_UPDATE_WORKFLOW.md`. A request to perform an update authorizes CHECK, DOWNLOAD, INSTALL and reboot through the normal updater; verify and report the installed before/after commits. A check-only request remains check-only.
 - For recent device behavior, follow `docs/RECENT_DRIVE_REVIEW.md`: locate recent routes through authenticated useradmin, verify the recorded build and effective settings, and distinguish qlog evidence from full CAN/ECU confirmation. Keep private logs and signed links outside the repository.
 - Python: use 3.11 or 3.12, matching `pyproject.toml` (`>=3.11,<3.13`), with this checkout's `.venv`.
 - macOS setup: `./tools/mac_setup.sh`. Dependencies only: `CC=/usr/bin/clang CXX=/usr/bin/clang++ uv sync --frozen --all-extras`; activate with `source .venv/bin/activate`.
