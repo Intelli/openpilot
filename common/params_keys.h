@@ -309,7 +309,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"DebugMode", {CLEAR_ON_OFFROAD_TRANSITION, BOOL, "0", "0"}},
     {"DecelerationProfile", {PERSISTENT, INT, "1", "0", 2, SETTINGS_SIMPLE}},
     {"DeveloperMetrics", {PERSISTENT, BOOL, "1", "0", 3}},
-    {"DeveloperSidebar", {PERSISTENT, BOOL, "1", "0", 3}},
+    {"DeveloperSidebar", {PERSISTENT, BOOL, "0", "0", 3}},
     {"DeveloperSidebarMetric1", {PERSISTENT, INT, "1", "0", 3}},
     {"DeveloperSidebarMetric2", {PERSISTENT, INT, "2", "0", 3}},
     {"DeveloperSidebarMetric3", {PERSISTENT, INT, "3", "0", 3}},

@@ -1,5 +1,5 @@
 diff --git a/common/params_keys.h b/common/params_keys.h
-index 7e6ecc9f288f61650b50852d50caf2ef86d09800..6f39c6bdba86705a49b7f11ab66b4ee047764583 100644
+index 7e6ecc9f288f61650b50852d50caf2ef86d09800..3d9485d4eef5a2cae1cc5e5d670d7f9939c5504a 100644
 --- a/common/params_keys.h
 +++ b/common/params_keys.h
 @@ -29,7 +29,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -50,6 +50,15 @@ index 7e6ecc9f288f61650b50852d50caf2ef86d09800..6f39c6bdba86705a49b7f11ab66b4ee0
      {"CECurves", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
      {"CECurvesLead", {PERSISTENT, BOOL, "0", "0", 1}},
      {"CELead", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+@@ -308,7 +309,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"DebugMode", {CLEAR_ON_OFFROAD_TRANSITION, BOOL, "0", "0"}},
+     {"DecelerationProfile", {PERSISTENT, INT, "1", "0", 2, SETTINGS_SIMPLE}},
+     {"DeveloperMetrics", {PERSISTENT, BOOL, "1", "0", 3}},
+-    {"DeveloperSidebar", {PERSISTENT, BOOL, "1", "0", 3}},
++    {"DeveloperSidebar", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"DeveloperSidebarMetric1", {PERSISTENT, INT, "1", "0", 3}},
+     {"DeveloperSidebarMetric2", {PERSISTENT, INT, "2", "0", 3}},
+     {"DeveloperSidebarMetric3", {PERSISTENT, INT, "3", "0", 3}},
 @@ -322,7 +323,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"GalaxyMobileDefault", {PERSISTENT | DONT_LOG, BOOL, "1", "1", 0, SETTINGS_SIMPLE}},
      {"DeveloperWidgets", {PERSISTENT, BOOL, "1", "0", 3}},
