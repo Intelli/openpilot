@@ -4,10 +4,11 @@ This is a cumulative changelog of the **enabled patches**, audited against stabl
 StarPilot commit `c3e4ec630f41c4baa43254a90f718abd1bf764a1`, recorded in
 [starpilot-upstream.json](../starpilot-upstream.json). The reviewed EV9 source is
 `f1b6e566dc`, plus the two-hour shutdown default and C4/Galaxy settings support
-(including the Lane Change Smoothing default of 10).
+(including the Lane Change Smoothing default of 10), and the EV9 startup
+longitudinal-status notice.
 
-There are **16 enabled patches: 10 application patches and 6 vehicle patches**,
-covering 82 source files, including tests and artwork. Replaying them in order on
+There are **17 enabled patches: 11 application patches and 6 vehicle patches**,
+covering 88 source files, including tests and artwork. Replaying them in order on
 the recorded baseline reproduces those files exactly. All application differences
 from that baseline are covered; repository maintenance changes are listed
 separately below. This compares with our imported baseline, not a newer upstream
@@ -252,6 +253,21 @@ Owners: [ev9_edition_starpilot.patch](ev9_edition_starpilot.patch),
   actuation are forced off. Replay and simulation are exempt. This is a functional
   restriction in the edition patch, not only a branding change.
 
+### EV9 startup longitudinal status
+
+Owner: [ev9_longitudinal_status.patch](ev9_longitudinal_status.patch).
+
+- Shows **OP long ready**, **OP long active**, or **Stock ACC** beneath the steering
+  wheel on C3/C3X for 30 seconds after startup confirms the control mode.
+- Uses fresh, current-session Panda configuration, initialization events and
+  control telemetry. Saved Alpha settings and cached car parameters do not
+  establish the displayed control mode.
+- Displays **Long status unavailable** if evidence goes stale during the notice.
+  Engagement, disengagement and data recovery do not restart the timer; the next
+  ignition session does. Existing alert/road-view visibility takes precedence.
+- Reports configuration and activity, not independently verified ECU or AEB
+  health. No vehicle-control, diagnostic, parameter, firmware or safety changes.
+
 ### Standard C3/C3X settings
 
 Owners: [settings_ui_starpilot.patch](settings_ui_starpilot.patch),
@@ -364,6 +380,7 @@ This file lives under `patches/` so upstream sync preserves it automatically.
 | [customize_warnings_starpilot.patch](customize_warnings_starpilot.patch) | 4: warning qualification and sound clearing |
 | [drive_helpers_starpilot.patch](drive_helpers_starpilot.patch) | 1–4: configuration, AOL, curvature and turn intent |
 | [ev9_edition_starpilot.patch](ev9_edition_starpilot.patch) | 5: branding and EV9 control restriction |
+| [ev9_longitudinal_status.patch](ev9_longitudinal_status.patch) | 5: 30-second startup control-mode notice |
 | [settings_ui_starpilot.patch](settings_ui_starpilot.patch) | 5: shared settings layout |
 | [ui_options_starpilot.patch](ui_options_starpilot.patch) | 1, 5: Steering page and EV9 controls on C3/C3X, C4 and Galaxy |
 | [opendbc/01_customize_warnings_starpilot.patch](opendbc/01_customize_warnings_starpilot.patch) | 4: Hyundai saturation timer |

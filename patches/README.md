@@ -25,9 +25,9 @@ exporting a new patch defaults to enabled, or accepts an explicit disabled suffi
 when you want to keep it inactive.
 
 The six migrated vehicle patches use prefixes `01_` through `06_` to preserve their
-dependency order. The ten enabled root patches contain build configuration, custom defaults, EV9 Edition branding and boot artwork,
+dependency order. The eleven enabled root patches contain build configuration, custom defaults, EV9 Edition branding and boot artwork,
 settings UI, EV9 control configuration/curvature, warning policy, compact alerts,
-EV9 settings controls, and the EV9 animated path effect. Only lane centering,
+EV9 settings controls, the EV9 animated path effect, and the startup longitudinal-status notice. Only lane centering,
 driver monitoring and power management remain `.temp-disabled` by request. The old prebuilt
 patch is archived as `.migrated` because the StarPilot build/publish tooling has
 already replaced its Sunnypilot implementation; it is not replayed.
@@ -36,6 +36,10 @@ See the migration guide for current EV9 behavior and patch ownership.
 `ui_options_starpilot.patch` exposes the four EV9 steering controls on C3/C3X,
 C4 and Galaxy, plus EV9 Path in Galaxy. The device path controls/renderers remain
 in `custom_model_ui_starpilot.patch`.
+
+`ev9_longitudinal_status.patch` adds a C3/C3X notice for 30 seconds after live
+startup telemetry identifies OP longitudinal control or stock ACC. It changes
+only the UI and tests; it does not change takeover or emergency braking behavior.
 
 Steering/AOL follow-ups are incorporated into the existing custom-defaults,
 alerts, warning and drive-helper patches and vehicle patches `03`–`06`. They cover
