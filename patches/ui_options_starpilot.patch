@@ -464,7 +464,7 @@ index 0000000000000000000000000000000000000000..7085e12522d62de24c4143502611089b
 +  assert values[key] == 20 and values["HkgSharedAutonomyMode"] == 0
 +  assert len(updates) == 2
 diff --git a/starpilot/common/assets/device_settings_layout.json b/starpilot/common/assets/device_settings_layout.json
-index 0ee696c875649466664f9ee2f05eb9029f09d4f2..ec5c5b8987fdf8b12b404ea242e14e33fdfb538e 100644
+index 0ee696c875649466664f9ee2f05eb9029f09d4f2..78a616f2ab039863ebb557f515fd3b10bcbadc49 100644
 --- a/starpilot/common/assets/device_settings_layout.json
 +++ b/starpilot/common/assets/device_settings_layout.json
 @@ -17,6 +17,80 @@
@@ -572,7 +572,7 @@ index 0ee696c875649466664f9ee2f05eb9029f09d4f2..ec5c5b8987fdf8b12b404ea242e14e33
 +      {
 +        "key": "EV9Path",
 +        "label": "EV9 Path",
-+        "description": "Use the EV9 driving path appearance on any vehicle. Overrides rainbow, acceleration and custom path colors while enabled; your saved appearance choices are preserved.",
++        "description": "Blue while cruising and rainbow while accelerating. Overrides rainbow, acceleration and custom path colors while enabled; saved choices are preserved. Warning highlighting is controlled separately.",
 +        "data_type": "bool",
 +        "ui_type": "toggle",
 +        "settings_tier": "simple"
@@ -580,8 +580,24 @@ index 0ee696c875649466664f9ee2f05eb9029f09d4f2..ec5c5b8987fdf8b12b404ea242e14e33
        {
          "key": "AccelerationPath",
          "label": "Acceleration Path",
+@@ -2827,6 +2908,15 @@
+         "is_parent_toggle": true,
+         "settings_tier": "simple"
+       },
++      {
++        "key": "PathWarningHighlight",
++        "label": "Path Warning Highlighting",
++        "description": "Highlight the path red for selected collision, steering-limit and driver-attention warnings.",
++        "data_type": "bool",
++        "ui_type": "toggle",
++        "parent_key": "ModelUI",
++        "settings_tier": "simple"
++      },
+       {
+         "key": "DynamicPathWidth",
+         "label": "Dynamic Path Width",
 diff --git a/starpilot/system/the_galaxy/tests/test_device_settings_layout.py b/starpilot/system/the_galaxy/tests/test_device_settings_layout.py
-index e5753b877d9abd493af74b7539de7ee6d553811e..8ee768367ce3321bc9f56eec3fd042dc0b49d7f0 100644
+index e5753b877d9abd493af74b7539de7ee6d553811e..8cf1640c738e904d27089ed93cf733d1ece5d4fd 100644
 --- a/starpilot/system/the_galaxy/tests/test_device_settings_layout.py
 +++ b/starpilot/system/the_galaxy/tests/test_device_settings_layout.py
 @@ -155,7 +155,7 @@ def test_ford_lateral_controls_are_ford_only_and_galaxy_only():
@@ -607,7 +623,7 @@ index e5753b877d9abd493af74b7539de7ee6d553811e..8ee768367ce3321bc9f56eec3fd042dc
      "CESpeed", "CESpeedLead", "CESignalSpeed",
      "CustomCruise", "CustomCruiseLong", "SetSpeedOffset", "PulseGlideSpeedDelta",
      "Offset1", "Offset2", "Offset3", "Offset4", "Offset5", "Offset6", "Offset7",
-@@ -501,3 +505,25 @@ def test_pip_preview_is_under_driving_screen_widgets_and_configured_only_in_gala
+@@ -501,3 +505,29 @@ def test_pip_preview_is_under_driving_screen_widgets_and_configured_only_in_gala
      REPO_ROOT / "selfdrive/ui/layouts/settings/starpilot/appearance.py",
    )
    assert all("PIPPreview" not in path.read_text(encoding="utf-8") for path in physical_settings)
@@ -632,6 +648,10 @@ index e5753b877d9abd493af74b7539de7ee6d553811e..8ee768367ce3321bc9f56eec3fd042dc
 +    assert tuple(rows[key][field] for field in ("min", "max", "step", "unit")) == expected
 +  assert rows["HkgSharedAutonomyMode"]["options"] == [{"value": 0, "label": "Off"}, {"value": 1, "label": "On"}]
 +  assert rows["EV9Path"]["ui_type"] == "toggle"
++  assert _declared_default("EV9Path") == _declared_default("PathWarningHighlight") == "1"
++  assert rows["PathWarningHighlight"]["ui_type"] == "toggle"
++  assert rows["PathWarningHighlight"]["parent_key"] == "ModelUI"
++  assert "device_types" not in rows["PathWarningHighlight"]
 +  assert not any(key in rows["EV9Path"] for key in ("requires_offroad", "visible_when_key", "parent_key", "device_types"))
 diff --git a/starpilot/system/the_galaxy/tests/test_navigation_params.py b/starpilot/system/the_galaxy/tests/test_navigation_params.py
 index b81a830a7defd6845a348aeab1b5eca6581ef958..4422dba8d96a9d75609777608592e12852013940 100644

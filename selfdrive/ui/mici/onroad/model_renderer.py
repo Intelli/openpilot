@@ -11,6 +11,7 @@ from openpilot.selfdrive.controls.lib.lane_centering import get_lane_centering_v
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
 from openpilot.selfdrive.ui.lib.starpilot_theme import get_param_color, get_theme_color, get_visual_color, is_stock_color_scheme, with_alpha
 from openpilot.selfdrive.ui.onroad.starpilot.rainbow_path import RainbowPath
+from openpilot.selfdrive.ui.onroad.starpilot.path_warning import PathWarningHighlight
 from openpilot.selfdrive.ui.onroad.starpilot.ev9_path import EV9Path, ev9_path_state
 from openpilot.selfdrive.ui.lib.starpilot_visuals import LeadInfoMode, blend_colors, lead_indicator_enabled, lead_info_mode
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
@@ -102,6 +103,7 @@ class ModelRenderer(Widget):
       stops=[0.0, 0.5, 1.0],
     )
     self._rainbow_path = RainbowPath()
+    self._path_warning_highlight = PathWarningHighlight()
     self._ev9_path = EV9Path()
     self._ev9_started_frame = None
 
@@ -465,6 +467,7 @@ class ModelRenderer(Widget):
   def _draw_path(self, sm):
     """Draw path with dynamic coloring based on mode and throttle state."""
     if not self._path.projected_points.size:
+      self._path_warning_highlight.reset()
       self._ev9_path.reset()
       return
 
@@ -474,8 +477,8 @@ class ModelRenderer(Widget):
     self._ev9_started_frame = ui_state.started_frame
     if use_ev9:
       now = time.monotonic()
-      acceleration, active, hazard = ev9_path_state(sm, ui_state.started_frame, now)
-      self._ev9_path.update(now=now, acceleration=acceleration, active=active, hazard=hazard)
+      acceleration, active = ev9_path_state(sm, ui_state.started_frame, now)
+      self._ev9_path.update(now=now, acceleration=acceleration, active=active)
 
     lateral_ui_active = ui_state.status == UIStatus.ENGAGED or ui_state.always_on_lateral_active
     allow_throttle = sm['longitudinalPlan'].allowThrottle or not self._longitudinal_control or ui_state.always_on_lateral_active
@@ -516,6 +519,10 @@ class ModelRenderer(Widget):
         with_alpha(path_color, int(path_color.a * 0.10)),
       ]
       draw_polygon(self._rect, self._path.projected_points, gradient=self._path_gradient)
+
+    enabled = self._params.get_bool("ModelUI", default=True) and self._params.get_bool("PathWarningHighlight")
+    if gradient := self._path_warning_highlight.update(sm, ui_state.started_frame, enabled, time.monotonic()):
+      draw_polygon(self._rect, self._path.projected_points, gradient=gradient)
 
   def _draw_lead_indicator(self, radar_state):
     # Draw lead vehicles if available

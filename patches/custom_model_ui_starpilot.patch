@@ -1,8 +1,8 @@
 diff --git a/selfdrive/ui/layouts/settings/starpilot/appearance.py b/selfdrive/ui/layouts/settings/starpilot/appearance.py
-index 528e9c4902df7851c1056296ef49a87abad28356..e6ea6ab4c8c774db8bedd8a477ea26ac4bda0e74 100644
+index 528e9c4902df7851c1056296ef49a87abad28356..8e68a25dbd4f693954b16b5d63a27d9da7ccec6f 100644
 --- a/selfdrive/ui/layouts/settings/starpilot/appearance.py
 +++ b/selfdrive/ui/layouts/settings/starpilot/appearance.py
-@@ -211,22 +211,32 @@ class StarPilotAppearanceLayout(_SettingsPage):
+@@ -211,22 +211,37 @@ class StarPilotAppearanceLayout(_SettingsPage):
                         subtitle="",
                         get_value=lambda: self._get_color_display("PathColor"),
                         on_click=lambda: self._show_color_selector("PathColor"),
@@ -15,9 +15,14 @@ index 528e9c4902df7851c1056296ef49a87abad28356..e6ea6ab4c8c774db8bedd8a477ea26ac
                         on_click=lambda: self._show_int_selector("RoadEdgesWidth", 0, 24, self._get_road_edges_unit()),
                         visible=model_on),
 +            SettingRow("EV9Path", "toggle", tr_noop("EV9 Path"),
-+                       subtitle=tr_noop("Blue while cruising, rainbow while accelerating, red for warnings."),
++                       subtitle=tr_noop("Blue while cruising, rainbow while accelerating. Warning highlighting is controlled separately."),
 +                       get_state=lambda: self._params.get_bool("EV9Path"),
 +                       set_state=lambda s: self._params.put_bool("EV9Path", s),
++                       visible=model_on),
++            SettingRow("PathWarningHighlight", "toggle", tr_noop("Path Warning Highlighting"),
++                       subtitle=tr_noop("Highlight the path red for selected collision, steering-limit and driver-attention warnings."),
++                       get_state=lambda: self._params.get_bool("PathWarningHighlight"),
++                       set_state=lambda s: self._params.put_bool("PathWarningHighlight", s),
 +                       visible=model_on),
              SettingRow("RainbowPath", "toggle", tr_noop("Rainbow Path"),
                         subtitle="",
@@ -38,7 +43,7 @@ index 528e9c4902df7851c1056296ef49a87abad28356..e6ea6ab4c8c774db8bedd8a477ea26ac
                         visible=model_on),
              SettingRow("AdjacentPath", "toggle", tr_noop("Adjacent Lanes"),
                         subtitle="",
-@@ -620,10 +630,18 @@ class StarPilotAppearanceLayout(_SettingsPage):
+@@ -620,10 +635,18 @@ class StarPilotAppearanceLayout(_SettingsPage):
              return "Stock"
          return val.upper()
  
@@ -58,30 +63,37 @@ index 528e9c4902df7851c1056296ef49a87abad28356..e6ea6ab4c8c774db8bedd8a477ea26ac
                  if dialog.selection == "Stock":
                      self._params.remove(key)
 diff --git a/selfdrive/ui/mici/layouts/settings/visuals.py b/selfdrive/ui/mici/layouts/settings/visuals.py
-index 723ac844f630e379a1db34a1a9fe04681ccbea89..9367691e382ca813b25eeb7b85fccc12653f4b8f 100644
+index 723ac844f630e379a1db34a1a9fe04681ccbea89..30a189d0cad2c6b5b2638cd8a3d666817178b636 100644
 --- a/selfdrive/ui/mici/layouts/settings/visuals.py
 +++ b/selfdrive/ui/mici/layouts/settings/visuals.py
-@@ -97,6 +97,8 @@ class VisualsLayoutMici(NavScroller):
+@@ -97,6 +97,10 @@ class VisualsLayoutMici(NavScroller):
      self._stopped_timer_btn = BigParamControl("stopped timer", "StoppedTimer")
      self._stock_confidence_ball_btn = BigParamControl("stock confidence ball", "StockConfidenceBallWidget")
      self._torque_bar_btn = BigParamControl("torque bar", "EnableTorqueBarWidget")
 +    self._ev9_path_btn = BigParamControl("EV9 path", "EV9Path")
-+    self._ev9_path_btn.set_value("blue cruise / rainbow accel / red warnings")
++    self._ev9_path_btn.set_value("blue cruise / rainbow accel")
++    self._path_warning_btn = BigParamControl("Path Warning Highlighting", "PathWarningHighlight")
++    self._path_warning_btn.set_value("red path for warnings")
      self._rainbow_path_btn = BigParamControl("rainbow road", "RainbowPath")
      self._lead_indicator_btn = LeadIndicatorBigButton()
      self._lead_info_btn = LeadInfoBigButton()
-@@ -111,6 +113,7 @@ class VisualsLayoutMici(NavScroller):
+@@ -111,6 +115,8 @@ class VisualsLayoutMici(NavScroller):
        self._stopped_timer_btn,
        self._stock_confidence_ball_btn,
        self._torque_bar_btn,
 +      self._ev9_path_btn,
++      self._path_warning_btn,
        self._rainbow_path_btn,
        self._lead_indicator_btn,
        self._lead_info_btn,
-@@ -129,6 +132,10 @@ class VisualsLayoutMici(NavScroller):
+@@ -129,6 +135,14 @@ class VisualsLayoutMici(NavScroller):
      self._refresh()
  
    def _refresh(self):
++    self._path_warning_btn.refresh()
++    model_ui = self._path_warning_btn.params.get_bool("ModelUI", default=True)
++    self._path_warning_btn.set_enabled(model_ui)
++    self._path_warning_btn.set_value("red path for warnings" if model_ui else "enable Model UI in Galaxy")
 +    ev9_path = self._ev9_path_btn.params.get_bool("EV9Path")
 +    self._ev9_path_btn.set_checked(ev9_path)
 +    self._rainbow_path_btn.set_enabled(not ev9_path)
@@ -90,7 +102,7 @@ index 723ac844f630e379a1db34a1a9fe04681ccbea89..9367691e382ca813b25eeb7b85fccc12
      self._lead_indicator_btn.refresh()
      self._lead_info_btn.refresh()
 diff --git a/selfdrive/ui/mici/onroad/model_renderer.py b/selfdrive/ui/mici/onroad/model_renderer.py
-index adf8b866d7a9059ce6fade2e5dec83f0b2c6e77d..2e9f823426dd496af54dfb5dfc2fd0e66a267aa8 100644
+index adf8b866d7a9059ce6fade2e5dec83f0b2c6e77d..65eb994fa49c43cac5c1669e648e8bb733febe21 100644
 --- a/selfdrive/ui/mici/onroad/model_renderer.py
 +++ b/selfdrive/ui/mici/onroad/model_renderer.py
 @@ -1,4 +1,5 @@
@@ -99,27 +111,30 @@ index adf8b866d7a9059ce6fade2e5dec83f0b2c6e77d..2e9f823426dd496af54dfb5dfc2fd0e6
  import math
  import numpy as np
  import pyray as rl
-@@ -10,6 +11,7 @@ from openpilot.selfdrive.controls.lib.lane_centering import get_lane_centering_v
+@@ -10,6 +11,8 @@ from openpilot.selfdrive.controls.lib.lane_centering import get_lane_centering_v
  from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
  from openpilot.selfdrive.ui.lib.starpilot_theme import get_param_color, get_theme_color, get_visual_color, is_stock_color_scheme, with_alpha
  from openpilot.selfdrive.ui.onroad.starpilot.rainbow_path import RainbowPath
++from openpilot.selfdrive.ui.onroad.starpilot.path_warning import PathWarningHighlight
 +from openpilot.selfdrive.ui.onroad.starpilot.ev9_path import EV9Path, ev9_path_state
  from openpilot.selfdrive.ui.lib.starpilot_visuals import LeadInfoMode, blend_colors, lead_indicator_enabled, lead_info_mode
  from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
  from openpilot.selfdrive.ui.mici.onroad.starpilot_status import get_border_color
-@@ -100,6 +102,8 @@ class ModelRenderer(Widget):
+@@ -100,6 +103,9 @@ class ModelRenderer(Widget):
        stops=[0.0, 0.5, 1.0],
      )
      self._rainbow_path = RainbowPath()
++    self._path_warning_highlight = PathWarningHighlight()
 +    self._ev9_path = EV9Path()
 +    self._ev9_started_frame = None
  
      # Get longitudinal control setting from car parameters
      self._params = ui_state.ui_params
-@@ -461,15 +465,27 @@ class ModelRenderer(Widget):
+@@ -461,15 +467,28 @@ class ModelRenderer(Widget):
    def _draw_path(self, sm):
      """Draw path with dynamic coloring based on mode and throttle state."""
      if not self._path.projected_points.size:
++      self._path_warning_highlight.reset()
 +      self._ev9_path.reset()
        return
  
@@ -129,8 +144,8 @@ index adf8b866d7a9059ce6fade2e5dec83f0b2c6e77d..2e9f823426dd496af54dfb5dfc2fd0e6
 +    self._ev9_started_frame = ui_state.started_frame
 +    if use_ev9:
 +      now = time.monotonic()
-+      acceleration, active, hazard = ev9_path_state(sm, ui_state.started_frame, now)
-+      self._ev9_path.update(now=now, acceleration=acceleration, active=active, hazard=hazard)
++      acceleration, active = ev9_path_state(sm, ui_state.started_frame, now)
++      self._ev9_path.update(now=now, acceleration=acceleration, active=active)
 +
      lateral_ui_active = ui_state.status == UIStatus.ENGAGED or ui_state.always_on_lateral_active
      allow_throttle = sm['longitudinalPlan'].allowThrottle or not self._longitudinal_control or ui_state.always_on_lateral_active
@@ -145,8 +160,19 @@ index adf8b866d7a9059ce6fade2e5dec83f0b2c6e77d..2e9f823426dd496af54dfb5dfc2fd0e6
        if len(self._exp_gradient.colors) > 1:
          draw_polygon(self._rect, self._path.projected_points, gradient=self._exp_gradient)
        else:
+@@ -501,6 +520,10 @@ class ModelRenderer(Widget):
+       ]
+       draw_polygon(self._rect, self._path.projected_points, gradient=self._path_gradient)
+ 
++    enabled = self._params.get_bool("ModelUI", default=True) and self._params.get_bool("PathWarningHighlight")
++    if gradient := self._path_warning_highlight.update(sm, ui_state.started_frame, enabled, time.monotonic()):
++      draw_polygon(self._rect, self._path.projected_points, gradient=gradient)
++
+   def _draw_lead_indicator(self, radar_state):
+     # Draw lead vehicles if available
+     lead_color = get_theme_color("LeadMarker", rl.Color(201, 34, 49, 255))
 diff --git a/selfdrive/ui/onroad/model_renderer.py b/selfdrive/ui/onroad/model_renderer.py
-index 92f34720ed1c1f067cb987df43dbf1459888f6ac..5989823e0f2cc8e5e9aece497328cc62ebf43621 100644
+index 92f34720ed1c1f067cb987df43dbf1459888f6ac..5e19695c514576e89a2d9823319ec41b380db875 100644
 --- a/selfdrive/ui/onroad/model_renderer.py
 +++ b/selfdrive/ui/onroad/model_renderer.py
 @@ -1,4 +1,5 @@
@@ -155,27 +181,30 @@ index 92f34720ed1c1f067cb987df43dbf1459888f6ac..5989823e0f2cc8e5e9aece497328cc62
  import numpy as np
  import pyray as rl
  from cereal import messaging, car
-@@ -10,6 +11,7 @@ from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
+@@ -10,6 +11,8 @@ from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
  from openpilot.selfdrive.ui.lib.starpilot_theme import get_param_color, get_theme_color, get_visual_color, is_stock_color_scheme, with_alpha
  from openpilot.selfdrive.ui.onroad.radar_tracks import project_radar_points
  from openpilot.selfdrive.ui.onroad.starpilot.rainbow_path import RainbowPath
++from openpilot.selfdrive.ui.onroad.starpilot.path_warning import PathWarningHighlight
 +from openpilot.selfdrive.ui.onroad.starpilot.ev9_path import EV9Path, ev9_path_state
  from openpilot.selfdrive.ui.lib.starpilot_visuals import lead_indicator_enabled
  from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
  from openpilot.system.ui.lib.application import gui_app
-@@ -101,6 +103,8 @@ class ModelRenderer(Widget):
+@@ -101,6 +104,9 @@ class ModelRenderer(Widget):
        stops=[],
      )
      self._rainbow_path = RainbowPath()
++    self._path_warning_highlight = PathWarningHighlight()
 +    self._ev9_path = EV9Path()
 +    self._ev9_started_frame = None
  
      # Get longitudinal control setting from car parameters
      self._params = ui_state.ui_params
-@@ -428,14 +432,26 @@ class ModelRenderer(Widget):
+@@ -428,14 +434,27 @@ class ModelRenderer(Widget):
    def _draw_path(self, sm):
      """Draw path with dynamic coloring based on mode and throttle state."""
      if not self._path.projected_points.size:
++      self._path_warning_highlight.reset()
 +      self._ev9_path.reset()
        return
  
@@ -185,8 +214,8 @@ index 92f34720ed1c1f067cb987df43dbf1459888f6ac..5989823e0f2cc8e5e9aece497328cc62
 +    self._ev9_started_frame = ui_state.started_frame
 +    if use_ev9:
 +      now = time.monotonic()
-+      acceleration, active, hazard = ev9_path_state(sm, ui_state.started_frame, now)
-+      self._ev9_path.update(now=now, acceleration=acceleration, active=active, hazard=hazard)
++      acceleration, active = ev9_path_state(sm, ui_state.started_frame, now)
++      self._ev9_path.update(now=now, acceleration=acceleration, active=active)
 +
      allow_throttle = sm['longitudinalPlan'].allowThrottle or not self._longitudinal_control
      self._blend_filter.update(int(allow_throttle))
@@ -200,12 +229,23 @@ index 92f34720ed1c1f067cb987df43dbf1459888f6ac..5989823e0f2cc8e5e9aece497328cc62
        if len(self._exp_gradient.colors) > 1:
          draw_polygon(self._rect, self._path.projected_points, gradient=self._exp_gradient)
        else:
+@@ -470,6 +489,10 @@ class ModelRenderer(Widget):
+       )
+       draw_polygon(self._rect, self._path.projected_points, gradient=gradient)
+ 
++    enabled = self._params.get_bool("ModelUI", default=True) and self._params.get_bool("PathWarningHighlight")
++    if gradient := self._path_warning_highlight.update(sm, ui_state.started_frame, enabled, time.monotonic()):
++      draw_polygon(self._rect, self._path.projected_points, gradient=gradient)
++
+   def _draw_lead_indicator(self, radar_state):
+     # Draw lead vehicles if available
+     lead_color = get_theme_color("LeadMarker", rl.Color(201, 34, 49, 255))
 diff --git a/selfdrive/ui/onroad/starpilot/ev9_path.py b/selfdrive/ui/onroad/starpilot/ev9_path.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..a456e97fb8534f17e95f44b5d79a522012c5451e
+index 0000000000000000000000000000000000000000..986a95d1ccedccb6899f8d3878d41f02cc2c5260
 --- /dev/null
 +++ b/selfdrive/ui/onroad/starpilot/ev9_path.py
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,112 @@
 +"""Animated EV9 path colors; geometry and drawing stay in the model renderer."""
 +import colorsys
 +import math
@@ -214,11 +254,8 @@ index 0000000000000000000000000000000000000000..a456e97fb8534f17e95f44b5d79a5220
 +
 +from openpilot.system.ui.lib.shader_polygon import Gradient
 +
-+HAZARD_PREFIXES = ("steerSaturated", "aeb", "stockAeb", "fcw", "driverDistracted", "driverUnresponsive", "manualRestart")
-+STARPILOT_HAZARDS = {"goatSteerSaturated", "firefoxSteerSaturated", "thisIsFineSteerSaturated"}
 +
-+
-+def ev9_path_state(sm, started_frame: int, now: float) -> tuple[float, bool, bool]:
++def ev9_path_state(sm, started_frame: int, now: float) -> tuple[float, bool]:
 +  def fresh(service):
 +    return (sm.valid.get(service, False) and sm.alive.get(service, False) and
 +            sm.recv_frame.get(service, -1) >= started_frame and 0 <= now - sm.recv_time.get(service, 0.0) <= 1.0)
@@ -226,12 +263,7 @@ index 0000000000000000000000000000000000000000..a456e97fb8534f17e95f44b5d79a5220
 +  acceleration = float(sm["carState"].aEgo) if fresh("carState") else 0.0
 +  # latActive includes always-on lateral, unlike the ACC engagement flag.
 +  active = bool(fresh("carState") and fresh("carControl") and sm["carControl"].latActive)
-+  hazard = False
-+  for service in ("selfdriveState", "starpilotSelfdriveState"):
-+    if fresh(service):
-+      event = str(sm[service].alertType).split("/", 1)[0]
-+      hazard |= event.startswith(HAZARD_PREFIXES) or event in STARPILOT_HAZARDS
-+  return acceleration if math.isfinite(acceleration) else 0.0, active, hazard
++  return acceleration if math.isfinite(acceleration) else 0.0, active
 +
 +
 +def _color(h, s, l, a):
@@ -248,8 +280,6 @@ index 0000000000000000000000000000000000000000..a456e97fb8534f17e95f44b5d79a5220
 +  ACCEL_STOP_THRESHOLD = 0.15
 +  ACCEL_FADE_IN_SECONDS = 0.5
 +  ACCEL_FADE_OUT_SECONDS = 1.0
-+  HAZARD_HOLD_SECONDS = 0.5
-+  HAZARD_FADE_SECONDS = 1.0
 +  OCEAN_STOPS = (
 +    (0.00, 206.0, 0.70, 0.32, 0.85),
 +    (0.35, 202.0, 0.72, 0.40, 0.75),
@@ -265,13 +295,11 @@ index 0000000000000000000000000000000000000000..a456e97fb8534f17e95f44b5d79a5220
 +    self._active = False
 +    self._accel_presence = 0.0
 +    self._accel_state = False
-+    self._hazard_mix = 0.0
-+    self._hazard_hold = 0.0
 +    self._wave_phase = 0.0
 +    self._rainbow_phase_shift = 0.0
 +    self._rainbow_wave_phase = 0.0
 +
-+  def update(self, *, now: float, acceleration: float, active: bool, hazard: bool):
++  def update(self, *, now: float, acceleration: float, active: bool):
 +    elapsed = 0.0 if self._last_update_time is None else now - self._last_update_time
 +    if elapsed < 0 or elapsed > 1.0:
 +      self.reset()
@@ -299,14 +327,6 @@ index 0000000000000000000000000000000000000000..a456e97fb8534f17e95f44b5d79a5220
 +      self._accel_state = False
 +      self._wave_phase = self._rainbow_phase_shift = self._rainbow_wave_phase = 0.0
 +
-+    if hazard:
-+      self._hazard_mix = 1.0
-+      self._hazard_hold = self.HAZARD_HOLD_SECONDS
-+    else:
-+      held = min(self._hazard_hold, dt)
-+      self._hazard_hold -= held
-+      self._hazard_mix = max(0.0, self._hazard_mix - (dt - held) / self.HAZARD_FADE_SECONDS)
-+
 +  def _ocean_color(self, position):
 +    hue, saturation, lightness, alpha = self.OCEAN_STOPS[-1][1:]
 +    for left, right in zip(self.OCEAN_STOPS, self.OCEAN_STOPS[1:], strict=False):
@@ -332,20 +352,87 @@ index 0000000000000000000000000000000000000000..a456e97fb8534f17e95f44b5d79a5220
 +
 +  def get_gradient(self) -> Gradient:
 +    stops = [i / 8 for i in range(9)]
-+    red = (rl.Color(115, 0, 0, 209), rl.Color(199, 36, 36, 173), rl.Color(235, 115, 115, 140))
 +    colors = []
 +    for position in stops:
 +      base = _blend(self._ocean_color(position), self._rainbow_color(position), self._accel_presence) if self._active else \
 +        rl.Color(150, 150, 150, round(80 * (1 - position)))
-+      hazard_color = _blend(red[0], red[1], position * 2) if position <= 0.5 else _blend(red[1], red[2], position * 2 - 1)
-+      colors.append(_blend(base, hazard_color, self._hazard_mix))
++      colors.append(base)
 +    return Gradient(start=(0.0, 1.0), end=(0.0, 0.0), colors=colors, stops=stops)
+diff --git a/selfdrive/ui/onroad/starpilot/path_warning.py b/selfdrive/ui/onroad/starpilot/path_warning.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..732b9ee9903e0c665de80c86dfdb98c0a6cb1ce1
+--- /dev/null
++++ b/selfdrive/ui/onroad/starpilot/path_warning.py
+@@ -0,0 +1,63 @@
++"""Optional warning highlighting shared by the driving-screen path renderers."""
++import pyray as rl
++
++from cereal import log
++from openpilot.system.ui.lib.shader_polygon import Gradient
++
++
++WARNING_EVENTS = {
++  "steerSaturated", "aeb", "stockAeb", "fcw", "manualRestart",
++  "driverDistracted1", "driverDistracted2", "driverDistracted3",
++  "driverUnresponsive1", "driverUnresponsive2", "driverUnresponsive3",
++  "goatSteerSaturated", "firefoxSteerSaturated", "thisIsFineSteerSaturated",
++}
++
++
++def path_warning_active(sm, started_frame: int, now: float) -> bool:
++  for service in ("selfdriveState", "starpilotSelfdriveState"):
++    if (sm.valid.get(service, False) and sm.alive.get(service, False) and
++        sm.recv_frame.get(service, -1) >= started_frame and 0 <= now - sm.recv_time.get(service, 0.0) <= 1.0):
++      alert = sm[service]
++      if alert.alertSize != log.SelfdriveState.AlertSize.none and str(alert.alertType).split("/", 1)[0] in WARNING_EVENTS:
++        return True
++  return False
++
++
++class PathWarningHighlight:
++  HOLD_SECONDS = 0.5
++  FADE_SECONDS = 1.0
++
++  def __init__(self):
++    self.reset()
++
++  def reset(self):
++    self._started_frame = None
++    self._last_update_time = None
++    self._mix = 0.0
++    self._hold = 0.0
++
++  def update(self, sm, started_frame: int, enabled: bool, now: float) -> Gradient | None:
++    if not enabled:
++      self.reset()
++      return None
++
++    elapsed = 0.0 if self._last_update_time is None else now - self._last_update_time
++    if self._started_frame != started_frame or elapsed < 0 or elapsed > 1.0:
++      self.reset()
++      elapsed = 0.0
++    self._started_frame = started_frame
++    self._last_update_time = now
++    dt = elapsed
++
++    if path_warning_active(sm, started_frame, now):
++      self._mix = 1.0
++      self._hold = self.HOLD_SECONDS
++    else:
++      held = min(self._hold, dt)
++      self._hold -= held
++      self._mix = max(0.0, self._mix - (dt - held) / self.FADE_SECONDS)
++
++    if self._mix <= 0.0:
++      return None
++    colors = [rl.Color(r, g, b, round(a * self._mix)) for r, g, b, a in ((115, 0, 0, 209), (199, 36, 36, 173), (235, 115, 115, 140))]
++    return Gradient(start=(0.0, 1.0), end=(0.0, 0.0), colors=colors, stops=[0.0, 0.5, 1.0])
 diff --git a/selfdrive/ui/tests/test_ev9_path.py b/selfdrive/ui/tests/test_ev9_path.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..a71b55f40ff58f23d838240f4ce4f5b1ae1c36f0
+index 0000000000000000000000000000000000000000..914d97502ce409bb42e3f37842809919a092bd90
 --- /dev/null
 +++ b/selfdrive/ui/tests/test_ev9_path.py
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,125 @@
 +from types import SimpleNamespace
 +
 +import pytest
@@ -360,8 +447,8 @@ index 0000000000000000000000000000000000000000..a71b55f40ff58f23d838240f4ce4f5b1
 +  return [(c.r, c.g, c.b, c.a) for c in gradient.colors]
 +
 +
-+def tick(path, now, *, acceleration=0.0, active=True, hazard=False):
-+  path.update(now=now, acceleration=acceleration, active=active, hazard=hazard)
++def tick(path, now, *, acceleration=0.0, active=True):
++  path.update(now=now, acceleration=acceleration, active=active)
 +
 +
 +def test_inactive_and_reset_clear_animation():
@@ -378,26 +465,6 @@ index 0000000000000000000000000000000000000000..a71b55f40ff58f23d838240f4ce4f5b1
 +  assert colors(path) == colors(EV9Path())
 +
 +
-+def test_hazard_priority_even_when_inactive_and_smooth_release():
-+  path = EV9Path()
-+  tick(path, 10, active=False)
-+  gray = colors(path)
-+  tick(path, 10.1, active=False, hazard=True)
-+  red = colors(path)
-+  assert any(r > g and r > b for r, g, b, _ in red)
-+  for frame in range(1, 5):
-+    tick(path, 10.1 + frame * 0.1, active=False)
-+    assert colors(path) == red
-+  for frame in range(5, 11):
-+    tick(path, 10.1 + frame * 0.1, active=False)
-+  assert colors(path) not in (red, gray)
-+  for frame in range(11, 18):
-+    tick(path, 10.1 + frame * 0.1, active=False)
-+  assert colors(path) == gray
-+  tick(path, 12, active=False, hazard=True)
-+  assert colors(path) == red
-+
-+
 +def test_long_gap_resets_and_does_not_advance_animation():
 +  path = EV9Path()
 +  tick(path, 10, acceleration=1)
@@ -411,8 +478,7 @@ index 0000000000000000000000000000000000000000..a71b55f40ff58f23d838240f4ce4f5b1
 +
 +class Messages(dict):
 +  def __init__(self):
-+    super().__init__(carState=SimpleNamespace(aEgo=0.8), carControl=SimpleNamespace(latActive=True),
-+                     selfdriveState=SimpleNamespace(alertType=''), starpilotSelfdriveState=SimpleNamespace(alertType=''))
++    super().__init__(carState=SimpleNamespace(aEgo=0.8), carControl=SimpleNamespace(latActive=True))
 +    self.valid = dict.fromkeys(self, True)
 +    self.alive = dict.fromkeys(self, True)
 +    self.recv_frame = dict.fromkeys(self, 100)
@@ -425,18 +491,15 @@ index 0000000000000000000000000000000000000000..a71b55f40ff58f23d838240f4ce4f5b1
 +
 +def test_lateral_activity_comes_from_car_control_including_aol():
 +  sm = Messages()
-+  sm['selfdriveState'].enabled = False
-+  assert state(sm) == (0.8, True, False)
++  assert state(sm) == (0.8, True)
 +  sm['carControl'].latActive = False
-+  assert state(sm) == (0.8, False, False)
++  assert state(sm) == (0.8, False)
 +
 +
-+@pytest.mark.parametrize('service', ['carState', 'carControl', 'selfdriveState', 'starpilotSelfdriveState'])
++@pytest.mark.parametrize('service', ['carState', 'carControl'])
 +@pytest.mark.parametrize('condition', ['invalid', 'dead', 'previous_session', 'stale', 'future'])
 +def test_stale_or_invalid_messages_cannot_affect_path(service, condition):
 +  sm = Messages()
-+  sm['selfdriveState'].alertType = 'fcw/permanent' if service == 'selfdriveState' else ''
-+  sm['starpilotSelfdriveState'].alertType = 'goatSteerSaturated/warning' if service == 'starpilotSelfdriveState' else ''
 +  if condition == 'invalid':
 +    sm.valid[service] = False
 +  elif condition == 'dead':
@@ -447,35 +510,11 @@ index 0000000000000000000000000000000000000000..a71b55f40ff58f23d838240f4ce4f5b1
 +    sm.recv_time[service] = 9.49
 +  else:
 +    sm.recv_time[service] = 10.6
-+  acceleration, active, hazard = state(sm)
++  acceleration, active = state(sm)
 +  if service == 'carState':
 +    assert acceleration == 0
 +  if service == 'carControl':
 +    assert not active
-+  assert not hazard
-+
-+
-+@pytest.mark.parametrize('prefix', ['steerSaturated', 'aeb', 'stockAeb', 'fcw', 'driverDistracted', 'driverDistracted2',
-+                                    'driverUnresponsive', 'manualRestart'])
-+def test_ordinary_hazards(prefix):
-+  sm = Messages()
-+  sm['selfdriveState'].alertType = prefix + '/warning'
-+  assert state(sm)[2]
-+
-+
-+@pytest.mark.parametrize('prefix', ['goatSteerSaturated', 'firefoxSteerSaturated', 'thisIsFineSteerSaturated'])
-+def test_starpilot_hazards(prefix):
-+  sm = Messages()
-+  sm['starpilotSelfdriveState'].alertType = prefix + '/warning'
-+  assert state(sm)[2]
-+
-+
-+@pytest.mark.parametrize('alert', ['', 'laneChange/warning', 'startup/permanent'])
-+def test_ordinary_informational_alerts_do_not_trigger_hazard(alert):
-+  sm = Messages()
-+  sm['selfdriveState'].alertType = alert
-+  sm['starpilotSelfdriveState'].alertType = alert
-+  assert not state(sm)[2]
 +
 +
 +def test_acceleration_hysteresis_and_fade_timing():
@@ -510,103 +549,15 @@ index 0000000000000000000000000000000000000000..a71b55f40ff58f23d838240f4ce4f5b1
 +  assert path._wave_phase == path._rainbow_phase_shift == path._rainbow_wave_phase == 0
 +
 +
-+def test_reset_clears_hazard_and_all_animation():
++def test_reset_clears_all_animation():
 +  path = EV9Path()
-+  tick(path, 10, acceleration=1, hazard=True)
-+  tick(path, 10.1, acceleration=1, hazard=True)
++  tick(path, 10, acceleration=1)
++  tick(path, 10.1, acceleration=1)
 +  path.reset()
 +  assert path._last_update_time is None
-+  assert path._accel_presence == path._hazard_mix == path._hazard_hold == 0
++  assert path._accel_presence == 0
 +  assert path._wave_phase == path._rainbow_phase_shift == path._rainbow_wave_phase == 0
 +  assert not path._accel_state
-diff --git a/selfdrive/ui/tests/test_ev9_path_renderers.py b/selfdrive/ui/tests/test_ev9_path_renderers.py
-new file mode 100644
-index 0000000000000000000000000000000000000000..a59c5bb11675021fc2f96f129e28af4d05967884
---- /dev/null
-+++ b/selfdrive/ui/tests/test_ev9_path_renderers.py
-@@ -0,0 +1,82 @@
-+"""Run both actual renderer branches with real EV9 animation and inert drawing."""
-+import ast
-+from pathlib import Path
-+from types import SimpleNamespace
-+
-+import numpy as np
-+import pyray as rl
-+import pytest
-+
-+from openpilot.selfdrive.ui.onroad.starpilot.ev9_path import EV9Path, ev9_path_state
-+from openpilot.system.ui.lib.shader_polygon import Gradient
-+
-+
-+class Messages(dict):
-+  pass
-+
-+
-+@pytest.mark.parametrize("device", ["onroad", "mici/onroad"])
-+@pytest.mark.parametrize("native_mode", ["rainbow", "acceleration", "color"])
-+def test_ev9_branch_precedence_restoration_and_frame_lifecycle(device, native_mode):
-+  path = Path(__file__).parents[1] / device / "model_renderer.py"
-+  tree = ast.parse(path.read_text())
-+  cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "ModelRenderer")
-+  method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_draw_path")
-+  draws = []
-+  clock = [10.0]
-+  state = SimpleNamespace(started_frame=1, status=1, always_on_lateral_active=False)
-+  custom_color = rl.Color(12, 34, 56, 255)
-+  namespace = dict(time=SimpleNamespace(monotonic=lambda: clock[0]), ui_state=state,
-+                   UIStatus=SimpleNamespace(ENGAGED=1, DISENGAGED=0), ev9_path_state=ev9_path_state,
-+                   draw_polygon=lambda *args, **kwargs: draws.append((args, kwargs)), rl=rl, Gradient=Gradient,
-+                   NO_THROTTLE_COLORS=[custom_color]*3, THROTTLE_COLORS=[custom_color]*3,
-+                   get_visual_color=lambda *args: custom_color,
-+                   with_alpha=lambda c, a: rl.Color(c.r, c.g, c.b, a))
-+  exec(compile(ast.Module(body=[method], type_ignores=[]), str(path), "exec"), namespace)
-+  values = {"EV9Path": True, "RainbowPath": native_mode == "rainbow", "AccelerationPath": native_mode == "acceleration"}
-+  preferences = values.copy()
-+  original_gradient = Gradient(start=(0, 1), end=(0, 0), colors=[custom_color]*3, stops=[0, .5, 1])
-+  animation = EV9Path()
-+  update = animation.update
-+  calls = []
-+  def counted_update(**kwargs):
-+    calls.append(kwargs)
-+    update(**kwargs)
-+  animation.update = counted_update
-+  renderer = SimpleNamespace(_params=SimpleNamespace(get_bool=lambda key, default=False: values.get(key, default)),
-+    _path=SimpleNamespace(projected_points=np.ones((4, 2))), _rect=None, _ev9_path=animation, _ev9_started_frame=1,
-+    _longitudinal_control=True, _blend_filter=SimpleNamespace(update=lambda value: None, x=1),
-+    _use_rainbow=values["RainbowPath"], _use_accel_path=values["AccelerationPath"], _experimental_mode=False,
-+    _exp_gradient=original_gradient, _path_gradient=original_gradient, _blend_colors=lambda *args: [custom_color]*3)
-+  sm = Messages(carState=SimpleNamespace(aEgo=.5), carControl=SimpleNamespace(latActive=True),
-+                selfdriveState=SimpleNamespace(alertType=""), starpilotSelfdriveState=SimpleNamespace(alertType=""),
-+                longitudinalPlan=SimpleNamespace(allowThrottle=True))
-+  sm.valid = sm.alive = dict.fromkeys(sm, True)
-+  sm.recv_frame = dict.fromkeys(sm, 1)
-+  sm.recv_time = dict.fromkeys(sm, 10)
-+  def draw():
-+    namespace["_draw_path"](renderer, sm)
-+  draw()
-+  clock[0] += .1
-+  draw()
-+  assert len(calls) == 2  # No modelUpdated event is needed for animation.
-+  assert animation._accel_presence > 0
-+  assert draws[-1][1]["gradient"] is not original_gradient
-+  assert values == preferences
-+  state.started_frame = 2
-+  draw()
-+  assert animation._accel_presence == 0 and not animation._active
-+  renderer._path.projected_points = np.empty((0, 2))
-+  count = len(draws)
-+  draw()
-+  assert len(draws) == count and animation._last_update_time is None
-+  renderer._path.projected_points = np.ones((4, 2))
-+  values["EV9Path"] = False
-+  draw()
-+  gradient = draws[-1][1]["gradient"]
-+  if native_mode == "rainbow":
-+    assert gradient is original_gradient
-+  else:
-+    assert [(c.r, c.g, c.b) for c in gradient.colors] == [(12, 34, 56)]*3
-+  assert {key: values[key] for key in ("RainbowPath", "AccelerationPath")} == {
-+    key: preferences[key] for key in ("RainbowPath", "AccelerationPath")}
 diff --git a/selfdrive/ui/tests/test_ev9_path_settings.py b/selfdrive/ui/tests/test_ev9_path_settings.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..703c71002f20903d6c6df848f80f389e33a59504
@@ -645,3 +596,136 @@ index 0000000000000000000000000000000000000000..703c71002f20903d6c6df848f80f389e
 +  values["EV9Path"] = False
 +  dialogs[0].callback(1)
 +  assert values["PathColor"] == "#abcdef"
+diff --git a/selfdrive/ui/tests/test_path_warning.py b/selfdrive/ui/tests/test_path_warning.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4e8031744453ed6b9ddcf74e18a878ad579a408
+--- /dev/null
++++ b/selfdrive/ui/tests/test_path_warning.py
+@@ -0,0 +1,127 @@
++import importlib
++from types import SimpleNamespace
++
++import numpy as np
++import pytest
++
++from cereal import custom, log
++from openpilot.common.params import Params
++from openpilot.selfdrive.ui.lib.ui_param_cache import UIParamCache
++from openpilot.selfdrive.ui.onroad.starpilot.path_warning import PathWarningHighlight, path_warning_active
++from openpilot.system.ui.lib.shader_polygon import Gradient
++import pyray as rl
++
++
++class Messages(dict):
++  def __init__(self):
++    super().__init__(selfdriveState=log.SelfdriveState.new_message(alertType="fcw/permanent", alertSize="full"),
++                     starpilotSelfdriveState=custom.StarPilotSelfdriveState.new_message(),
++                     longitudinalPlan=SimpleNamespace(allowThrottle=True),
++                     carState=SimpleNamespace(aEgo=0.8), carControl=SimpleNamespace(latActive=True))
++    self.valid = dict.fromkeys(self, True)
++    self.alive = dict.fromkeys(self, True)
++    self.recv_frame = dict.fromkeys(self, 100)
++    self.recv_time = dict.fromkeys(self, 10.0)
++
++
++def test_selected_alerts_only_including_starpilot_and_normal_status():
++  sm = Messages()
++  assert path_warning_active(sm, 100, 10.5)
++  sm["selfdriveState"].alertType = "driverDistracted1/permanent"
++  sm["selfdriveState"].alertStatus = "normal"
++  assert path_warning_active(sm, 100, 10.5)
++  sm["selfdriveState"].alertType = "laneChange/warning"
++  assert not path_warning_active(sm, 100, 10.5)
++  sm["starpilotSelfdriveState"].alertType = "goatSteerSaturated/warning"
++  sm["starpilotSelfdriveState"].alertSize = "mid"
++  assert path_warning_active(sm, 100, 10.5)
++
++
++@pytest.mark.parametrize("condition", ["invalid", "dead", "previous_drive", "stale", "future", "hidden"])
++def test_unusable_alert_does_not_highlight(condition):
++  sm = Messages()
++  if condition == "invalid":
++    sm.valid["selfdriveState"] = False
++  elif condition == "dead":
++    sm.alive["selfdriveState"] = False
++  elif condition == "previous_drive":
++    sm.recv_frame["selfdriveState"] = 99
++  elif condition in ("stale", "future"):
++    sm.recv_time["selfdriveState"] = 9.0 if condition == "stale" else 11.0
++  else:
++    sm["selfdriveState"].alertSize = "none"
++  assert not path_warning_active(sm, 100, 10.5)
++
++
++def test_warning_holds_then_fades_and_resets_on_disable_session_or_time_gap():
++  sm, highlight = Messages(), PathWarningHighlight()
++  red = highlight.update(sm, 100, True, 10.0)
++  sm["selfdriveState"].alertType = ""
++  # Slow rendering must not stretch the half-second hold or one-second fade.
++  assert highlight.update(sm, 100, True, 10.25).colors[0].a == red.colors[0].a
++  assert highlight.update(sm, 100, True, 10.5).colors[0].a == red.colors[0].a
++  fading = highlight.update(sm, 100, True, 11.0)
++  assert fading.colors[0].a == round(red.colors[0].a / 2)
++  assert highlight.update(sm, 100, True, 11.5) is None
++
++  for enabled, started_frame, now in ((False, 100, 10.1), (True, 101, 10.1), (True, 100, 12.0), (True, 100, 9.0)):
++    highlight.reset()
++    sm["selfdriveState"].alertType = "fcw/permanent"
++    assert highlight.update(sm, 100, True, 10.0) is not None
++    sm["selfdriveState"].alertType = ""
++    assert highlight.update(sm, started_frame, enabled, now) is None
++
++
++@pytest.mark.parametrize("module", ["openpilot.selfdrive.ui.onroad.model_renderer", "openpilot.selfdrive.ui.mici.onroad.model_renderer"])
++def test_renderers_overlay_existing_styles_and_respect_settings(monkeypatch, tmp_path, module):
++  renderer_module = importlib.import_module(module)
++  params = Params(str(tmp_path))
++  ui = SimpleNamespace(ui_params=UIParamCache(params), started_frame=100,
++                       status=renderer_module.UIStatus.ENGAGED, always_on_lateral_active=True)
++  monkeypatch.setattr(renderer_module, "ui_state", ui)
++  monkeypatch.setattr(renderer_module.time, "monotonic", lambda: 10.0)
++  draws = []
++  monkeypatch.setattr(renderer_module, "draw_polygon", lambda rect, points, color=None, gradient=None: draws.append((points, color, gradient)))
++  renderer = renderer_module.ModelRenderer()
++  renderer._path.projected_points = np.array([[0, 100], [40, 0], [60, 0], [100, 100]], dtype=np.float32)
++  renderer._exp_gradient = Gradient((0, 1), (0, 0), [rl.Color(*rl.BLUE), rl.Color(*rl.GREEN)], [0, 1])
++  sm = Messages()
++  ui.ui_params.put("PathColor", "#123456")
++  for ev9, rainbow, acceleration, experimental in ((True, True, True, False), (False, False, False, False),
++                                                 (False, False, True, False), (False, False, True, True), (False, True, True, False)):
++    ui.ui_params.put_bool("EV9Path", ev9)
++    ui.ui_params.put_bool("RainbowPath", rainbow)
++    ui.ui_params.put_bool("AccelerationPath", acceleration)
++    renderer._use_rainbow, renderer._use_accel_path = rainbow, acceleration
++    renderer._experimental_mode = experimental
++    for enabled, model_ui, expected_draws in ((False, True, 1), (True, True, 2), (True, False, 1)):
++      ui.ui_params.put_bool("PathWarningHighlight", enabled)
++      ui.ui_params.put_bool("ModelUI", model_ui)
++      draws.clear()
++      renderer._draw_path(sm)
++      assert len(draws) == expected_draws
++      base_colors = [(c.r, c.g, c.b, c.a) for c in draws[0][2].colors]
++      if not enabled:
++        original_colors = base_colors
++      assert base_colors == original_colors
++      if expected_draws == 2:
++        assert draws[-1][0] is renderer._path.projected_points
++        assert draws[-1][2].colors[0].r > draws[-1][2].colors[0].g
++    assert params.get_bool("RainbowPath") == rainbow and params.get_bool("AccelerationPath") == acceleration
++  assert params.get("PathColor") == "#123456"
++  # EV9 animation advances each draw, and resets between drives and without a path.
++  ui.ui_params.put_bool("EV9Path", True)
++  sm["selfdriveState"].alertType = ""
++  renderer._draw_path(sm)
++  monkeypatch.setattr(renderer_module.time, "monotonic", lambda: 10.1)
++  renderer._draw_path(sm)
++  assert renderer._ev9_path._accel_presence > 0
++  ui.started_frame = 101
++  renderer._draw_path(sm)
++  assert renderer._ev9_path._accel_presence == 0 and not renderer._ev9_path._active
++  renderer._path.projected_points = np.empty((0, 2), dtype=np.float32)
++  draws.clear()
++  renderer._draw_path(sm)
++  assert not draws
++  assert renderer._ev9_path._last_update_time is None
++  assert renderer._path_warning_highlight._last_update_time is None

@@ -12,8 +12,8 @@ def colors(path):
   return [(c.r, c.g, c.b, c.a) for c in gradient.colors]
 
 
-def tick(path, now, *, acceleration=0.0, active=True, hazard=False):
-  path.update(now=now, acceleration=acceleration, active=active, hazard=hazard)
+def tick(path, now, *, acceleration=0.0, active=True):
+  path.update(now=now, acceleration=acceleration, active=active)
 
 
 def test_inactive_and_reset_clear_animation():
@@ -30,26 +30,6 @@ def test_inactive_and_reset_clear_animation():
   assert colors(path) == colors(EV9Path())
 
 
-def test_hazard_priority_even_when_inactive_and_smooth_release():
-  path = EV9Path()
-  tick(path, 10, active=False)
-  gray = colors(path)
-  tick(path, 10.1, active=False, hazard=True)
-  red = colors(path)
-  assert any(r > g and r > b for r, g, b, _ in red)
-  for frame in range(1, 5):
-    tick(path, 10.1 + frame * 0.1, active=False)
-    assert colors(path) == red
-  for frame in range(5, 11):
-    tick(path, 10.1 + frame * 0.1, active=False)
-  assert colors(path) not in (red, gray)
-  for frame in range(11, 18):
-    tick(path, 10.1 + frame * 0.1, active=False)
-  assert colors(path) == gray
-  tick(path, 12, active=False, hazard=True)
-  assert colors(path) == red
-
-
 def test_long_gap_resets_and_does_not_advance_animation():
   path = EV9Path()
   tick(path, 10, acceleration=1)
@@ -63,8 +43,7 @@ def test_long_gap_resets_and_does_not_advance_animation():
 
 class Messages(dict):
   def __init__(self):
-    super().__init__(carState=SimpleNamespace(aEgo=0.8), carControl=SimpleNamespace(latActive=True),
-                     selfdriveState=SimpleNamespace(alertType=''), starpilotSelfdriveState=SimpleNamespace(alertType=''))
+    super().__init__(carState=SimpleNamespace(aEgo=0.8), carControl=SimpleNamespace(latActive=True))
     self.valid = dict.fromkeys(self, True)
     self.alive = dict.fromkeys(self, True)
     self.recv_frame = dict.fromkeys(self, 100)
@@ -77,18 +56,15 @@ def state(sm):
 
 def test_lateral_activity_comes_from_car_control_including_aol():
   sm = Messages()
-  sm['selfdriveState'].enabled = False
-  assert state(sm) == (0.8, True, False)
+  assert state(sm) == (0.8, True)
   sm['carControl'].latActive = False
-  assert state(sm) == (0.8, False, False)
+  assert state(sm) == (0.8, False)
 
 
-@pytest.mark.parametrize('service', ['carState', 'carControl', 'selfdriveState', 'starpilotSelfdriveState'])
+@pytest.mark.parametrize('service', ['carState', 'carControl'])
 @pytest.mark.parametrize('condition', ['invalid', 'dead', 'previous_session', 'stale', 'future'])
 def test_stale_or_invalid_messages_cannot_affect_path(service, condition):
   sm = Messages()
-  sm['selfdriveState'].alertType = 'fcw/permanent' if service == 'selfdriveState' else ''
-  sm['starpilotSelfdriveState'].alertType = 'goatSteerSaturated/warning' if service == 'starpilotSelfdriveState' else ''
   if condition == 'invalid':
     sm.valid[service] = False
   elif condition == 'dead':
@@ -99,35 +75,11 @@ def test_stale_or_invalid_messages_cannot_affect_path(service, condition):
     sm.recv_time[service] = 9.49
   else:
     sm.recv_time[service] = 10.6
-  acceleration, active, hazard = state(sm)
+  acceleration, active = state(sm)
   if service == 'carState':
     assert acceleration == 0
   if service == 'carControl':
     assert not active
-  assert not hazard
-
-
-@pytest.mark.parametrize('prefix', ['steerSaturated', 'aeb', 'stockAeb', 'fcw', 'driverDistracted', 'driverDistracted2',
-                                    'driverUnresponsive', 'manualRestart'])
-def test_ordinary_hazards(prefix):
-  sm = Messages()
-  sm['selfdriveState'].alertType = prefix + '/warning'
-  assert state(sm)[2]
-
-
-@pytest.mark.parametrize('prefix', ['goatSteerSaturated', 'firefoxSteerSaturated', 'thisIsFineSteerSaturated'])
-def test_starpilot_hazards(prefix):
-  sm = Messages()
-  sm['starpilotSelfdriveState'].alertType = prefix + '/warning'
-  assert state(sm)[2]
-
-
-@pytest.mark.parametrize('alert', ['', 'laneChange/warning', 'startup/permanent'])
-def test_ordinary_informational_alerts_do_not_trigger_hazard(alert):
-  sm = Messages()
-  sm['selfdriveState'].alertType = alert
-  sm['starpilotSelfdriveState'].alertType = alert
-  assert not state(sm)[2]
 
 
 def test_acceleration_hysteresis_and_fade_timing():
@@ -162,12 +114,12 @@ def test_frame_delta_is_bounded_and_inactive_resets_acceleration():
   assert path._wave_phase == path._rainbow_phase_shift == path._rainbow_wave_phase == 0
 
 
-def test_reset_clears_hazard_and_all_animation():
+def test_reset_clears_all_animation():
   path = EV9Path()
-  tick(path, 10, acceleration=1, hazard=True)
-  tick(path, 10.1, acceleration=1, hazard=True)
+  tick(path, 10, acceleration=1)
+  tick(path, 10.1, acceleration=1)
   path.reset()
   assert path._last_update_time is None
-  assert path._accel_presence == path._hazard_mix == path._hazard_hold == 0
+  assert path._accel_presence == 0
   assert path._wave_phase == path._rainbow_phase_shift == path._rainbow_wave_phase == 0
   assert not path._accel_state

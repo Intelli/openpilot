@@ -37,7 +37,7 @@ Archived helpers under `patches/legacy-openpilot-tooling/` and
 | `drive_helpers_starpilot.patch` | EV9 tuning broadcast, curvature integration, calibration and always-on lateral (AOL) state |
 | `customize_warnings_starpilot.patch` | Steering-warning policy and driver-input suppression |
 | `alerts_starpilot.patch` | Compact alerts and silent braking while AOL steering continues |
-| `custom_model_ui_starpilot.patch` | EV9 path colors and appearance toggle |
+| `custom_model_ui_starpilot.patch` | EV9 blue/rainbow style and independent path-warning highlighting |
 | `ui_options_starpilot.patch` | Flat Steering page and EV9 controls |
 
 ## EV9 vehicle migrations
@@ -95,7 +95,8 @@ Archived helpers under `patches/legacy-openpilot-tooling/` and
 
 The four EV9 controls are offroad-only: Steering → EV9 Steering on C3/C3X,
 Settings → Vehicle → EV9 Steering on C4, and Galaxy → Lateral (Steering).
-EV9 Path is also available in both device UIs and Galaxy → Visual (Display & UI).
+EV9 Path and Path Warning Highlighting are available in both device UIs and
+Galaxy → Visual (Display & UI). Both default on in this branch.
 Runtime consumers use the toggle broadcast, not parameter-file I/O. Persisted
 startup identity/settings take precedence over cached broadcasts. Active
 `/data/params/d` values override `/cache/starpilot/params/d` and compiled defaults;
@@ -149,10 +150,15 @@ thresholds do not impose a universal 90° steering-command limit.
 
 ### Path appearance
 
-EV9 Path uses animated blue, acceleration rainbow and alert-red fills in both
-device renderers; it preserves saved native path-color choices when disabled.
+EV9 Path provides animated blue and acceleration rainbow in both renderers,
+preserving saved native path-color choices when disabled. Path Warning Highlighting
+is a separate default-on Model UI option and works over any base style. Its helper
+and renderer overlay match the parked upstream PR; only the EV9 default is on.
+Selected fresh, current-drive alerts with nonzero size trigger a red overlay,
+which holds for 0.5 seconds then fades for 1 second. It replaces the old EV9 color
+blend, so its appearance needs device validation before upstream publication.
 Geometry and adjacent blind-spot overlays remain native StarPilot behavior.
-Blind-spot red can appear without an alert and is independent of the EV9 alert fill.
+Blind-spot red can appear without an alert and is independent of warning highlighting.
 
 ## Build, deployment and verification
 

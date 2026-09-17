@@ -2729,7 +2729,7 @@
       {
         "key": "EV9Path",
         "label": "EV9 Path",
-        "description": "Use the EV9 driving path appearance on any vehicle. Overrides rainbow, acceleration and custom path colors while enabled; your saved appearance choices are preserved.",
+        "description": "Blue while cruising and rainbow while accelerating. Overrides rainbow, acceleration and custom path colors while enabled; saved choices are preserved. Warning highlighting is controlled separately.",
         "data_type": "bool",
         "ui_type": "toggle",
         "settings_tier": "simple"
@@ -2906,6 +2906,15 @@
         "data_type": "bool",
         "ui_type": "toggle",
         "is_parent_toggle": true,
+        "settings_tier": "simple"
+      },
+      {
+        "key": "PathWarningHighlight",
+        "label": "Path Warning Highlighting",
+        "description": "Highlight the path red for selected collision, steering-limit and driver-attention warnings.",
+        "data_type": "bool",
+        "ui_type": "toggle",
+        "parent_key": "ModelUI",
         "settings_tier": "simple"
       },
       {
