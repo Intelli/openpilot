@@ -79,10 +79,14 @@ Owners: [drive_helpers_starpilot.patch](drive_helpers_starpilot.patch),
   top-left main-cruise/Driving Assist button. Migration
   requires AOL enabled, LKAS already assigned to AOL, and no main-button assignment;
   the existing LKAS assignment and explicit custom mappings are preserved. The
-  Driving Assist button keeps its factory cruise behavior.
+  Driving Assist button keeps its factory cruise behavior with stock ACC. With
+  OP longitudinal actually enabled, main ON requests AOL ON and main OFF requests
+  AOL OFF, using fault-free cruise readiness and the existing calibration gates.
+  Independent LKAS presses or a refused request cannot invert the next main action.
 - **Independent lateral control:** explicit button OFF remains OFF even if stock
   cruise engagement arrives afterward. A refused activation during calibration
-  cannot silently become active through a later cruise-state update.
+  cannot silently become active through a later cruise-state update. In OP-long
+  mode, LKAS OFF while cruise is armed also stays OFF through SET/RES engagement.
 - **Calibration:** EV9 lateral actuation requires healthy, current, completed
   calibration. Shared AOL session handling clears refused/lost-calibration requests
   and requires fresh rearming. Parts of this AOL lifecycle fix apply beyond the EV9.

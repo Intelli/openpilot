@@ -283,6 +283,7 @@ class StarPilotCard:
     ev9_main_aol_managed = (
       getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.KIA_EV9 and starpilot_toggles.main_cruise_aol_toggle
     )
+    ev9_main_aol_op_long = ev9_main_aol_managed and getattr(self.CP, "openpilotLongitudinalControl", False)
     if ev9_main_aol_managed and live_aol and not self.aol_calibration_ready:
       # A rejected request must not return through a delayed stock-SCC enable
       # after calibration finishes. A fresh accepted steering toggle clears this.
@@ -314,7 +315,8 @@ class StarPilotCard:
           if hyundai_aol_needs_engagement:
             self.hyundai_aol_ready = True
           self.always_on_lateral_allowed = not self.always_on_lateral_allowed
-          if carState.cruiseState.enabled or self.pause_lateral:
+          if carState.cruiseState.enabled or self.pause_lateral or ev9_main_aol_op_long:
+            # Preserve an explicit EV9 OP-long steering OFF through a later SET/RES.
             self.pause_lateral = not self.always_on_lateral_allowed
         elif be_type == ButtonType.mainCruise and be.pressed:
           if aol_ready and starpilot_toggles.main_cruise_aol_toggle:
@@ -327,10 +329,15 @@ class StarPilotCard:
               self.g70_main_cruise_aol_pending = True
               self.g70_main_cruise_aol_pending_frames = 0
             else:
-              self.always_on_lateral_allowed = not self.always_on_lateral_allowed
+              if ev9_main_aol_op_long:
+                # CarState already applied this press to software cruise readiness.
+                # Match it so independent LKAS presses cannot invert the main action.
+                self.always_on_lateral_allowed = carState.cruiseState.available
+              else:
+                self.always_on_lateral_allowed = not self.always_on_lateral_allowed
               if ev9_main_aol_managed:
-                # Stock SCC can report engagement after this press. Explicit OFF
-                # must also block normal lateral when that delayed state arrives.
+                # Explicit OFF must also block normal lateral on later engagement,
+                # whether from delayed stock SCC or OP-long SET/RES.
                 self.pause_lateral = not self.always_on_lateral_allowed
           elif starpilot_toggles.main_cruise_slc_adopt and starpilot_toggles.speed_limit_controller:
             self.params_memory.put_bool("SLCAdoptSpeedLimit", True)

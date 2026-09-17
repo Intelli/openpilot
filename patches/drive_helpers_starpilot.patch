@@ -893,7 +893,7 @@ index dd1d71e80bada04c785e53f18316b1c0b11af8b2..80a4820725d781e6a8f893660dae06f4
    toggle = SimpleNamespace()
  
 diff --git a/starpilot/controls/starpilot_card.py b/starpilot/controls/starpilot_card.py
-index d2247d89ce0ef549777875bb9efc02eb2efa8301..0ebab639c77d0a1b92b8d18722bd109f9d4a6ef3 100644
+index d2247d89ce0ef549777875bb9efc02eb2efa8301..4fccbf26d30ebcd3803b05850c2c5aa32d21b5f3 100644
 --- a/starpilot/controls/starpilot_card.py
 +++ b/starpilot/controls/starpilot_card.py
 @@ -5,6 +5,7 @@ from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR, HyundaiFlags
@@ -954,13 +954,14 @@ index d2247d89ce0ef549777875bb9efc02eb2efa8301..0ebab639c77d0a1b92b8d18722bd109f
      self.switchback_mode_enabled = self.params_memory.get_bool("SwitchbackModeEnabled")
      self._handle_favorite_traffic_mode_action(sm)
  
-@@ -255,6 +280,13 @@ class StarPilotCard:
+@@ -255,6 +280,14 @@ class StarPilotCard:
      if getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.HYUNDAI_SONATA_HYBRID:
        button_aol_supported = self.always_on_lateral_supported and bool(starpilot_toggles.lkas_allowed_for_aol)
      button_managed_aol = starpilot_toggles.always_on_lateral_lkas or (button_aol_supported and starpilot_toggles.main_cruise_aol_toggle)
 +    ev9_main_aol_managed = (
 +      getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.KIA_EV9 and starpilot_toggles.main_cruise_aol_toggle
 +    )
++    ev9_main_aol_op_long = ev9_main_aol_managed and getattr(self.CP, "openpilotLongitudinalControl", False)
 +    if ev9_main_aol_managed and live_aol and not self.aol_calibration_ready:
 +      # A rejected request must not return through a delayed stock-SCC enable
 +      # after calibration finishes. A fresh accepted steering toggle clears this.
@@ -968,7 +969,7 @@ index d2247d89ce0ef549777875bb9efc02eb2efa8301..0ebab639c77d0a1b92b8d18722bd109f
      g70_main_cruise_aol_managed = (
        getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.GENESIS_G70_2020
        and starpilot_toggles.main_cruise_aol_toggle
-@@ -277,14 +309,16 @@ class StarPilotCard:
+@@ -277,14 +310,17 @@ class StarPilotCard:
  
      if button_aol_supported:
        for be, be_type in zip(carState.buttonEvents, button_event_types, strict=False):
@@ -978,7 +979,9 @@ index d2247d89ce0ef549777875bb9efc02eb2efa8301..0ebab639c77d0a1b92b8d18722bd109f
            if hyundai_aol_needs_engagement:
              self.hyundai_aol_ready = True
            self.always_on_lateral_allowed = not self.always_on_lateral_allowed
-           if carState.cruiseState.enabled or self.pause_lateral:
+-          if carState.cruiseState.enabled or self.pause_lateral:
++          if carState.cruiseState.enabled or self.pause_lateral or ev9_main_aol_op_long:
++            # Preserve an explicit EV9 OP-long steering OFF through a later SET/RES.
              self.pause_lateral = not self.always_on_lateral_allowed
          elif be_type == ButtonType.mainCruise and be.pressed:
 -          if starpilot_toggles.main_cruise_aol_toggle:
@@ -987,13 +990,20 @@ index d2247d89ce0ef549777875bb9efc02eb2efa8301..0ebab639c77d0a1b92b8d18722bd109f
              if hyundai_aol_needs_engagement:
                self.hyundai_aol_ready = True
              if g70_main_cruise_aol_managed:
-@@ -294,10 +328,17 @@ class StarPilotCard:
+@@ -293,11 +329,23 @@ class StarPilotCard:
+               self.g70_main_cruise_aol_pending = True
                self.g70_main_cruise_aol_pending_frames = 0
              else:
-               self.always_on_lateral_allowed = not self.always_on_lateral_allowed
+-              self.always_on_lateral_allowed = not self.always_on_lateral_allowed
++              if ev9_main_aol_op_long:
++                # CarState already applied this press to software cruise readiness.
++                # Match it so independent LKAS presses cannot invert the main action.
++                self.always_on_lateral_allowed = carState.cruiseState.available
++              else:
++                self.always_on_lateral_allowed = not self.always_on_lateral_allowed
 +              if ev9_main_aol_managed:
-+                # Stock SCC can report engagement after this press. Explicit OFF
-+                # must also block normal lateral when that delayed state arrives.
++                # Explicit OFF must also block normal lateral on later engagement,
++                # whether from delayed stock SCC or OP-long SET/RES.
 +                self.pause_lateral = not self.always_on_lateral_allowed
            elif starpilot_toggles.main_cruise_slc_adopt and starpilot_toggles.speed_limit_controller:
              self.params_memory.put_bool("SLCAdoptSpeedLimit", True)
@@ -1005,7 +1015,7 @@ index d2247d89ce0ef549777875bb9efc02eb2efa8301..0ebab639c77d0a1b92b8d18722bd109f
      ford_lateral_session_started = self.CP.brand == "ford" and (
        (cruise_available_changed and carState.cruiseState.available) or
        (carState.cruiseState.enabled and not self.prev_cruise_enabled)
-@@ -316,7 +357,7 @@ class StarPilotCard:
+@@ -316,7 +364,7 @@ class StarPilotCard:
            self.g70_main_cruise_aol_pending = False
            self.g70_main_cruise_aol_pending_frames = 0
  
@@ -1014,7 +1024,7 @@ index d2247d89ce0ef549777875bb9efc02eb2efa8301..0ebab639c77d0a1b92b8d18722bd109f
        car_fingerprint = getattr(self.CP, "carFingerprint", None)
        pcm_cruise = getattr(self.CP, "pcmCruise", False)
        if pacifica_hybrid_aol_requires_set_press(car_fingerprint, pcm_cruise):
-@@ -331,7 +372,7 @@ class StarPilotCard:
+@@ -331,7 +379,7 @@ class StarPilotCard:
  
      # On rising edge of engagement (SET press enabling lat+long), auto-enable AOL
      # so that lateral persists when braking disengages longitudinal
@@ -1023,7 +1033,7 @@ index d2247d89ce0ef549777875bb9efc02eb2efa8301..0ebab639c77d0a1b92b8d18722bd109f
        if hyundai_aol_needs_engagement:
          self.hyundai_aol_ready = True
        self.always_on_lateral_allowed = True
-@@ -340,14 +381,14 @@ class StarPilotCard:
+@@ -340,14 +388,14 @@ class StarPilotCard:
      self.prev_cruise_enabled = carState.cruiseState.enabled
      self.prev_cruise_available = carState.cruiseState.available
  
@@ -1042,7 +1052,7 @@ index d2247d89ce0ef549777875bb9efc02eb2efa8301..0ebab639c77d0a1b92b8d18722bd109f
        sm["selfdriveState"].alertType, sm["starpilotSelfdriveState"].alertType,
      )
 diff --git a/starpilot/controls/tests/test_starpilot_card.py b/starpilot/controls/tests/test_starpilot_card.py
-index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252339dad52 100644
+index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..352907359183ab8e34fc2d27ac6de9c556d3fac8 100644
 --- a/starpilot/controls/tests/test_starpilot_card.py
 +++ b/starpilot/controls/tests/test_starpilot_card.py
 @@ -1,6 +1,7 @@
@@ -1075,7 +1085,7 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
    }, updated={"starpilotPlan": False})
  
  
-@@ -279,6 +286,219 @@ def make_wrapped_button_event(button_type, pressed):
+@@ -279,6 +286,356 @@ def make_wrapped_button_event(button_type, pressed):
    return SimpleNamespace(type=SimpleNamespace(raw=int(button_type)), pressed=pressed)
  
  
@@ -1292,10 +1302,147 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
 +  assert not result.pauseLateral
 +
 +
++@pytest.fixture
++def ev9_op_long_buttons(monkeypatch, tmp_path):
++  from opendbc.car.hyundai.carstate import CarState
++  from opendbc.car.interfaces import CarStateBase
++
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  cp = SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9,
++                       openpilotLongitudinalControl=True, pcmCruise=False)
++  card = spc.StarPilotCard(cp, SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
++  hyundai_state = SimpleNamespace(CP=cp, main_cruise_on=False)
++  cs, sm = make_car_state(), make_sm()
++  out = SimpleNamespace(distancePressed=False)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, main_cruise_aol_toggle=True)
++
++  def step(button_type=None, pressed=True, available=True):
++    cs.buttonEvents = [] if button_type is None else [SimpleNamespace(type=button_type, pressed=pressed)]
++    # Match card.py ordering: CarState applies the press before StarPilotCard.
++    cs.cruiseState.available = available
++    if cp.openpilotLongitudinalControl:
++      cs.cruiseState.available = CarState.update_main_cruise(hyundai_state, cs)
++    cs.buttonEnable = CarStateBase.update_button_enable(hyundai_state, cs.buttonEvents)
++    return card.update(cs, out, sm, toggles)
++
++  return cp, cs, sm, step
++
++
++@pytest.mark.parametrize("lkas_first", [False, True])
++def test_ev9_op_long_main_arms_aol_without_inverting_prior_lkas(ev9_op_long_buttons, lkas_first):
++  _, cs, sm, step = ev9_op_long_buttons
++  if lkas_first:
++    assert step(spc.ButtonType.lkas).alwaysOnLateralAllowed
++    assert not cs.cruiseState.available
++  result = step(spc.ButtonType.mainCruise)
++  assert cs.cruiseState.available
++  assert not cs.buttonEnable  # Main arms cruise; SET/RES still engages longitudinal.
++  assert result.alwaysOnLateralAllowed
++  assert result.alwaysOnLateralEnabled
++  assert not result.pauseLateral
++  step(spc.ButtonType.mainCruise, pressed=False)
++  step(spc.ButtonType.decelCruise)
++  step(spc.ButtonType.decelCruise, pressed=False)
++  assert cs.buttonEnable
++  sm["selfdriveState"].active = True
++  assert step().alwaysOnLateralEnabled
++
++  result = step(spc.ButtonType.mainCruise)
++  assert not cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++
++
++@pytest.mark.parametrize("enable_button", [spc.ButtonType.accelCruise, spc.ButtonType.decelCruise])
++def test_ev9_op_long_lkas_off_survives_set_resume_and_main_off(ev9_op_long_buttons, enable_button):
++  _, cs, sm, step = ev9_op_long_buttons
++  step(spc.ButtonType.mainCruise)
++  assert not cs.cruiseState.enabled  # Cruise is armed, but ACC_REQ is still false.
++  result = step(spc.ButtonType.lkas)
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  assert cs.cruiseState.available  # LKAS does not disarm cruise.
++  step(enable_button)
++  step(enable_button, pressed=False)
++  assert cs.buttonEnable
++  sm["selfdriveState"].active = True
++  result = step()
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++
++  result = step(spc.ButtonType.mainCruise)
++  assert not cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed  # Main OFF cannot turn steering back on.
++  assert result.pauseLateral
++  result = step(spc.ButtonType.lkas)
++  assert result.alwaysOnLateralAllowed
++  assert not result.pauseLateral
++  assert not cs.cruiseState.available
++
++
++@pytest.mark.parametrize("status", ["uncalibrated", "invalid"])
++def test_ev9_op_long_refused_main_requires_fresh_main_on(ev9_op_long_buttons, status):
++  _, cs, sm, step = ev9_op_long_buttons
++  sm["liveCalibration"].calStatus = getattr(log.LiveCalibrationData.Status, status)
++  result = step(spc.ButtonType.mainCruise)
++  assert cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
++  step(spc.ButtonType.decelCruise)
++  step(spc.ButtonType.decelCruise, pressed=False)
++  assert cs.buttonEnable
++  sm["selfdriveState"].active = True
++  result = step()
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++
++  result = step(spc.ButtonType.mainCruise)
++  assert not cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  step(spc.ButtonType.mainCruise, pressed=False)
++  result = step(spc.ButtonType.mainCruise)
++  assert cs.cruiseState.available
++  assert result.alwaysOnLateralAllowed
++  assert not result.pauseLateral
++
++
++def test_ev9_op_long_main_fault_refusal_does_not_enable_after_fault_clears(ev9_op_long_buttons):
++  _, cs, _, step = ev9_op_long_buttons
++  result = step(spc.ButtonType.mainCruise, available=False)
++  assert not cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  result = step()
++  assert cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++
++
++def test_ev9_main_uses_stock_toggle_after_runtime_long_fallback(ev9_op_long_buttons):
++  cp, cs, _, step = ev9_op_long_buttons
++  step(spc.ButtonType.mainCruise)
++  step(spc.ButtonType.mainCruise, pressed=False)
++  # ECU-disable fallback mutates the existing CP after StarPilotCard construction.
++  cp.openpilotLongitudinalControl = False
++  cp.pcmCruise = True
++  result = step(spc.ButtonType.mainCruise)
++  assert cs.cruiseState.available  # Received stock main remains available.
++  assert not cs.buttonEnable
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  step(spc.ButtonType.mainCruise, pressed=False)
++  result = step(spc.ButtonType.mainCruise)
++  assert result.alwaysOnLateralAllowed
++  assert not result.pauseLateral
++
++
  @pytest.mark.parametrize(
    ("car_fingerprint", "expect_normalized_release"),
    (
-@@ -329,7 +549,7 @@ def test_honda_lkas_button_can_toggle_always_on_lateral(monkeypatch, tmp_path):
+@@ -329,7 +686,7 @@ def test_honda_lkas_button_can_toggle_always_on_lateral(monkeypatch, tmp_path):
    car_state = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
    starpilot_car_state = SimpleNamespace(distancePressed=False)
    sm = make_sm()
@@ -1304,7 +1451,7 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
  
    ret = card.update(car_state, starpilot_car_state, sm, toggles)
  
-@@ -870,7 +1090,7 @@ def test_honda_lkas_button_pauses_lateral_when_cruise_is_active(monkeypatch, tmp
+@@ -870,7 +1227,7 @@ def test_honda_lkas_button_pauses_lateral_when_cruise_is_active(monkeypatch, tmp
    starpilot_car_state = SimpleNamespace(distancePressed=False)
    sm = make_sm()
    sm["selfdriveState"].active = True
@@ -1313,7 +1460,7 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
    card.prev_active = True
  
    ret = card.update(car_state, starpilot_car_state, sm, toggles)
-@@ -1089,7 +1309,7 @@ def test_honda_main_aol_follows_cruise_main_without_manual_aol_button_mapping(mo
+@@ -1089,7 +1446,7 @@ def test_honda_main_aol_follows_cruise_main_without_manual_aol_button_mapping(mo
      SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
    )
  
@@ -1322,7 +1469,7 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
    ret = card.update(make_car_state(available=True), SimpleNamespace(distancePressed=False), make_sm(), toggles)
  
    assert ret.alwaysOnLateralAllowed is True
-@@ -1106,7 +1326,7 @@ def test_hyundai_main_aol_persists_after_brake_disengage_without_manual_aol_butt
+@@ -1106,7 +1463,7 @@ def test_hyundai_main_aol_persists_after_brake_disengage_without_manual_aol_butt
    )
  
    sm = make_sm()
@@ -1331,7 +1478,7 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
    starpilot_car_state = SimpleNamespace(distancePressed=False)
  
    sm["selfdriveState"].active = True
-@@ -1136,7 +1356,7 @@ def test_aol_persists_through_longitudinal_speed_too_low_disable(monkeypatch, tm
+@@ -1136,7 +1493,7 @@ def test_aol_persists_through_longitudinal_speed_too_low_disable(monkeypatch, tm
  
    ret = card.update(
      make_car_state(available=True), SimpleNamespace(distancePressed=False), sm,
@@ -1340,7 +1487,7 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
    )
  
    assert ret.alwaysOnLateralAllowed is True
-@@ -1156,7 +1376,7 @@ def test_aol_still_stops_for_other_immediate_disables(monkeypatch, tmp_path):
+@@ -1156,7 +1513,7 @@ def test_aol_still_stops_for_other_immediate_disables(monkeypatch, tmp_path):
  
    ret = card.update(
      make_car_state(available=True), SimpleNamespace(distancePressed=False), sm,
@@ -1349,7 +1496,7 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
    )
  
    assert ret.alwaysOnLateralAllowed is True
-@@ -1172,7 +1392,7 @@ def test_non_button_aol_platform_keeps_main_aol_when_main_cruise_is_mapped(monke
+@@ -1172,7 +1529,7 @@ def test_non_button_aol_platform_keeps_main_aol_when_main_cruise_is_mapped(monke
      SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
    )
  
@@ -1358,7 +1505,7 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
    ret = card.update(make_car_state(available=True), SimpleNamespace(distancePressed=False), make_sm(), toggles)
  
    assert ret.alwaysOnLateralAllowed is True
-@@ -1187,7 +1407,7 @@ def test_main_aol_still_follows_cruise_main_for_other_platforms(monkeypatch, tmp
+@@ -1187,7 +1544,7 @@ def test_main_aol_still_follows_cruise_main_for_other_platforms(monkeypatch, tmp
                             SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
  
    ret = card.update(make_car_state(available=True), SimpleNamespace(distancePressed=False), make_sm(),
@@ -1367,7 +1514,7 @@ index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..2b0df8469d82e1b02346cd7133779252
  
    assert ret.alwaysOnLateralAllowed is True
    assert ret.alwaysOnLateralEnabled is True
-@@ -1203,7 +1423,7 @@ def test_pacifica_hybrid_main_aol_waits_for_set_press(monkeypatch, tmp_path):
+@@ -1203,7 +1560,7 @@ def test_pacifica_hybrid_main_aol_waits_for_set_press(monkeypatch, tmp_path):
    )
  
    sm = make_sm()
