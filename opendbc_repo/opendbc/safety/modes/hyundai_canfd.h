@@ -70,6 +70,7 @@ static bool hyundai_ccnc = false;
 static bool hyundai_canfd_ccnc_angle_long = false;
 static bool hyundai_canfd_lka_alt_drive_gear = false;
 static uint8_t hyundai_canfd_inactive_accel_tx_count = 0U;
+static bool hyundai_canfd_ev9_cancel_engage_pending = false;
 
 static unsigned int hyundai_canfd_get_lka_addr(void) {
   return hyundai_canfd_lka_steering_alt ? 0x110U : 0x50U;
@@ -113,6 +114,20 @@ static bool hyundai_canfd_lka_alt_stock_forwarding(void) {
 
 static void hyundai_canfd_rx_all_hook(const CANPacket_t *msg) {
   SAFETY_UNUSED(msg);
+  if (hyundai_canfd_ev9_cancel_engage_pending) {
+    // RX validation runs after this hook. Retire an interrupted intent before a
+    // subsequent good frame can recover validity and complete the old release.
+    for (int i = 0; i < current_safety_config.rx_checks_len; i++) {
+      const RxStatus *status = &current_safety_config.rx_checks[i].status;
+      if (status->msg_seen && (!status->valid_checksum || !status->valid_quality_flag ||
+                              (status->wrong_counters >= MAX_WRONG_COUNTERS))) {
+        hyundai_canfd_ev9_cancel_engage_pending = false;
+      }
+    }
+    if (safety_rx_checks_invalid || relay_malfunction) {
+      hyundai_canfd_ev9_cancel_engage_pending = false;
+    }
+  }
 }
 
 static bool hyundai_canfd_fwd_hook(int bus_num, int addr) {
@@ -164,7 +179,25 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
 
         hyundai_lkas_button_check(GET_BIT(msg, 39U));
       }
+      const int previous_cruise_button = cruise_button_prev;
       hyundai_common_cruise_buttons_check(cruise_button, main_button);
+      if (hyundai_canfd_ev9 && hyundai_longitudinal) {
+        // The EV9 pause knob acts as SET only when its complete press began inactive.
+        // Do not infer software engagement from stock SCC state in OP-long mode.
+        if (cruise_button == HYUNDAI_BTN_CANCEL) {
+          if (previous_cruise_button != HYUNDAI_BTN_CANCEL) {
+            hyundai_canfd_ev9_cancel_engage_pending = (previous_cruise_button == HYUNDAI_BTN_NONE) && !controls_allowed_prev;
+          }
+          controls_allowed = false;
+        } else {
+          if ((previous_cruise_button == HYUNDAI_BTN_CANCEL) && (cruise_button == HYUNDAI_BTN_NONE) &&
+              hyundai_canfd_ev9_cancel_engage_pending && acc_main_on && !brake_pressed && !gas_pressed &&
+              !regen_braking && !steering_disengage && !safety_rx_checks_invalid && !relay_malfunction) {
+            controls_allowed = true;
+          }
+          hyundai_canfd_ev9_cancel_engage_pending = false;
+        }
+      }
       if (!controls_allowed_prev && controls_allowed) {
         hyundai_canfd_inactive_accel_tx_count = 0U;
       }
@@ -212,6 +245,10 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
   }
 
   hyundai_common_reset_acc_main_on_mismatches();
+  // A hold interrupted by another disengagement condition requires a fresh press.
+  if (!acc_main_on || brake_pressed || gas_pressed || regen_braking || steering_disengage) {
+    hyundai_canfd_ev9_cancel_engage_pending = false;
+  }
 }
 
 static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
@@ -520,6 +557,7 @@ static safety_config hyundai_canfd_init(uint16_t param) {
                                   hyundai_canfd_lka_steering_alt && hyundai_canfd_angle_steering && hyundai_ccnc;
   hyundai_canfd_lka_alt_drive_gear = false;
   hyundai_canfd_inactive_accel_tx_count = 0U;
+  hyundai_canfd_ev9_cancel_engage_pending = false;
 
   safety_config ret;
   if (hyundai_longitudinal) {

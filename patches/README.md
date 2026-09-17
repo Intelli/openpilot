@@ -42,6 +42,12 @@ ready** while waiting for brake + Start, then green **OP long** for 30 seconds
 after vehicle READY. **Stock ACC** is also green. It includes display-only EV9
 READY telemetry and tests; it does not change takeover or emergency braking behavior.
 
+`drive_helpers_starpilot.patch` also normalizes the EV9 OP-long cruise knob:
+up/down/in engage when inactive; up resumes a saved speed when available, while
+down/in follow normal SET initialization. While engaged, up/down adjust speed
+and in cancels. Vehicle patch `04` includes the matching native permission checks,
+with regressions in `06`. Stock ACC and other vehicles keep their existing controls.
+
 Steering/AOL follow-ups are incorporated into the existing custom-defaults,
 alerts, warning and drive-helper patches and vehicle patches `03`–`06`. They cover
 valid calibration and rejected-request handling, AOL feedback and button state,

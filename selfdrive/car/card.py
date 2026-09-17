@@ -28,6 +28,7 @@ from openpilot.selfdrive.car.cruise import (
 )
 from openpilot.selfdrive.car.redneck_cruise import RedneckCruise, select_redneck_target_speed
 from openpilot.selfdrive.car.car_specific import MockCarState
+from openpilot.selfdrive.car.ev9_cruise_buttons import EV9CruiseButtons
 
 from openpilot.starpilot.common.favorite_slots import (
   FAVORITE_ACTION_ACCEL_COUNTER,
@@ -220,6 +221,7 @@ class Car:
 
     self.mock_carstate = MockCarState()
     self.v_cruise_helper = VCruiseHelper(self.CP, self.FPCP)
+    self.ev9_cruise_buttons = EV9CruiseButtons()
     self.redneck_cruise = RedneckCruise(self.CP, self.FPCP) if self.CP.brand in ("hyundai", "subaru") and \
       self.FPCP.redneckCruiseAvailable and not self.FPCP.pcmCruiseSpeed else None
 
@@ -293,12 +295,16 @@ class Car:
     CS, FPCS = self.CI.update(can_list, self.starpilot_toggles)
     if self.CP.brand == 'mock':
       CS, FPCS = self.mock_carstate.update(CS, FPCS)
-    self._inject_favorite_virtual_cruise_events(CS)
 
     # Update radar tracks from CAN
     RD: structs.RadarDataT | None = self.RI.update(can_list)
 
     self.sm.update(0)
+
+    # Use software engagement, not stock ACC_REQ or temporary actuator overrides.
+    enabled = self.sm['carControl'].enabled if self.sm.seen['carControl'] and self.sm.all_checks(['carControl']) else None
+    self.ev9_cruise_buttons.update(self.CP, CS, enabled=enabled, cruise_initialized=self.v_cruise_helper.v_cruise_initialized)
+    self._inject_favorite_virtual_cruise_events(CS)
 
     can_rcv_valid = len(can_strs) > 0
 

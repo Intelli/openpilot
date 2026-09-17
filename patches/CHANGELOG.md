@@ -5,10 +5,10 @@ StarPilot commit `c3e4ec630f41c4baa43254a90f718abd1bf764a1`, recorded in
 [starpilot-upstream.json](../starpilot-upstream.json). The reviewed EV9 source is
 `f1b6e566dc`, plus the two-hour shutdown default and C4/Galaxy settings support
 (including the Lane Change Smoothing default of 10), and the EV9 startup
-longitudinal-status notice.
+longitudinal-status notice and EV9 OP-long cruise-knob engagement.
 
 There are **17 enabled patches: 11 application patches and 6 vehicle patches**,
-covering 88 source files, including tests and artwork. Replaying them in order on
+covering 96 source files, including tests and artwork. Replaying them in order on
 the recorded baseline reproduces those files exactly. All application differences
 from that baseline are covered; repository maintenance changes are listed
 separately below. This compares with our imported baseline, not a newer upstream
@@ -83,6 +83,15 @@ Owners: [drive_helpers_starpilot.patch](drive_helpers_starpilot.patch),
   OP longitudinal actually enabled, main ON requests AOL ON and main OFF requests
   AOL OFF, using fault-free cruise readiness and the existing calibration gates.
   Independent LKAS presses or a refused request cannot invert the next main action.
+- **OP-long cruise knob:** on the EV9 with OP longitudinal active as the selected
+  control system, up, down or a knob press can request engagement on release.
+  Up resumes a saved speed, or sets the current speed on first engagement; down
+  and a knob press use the normal SET speed initialization. While engaged, up/down
+  retain their speed adjustments and a knob press cancels immediately. A held
+  cancel cannot re-engage on release. Stock ACC, other vehicles, main arming,
+  existing engagement checks and speed-limit preferences retain their behavior.
+  The native EV9 safety hook accepts a complete inactive-origin knob press only;
+  pedal, main-off or safety interruptions require a fresh press.
 - **Independent lateral control:** explicit button OFF remains OFF even if stock
   cruise engagement arrives afterward. A refused activation during calibration
   cannot silently become active through a later cruise-state update. In OP-long
