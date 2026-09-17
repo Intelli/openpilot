@@ -62,7 +62,7 @@ class LongitudinalStatusWidget(LayoutWidget):
     if self._label is None:
       return
     color = rl.Color(205, 210, 208, 255)
-    if self._label in ('OP long', 'Stock ACC'):
+    if self._label == 'Stock ACC':
       color = rl.Color(128, 216, 166, 255)
     elif self._label == 'Long status unavailable':
       color = rl.Color(255, 190, 90, 255)
@@ -75,5 +75,14 @@ class LongitudinalStatusWidget(LayoutWidget):
     if size.x > rect.width - 16:
       font_size *= (rect.width - 16) / size.x
       size = measure_text_cached(self._font, self._label, font_size)
-    rl.draw_text_ex(self._font, self._label, rl.Vector2(rect.x + (rect.width - size.x) / 2, rect.y + (rect.height - size.y) / 2),
-                   font_size, 0, color)
+    x = rect.x + (rect.width - size.x) / 2
+    y = rect.y + (rect.height - size.y) / 2
+    if self._label == 'OP long':
+      # Tint the glyphs from bright lilac to violet without changing render state.
+      for i, char in enumerate(self._label):
+        progress = i / (len(self._label) - 1)
+        color = rl.Color(round(232 - 58 * progress), round(145 - 41 * progress), 255, 255)
+        rl.draw_text_ex(self._font, char, rl.Vector2(x, y), font_size, 0, color)
+        x += measure_text_cached(self._font, char, font_size).x
+    else:
+      rl.draw_text_ex(self._font, self._label, rl.Vector2(x, y), font_size, 0, color)

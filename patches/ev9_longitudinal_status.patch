@@ -307,10 +307,10 @@ index 5fd40bb8ac3d23e15ba8d429936f84c74b25c1e4..0f8011604929a0785c53f3cbb0bef512
  
 diff --git a/selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py b/selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..cc502886b25884d7773143eae5f8a64bd085a6dc
+index 0000000000000000000000000000000000000000..c6567a9bd5b2725245d4c8d9c36da9287d0ea77a
 --- /dev/null
 +++ b/selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,88 @@
 +"""EV9 startup prompt and mode confirmation based on live vehicle telemetry."""
 +import time
 +
@@ -375,7 +375,7 @@ index 0000000000000000000000000000000000000000..cc502886b25884d7773143eae5f8a64b
 +    if self._label is None:
 +      return
 +    color = rl.Color(205, 210, 208, 255)
-+    if self._label in ('OP long', 'Stock ACC'):
++    if self._label == 'Stock ACC':
 +      color = rl.Color(128, 216, 166, 255)
 +    elif self._label == 'Long status unavailable':
 +      color = rl.Color(255, 190, 90, 255)
@@ -388,8 +388,17 @@ index 0000000000000000000000000000000000000000..cc502886b25884d7773143eae5f8a64b
 +    if size.x > rect.width - 16:
 +      font_size *= (rect.width - 16) / size.x
 +      size = measure_text_cached(self._font, self._label, font_size)
-+    rl.draw_text_ex(self._font, self._label, rl.Vector2(rect.x + (rect.width - size.x) / 2, rect.y + (rect.height - size.y) / 2),
-+                   font_size, 0, color)
++    x = rect.x + (rect.width - size.x) / 2
++    y = rect.y + (rect.height - size.y) / 2
++    if self._label == 'OP long':
++      # Tint the glyphs from bright lilac to violet without changing render state.
++      for i, char in enumerate(self._label):
++        progress = i / (len(self._label) - 1)
++        color = rl.Color(round(232 - 58 * progress), round(145 - 41 * progress), 255, 255)
++        rl.draw_text_ex(self._font, char, rl.Vector2(x, y), font_size, 0, color)
++        x += measure_text_cached(self._font, char, font_size).x
++    else:
++      rl.draw_text_ex(self._font, self._label, rl.Vector2(x, y), font_size, 0, color)
 diff --git a/selfdrive/ui/tests/test_longitudinal_status.py b/selfdrive/ui/tests/test_longitudinal_status.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..158b7216b00da8d7f1fcec375796e5899a62e36d
@@ -508,10 +517,10 @@ index 0000000000000000000000000000000000000000..158b7216b00da8d7f1fcec375796e589
 +  assert notice.update(sample(now=150, session_start=119, identity_time=149, vehicle_ready=True)) is None
 diff --git a/selfdrive/ui/tests/test_longitudinal_status_widget.py b/selfdrive/ui/tests/test_longitudinal_status_widget.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..3598fc81e485e3ee5753a9d719425cc514fea2dc
+index 0000000000000000000000000000000000000000..a5bc8468ca72f67228d2901c0bf848052277f3f1
 --- /dev/null
 +++ b/selfdrive/ui/tests/test_longitudinal_status_widget.py
-@@ -0,0 +1,145 @@
+@@ -0,0 +1,153 @@
 +import importlib.util
 +import sys
 +from pathlib import Path
@@ -652,9 +661,17 @@ index 0000000000000000000000000000000000000000..3598fc81e485e3ee5753a9d719425cc5
 +    monkeypatch.setattr(module.time, 'monotonic', lambda now=now: now)
 +    widget._render(rect)
 +  assert len(backgrounds) == 3
-+  assert len(drawn) == (2 if label == 'OP long ready' else 3)
++  draws_per_frame = len(label) if label == 'OP long' else 1
++  assert len(drawn) == draws_per_frame * (2 if label == 'OP long ready' else 3)
 +  assert all(22 < call[3] <= 28 for call in drawn)
-+  expected_color = ((128, 216, 166, 255) if label in ('OP long', 'Stock ACC') else
++  if label == 'OP long':
++    for frame in range(3):
++      glyphs = drawn[frame * draws_per_frame:(frame + 1) * draws_per_frame]
++      assert ''.join(call[1] for call in glyphs) == label
++      assert glyphs[0][5] == (232, 145, 255, 255)
++      assert glyphs[-1][5] == (174, 104, 255, 255)
++    return
++  expected_color = ((128, 216, 166, 255) if label == 'Stock ACC' else
 +                    (255, 190, 90, 255) if label == 'Long status unavailable' else (205, 210, 208, 255))
 +  assert all(call[5] == expected_color for call in drawn)
 diff --git a/selfdrive/ui/tests/test_onroad_render_layers.py b/selfdrive/ui/tests/test_onroad_render_layers.py
