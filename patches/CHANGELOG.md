@@ -274,8 +274,8 @@ Owner: [ev9_longitudinal_status.patch](ev9_longitudinal_status.patch).
   initialization confirms OP longitudinal mode while the vehicle is still in
   IGN-ON, prompting the driver to complete brake + Start. The prompt stays visible
   while fresh evidence confirms this state.
-- Shows steady green **OP long** once vehicle READY is detected, for 30 seconds.
-  **Stock ACC** is also green; its initial 30-second notice restarts once when
+- Shows steady **OP long** in a bright lilac-to-violet text gradient once vehicle READY is detected, for 30 seconds.
+  **Stock ACC** stays solid green; its initial 30-second notice restarts once when
   READY is first confirmed. Text increases from 22 to 28 px, fitting to the badge
   width for longer messages. Cruise engagement does not change the notice.
 - Uses fresh, current-session Panda configuration, initialization events and

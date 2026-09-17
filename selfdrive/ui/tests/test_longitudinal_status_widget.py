@@ -138,8 +138,16 @@ def test_larger_text_and_flashing_only_for_startup_prompt(monkeypatch, label):
     monkeypatch.setattr(module.time, 'monotonic', lambda now=now: now)
     widget._render(rect)
   assert len(backgrounds) == 3
-  assert len(drawn) == (2 if label == 'OP long ready' else 3)
+  draws_per_frame = len(label) if label == 'OP long' else 1
+  assert len(drawn) == draws_per_frame * (2 if label == 'OP long ready' else 3)
   assert all(22 < call[3] <= 28 for call in drawn)
-  expected_color = ((128, 216, 166, 255) if label in ('OP long', 'Stock ACC') else
+  if label == 'OP long':
+    for frame in range(3):
+      glyphs = drawn[frame * draws_per_frame:(frame + 1) * draws_per_frame]
+      assert ''.join(call[1] for call in glyphs) == label
+      assert glyphs[0][5] == (232, 145, 255, 255)
+      assert glyphs[-1][5] == (174, 104, 255, 255)
+    return
+  expected_color = ((128, 216, 166, 255) if label == 'Stock ACC' else
                     (255, 190, 90, 255) if label == 'Long status unavailable' else (205, 210, 208, 255))
   assert all(call[5] == expected_color for call in drawn)

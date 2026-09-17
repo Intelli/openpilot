@@ -38,8 +38,8 @@ C4 and Galaxy, plus EV9 Path in Galaxy. The device path controls/renderers remai
 in `custom_model_ui_starpilot.patch`.
 
 `ev9_longitudinal_status.patch` adds a C3/C3X startup notice: flashing **OP long
-ready** while waiting for brake + Start, then green **OP long** for 30 seconds
-after vehicle READY. **Stock ACC** is also green. It includes display-only EV9
+ready** while waiting for brake + Start, then bright purple-gradient **OP long** for 30 seconds
+after vehicle READY. **Stock ACC** stays solid green. It includes display-only EV9
 READY telemetry and tests; it does not change takeover or emergency braking behavior.
 
 `drive_helpers_starpilot.patch` also normalizes the EV9 OP-long cruise knob:
