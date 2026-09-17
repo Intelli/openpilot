@@ -261,16 +261,26 @@ Owners: [ev9_edition_starpilot.patch](ev9_edition_starpilot.patch),
 
 Owner: [ev9_longitudinal_status.patch](ev9_longitudinal_status.patch).
 
-- Shows **OP long ready**, **OP long active**, or **Stock ACC** beneath the steering
-  wheel on C3/C3X for 30 seconds after startup confirms the control mode.
+- Flashes **OP long ready** at 2 Hz beneath the steering wheel on C3/C3X when
+  initialization confirms OP longitudinal mode while the vehicle is still in
+  IGN-ON, prompting the driver to complete brake + Start. The prompt stays visible
+  while fresh evidence confirms this state.
+- Shows steady green **OP long** once vehicle READY is detected, for 30 seconds.
+  **Stock ACC** is also green; its initial 30-second notice restarts once when
+  READY is first confirmed. Text increases from 22 to 28 px, fitting to the badge
+  width for longer messages. Cruise engagement does not change the notice.
 - Uses fresh, current-session Panda configuration, initialization events and
-  control telemetry. Saved Alpha settings and cached car parameters do not
-  establish the displayed control mode.
+  control telemetry, plus EV9's existing power READY bit decoded continuously
+  from checksum/counter-accepted CAN. The UI checks both the publication time and
+  original READY sample time. Saved Alpha settings and cached car parameters do
+  not establish the displayed control mode.
 - Displays **Long status unavailable** if evidence goes stale during the notice.
-  Engagement, disengagement and data recovery do not restart the timer; the next
-  ignition session does. Existing alert/road-view visibility takes precedence.
-- Reports configuration and activity, not independently verified ECU or AEB
-  health. No vehicle-control, diagnostic, parameter, firmware or safety changes.
+  Data recovery and repeated READY transitions do not extend the final 30-second
+  window; a new ignition session resets it. Existing alert/road-view visibility
+  takes precedence.
+- Reports configuration and vehicle power state, not independently verified ECU
+  or AEB health. Adds display telemetry/schema fields only; no vehicle-control,
+  diagnostic, parameter, firmware or safety changes.
 
 ### Standard C3/C3X settings
 

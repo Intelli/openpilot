@@ -1,4 +1,4 @@
-"""Brief EV9 startup notice based on live control and Panda telemetry."""
+"""EV9 startup prompt and mode confirmation based on live vehicle telemetry."""
 import time
 
 import pyray as rl
@@ -33,6 +33,7 @@ class LongitudinalStatusWidget(LayoutWidget):
       return sm.logMonoTime[service] / 1e9 if sm.seen[service] else 0.0
 
     pandas = sm['pandaStates'] if sm.seen['pandaStates'] else ()
+    vehicle = sm['starpilotCarState']
     self._label = self._status.update(LongitudinalSample(
       now=time.monotonic(), session_start=ui_state.started_time, started=ui_state.started,
       identity_ev9=bool(sm.seen['carParams'] and sm.valid['carParams'] and sm['carParams'].carFingerprint == 'KIA_EV9'),
@@ -40,7 +41,9 @@ class LongitudinalStatusWidget(LayoutWidget):
       safety_models=tuple(str(p.safetyModel) for p in pandas), safety_params=tuple(p.safetyParam for p in pandas),
       panda_fault=any(bool(p.faults) for p in pandas), events_time=timestamp('onroadEvents'), events_valid=valid('onroadEvents'),
       initializing=any(str(e.name) == 'selfdriveInitializing' for e in sm['onroadEvents']),
-      control_time=timestamp('carControl'), control_valid=valid('carControl'), long_active=sm['carControl'].longActive,
+      control_time=timestamp('carControl'), control_valid=valid('carControl'),
+      vehicle_time=timestamp('starpilotCarState'), vehicle_valid=valid('starpilotCarState'),
+      ready_time=vehicle.vehicleReadyTimestamp / 1e9, vehicle_ready=vehicle.vehicleReady,
     ))
 
   @property
@@ -52,18 +55,22 @@ class LongitudinalStatusWidget(LayoutWidget):
     return False
 
   def get_size(self):
-    return 250.0, 52.0
+    # The right-column anchor sits 146 px from the edge.
+    return 280.0, 60.0
 
   def _render(self, rect):
     if self._label is None:
       return
     color = rl.Color(205, 210, 208, 255)
-    if self._label == 'OP long active':
+    if self._label in ('OP long', 'Stock ACC'):
       color = rl.Color(128, 216, 166, 255)
     elif self._label == 'Long status unavailable':
       color = rl.Color(255, 190, 90, 255)
     rl.draw_rectangle_rounded(rect, 0.25, 8, rl.Color(0, 0, 0, 190))
-    font_size = 22
+    # Flash the text at 2 Hz; preserve the badge's layout and background.
+    if self._label == 'OP long ready' and int(time.monotonic() * 4) % 2:
+      return
+    font_size = 28
     size = measure_text_cached(self._font, self._label, font_size)
     if size.x > rect.width - 16:
       font_size *= (rect.width - 16) / size.x

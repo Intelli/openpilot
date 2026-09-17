@@ -37,9 +37,10 @@ See the migration guide for current EV9 behavior and patch ownership.
 C4 and Galaxy, plus EV9 Path in Galaxy. The device path controls/renderers remain
 in `custom_model_ui_starpilot.patch`.
 
-`ev9_longitudinal_status.patch` adds a C3/C3X notice for 30 seconds after live
-startup telemetry identifies OP longitudinal control or stock ACC. It changes
-only the UI and tests; it does not change takeover or emergency braking behavior.
+`ev9_longitudinal_status.patch` adds a C3/C3X startup notice: flashing **OP long
+ready** while waiting for brake + Start, then green **OP long** for 30 seconds
+after vehicle READY. **Stock ACC** is also green. It includes display-only EV9
+READY telemetry and tests; it does not change takeover or emergency braking behavior.
 
 Steering/AOL follow-ups are incorporated into the existing custom-defaults,
 alerts, warning and drive-helper patches and vehicle patches `03`–`06`. They cover

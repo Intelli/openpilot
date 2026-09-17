@@ -1,10 +1,180 @@
+diff --git a/cereal/custom.capnp b/cereal/custom.capnp
+index 908dee7d56f69a45b26505dc8a6183d95b505fde..59f561944d95438c5250e66e717a35f80da7a473 100644
+--- a/cereal/custom.capnp
++++ b/cereal/custom.capnp
+@@ -110,6 +110,8 @@ struct StarPilotCarState @0xf35cc4560bbf6ec2 {
+   accelHardCruise @28 :Bool;  # current/releasing accel cruise button came from GM hard-press signal
+   decelHardCruise @29 :Bool;  # current/releasing decel cruise button came from GM hard-press signal
+   pulseAndGlide @30 :Bool;  # developer-only wheel-button pulse-and-glide mode is enabled
++  vehicleReady @31 :Bool;  # EV9 power READY; meaningful only with a fresh vehicleReadyTimestamp
++  vehicleReadyTimestamp @32 :UInt64;  # accepted source CAN monotonic ns; zero means unknown
+ }
+ 
+ struct StarPilotDeviceState @0xda96579883444c35 {
+diff --git a/opendbc_repo/opendbc/car/hyundai/carstate.py b/opendbc_repo/opendbc/car/hyundai/carstate.py
+index 1ea110c425df9ee04d7e7b37377463d4f2a68bd2..8b38bb9c5a69a4f954fa9b7404ecb602dd981ff4 100644
+--- a/opendbc_repo/opendbc/car/hyundai/carstate.py
++++ b/opendbc_repo/opendbc/car/hyundai/carstate.py
+@@ -646,6 +646,16 @@ class CarState(CarStateBase):
+     fp_ret = custom.StarPilotCarState.new_message()
+     fp_ret.dashboardSpeedLimit = calculate_canfd_speed_limit(self.CP, self.FPCP, cp, cp_cam, speed_factor)
+ 
++    # Same power-state bit as egmp_in_ready_state(), continuously decoded for display only.
++    # ts_nanos advances only for checksum/counter-accepted samples. Retain that source
++    # timestamp across empty updates; the UI also checks its age before using the value.
++    # card publishes overall CAN validity separately; do not read cp.can_valid here
++    # because that property advances the parser's control-validity debounce.
++    if (self.CP.carFingerprint == CAR.KIA_EV9 and
++        cp.ts_nanos["ACCELERATOR"]["EV9_READY"] > 0 and len(cp.vl_raw["ACCELERATOR"]) == 32):
++      fp_ret.vehicleReady = bool(cp.vl["ACCELERATOR"]["EV9_READY"])
++      fp_ret.vehicleReadyTimestamp = cp.ts_nanos["ACCELERATOR"]["EV9_READY"]
++
+     if self.CP.flags & HyundaiFlags.EV:
+       drive_mode = cp.vl["DRIVE_MODE_EV"]["DRIVE_MODE"]
+       fp_ret.ecoGear = (drive_mode == 4)
+diff --git a/opendbc_repo/opendbc/car/hyundai/tests/test_ev9_ready.py b/opendbc_repo/opendbc/car/hyundai/tests/test_ev9_ready.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..a1d43ee95979603f8779f36fdb0c16035b8f85b3
+--- /dev/null
++++ b/opendbc_repo/opendbc/car/hyundai/tests/test_ev9_ready.py
+@@ -0,0 +1,106 @@
++"""Vehicle READY telemetry uses accepted CAN samples, not publication timestamps."""
++
++import pytest
++
++from opendbc.can import CANPacker
++from opendbc.car import Bus, gen_empty_fingerprint
++from opendbc.car.hyundai.carstate import CarState
++from opendbc.car.hyundai.interface import CarInterface
++from opendbc.car.hyundai.values import CAR, DBC
++
++
++def setup_state(candidate=CAR.KIA_EV9):
++  fingerprint = gen_empty_fingerprint()
++  cp = CarInterface.get_params(candidate, fingerprint, [], False, False, False, None)
++  fpcp = CarInterface.get_starpilot_params(candidate, fingerprint, [], cp, None)
++  state = CarState(cp, fpcp)
++  parsers = state.get_can_parsers(cp)
++  packer = CANPacker(DBC[candidate][Bus.pt])
++  # Register lazily accessed messages before supplying a complete valid parser batch.
++  state.update_canfd(parsers)
++  for parser in parsers.values():
++    messages = [packer.make_can_msg(msg.name, parser.bus, {}) for msg in parser.message_states.values()]
++    parser.update([(1_000_000_000, messages)])
++  return state, parsers, packer
++
++
++def test_ready_transition_and_timestamp_retention():
++  state, parsers, packer = setup_state()
++  pt = parsers[Bus.pt]
++  _, status = state.update_canfd(parsers)
++  assert not status.vehicleReady
++  assert status.vehicleReadyTimestamp == 1_000_000_000
++
++  msg = packer.make_can_msg("ACCELERATOR", pt.bus, {"EV9_READY": 1})
++  assert msg[1][3] & 0x40  # Match the existing initialization guard's raw bit.
++  pt.update([(1_010_000_000, [msg])])
++  validity_count = pt.can_invalid_cnt
++  _, status = state.update_canfd(parsers)
++  assert pt.can_invalid_cnt == validity_count
++  assert status.vehicleReady
++  assert status.vehicleReadyTimestamp == 1_010_000_000
++
++  pt.update([(1_020_000_000, [])])
++  _, status = state.update_canfd(parsers)
++  assert status.vehicleReady
++  assert status.vehicleReadyTimestamp == 1_010_000_000
++
++  pt.update([(1_030_000_000, [packer.make_can_msg("ACCELERATOR", pt.bus, {"EV9_READY": 0})])])
++  _, status = state.update_canfd(parsers)
++  assert not status.vehicleReady
++  assert status.vehicleReadyTimestamp == 1_030_000_000
++
++
++def test_bad_checksum_does_not_refresh_ready():
++  state, parsers, packer = setup_state()
++  pt = parsers[Bus.pt]
++  address, data, bus = packer.make_can_msg("ACCELERATOR", pt.bus, {"EV9_READY": 1})
++  corrupted = bytearray(data)
++  corrupted[0] ^= 1
++  pt.update([(1_010_000_000, [(address, bytes(corrupted), bus)])])
++  _, status = state.update_canfd(parsers)
++  assert not status.vehicleReady
++  assert status.vehicleReadyTimestamp == 1_000_000_000
++
++
++def test_bad_counter_invalidates_transport_without_refreshing_ready():
++  state, parsers, packer = setup_state()
++  pt = parsers[Bus.pt]
++  msg = packer.make_can_msg("ACCELERATOR", pt.bus, {"EV9_READY": 1})
++  for index in range(7):
++    pt.update([(1_010_000_000 + index * 1_000_000, [msg])])
++  rejected_timestamp = pt.ts_nanos["ACCELERATOR"]["EV9_READY"]
++  pt.update([(1_020_000_000, [msg])])
++  assert pt.ts_nanos["ACCELERATOR"]["EV9_READY"] == rejected_timestamp
++  _, status = state.update_canfd(parsers)
++  assert status.vehicleReadyTimestamp == rejected_timestamp
++  # CarInterface/card propagate this as the publication's validity; the UI rejects it.
++  assert not pt.can_valid
++
++
++def test_missing_frames_never_refresh_source_timestamp():
++  state, parsers, _ = setup_state()
++  parsers[Bus.pt].update([(2_000_000_000, [])])
++  _, status = state.update_canfd(parsers)
++  # Optional parser messages can remain valid without new frames. The UI must check
++  # the source timestamp independently of transport/parser validity.
++  assert status.vehicleReadyTimestamp == 1_000_000_000
++
++
++@pytest.mark.parametrize("candidate", [CAR.KIA_EV9, CAR.KIA_EV6])
++def test_unknown_before_first_sample_and_ev9_only(candidate):
++  fingerprint = gen_empty_fingerprint()
++  cp = CarInterface.get_params(candidate, fingerprint, [], False, False, False, None)
++  fpcp = CarInterface.get_starpilot_params(candidate, fingerprint, [], cp, None)
++  state = CarState(cp, fpcp)
++  _, status = state.update_canfd(state.get_can_parsers(cp))
++  assert not status.vehicleReady
++  assert status.vehicleReadyTimestamp == 0
++
++  if candidate != CAR.KIA_EV9:
++    state, parsers, packer = setup_state(candidate)
++    pt = parsers[Bus.pt]
++    pt.update([(1_010_000_000, [packer.make_can_msg("ACCELERATOR", pt.bus, {"EV9_READY": 1})])])
++    _, status = state.update_canfd(parsers)
++    assert not status.vehicleReady
++    assert status.vehicleReadyTimestamp == 0
+diff --git a/opendbc_repo/opendbc/dbc/generator/hyundai/hyundai_canfd.dbc b/opendbc_repo/opendbc/dbc/generator/hyundai/hyundai_canfd.dbc
+index 2105461110a007a0a68180eecb9e224d571c421a..d71d114c7cec601aeee51047759a8636e9c0ca78 100644
+--- a/opendbc_repo/opendbc/dbc/generator/hyundai/hyundai_canfd.dbc
++++ b/opendbc_repo/opendbc/dbc/generator/hyundai/hyundai_canfd.dbc
+@@ -3,6 +3,7 @@ CM_ "IMPORT _hyundai_canfd_common.dbc";
+ BO_ 53 ACCELERATOR: 32 XXX
+  SG_ CHECKSUM : 0|16@1+ (1,0) [0|65535] "" XXX
+  SG_ COUNTER : 16|8@1+ (1,0) [0|255] "" XXX
++ SG_ EV9_READY : 30|1@1+ (1,0) [0|1] "" XXX
+  SG_ ACCELERATOR_PEDAL : 40|8@1+ (1,0) [0|255] "" XXX
+  SG_ GEAR : 192|3@1+ (1,0) [0|7] "" XXX
+ 
+diff --git a/opendbc_repo/opendbc/dbc/hyundai_canfd_generated.dbc b/opendbc_repo/opendbc/dbc/hyundai_canfd_generated.dbc
+index f4c6f3c89e56633265e4794945de1fc573ef85f4..d9625014667157e875dc31877bdbae6ff1223a9f 100644
+--- a/opendbc_repo/opendbc/dbc/hyundai_canfd_generated.dbc
++++ b/opendbc_repo/opendbc/dbc/hyundai_canfd_generated.dbc
+@@ -240,6 +240,7 @@ CM_ "hyundai_canfd.dbc starts here";
+ BO_ 53 ACCELERATOR: 32 XXX
+  SG_ CHECKSUM : 0|16@1+ (1,0) [0|65535] "" XXX
+  SG_ COUNTER : 16|8@1+ (1,0) [0|255] "" XXX
++ SG_ EV9_READY : 30|1@1+ (1,0) [0|1] "" XXX
+  SG_ ACCELERATOR_PEDAL : 40|8@1+ (1,0) [0|255] "" XXX
+  SG_ GEAR : 192|3@1+ (1,0) [0|7] "" XXX
+ 
 diff --git a/selfdrive/ui/onroad/starpilot/longitudinal_status.py b/selfdrive/ui/onroad/starpilot/longitudinal_status.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..8bb9aae8018a104aa2f9f9080467c0cac0a15f65
+index 0000000000000000000000000000000000000000..234f49a6b2fa5fd20906092598d3295ea7618d59
 --- /dev/null
 +++ b/selfdrive/ui/onroad/starpilot/longitudinal_status.py
-@@ -0,0 +1,75 @@
-+"""Short EV9 startup notice based on live control telemetry, not saved preferences."""
+@@ -0,0 +1,96 @@
++"""EV9 startup mode and vehicle READY notice, independent of cruise engagement."""
 +from dataclasses import dataclass
 +
 +
@@ -31,15 +201,25 @@ index 0000000000000000000000000000000000000000..8bb9aae8018a104aa2f9f9080467c0ca
 +  initializing: bool
 +  control_time: float
 +  control_valid: bool
-+  long_active: bool
++  vehicle_time: float
++  vehicle_valid: bool
++  ready_time: float
++  vehicle_ready: bool
 +
 +
 +def _fresh(timestamp: float, sample: LongitudinalSample, maximum_age: float) -> bool:
 +  return timestamp > 0 and timestamp >= sample.session_start and 0 <= sample.now - timestamp <= maximum_age
 +
 +
++def _ready_state(sample: LongitudinalSample) -> bool | None:
++  # A fresh publication can contain an old CAN value. Check both timestamps.
++  if not sample.vehicle_valid or not _fresh(sample.vehicle_time, sample, 0.5) or not _fresh(sample.ready_time, sample, 0.5):
++    return None
++  return sample.vehicle_ready
++
++
 +def longitudinal_status(sample: LongitudinalSample) -> str | None:
-+  """Identify the configured controller/activity; this does not certify ECU or AEB health."""
++  """Identify the configured controller and power state; not an ECU-health certification."""
 +  # carParams publishes every 50 seconds and may arrive just before the UI starts.
 +  # Use it only for identity. Current-session Panda configuration determines mode,
 +  # including fallback, which can differ from the initial/cached carParams.
@@ -55,27 +235,38 @@ index 0000000000000000000000000000000000000000..8bb9aae8018a104aa2f9f9080467c0ca
 +      not sample.control_valid or not _fresh(sample.control_time, sample, 0.5)):
 +    return None
 +  if not safety_param & LONGITUDINAL_FLAG:
-+    return None if sample.long_active else "Stock ACC"
-+  return "OP long active" if sample.long_active else "OP long ready"
++    return "Stock ACC"
++  ready = _ready_state(sample)
++  if ready is None:
++    return None
++  return "OP long" if ready else "OP long ready"
 +
 +
 +class LongitudinalStatus:
 +  def __init__(self):
 +    self._session_start: float | None = None
 +    self._show_until: float | None = None
++    self._ready_seen = False
 +
 +  def update(self, sample: LongitudinalSample) -> str | None:
 +    if not sample.started:
 +      self._session_start = self._show_until = None
++      self._ready_seen = False
 +      return None
 +    if sample.session_start != self._session_start:
 +      self._session_start = sample.session_start
 +      self._show_until = None
++      self._ready_seen = False
 +
-+    # Do not restart the timer on missing telemetry, engagement, or disengagement.
 +    status = longitudinal_status(sample)
 +    if self._show_until is None and status is not None:
 +      self._show_until = sample.now + NOTICE_SECONDS
++    # Keep the pre-READY prompt available while the driver completes startup.
++    # Give the final mode its own 30 seconds, once per ignition session.
++    if status is not None and not self._ready_seen:
++      if status == "OP long ready" or _ready_state(sample) is True:
++        self._show_until = sample.now + NOTICE_SECONDS
++      self._ready_seen = _ready_state(sample) is True
 +    if not sample.identity_ev9 or self._show_until is None or sample.now >= self._show_until:
 +      return None
 +    return status or "Long status unavailable"
@@ -116,11 +307,11 @@ index 5fd40bb8ac3d23e15ba8d429936f84c74b25c1e4..0f8011604929a0785c53f3cbb0bef512
  
 diff --git a/selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py b/selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..3830a8c4b194b864801ecc6287a3e6f9658e5686
+index 0000000000000000000000000000000000000000..cc502886b25884d7773143eae5f8a64bd085a6dc
 --- /dev/null
 +++ b/selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py
-@@ -0,0 +1,72 @@
-+"""Brief EV9 startup notice based on live control and Panda telemetry."""
+@@ -0,0 +1,79 @@
++"""EV9 startup prompt and mode confirmation based on live vehicle telemetry."""
 +import time
 +
 +import pyray as rl
@@ -155,6 +346,7 @@ index 0000000000000000000000000000000000000000..3830a8c4b194b864801ecc6287a3e6f9
 +      return sm.logMonoTime[service] / 1e9 if sm.seen[service] else 0.0
 +
 +    pandas = sm['pandaStates'] if sm.seen['pandaStates'] else ()
++    vehicle = sm['starpilotCarState']
 +    self._label = self._status.update(LongitudinalSample(
 +      now=time.monotonic(), session_start=ui_state.started_time, started=ui_state.started,
 +      identity_ev9=bool(sm.seen['carParams'] and sm.valid['carParams'] and sm['carParams'].carFingerprint == 'KIA_EV9'),
@@ -162,7 +354,9 @@ index 0000000000000000000000000000000000000000..3830a8c4b194b864801ecc6287a3e6f9
 +      safety_models=tuple(str(p.safetyModel) for p in pandas), safety_params=tuple(p.safetyParam for p in pandas),
 +      panda_fault=any(bool(p.faults) for p in pandas), events_time=timestamp('onroadEvents'), events_valid=valid('onroadEvents'),
 +      initializing=any(str(e.name) == 'selfdriveInitializing' for e in sm['onroadEvents']),
-+      control_time=timestamp('carControl'), control_valid=valid('carControl'), long_active=sm['carControl'].longActive,
++      control_time=timestamp('carControl'), control_valid=valid('carControl'),
++      vehicle_time=timestamp('starpilotCarState'), vehicle_valid=valid('starpilotCarState'),
++      ready_time=vehicle.vehicleReadyTimestamp / 1e9, vehicle_ready=vehicle.vehicleReady,
 +    ))
 +
 +  @property
@@ -174,18 +368,22 @@ index 0000000000000000000000000000000000000000..3830a8c4b194b864801ecc6287a3e6f9
 +    return False
 +
 +  def get_size(self):
-+    return 250.0, 52.0
++    # The right-column anchor sits 146 px from the edge.
++    return 280.0, 60.0
 +
 +  def _render(self, rect):
 +    if self._label is None:
 +      return
 +    color = rl.Color(205, 210, 208, 255)
-+    if self._label == 'OP long active':
++    if self._label in ('OP long', 'Stock ACC'):
 +      color = rl.Color(128, 216, 166, 255)
 +    elif self._label == 'Long status unavailable':
 +      color = rl.Color(255, 190, 90, 255)
 +    rl.draw_rectangle_rounded(rect, 0.25, 8, rl.Color(0, 0, 0, 190))
-+    font_size = 22
++    # Flash the text at 2 Hz; preserve the badge's layout and background.
++    if self._label == 'OP long ready' and int(time.monotonic() * 4) % 2:
++      return
++    font_size = 28
 +    size = measure_text_cached(self._font, self._label, font_size)
 +    if size.x > rect.width - 16:
 +      font_size *= (rect.width - 16) / size.x
@@ -194,10 +392,10 @@ index 0000000000000000000000000000000000000000..3830a8c4b194b864801ecc6287a3e6f9
 +                   font_size, 0, color)
 diff --git a/selfdrive/ui/tests/test_longitudinal_status.py b/selfdrive/ui/tests/test_longitudinal_status.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..c2680a4bf257edf5b420044961f218c61a39be78
+index 0000000000000000000000000000000000000000..158b7216b00da8d7f1fcec375796e5899a62e36d
 --- /dev/null
 +++ b/selfdrive/ui/tests/test_longitudinal_status.py
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,110 @@
 +from dataclasses import replace
 +
 +import pytest
@@ -210,15 +408,16 @@ index 0000000000000000000000000000000000000000..c2680a4bf257edf5b420044961f218c6
 +    now=now, session_start=10.0, started=True, identity_ev9=True, identity_time=9.9,
 +    panda_time=now - 0.01, panda_valid=True, safety_models=("hyundaiCanfd",), safety_params=(36245,), panda_fault=False,
 +    events_time=now - 0.01, events_valid=True, initializing=False,
-+    control_time=now - 0.01, control_valid=True, long_active=False,
++    control_time=now - 0.01, control_valid=True,
++    vehicle_time=now - 0.01, vehicle_valid=True, ready_time=now - 0.01, vehicle_ready=False,
 +  ), **changes)
 +
 +
-+def test_runtime_configuration_and_activity_are_distinct():
++def test_runtime_configuration_and_vehicle_power_state():
 +  assert longitudinal_status(sample()) == "OP long ready"
-+  assert longitudinal_status(sample(long_active=True)) == "OP long active"
++  assert longitudinal_status(sample(vehicle_ready=True)) == "OP long"
 +  assert longitudinal_status(sample(safety_params=(36241,))) == "Stock ACC"
-+  assert longitudinal_status(sample(safety_params=(36241,), long_active=True)) is None
++  assert longitudinal_status(sample(safety_params=(36241,), vehicle_ready=True)) == "Stock ACC"
 +
 +
 +@pytest.mark.parametrize("changes", [
@@ -234,53 +433,91 @@ index 0000000000000000000000000000000000000000..c2680a4bf257edf5b420044961f218c6
 +  assert longitudinal_status(sample(**changes)) is None
 +
 +
++@pytest.mark.parametrize("changes", [
++  {"vehicle_valid": False}, {"vehicle_time": 0}, {"vehicle_time": 9.9}, {"vehicle_time": 19.4}, {"vehicle_time": 21},
++  {"ready_time": 0}, {"ready_time": 9.9}, {"ready_time": 19.4}, {"ready_time": 21},
++])
++@pytest.mark.parametrize("ready", [False, True])
++def test_op_prompt_and_confirmation_require_fresh_ready_evidence(changes, ready):
++  assert longitudinal_status(sample(vehicle_ready=ready, **changes)) is None
++  # Stock mode is established by Panda; no READY inference is needed for that label.
++  assert longitudinal_status(sample(safety_params=(36241,), vehicle_ready=ready, **changes)) == "Stock ACC"
++
++
 +def test_car_params_identity_can_precede_ui_start_but_must_be_recent():
 +  assert longitudinal_status(sample(identity_time=9.9)) == "OP long ready"
 +  assert longitudinal_status(sample(now=70, identity_time=9.9)) is None
 +
 +
-+@pytest.mark.parametrize("safety_param,label", [(36245, "OP long ready"), (36241, "Stock ACC")])
++@pytest.mark.parametrize("safety_param,label", [(36245, "OP long"), (36241, "Stock ACC")])
 +def test_thirty_seconds_begin_at_confirmation_not_onroad_transition(safety_param, label):
 +  notice = LongitudinalStatus()
 +  assert notice.update(sample(now=20, initializing=True)) is None
 +  assert notice.update(sample(now=30, safety_models=("elm327",))) is None
-+  assert notice.update(sample(now=40, safety_params=(safety_param,))) == label
-+  assert notice.update(sample(now=69.99, identity_time=60, safety_params=(safety_param,))) == label
-+  assert notice.update(sample(now=70, identity_time=60, safety_params=(safety_param,))) is None
-+  assert notice.update(sample(now=71, identity_time=60, safety_params=(safety_param,))) is None
++  assert notice.update(sample(now=40, safety_params=(safety_param,), vehicle_ready=True)) == label
++  assert notice.update(sample(now=69.99, identity_time=60, safety_params=(safety_param,), vehicle_ready=True)) == label
++  assert notice.update(sample(now=70, identity_time=60, safety_params=(safety_param,), vehicle_ready=True)) is None
++  assert notice.update(sample(now=71, identity_time=60, safety_params=(safety_param,), vehicle_ready=True)) is None
 +
 +
-+def test_activity_changes_and_data_recovery_do_not_extend_notice():
++def test_prompt_waits_for_brake_start_then_confirmation_gets_thirty_seconds():
 +  notice = LongitudinalStatus()
 +  assert notice.update(sample()) == "OP long ready"
-+  assert notice.update(sample(now=25, long_active=True)) == "OP long active"
-+  assert notice.update(sample(now=30, panda_valid=False)) == "Long status unavailable"
-+  assert notice.update(sample(now=35, identity_ev9=False)) is None
-+  assert notice.update(sample(now=49.99)) == "OP long ready"
-+  assert notice.update(sample(now=50, long_active=True)) is None
-+  assert notice.update(sample(now=51, initializing=True)) is None
-+  assert notice.update(sample(now=52, safety_params=(36241,))) is None
++  assert notice.update(sample(now=80, identity_time=79)) == "OP long ready"
++  assert notice.update(sample(now=90, identity_time=89, vehicle_ready=True)) == "OP long"
++  assert notice.update(sample(now=119.99, identity_time=119, vehicle_ready=True)) == "OP long"
++  assert notice.update(sample(now=120, identity_time=119, vehicle_ready=True)) is None
++
++
++def test_missing_evidence_never_keeps_green_or_restarts_final_window():
++  notice = LongitudinalStatus()
++  assert notice.update(sample(vehicle_ready=True)) == "OP long"
++  assert notice.update(sample(now=25, ready_time=20, vehicle_ready=True)) == "Long status unavailable"
++  assert notice.update(sample(now=30, panda_valid=False, vehicle_ready=True)) == "Long status unavailable"
++  assert notice.update(sample(now=35, identity_ev9=False, vehicle_ready=True)) is None
++  assert notice.update(sample(now=49.99, vehicle_ready=True)) == "OP long"
++  assert notice.update(sample(now=50, vehicle_ready=True)) is None
++  assert notice.update(sample(now=51, initializing=True, vehicle_ready=True)) is None
++  assert notice.update(sample(now=52, safety_params=(36241,), vehicle_ready=True)) is None
++
++
++def test_ready_fluctuations_do_not_restart_final_window():
++  notice = LongitudinalStatus()
++  assert notice.update(sample(vehicle_ready=True)) == "OP long"
++  assert notice.update(sample(now=30)) == "OP long ready"
++  assert notice.update(sample(now=40, vehicle_ready=True)) == "OP long"
++  assert notice.update(sample(now=50, vehicle_ready=True)) is None
++
++
++def test_stock_confirmation_reappears_when_vehicle_starts_after_initial_window():
++  notice = LongitudinalStatus()
++  assert notice.update(sample(safety_params=(36241,))) == "Stock ACC"
++  assert notice.update(sample(now=50, safety_params=(36241,))) is None
++  assert notice.update(sample(now=60, identity_time=59, safety_params=(36241,), vehicle_ready=True)) == "Stock ACC"
++  assert notice.update(sample(now=90, identity_time=89, safety_params=(36241,), vehicle_ready=True)) is None
 +
 +
 +def test_offroad_and_new_ignition_each_reset_the_notice():
 +  notice = LongitudinalStatus()
-+  assert notice.update(sample()) == "OP long ready"
-+  assert notice.update(sample(now=50)) is None
++  assert notice.update(sample(vehicle_ready=True)) == "OP long"
++  assert notice.update(sample(now=50, vehicle_ready=True)) is None
 +  assert notice.update(sample(now=51, started=False)) is None
 +  assert notice.update(sample(now=60, session_start=59, identity_time=59)) == "OP long ready"
 +  # Reset even if rendering never observed the intervening offroad frame.
-+  assert notice.update(sample(now=120, session_start=119, identity_time=119)) == "OP long ready"
-+  assert notice.update(sample(now=150, session_start=119, identity_time=149)) is None
++  assert notice.update(sample(now=120, session_start=119, identity_time=119, vehicle_ready=True)) == "OP long"
++  assert notice.update(sample(now=150, session_start=119, identity_time=149, vehicle_ready=True)) is None
 diff --git a/selfdrive/ui/tests/test_longitudinal_status_widget.py b/selfdrive/ui/tests/test_longitudinal_status_widget.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..29ad04c750490f5c5705da10a6a0775b0c0c0bc6
+index 0000000000000000000000000000000000000000..3598fc81e485e3ee5753a9d719425cc514fea2dc
 --- /dev/null
 +++ b/selfdrive/ui/tests/test_longitudinal_status_widget.py
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,145 @@
 +import importlib.util
 +import sys
 +from pathlib import Path
 +from types import ModuleType, SimpleNamespace
++
++import pytest
 +
 +
 +def load_widget(monkeypatch):
@@ -305,7 +542,8 @@ index 0000000000000000000000000000000000000000..29ad04c750490f5c5705da10a6a0775b
 +  def __init__(self):
 +    super().__init__(carParams=SimpleNamespace(carFingerprint='KIA_EV9'),
 +                     pandaStates=[SimpleNamespace(safetyModel='hyundaiCanfd', safetyParam=36245, faults=[])],
-+                     onroadEvents=[], carControl=SimpleNamespace(longActive=False))
++                     onroadEvents=[], carControl=SimpleNamespace(longActive=False),
++                     starpilotCarState=SimpleNamespace(vehicleReady=False, vehicleReadyTimestamp=99_000_000_000))
 +    self.frame = 1
 +    self.seen = dict.fromkeys(self, True)
 +    self.valid = dict.fromkeys(self, True)
@@ -328,6 +566,7 @@ index 0000000000000000000000000000000000000000..29ad04c750490f5c5705da10a6a0775b
 +  assert samples[-1].identity_ev9
 +  assert samples[-1].safety_params == (36245,)
 +  assert samples[-1].panda_valid and samples[-1].events_valid and samples[-1].control_valid
++  assert samples[-1].vehicle_valid and samples[-1].ready_time == 99.0 and not samples[-1].vehicle_ready
 +  assert not widget.is_visible
 +
 +  sm.frame += 1
@@ -335,12 +574,14 @@ index 0000000000000000000000000000000000000000..29ad04c750490f5c5705da10a6a0775b
 +  sm.alive['pandaStates'] = False
 +  sm.valid['onroadEvents'] = False
 +  sm.seen['carControl'] = False
++  sm.valid['starpilotCarState'] = False
 +  sm['pandaStates'][0].faults = ['relayMalfunction']
 +  widget.update_status()
 +  sample = samples[-1]
 +  assert not sample.identity_ev9 and sample.identity_time == 0
 +  assert not sample.panda_valid and sample.panda_fault
 +  assert not sample.events_valid and not sample.control_valid and sample.control_time == 0
++  assert not sample.vehicle_valid
 +
 +  # Transitions reset classifier state even if rendering is suppressed and sm.frame is unchanged.
 +  module.ui_state.started = False
@@ -366,16 +607,22 @@ index 0000000000000000000000000000000000000000..29ad04c750490f5c5705da10a6a0775b
 +    monkeypatch.setattr(module.time, 'monotonic', lambda: now)
 +    sm.frame += 1
 +    sm.logMonoTime = dict.fromkeys(sm, int((now - 0.01) * 1e9))
++    sm['starpilotCarState'].vehicleReadyTimestamp = int((now - 0.01) * 1e9)
 +    widget.update_status()
 +    return widget._label
 +
 +  assert update(100) == 'OP long ready'
 +  sm['carControl'].longActive = True
-+  assert update(105) == 'OP long active'
++  assert update(105) == 'OP long ready'
++  sm['starpilotCarState'].vehicleReady = True
++  assert update(106) == 'OP long'
++  sm['carControl'].longActive = False
++  assert update(107) == 'OP long'
 +  sm.alive['pandaStates'] = False
 +  assert update(110) == 'Long status unavailable'
 +  sm.alive['pandaStates'] = True
-+  assert update(130) is None
++  assert update(135.99) == 'OP long'
++  assert update(136) is None
 +  assert update(140) is None
 +
 +  # The onroad view may not render a frame during the intervening offroad period.
@@ -383,6 +630,33 @@ index 0000000000000000000000000000000000000000..29ad04c750490f5c5705da10a6a0775b
 +  sm['pandaStates'][0].safetyParam = 36241
 +  sm['carControl'].longActive = False
 +  assert update(160) == 'Stock ACC'
++
++
++@pytest.mark.parametrize('label', ['OP long', 'Stock ACC', 'OP long ready', 'Long status unavailable'])
++def test_larger_text_and_flashing_only_for_startup_prompt(monkeypatch, label):
++  module = load_widget(monkeypatch)
++  drawn = []
++  backgrounds = []
++  module.rl.Color = lambda *rgba: rgba
++  module.rl.Vector2 = lambda x, y: (x, y)
++  module.rl.draw_rectangle_rounded = lambda *args: backgrounds.append(args)
++  module.rl.draw_text_ex = lambda *args: drawn.append(args)
++  module.measure_text_cached = lambda font, text, size: SimpleNamespace(x=len(text) * size * 0.5, y=size)
++  widget = object.__new__(module.LongitudinalStatusWidget)
++  widget._font = object()
++  widget._label = label
++  width, height = widget.get_size()
++  rect = SimpleNamespace(x=0, y=0, width=width, height=height)
++
++  for now in (100, 100.26, 100.5):
++    monkeypatch.setattr(module.time, 'monotonic', lambda now=now: now)
++    widget._render(rect)
++  assert len(backgrounds) == 3
++  assert len(drawn) == (2 if label == 'OP long ready' else 3)
++  assert all(22 < call[3] <= 28 for call in drawn)
++  expected_color = ((128, 216, 166, 255) if label in ('OP long', 'Stock ACC') else
++                    (255, 190, 90, 255) if label == 'Long status unavailable' else (205, 210, 208, 255))
++  assert all(call[5] == expected_color for call in drawn)
 diff --git a/selfdrive/ui/tests/test_onroad_render_layers.py b/selfdrive/ui/tests/test_onroad_render_layers.py
 index ed388451268514afc141eab41c81e1727a94dd7e..533c0c238eb6d75cbe6e9901a90bdbdcf9aaf3c5 100644
 --- a/selfdrive/ui/tests/test_onroad_render_layers.py
