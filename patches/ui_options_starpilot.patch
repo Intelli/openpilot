@@ -31,7 +31,7 @@ index 0000000000000000000000000000000000000000..9eec57b160cc2050b6d839c6f520e8a1
 +  }
 +  return read_ev9_tuning(params)[attributes[key]]
 diff --git a/selfdrive/ui/layouts/settings/starpilot/lateral.py b/selfdrive/ui/layouts/settings/starpilot/lateral.py
-index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..b5382b9c28245bb53985d5a8b3309f200d2afa31 100644
+index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..bf18670cffd693a377592e95fca82050c1d22237 100644
 --- a/selfdrive/ui/layouts/settings/starpilot/lateral.py
 +++ b/selfdrive/ui/layouts/settings/starpilot/lateral.py
 @@ -1,6 +1,7 @@
@@ -180,7 +180,7 @@ index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..b5382b9c28245bb53985d5a8b3309f20
 +  def _ev9_rows(self):
 +    rows = [SettingRow(
 +      "HkgSharedAutonomyMode", "toggle", tr_noop("Improved Manual Control"),
-+      subtitle=tr_noop("Hands-on steering input hands control to you at or below the EV9 limits speed. " +
++      subtitle=tr_noop("Hands-on steering input hands control to you at or below the manual-control entry speed. " +
 +                       "Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off."),
 +      get_state=lambda: self._ev9_value("HkgSharedAutonomyMode") != 0, set_state=self._ev9_set_manual,
 +      enabled=self._ev9_editable, disabled_label=tr_noop("Turn vehicle off to adjust."),
@@ -188,8 +188,8 @@ index 0c861b5b3426616ebe87ceae7f19b3ec4cc51908..b5382b9c28245bb53985d5a8b3309f20
 +    for key, title, description, maximum, step, unit in (
 +      ("HkgTuningAngleOverrideEffortPercent", "Steering Override Effort",
 +       "Lower values ease manual steering override. 100% applies no additional effort reduction.", 100, 10, "%"),
-+      ("HkgTuningAngleCustomLimitMaxSpeedKph", "EV9 Limits Speed",
-+       "Higher steering limits and manual-control entry apply at or below this speed.", 40, 1, " km/h"),
++      ("HkgTuningAngleCustomLimitMaxSpeedKph", "Manual Control Entry Speed",
++       "Improved Manual Control can begin at or below this speed. Steering limits are unchanged.", 40, 1, " km/h"),
 +      ("HkgTuningEv9AlertsSpeedKph", "EV9 Alert Speed",
 +       "Warn about steering saturation above this speed. Desired steering angles of 90° or more can still warn below it.", 50, 1, " km/h"),
 +    ):
@@ -464,7 +464,7 @@ index 0000000000000000000000000000000000000000..7085e12522d62de24c4143502611089b
 +  assert values[key] == 20 and values["HkgSharedAutonomyMode"] == 0
 +  assert len(updates) == 2
 diff --git a/starpilot/common/assets/device_settings_layout.json b/starpilot/common/assets/device_settings_layout.json
-index 0ee696c875649466664f9ee2f05eb9029f09d4f2..78a616f2ab039863ebb557f515fd3b10bcbadc49 100644
+index 0ee696c875649466664f9ee2f05eb9029f09d4f2..4910e3eb07036a257e7adc9eb1948d28d71d408b 100644
 --- a/starpilot/common/assets/device_settings_layout.json
 +++ b/starpilot/common/assets/device_settings_layout.json
 @@ -17,6 +17,80 @@
@@ -474,7 +474,7 @@ index 0ee696c875649466664f9ee2f05eb9029f09d4f2..78a616f2ab039863ebb557f515fd3b10
 +      {
 +        "key": "HkgSharedAutonomyMode",
 +        "label": "Improved Manual Control",
-+        "description": "Hands-on steering input hands control to you at or below the EV9 limits speed. Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off. Turn vehicle off to adjust.",
++        "description": "Hands-on steering input hands control to you at or below the manual-control entry speed. Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off. Turn vehicle off to adjust.",
 +        "data_type": "int",
 +        "ui_type": "dropdown",
 +        "settings_tier": "simple",
@@ -513,8 +513,8 @@ index 0ee696c875649466664f9ee2f05eb9029f09d4f2..78a616f2ab039863ebb557f515fd3b10
 +      },
 +      {
 +        "key": "HkgTuningAngleCustomLimitMaxSpeedKph",
-+        "label": "EV9 Limits Speed",
-+        "description": "Higher steering limits and manual-control entry apply at or below this speed. Turn vehicle off to adjust.",
++        "label": "Manual Control Entry Speed",
++        "description": "Improved Manual Control can begin at or below this speed. Steering limits are unchanged. Turn vehicle off to adjust.",
 +        "data_type": "int",
 +        "ui_type": "numeric",
 +        "settings_tier": "simple",

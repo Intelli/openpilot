@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 # Provenance: portions of HKG angle control are adapted from sunnypilot/opendbc's
 # hkg-angle-steering-2025 branch at cc4b08625. See CREDITS.md and THIRD_PARTY_NOTICES.md.
@@ -11,8 +11,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.lead_data import CanLeadDataState
-from opendbc.car.hyundai.ev9 import (EV9AngleConfig, EV9ManualControlState, EV9_HIGH_LATERAL_LIMIT, EV9_PANDA_LIMIT_SPEED_MPS,
-                                   apply_override_gain, ev9_hands_off, ev9_hands_on)
+from opendbc.car.hyundai.ev9 import EV9AngleConfig, EV9ManualControlState, apply_override_gain, ev9_hands_off, ev9_hands_on
 from opendbc.car.hyundai.values import HyundaiFlags, HyundaiSafetyFlags, HyundaiStarPilotFlags, Buttons, CarControllerParams, CAR, CANFD_ANGLE_LONGITUDINAL_CAR, \
                                         CANFD_RADAR_ECU_KEEPALIVE_CAR, CANFD_ALT_BUTTONS_RESUME_CAR, kia_ev6_gt_line_longitudinal_tuning, \
                                         KIA_EV6_GT_LINE_LONG_TUNING_TESTING_GROUND_ID
@@ -507,21 +506,8 @@ class CarController(CarControllerBase):
     self._ev9_manual = EV9ManualControlState()
     self._ev9_initialized_angle_transports = set()
     if CP.carFingerprint == CAR.KIA_EV9:
-      # Never modify the class-level angle limits shared with other Hyundai controllers.
-      self._ev9_stock_angle_limits = replace(self.params.ANGLE_LIMITS)
+      # Keep the standard StarPilot envelope for both steering transports.
       self._ev9_safety_params = CarControllerParams(CP)
-
-  def _update_ev9_angle_limits(self, v_ego_raw, toggles):
-    self.ev9_angle_config = EV9AngleConfig.from_toggles(toggles)
-    self.params.ANGLE_LIMITS = replace(self._ev9_stock_angle_limits)
-    self._ev9_safety_params.ANGLE_LIMITS = replace(self._ev9_stock_angle_limits)
-    if v_ego_raw <= self.ev9_angle_config.limit_speed_mps:
-      self.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = EV9_HIGH_LATERAL_LIMIT
-      self.params.ANGLE_LIMITS.MAX_LATERAL_JERK = EV9_HIGH_LATERAL_LIMIT
-    # A larger configured controller speed never enlarges Panda's independent envelope.
-    if max(v_ego_raw - 1.0, 1.0) <= EV9_PANDA_LIMIT_SPEED_MPS:
-      self._ev9_safety_params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = EV9_HIGH_LATERAL_LIMIT
-      self._ev9_safety_params.ANGLE_LIMITS.MAX_LATERAL_JERK = EV9_HIGH_LATERAL_LIMIT
 
   def _update_dash_icon_state(self, CC):
     if CC.latActive:
@@ -610,7 +596,7 @@ class CarController(CarControllerBase):
 
     ev9_angle_control = self.CP.carFingerprint == CAR.KIA_EV9 and bool(self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING)
     if ev9_angle_control:
-      self._update_ev9_angle_limits(CS.out.vEgoRaw, starpilot_toggles)
+      self.ev9_angle_config = EV9AngleConfig.from_toggles(starpilot_toggles)
     safety_params = self._ev9_safety_params if ev9_angle_control else self.params
 
     if not self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING:

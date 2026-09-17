@@ -132,18 +132,16 @@ Owners: vehicle patches [03](opendbc/03_modify_baseline_starpilot.patch),
 - Adds context-qualified EV9 safety identification and masks overlapping flag bits
   before common Hyundai decoding. EV9 flags no longer accidentally select FCEV
   gas handling or unrelated main-button/LKAS latch behavior.
-- Raises the low-speed controller envelope from approximately 3.59 to **4.2 m/s²
-  lateral acceleration and 4.2 m/s³ lateral jerk**, with a configurable speed gate.
-  Panda's EV9 low-speed envelope similarly rises from approximately 3.59 to 4.2 in
-  those respective units.
-- At the application curvature layer, low-speed EV9 requests use a symmetric
-  **4.2 m/s²** envelope instead of 3.0 m/s² plus roll compensation. The generic
-  `0.2 m⁻¹` curvature cap is omitted in this region; vehicle and Panda limits still apply.
-- The application/controller threshold defaults to **40 km/h**. The vehicle
-  consumer retains a **32 km/h** fallback if tuning data is missing. Panda has an
-  independent historical gate: `max(minimum measured speed − 1 m/s, 1 m/s)` must
-  be no greater than `42 km/h + 0.1 m/s` (about 45.96 km/h before that tolerance).
-  Above the relevant gates, standard limits apply.
+- Uses the standard StarPilot controller and Panda envelope at every speed:
+  approximately **3.59 m/s² lateral acceleration and 3.59 m/s³ lateral jerk**.
+  The former EV9 low-speed 4.2 increase and its speed gates have been removed
+  for steering-fault investigation, while EV9 geometry is retained.
+- Restores standard application curvature limiting: **3.0 m/s²** with roll
+  compensation and the **0.2 m⁻¹** curvature cap at all speeds.
+- **Manual Control Entry Speed** retains the existing parameter key and saved
+  value, defaulting to **40 km/h** with a **32 km/h** vehicle fallback when tuning
+  data is missing. It now controls manual-handoff entry only; it cannot enlarge
+  the controller or Panda steering envelope.
 - Intersects vehicle angle/rate bounds with the Panda-compatible envelope.
   Ordinary clipping keeps steering active at a valid bounded request; an empty
   intersection requires an inactive command.
@@ -152,6 +150,8 @@ The absolute **360° software angle ceiling**, native vehicle angle filtering,
 base torque-reduction law and longitudinal acceleration limits are unchanged.
 The 119.9° warning threshold is not a new steering-command ceiling. Upstream
 curvature-rate limiting and any enabled lane-change smoothing still apply.
+Restoring these limits is a diagnostic rollback, not a verified fix for the
+vehicle-reported steering fault. Both Stock ACC and OP-long use the restored limits.
 
 ### Driver override and Improved Manual Control
 

@@ -5,8 +5,6 @@ import math
 
 from opendbc.car import DT_CTRL
 
-EV9_PANDA_LIMIT_SPEED_MPS = 42.0 / 3.6 + 0.1
-EV9_HIGH_LATERAL_LIMIT = 4.2
 _MISSING = object()
 
 
