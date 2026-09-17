@@ -1,0 +1,397 @@
+diff --git a/selfdrive/ui/onroad/starpilot/longitudinal_status.py b/selfdrive/ui/onroad/starpilot/longitudinal_status.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8bb9aae8018a104aa2f9f9080467c0cac0a15f65
+--- /dev/null
++++ b/selfdrive/ui/onroad/starpilot/longitudinal_status.py
+@@ -0,0 +1,75 @@
++"""Short EV9 startup notice based on live control telemetry, not saved preferences."""
++from dataclasses import dataclass
++
++
++# HyundaiSafetyFlags: the EV9 alias is meaningful only with EV and angle steering.
++EV9_SAFETY_IDENTITY = 1 | 256 | 1024
++LONGITUDINAL_FLAG = 4
++NOTICE_SECONDS = 30.0
++
++
++@dataclass(frozen=True)
++class LongitudinalSample:
++  now: float
++  session_start: float
++  started: bool
++  identity_ev9: bool
++  identity_time: float
++  panda_time: float
++  panda_valid: bool
++  safety_models: tuple[str, ...]
++  safety_params: tuple[int, ...]
++  panda_fault: bool
++  events_time: float
++  events_valid: bool
++  initializing: bool
++  control_time: float
++  control_valid: bool
++  long_active: bool
++
++
++def _fresh(timestamp: float, sample: LongitudinalSample, maximum_age: float) -> bool:
++  return timestamp > 0 and timestamp >= sample.session_start and 0 <= sample.now - timestamp <= maximum_age
++
++
++def longitudinal_status(sample: LongitudinalSample) -> str | None:
++  """Identify the configured controller/activity; this does not certify ECU or AEB health."""
++  # carParams publishes every 50 seconds and may arrive just before the UI starts.
++  # Use it only for identity. Current-session Panda configuration determines mode,
++  # including fallback, which can differ from the initial/cached carParams.
++  if not sample.started or not sample.identity_ev9 or not (sample.identity_time > 0 and 0 <= sample.now - sample.identity_time <= 55.0):
++    return None
++  if (not sample.panda_valid or sample.panda_fault or not _fresh(sample.panda_time, sample, 1.0) or
++      sample.safety_models != ("hyundaiCanfd",) or len(sample.safety_params) != 1):
++    return None
++  safety_param = sample.safety_params[0]
++  if safety_param & EV9_SAFETY_IDENTITY != EV9_SAFETY_IDENTITY:
++    return None
++  if (not sample.events_valid or not _fresh(sample.events_time, sample, 2.5) or sample.initializing or
++      not sample.control_valid or not _fresh(sample.control_time, sample, 0.5)):
++    return None
++  if not safety_param & LONGITUDINAL_FLAG:
++    return None if sample.long_active else "Stock ACC"
++  return "OP long active" if sample.long_active else "OP long ready"
++
++
++class LongitudinalStatus:
++  def __init__(self):
++    self._session_start: float | None = None
++    self._show_until: float | None = None
++
++  def update(self, sample: LongitudinalSample) -> str | None:
++    if not sample.started:
++      self._session_start = self._show_until = None
++      return None
++    if sample.session_start != self._session_start:
++      self._session_start = sample.session_start
++      self._show_until = None
++
++    # Do not restart the timer on missing telemetry, engagement, or disengagement.
++    status = longitudinal_status(sample)
++    if self._show_until is None and status is not None:
++      self._show_until = sample.now + NOTICE_SECONDS
++    if not sample.identity_ev9 or self._show_until is None or sample.now >= self._show_until:
++      return None
++    return status or "Long status unavailable"
+diff --git a/selfdrive/ui/onroad/starpilot/starpilot_onroad_view.py b/selfdrive/ui/onroad/starpilot/starpilot_onroad_view.py
+index 5fd40bb8ac3d23e15ba8d429936f84c74b25c1e4..0f8011604929a0785c53f3cbb0bef51254aa6647 100644
+--- a/selfdrive/ui/onroad/starpilot/starpilot_onroad_view.py
++++ b/selfdrive/ui/onroad/starpilot/starpilot_onroad_view.py
+@@ -1,5 +1,6 @@
+ import pyray as rl
+ from msgq.visionipc import VisionStreamType
++from openpilot.selfdrive.ui.onroad.starpilot.widgets.longitudinal_status import LongitudinalStatusWidget
+ from openpilot.selfdrive.ui.onroad.augmented_road_view import AugmentedRoadView
+ from openpilot.selfdrive.ui.onroad.starpilot.starpilot_border import render_behind, render_overlay, render_background_effects
+ from openpilot.selfdrive.ui.onroad.starpilot.path import render_adjacent_lanes, render_path_edges
+@@ -68,6 +69,7 @@ class StarPilotOnroadView(AugmentedRoadView):
+     self._speed_limit_widget = SpeedLimitWidget()
+     self._aethergauge_widget = AetherGaugeWidget(self._hud_renderer)
+     self._steering_wheel_widget = SteeringWheelWidget(self._hud_renderer._exp_button)
++    self._longitudinal_status_widget = LongitudinalStatusWidget()
+     self._pedals_widget = PedalIconsWidget()
+     self._personality_button_widget = PersonalityButtonWidget()
+     self._driver_monitor_widget = DriverMonitorWidget(self.driver_state_renderer)
+@@ -79,6 +81,7 @@ class StarPilotOnroadView(AugmentedRoadView):
+     self.layout_manager.register_widget("left", self._speed_limit_widget)
+     self.layout_manager.register_widget("left", self._aethergauge_widget)
+     self.layout_manager.register_widget("right", self._steering_wheel_widget)
++    self.layout_manager.register_widget("right", self._longitudinal_status_widget)
+     self.layout_manager.register_widget("right", self._pedals_widget)
+     self.layout_manager.register_widget("right_center", self._model_source_widget)
+     self.layout_manager.register_widget("bottom", self._personality_button_widget)
+@@ -96,6 +99,7 @@ class StarPilotOnroadView(AugmentedRoadView):
+     self._child(self._stopped_timer_widget)
+ 
+   def _update_state(self) -> None:
++    self._longitudinal_status_widget.update_status()
+     rivian_lateral_mode.update()
+     self._hud_renderer._exp_button.wheel_tint = rivian_lateral_mode.wheel_tint
+ 
+diff --git a/selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py b/selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3830a8c4b194b864801ecc6287a3e6f9658e5686
+--- /dev/null
++++ b/selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py
+@@ -0,0 +1,72 @@
++"""Brief EV9 startup notice based on live control and Panda telemetry."""
++import time
++
++import pyray as rl
++
++from openpilot.selfdrive.ui.onroad.starpilot.longitudinal_status import LongitudinalSample, LongitudinalStatus
++from openpilot.selfdrive.ui.onroad.starpilot.widgets.base import LayoutWidget
++from openpilot.selfdrive.ui.ui_state import ui_state
++from openpilot.system.ui.lib.application import FontWeight, gui_app
++from openpilot.system.ui.lib.text_measure import measure_text_cached
++
++
++class LongitudinalStatusWidget(LayoutWidget):
++  def __init__(self):
++    super().__init__("longitudinal_status", priority=2)
++    self.set_enabled(False)
++    self._font = gui_app.font(FontWeight.SEMI_BOLD)
++    self._status = LongitudinalStatus()
++    self._label = None
++    self._last_sample_key = None
++
++  def update_status(self):
++    sm = ui_state.sm
++    key = (sm.frame, ui_state.started, ui_state.started_time)
++    if key == self._last_sample_key:
++      return
++    self._last_sample_key = key
++
++    def valid(service):
++      return bool(sm.seen[service] and sm.valid[service] and sm.alive[service])
++
++    def timestamp(service):
++      return sm.logMonoTime[service] / 1e9 if sm.seen[service] else 0.0
++
++    pandas = sm['pandaStates'] if sm.seen['pandaStates'] else ()
++    self._label = self._status.update(LongitudinalSample(
++      now=time.monotonic(), session_start=ui_state.started_time, started=ui_state.started,
++      identity_ev9=bool(sm.seen['carParams'] and sm.valid['carParams'] and sm['carParams'].carFingerprint == 'KIA_EV9'),
++      identity_time=timestamp('carParams'), panda_time=timestamp('pandaStates'), panda_valid=valid('pandaStates'),
++      safety_models=tuple(str(p.safetyModel) for p in pandas), safety_params=tuple(p.safetyParam for p in pandas),
++      panda_fault=any(bool(p.faults) for p in pandas), events_time=timestamp('onroadEvents'), events_valid=valid('onroadEvents'),
++      initializing=any(str(e.name) == 'selfdriveInitializing' for e in sm['onroadEvents']),
++      control_time=timestamp('carControl'), control_valid=valid('carControl'), long_active=sm['carControl'].longActive,
++    ))
++
++  @property
++  def is_visible(self):
++    return self._label is not None
++
++  @property
++  def blocks_pointer(self):
++    return False
++
++  def get_size(self):
++    return 250.0, 52.0
++
++  def _render(self, rect):
++    if self._label is None:
++      return
++    color = rl.Color(205, 210, 208, 255)
++    if self._label == 'OP long active':
++      color = rl.Color(128, 216, 166, 255)
++    elif self._label == 'Long status unavailable':
++      color = rl.Color(255, 190, 90, 255)
++    rl.draw_rectangle_rounded(rect, 0.25, 8, rl.Color(0, 0, 0, 190))
++    font_size = 22
++    size = measure_text_cached(self._font, self._label, font_size)
++    if size.x > rect.width - 16:
++      font_size *= (rect.width - 16) / size.x
++      size = measure_text_cached(self._font, self._label, font_size)
++    rl.draw_text_ex(self._font, self._label, rl.Vector2(rect.x + (rect.width - size.x) / 2, rect.y + (rect.height - size.y) / 2),
++                   font_size, 0, color)
+diff --git a/selfdrive/ui/tests/test_longitudinal_status.py b/selfdrive/ui/tests/test_longitudinal_status.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..c2680a4bf257edf5b420044961f218c61a39be78
+--- /dev/null
++++ b/selfdrive/ui/tests/test_longitudinal_status.py
+@@ -0,0 +1,73 @@
++from dataclasses import replace
++
++import pytest
++
++from openpilot.selfdrive.ui.onroad.starpilot.longitudinal_status import LongitudinalSample, LongitudinalStatus, longitudinal_status
++
++
++def sample(now=20.0, **changes):
++  return replace(LongitudinalSample(
++    now=now, session_start=10.0, started=True, identity_ev9=True, identity_time=9.9,
++    panda_time=now - 0.01, panda_valid=True, safety_models=("hyundaiCanfd",), safety_params=(36245,), panda_fault=False,
++    events_time=now - 0.01, events_valid=True, initializing=False,
++    control_time=now - 0.01, control_valid=True, long_active=False,
++  ), **changes)
++
++
++def test_runtime_configuration_and_activity_are_distinct():
++  assert longitudinal_status(sample()) == "OP long ready"
++  assert longitudinal_status(sample(long_active=True)) == "OP long active"
++  assert longitudinal_status(sample(safety_params=(36241,))) == "Stock ACC"
++  assert longitudinal_status(sample(safety_params=(36241,), long_active=True)) is None
++
++
++@pytest.mark.parametrize("changes", [
++  {"started": False}, {"identity_ev9": False}, {"identity_time": 0}, {"identity_time": 21},
++  {"panda_valid": False}, {"panda_fault": True}, {"panda_time": 9.9}, {"panda_time": 18.9}, {"panda_time": 21.0},
++  {"safety_models": ()}, {"safety_params": ()}, {"safety_models": ("elm327",)},
++  {"safety_models": ("noOutput",)}, {"safety_models": ("hyundaiCanfd", "hyundaiCanfd"), "safety_params": (36245, 36245)},
++  {"safety_params": (4,)}, {"safety_params": (36245 & ~256,)},
++  {"events_valid": False}, {"events_time": 9.9}, {"events_time": 17.4}, {"events_time": 21.0}, {"initializing": True},
++  {"control_valid": False}, {"control_time": 9.9}, {"control_time": 19.4}, {"control_time": 21.0},
++])
++def test_no_claim_without_current_vehicle_safety_and_control_evidence(changes):
++  assert longitudinal_status(sample(**changes)) is None
++
++
++def test_car_params_identity_can_precede_ui_start_but_must_be_recent():
++  assert longitudinal_status(sample(identity_time=9.9)) == "OP long ready"
++  assert longitudinal_status(sample(now=70, identity_time=9.9)) is None
++
++
++@pytest.mark.parametrize("safety_param,label", [(36245, "OP long ready"), (36241, "Stock ACC")])
++def test_thirty_seconds_begin_at_confirmation_not_onroad_transition(safety_param, label):
++  notice = LongitudinalStatus()
++  assert notice.update(sample(now=20, initializing=True)) is None
++  assert notice.update(sample(now=30, safety_models=("elm327",))) is None
++  assert notice.update(sample(now=40, safety_params=(safety_param,))) == label
++  assert notice.update(sample(now=69.99, identity_time=60, safety_params=(safety_param,))) == label
++  assert notice.update(sample(now=70, identity_time=60, safety_params=(safety_param,))) is None
++  assert notice.update(sample(now=71, identity_time=60, safety_params=(safety_param,))) is None
++
++
++def test_activity_changes_and_data_recovery_do_not_extend_notice():
++  notice = LongitudinalStatus()
++  assert notice.update(sample()) == "OP long ready"
++  assert notice.update(sample(now=25, long_active=True)) == "OP long active"
++  assert notice.update(sample(now=30, panda_valid=False)) == "Long status unavailable"
++  assert notice.update(sample(now=35, identity_ev9=False)) is None
++  assert notice.update(sample(now=49.99)) == "OP long ready"
++  assert notice.update(sample(now=50, long_active=True)) is None
++  assert notice.update(sample(now=51, initializing=True)) is None
++  assert notice.update(sample(now=52, safety_params=(36241,))) is None
++
++
++def test_offroad_and_new_ignition_each_reset_the_notice():
++  notice = LongitudinalStatus()
++  assert notice.update(sample()) == "OP long ready"
++  assert notice.update(sample(now=50)) is None
++  assert notice.update(sample(now=51, started=False)) is None
++  assert notice.update(sample(now=60, session_start=59, identity_time=59)) == "OP long ready"
++  # Reset even if rendering never observed the intervening offroad frame.
++  assert notice.update(sample(now=120, session_start=119, identity_time=119)) == "OP long ready"
++  assert notice.update(sample(now=150, session_start=119, identity_time=149)) is None
+diff --git a/selfdrive/ui/tests/test_longitudinal_status_widget.py b/selfdrive/ui/tests/test_longitudinal_status_widget.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..29ad04c750490f5c5705da10a6a0775b0c0c0bc6
+--- /dev/null
++++ b/selfdrive/ui/tests/test_longitudinal_status_widget.py
+@@ -0,0 +1,106 @@
++import importlib.util
++import sys
++from pathlib import Path
++from types import ModuleType, SimpleNamespace
++
++
++def load_widget(monkeypatch):
++  def stub(name, **attributes):
++    module = ModuleType(name)
++    module.__dict__.update(attributes)
++    monkeypatch.setitem(sys.modules, name, module)
++
++  stub('pyray')
++  stub('openpilot.selfdrive.ui.onroad.starpilot.widgets.base', LayoutWidget=object)
++  stub('openpilot.selfdrive.ui.ui_state', ui_state=None)
++  stub('openpilot.system.ui.lib.application', FontWeight=None, gui_app=None)
++  stub('openpilot.system.ui.lib.text_measure', measure_text_cached=None)
++  path = Path(__file__).parents[1] / 'onroad/starpilot/widgets/longitudinal_status.py'
++  spec = importlib.util.spec_from_file_location('tested_longitudinal_widget', path)
++  module = importlib.util.module_from_spec(spec)
++  spec.loader.exec_module(module)
++  return module
++
++
++class SubMaster(dict):
++  def __init__(self):
++    super().__init__(carParams=SimpleNamespace(carFingerprint='KIA_EV9'),
++                     pandaStates=[SimpleNamespace(safetyModel='hyundaiCanfd', safetyParam=36245, faults=[])],
++                     onroadEvents=[], carControl=SimpleNamespace(longActive=False))
++    self.frame = 1
++    self.seen = dict.fromkeys(self, True)
++    self.valid = dict.fromkeys(self, True)
++    self.alive = dict.fromkeys(self, True)
++    self.logMonoTime = dict.fromkeys(self, 99_000_000_000)
++
++
++def test_live_samples_filtered_and_updated_even_when_hidden(monkeypatch):
++  module = load_widget(monkeypatch)
++  sm = SubMaster()
++  module.ui_state = SimpleNamespace(sm=sm, started=True, started_time=90.0)
++  samples = []
++  widget = object.__new__(module.LongitudinalStatusWidget)
++  widget._status = SimpleNamespace(update=lambda sample: samples.append(sample))
++  widget._last_sample_key = None
++  widget._label = None
++  widget.update_status()
++  widget.update_status()
++  assert len(samples) == 1
++  assert samples[-1].identity_ev9
++  assert samples[-1].safety_params == (36245,)
++  assert samples[-1].panda_valid and samples[-1].events_valid and samples[-1].control_valid
++  assert not widget.is_visible
++
++  sm.frame += 1
++  sm.seen['carParams'] = False
++  sm.alive['pandaStates'] = False
++  sm.valid['onroadEvents'] = False
++  sm.seen['carControl'] = False
++  sm['pandaStates'][0].faults = ['relayMalfunction']
++  widget.update_status()
++  sample = samples[-1]
++  assert not sample.identity_ev9 and sample.identity_time == 0
++  assert not sample.panda_valid and sample.panda_fault
++  assert not sample.events_valid and not sample.control_valid and sample.control_time == 0
++
++  # Transitions reset classifier state even if rendering is suppressed and sm.frame is unchanged.
++  module.ui_state.started = False
++  widget.update_status()
++  assert not samples[-1].started
++  module.ui_state.started = True
++  module.ui_state.started_time = 101.0
++  widget.update_status()
++  assert samples[-1].session_start == 101.0
++  assert len(samples) == 4
++
++
++def test_live_widget_notice_expires_without_rendering_and_returns_next_startup(monkeypatch):
++  module = load_widget(monkeypatch)
++  sm = SubMaster()
++  module.ui_state = SimpleNamespace(sm=sm, started=True, started_time=90.0)
++  widget = object.__new__(module.LongitudinalStatusWidget)
++  widget._status = module.LongitudinalStatus()
++  widget._last_sample_key = None
++  widget._label = None
++
++  def update(now):
++    monkeypatch.setattr(module.time, 'monotonic', lambda: now)
++    sm.frame += 1
++    sm.logMonoTime = dict.fromkeys(sm, int((now - 0.01) * 1e9))
++    widget.update_status()
++    return widget._label
++
++  assert update(100) == 'OP long ready'
++  sm['carControl'].longActive = True
++  assert update(105) == 'OP long active'
++  sm.alive['pandaStates'] = False
++  assert update(110) == 'Long status unavailable'
++  sm.alive['pandaStates'] = True
++  assert update(130) is None
++  assert update(140) is None
++
++  # The onroad view may not render a frame during the intervening offroad period.
++  module.ui_state.started_time = 150.0
++  sm['pandaStates'][0].safetyParam = 36241
++  sm['carControl'].longActive = False
++  assert update(160) == 'Stock ACC'
+diff --git a/selfdrive/ui/tests/test_onroad_render_layers.py b/selfdrive/ui/tests/test_onroad_render_layers.py
+index ed388451268514afc141eab41c81e1727a94dd7e..533c0c238eb6d75cbe6e9901a90bdbdcf9aaf3c5 100644
+--- a/selfdrive/ui/tests/test_onroad_render_layers.py
++++ b/selfdrive/ui/tests/test_onroad_render_layers.py
+@@ -66,6 +66,7 @@ def _load_starpilot_onroad_view(monkeypatch):
+   stub_module("openpilot.selfdrive.ui.ui_state", ui_state=SimpleNamespace())
+   stub_module("openpilot.selfdrive.ui.onroad.starpilot.torque_bar", TorqueBar=dummy_widget)
+   stub_module("openpilot.selfdrive.ui.onroad.starpilot.widget_layout_manager", WidgetLayoutManager=dummy_widget)
++  stub_module("openpilot.selfdrive.ui.onroad.starpilot.widgets.longitudinal_status", LongitudinalStatusWidget=dummy_widget)
+   stub_module(
+     "openpilot.selfdrive.ui.onroad.starpilot.widgets",
+     SetSpeedWidget=dummy_widget,

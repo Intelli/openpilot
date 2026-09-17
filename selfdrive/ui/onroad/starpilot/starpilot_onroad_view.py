@@ -1,5 +1,6 @@
 import pyray as rl
 from msgq.visionipc import VisionStreamType
+from openpilot.selfdrive.ui.onroad.starpilot.widgets.longitudinal_status import LongitudinalStatusWidget
 from openpilot.selfdrive.ui.onroad.augmented_road_view import AugmentedRoadView
 from openpilot.selfdrive.ui.onroad.starpilot.starpilot_border import render_behind, render_overlay, render_background_effects
 from openpilot.selfdrive.ui.onroad.starpilot.path import render_adjacent_lanes, render_path_edges
@@ -68,6 +69,7 @@ class StarPilotOnroadView(AugmentedRoadView):
     self._speed_limit_widget = SpeedLimitWidget()
     self._aethergauge_widget = AetherGaugeWidget(self._hud_renderer)
     self._steering_wheel_widget = SteeringWheelWidget(self._hud_renderer._exp_button)
+    self._longitudinal_status_widget = LongitudinalStatusWidget()
     self._pedals_widget = PedalIconsWidget()
     self._personality_button_widget = PersonalityButtonWidget()
     self._driver_monitor_widget = DriverMonitorWidget(self.driver_state_renderer)
@@ -79,6 +81,7 @@ class StarPilotOnroadView(AugmentedRoadView):
     self.layout_manager.register_widget("left", self._speed_limit_widget)
     self.layout_manager.register_widget("left", self._aethergauge_widget)
     self.layout_manager.register_widget("right", self._steering_wheel_widget)
+    self.layout_manager.register_widget("right", self._longitudinal_status_widget)
     self.layout_manager.register_widget("right", self._pedals_widget)
     self.layout_manager.register_widget("right_center", self._model_source_widget)
     self.layout_manager.register_widget("bottom", self._personality_button_widget)
@@ -96,6 +99,7 @@ class StarPilotOnroadView(AugmentedRoadView):
     self._child(self._stopped_timer_widget)
 
   def _update_state(self) -> None:
+    self._longitudinal_status_widget.update_status()
     rivian_lateral_mode.update()
     self._hud_renderer._exp_button.wheel_tint = rivian_lateral_mode.wheel_tint
 
