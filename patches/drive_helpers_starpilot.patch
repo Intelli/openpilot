@@ -362,10 +362,18 @@ index 0000000000000000000000000000000000000000..f20d6a4493501735b694c307f06941df
 +  assert output.buttonEvents[0].type == ButtonType.accelCruise
 +  assert not output.buttonEnable
 diff --git a/selfdrive/controls/controlsd.py b/selfdrive/controls/controlsd.py
-index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..83f4df4458bd915536bd803e9e93a8d584b348b2 100644
+index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..413363e80a88a33b7e4b439755786840cd5dffc8 100644
 --- a/selfdrive/controls/controlsd.py
 +++ b/selfdrive/controls/controlsd.py
-@@ -21,6 +21,7 @@ from opendbc.car.vehicle_model import VehicleModel
+@@ -15,12 +15,14 @@ from opendbc.car.car_helpers import interfaces
+ from opendbc.car.chrysler.values import pacifica_hybrid_aol_stock_acc_mode
+ from opendbc.car.gm.values import CAR as GM_CAR
+ from opendbc.car.honda.values import CAR as HONDA_CAR
+-from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
++from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR, HyundaiFlags
++from opendbc.car.hyundai.ev9 import EV9AngleConfig
+ from opendbc.car.nissan.values import CAR as NISSAN_CAR
+ from opendbc.car.vehicle_model import VehicleModel
  from openpilot.selfdrive.controls.lib.drive_helpers import (
    MAX_LATERAL_JERK,
    clip_curvature,
@@ -373,7 +381,7 @@ index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..83f4df4458bd915536bd803e9e93a8d5
    get_kona_non_scc_lateral_active,
    get_lateral_active,
    update_lateral_fault_latch,
-@@ -542,6 +543,10 @@ class Controls:
+@@ -542,6 +544,10 @@ class Controls:
                                          CS.steerFaultTemporary, CS.steerFaultPermanent,
                                          standstill, self.CP.steerAtStandstill,
                                          self.sm['starpilotPlan'].lateralCheck)
@@ -384,7 +392,18 @@ index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..83f4df4458bd915536bd803e9e93a8d5
      # EcuDisableFailed is set when car started in READY mode (ECU disable was rejected)
      # Disable longitudinal so stock ACC works instead
      self.update_ecu_disable_failed()
-@@ -788,12 +793,15 @@ class Controls:
+@@ -782,18 +788,25 @@ class Controls:
+           jerk_factor = self.lc_arrest_jerk_factor + rise_alpha * (jerk_factor - self.lc_arrest_jerk_factor)
+       self.lc_arrest_jerk_factor = jerk_factor
+ 
++    ev9_limit_speed = None
++    if self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9 and self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING and \
++        self.CP.steerControlType == car.CarParams.SteerControlType.angle:
++      ev9_limit_speed = EV9AngleConfig.from_toggles(self.starpilot_toggles).limit_speed_mps
+     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll,
+-                                                               jerk_factor)
++                                                               jerk_factor, ev9_angle_limit_speed_mps=ev9_limit_speed)
+     lat_smooth_seconds = get_control_lateral_smooth_seconds(self.CP.brand, CS.vEgo, self.CP.lateralSmoothSeconds)
      lat_delay = self.sm["liveDelay"].lateralDelay + lat_smooth_seconds
  
      actuators.curvature = self.desired_curvature
@@ -401,7 +420,7 @@ index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..83f4df4458bd915536bd803e9e93a8d5
      actuators.torque = float(steer)
      if self.CP.steerControlType == car.CarParams.SteerControlType.curvatureDEPRECATED:
        actuators.curvature = float(lateral_output)
-@@ -875,7 +883,7 @@ class Controls:
+@@ -875,7 +888,7 @@ class Controls:
        hudControl.leftLaneDepart = self.sm['driverAssistance'].leftLaneDeparture
        hudControl.rightLaneDepart = self.sm['driverAssistance'].rightLaneDeparture
  
@@ -410,7 +429,7 @@ index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..83f4df4458bd915536bd803e9e93a8d5
        CO = self.sm['carOutput']
        if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
          output_healthy = (
-@@ -889,6 +897,8 @@ class Controls:
+@@ -889,6 +902,8 @@ class Controls:
          )
        else:
          self.steer_limited_by_safety = abs(CC.actuators.torque - CO.actuatorsOutput.torque) > 1e-2
@@ -447,16 +466,63 @@ index 8d1330b4987b0c8ce7e8cd733f5872a2a996f9aa..a31edac07c7bb5cdf9a93c6fef3c75d6
        self.desire = TURN_DESIRES[self.turn_direction]
      else:
 diff --git a/selfdrive/controls/lib/drive_helpers.py b/selfdrive/controls/lib/drive_helpers.py
-index 8a2a1881f874dcc673a63fc6f4fdeb51d77348a0..b47c1ee3eddea3de63a3b425251ba53bead7437a 100644
+index 8a2a1881f874dcc673a63fc6f4fdeb51d77348a0..0ef74d6e19dc066512381aea90d7f927e2ac527c 100644
 --- a/selfdrive/controls/lib/drive_helpers.py
 +++ b/selfdrive/controls/lib/drive_helpers.py
-@@ -1,4 +1,5 @@
+@@ -1,4 +1,6 @@
  import numpy as np
 +from cereal import log
++from opendbc.car.hyundai.ev9 import EV9_HIGH_LATERAL_LIMIT
  from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
  from openpilot.common.realtime import DT_CTRL, DT_MDL
  
-@@ -69,6 +70,14 @@ def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.
+@@ -22,7 +24,8 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
+   alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
+   return alpha * val + (1 - alpha) * prev_val
+ 
+-def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0, lat_accel_factor=1.0) -> tuple[float, bool]:
++def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0, lat_accel_factor=1.0,
++                   *, ev9_angle_limit_speed_mps: float | None = None) -> tuple[float, bool]:
+   # This function respects ISO lateral jerk and acceleration limits + a max curvature
+   v_ego = max(v_ego, MIN_SPEED)
+   max_curvature_rate = (MAX_LATERAL_JERK * jerk_factor) / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
+@@ -30,8 +33,10 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0,
+                           prev_curvature - max_curvature_rate * DT_CTRL,
+                           prev_curvature + max_curvature_rate * DT_CTRL)
+ 
+-  effective_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL * lat_accel_factor
+-  roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
++  ev9_low_speed = ev9_angle_limit_speed_mps is not None and v_ego <= ev9_angle_limit_speed_mps
++  base_lat_accel = EV9_HIGH_LATERAL_LIMIT if ev9_low_speed else MAX_LATERAL_ACCEL_NO_ROLL
++  effective_lat_accel = base_lat_accel * lat_accel_factor
++  roll_compensation = 0.0 if ev9_low_speed else roll * ACCELERATION_DUE_TO_GRAVITY
+   min_curvature = (-effective_lat_accel + roll_compensation) / v_ego ** 2
+   max_curvature = (effective_lat_accel + roll_compensation) / v_ego ** 2
+   if lat_accel_factor < 1.0:
+@@ -39,15 +44,18 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0,
+     # (e.g. lane change on a curve); it only limits further growth.
+     min_curvature = min(min_curvature, prev_curvature)
+     max_curvature = max(max_curvature, prev_curvature)
+-  # Saturation is reported against the stock envelope only: riding an intentionally
++  # Saturation is reported against the unshaped vehicle envelope only: riding an intentionally
+   # tightened lane-change ceiling is comfort shaping, not steering saturation, and
+   # must not trip the "Turn Exceeds Steering Limit" alert.
+-  stock_min_curvature = (-MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation) / v_ego ** 2
+-  stock_max_curvature = (MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation) / v_ego ** 2
++  stock_min_curvature = (-base_lat_accel + roll_compensation) / v_ego ** 2
++  stock_max_curvature = (base_lat_accel + roll_compensation) / v_ego ** 2
+   limited_accel = bool(new_curvature < stock_min_curvature or new_curvature > stock_max_curvature)
+   new_curvature, _ = clamp(new_curvature, min_curvature, max_curvature)
+ 
+-  new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
++  # EV9 tight turns retain downstream vehicle-model and Panda limits.
++  limited_max_curv = False
++  if not ev9_low_speed:
++    new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+   return float(new_curvature), limited_accel or limited_max_curv
+ 
+ 
+@@ -69,6 +77,14 @@ def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.
  get_accel_from_plan_tomb_raider = get_accel_from_plan
  
  
@@ -510,11 +576,10 @@ index 8ec54a9bdb7b340b341cc21de50f9164e8583f54..c57f0a90b120b03a655d049b947a6cb1
  def test_get_lateral_active_requires_enabled_without_aol():
 diff --git a/selfdrive/controls/tests/test_ev9_curvature_limits.py b/selfdrive/controls/tests/test_ev9_curvature_limits.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..474a71a343687a2b25e1327f97e393b77b2087c6
+index 0000000000000000000000000000000000000000..054adf1890311007d9d671de690b7a7a77f3f1cc
 --- /dev/null
 +++ b/selfdrive/controls/tests/test_ev9_curvature_limits.py
-@@ -0,0 +1,40 @@
-+"""EV9 uses the standard StarPilot curvature envelope at every speed."""
+@@ -0,0 +1,48 @@
 +import pytest
 +
 +from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
@@ -524,36 +589,45 @@ index 0000000000000000000000000000000000000000..474a71a343687a2b25e1327f97e393b7
 +
 +@pytest.mark.parametrize('sign', [-1, 1])
 +@pytest.mark.parametrize('roll', [-0.1, 0.1])
-+@pytest.mark.parametrize('speed', [5, 10, 40 / 3.6, 40 / 3.6 + 0.001, 20])
-+def test_standard_acceleration_with_roll_at_all_speeds(sign, roll, speed):
-+  result, limited = clip_curvature(speed, sign * 0.2, sign * 0.2, roll)
-+  assert result == pytest.approx((sign * 3.0 + roll * ACCELERATION_DUE_TO_GRAVITY) / speed**2)
++def test_ev9_low_speed_uses_symmetric_acceleration_without_roll(sign, roll):
++  result, limited = clip_curvature(10, sign * 0.1, sign * 0.1, roll, ev9_angle_limit_speed_mps=40 / 3.6)
++  assert result == pytest.approx(sign * 4.2 / 100)
 +  assert limited
 +
 +
-+@pytest.mark.parametrize('sign', [-1, 1])
-+def test_low_speed_keeps_standard_curvature_cap(sign):
-+  result, limited = clip_curvature(1, sign * 0.5, sign * 0.5, 0)
-+  assert result == sign * 0.2
++@pytest.mark.parametrize('speed', [40 / 3.6, 40 / 3.6 + 0.001])
++def test_threshold_includes_boundary_and_restores_stock_above(speed):
++  result, limited = clip_curvature(speed, 0.1, 0.1, 0.05, ev9_angle_limit_speed_mps=40 / 3.6)
++  accel = 4.2 if speed <= 40 / 3.6 else 3.0 + 0.05 * ACCELERATION_DUE_TO_GRAVITY
++  assert result == pytest.approx(accel / speed**2)
 +  assert limited
 +
 +
-+def test_jerk_comfort_factor_remains_effective():
-+  result, limited = clip_curvature(10, 0, 0.1, 0, jerk_factor=0.25)
++def test_omitted_vehicle_threshold_keeps_stock_roll_and_curvature_caps():
++  assert clip_curvature(1, 0.5, 0.5, 0)[0] == 0.2
++  assert clip_curvature(1, 0.5, 0.5, 0, ev9_angle_limit_speed_mps=40 / 3.6) == (0.5, False)
++  result, limited = clip_curvature(10, 0.1, 0.1, 0.1)
++  assert result == pytest.approx((3 + 0.1 * ACCELERATION_DUE_TO_GRAVITY) / 100)
++  assert limited
++
++
++@pytest.mark.parametrize('threshold', [None, 40 / 3.6])
++def test_jerk_comfort_factor_remains_effective(threshold):
++  result, limited = clip_curvature(10, 0, 0.1, 0, jerk_factor=0.25, ev9_angle_limit_speed_mps=threshold)
 +  assert result == pytest.approx(MAX_LATERAL_JERK * 0.25 / 100 * DT_CTRL)
 +  assert not limited
 +
 +
-+def test_acceleration_comfort_preserves_existing_curve_without_false_saturation():
-+  result, limited = clip_curvature(10, 0.014, 0.022, 0, lat_accel_factor=0.5)
-+  assert result == pytest.approx(0.0145)
++def test_ev9_acceleration_comfort_limits_growth_without_false_saturation():
++  result, limited = clip_curvature(10, 0.02, 0.022, 0, lat_accel_factor=0.5, ev9_angle_limit_speed_mps=40 / 3.6)
++  assert result == pytest.approx(0.0205)
 +  assert not limited
-+  result, limited = clip_curvature(10, 0.021, 0.025, 0, lat_accel_factor=0.5)
++  result, limited = clip_curvature(10, 0.021, 0.025, 0, lat_accel_factor=0.5, ev9_angle_limit_speed_mps=40 / 3.6)
 +  assert result == pytest.approx(0.021)
 +  assert not limited
-+  result, limited = clip_curvature(10, 0.03, 0.035, 0, lat_accel_factor=0.5)
++  result, limited = clip_curvature(10, 0.03, 0.035, 0, lat_accel_factor=0.5, ev9_angle_limit_speed_mps=40 / 3.6)
 +  assert result == 0.03  # Preserve an existing curve, prohibit further growth.
-+  assert limited  # The request exceeds the standard unshaped envelope.
++  assert not limited
 diff --git a/selfdrive/controls/tests/test_navigation_desires.py b/selfdrive/controls/tests/test_navigation_desires.py
 index 13128651ed9982725eb70968398666aa86697ece..1b5ad4ceddaaaf053991cac74bea213999f9291d 100644
 --- a/selfdrive/controls/tests/test_navigation_desires.py

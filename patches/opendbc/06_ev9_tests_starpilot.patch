@@ -219,15 +219,15 @@ index 0000000000000000000000000000000000000000..34d1995672ab4f72b0a3b0bad5b38121
 +  assert state.mdps_steering_angle == pytest.approx(10 * sign)
 +  assert state.angle_steering_angle == pytest.approx(20 * sign)
 diff --git a/opendbc/car/hyundai/tests/test_hyundai.py b/opendbc/car/hyundai/tests/test_hyundai.py
-index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e1a49b404 100644
+index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..f5ecacaa127f82332e387d88bca2ae8e8fe025ac 100644
 --- a/opendbc/car/hyundai/tests/test_hyundai.py
 +++ b/opendbc/car/hyundai/tests/test_hyundai.py
-@@ -541,13 +541,16 @@ class TestHyundaiFingerprint:
+@@ -541,13 +541,17 @@ class TestHyundaiFingerprint:
      assert get_angle_smoothing_alpha(ev9_cp, 20.0) == pytest.approx(get_angle_smoothing_alpha(other_cp, 20.0))
      assert get_angle_smoothing_alpha(other_cp, 20.0) == pytest.approx(0.0)
  
 -  def test_ev9_direct_angle_waits_for_safety_envelope(self):
-+  @pytest.mark.parametrize("speed,inside,outside", [(8.47, 180.0, 200.0), (20.0, 30.0, 40.0)])
++  @pytest.mark.parametrize("speed,inside,outside", [(8.47, 210.0, 225.0), (20.0, 30.0, 40.0)])
 +  @pytest.mark.parametrize("sign", [-1, 1])
 +  def test_ev9_direct_angle_waits_for_safety_envelope(self, speed, inside, outside, sign):
      CP = CarInterface.get_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], True, False, False, None)
@@ -236,6 +236,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
 -    assert not direct_angle_request_allowed(8.47, 155.5, 155.6, True, controller.BASELINE_VM, controller.params)
 -    assert direct_angle_request_allowed(8.47, 140.0, 140.0, True, controller.BASELINE_VM, controller.params)
 -    assert not direct_angle_request_allowed(8.47, 140.0, 140.0, False, controller.BASELINE_VM, controller.params)
++    controller._update_ev9_angle_limits(speed, get_test_toggles())
 +    limits = controller._ev9_safety_params
 +    assert direct_angle_request_allowed(speed, inside * sign, inside * sign, True, controller.BASELINE_VM, limits)
 +    assert not direct_angle_request_allowed(speed, outside * sign, inside * sign, True, controller.BASELINE_VM, limits)
@@ -244,7 +245,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
  
    def test_angle_platforms_standstill_steering_flags(self):
      ev9_cp = CarInterface.get_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], False, False, False, None)
-@@ -2488,7 +2491,8 @@ class TestHyundaiFingerprint:
+@@ -2488,7 +2492,8 @@ class TestHyundaiFingerprint:
      assert lead_distance == pytest.approx(20.0)
      assert lead_rel_speed == pytest.approx(0.0)
  
@@ -254,7 +255,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      CP = CarParams.new_message()
      CP.carFingerprint = CAR.KIA_EV9
      CP.flags = int(HyundaiFlags.CANFD | HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING |
-@@ -2496,6 +2500,7 @@ class TestHyundaiFingerprint:
+@@ -2496,6 +2501,7 @@ class TestHyundaiFingerprint:
      CP.openpilotLongitudinalControl = False
  
      controller = CarController(DBC[CP.carFingerprint], CP)
@@ -262,7 +263,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      controller.frame = 1
      can_bus = CanBus(CP)
      parser = CANParser(DBC[CP.carFingerprint][Bus.pt], [("LKAS_ALT", 0)], can_bus.ACAN)
-@@ -2524,7 +2529,10 @@ class TestHyundaiFingerprint:
+@@ -2524,7 +2530,10 @@ class TestHyundaiFingerprint:
      cs = SimpleNamespace(stock_lfa_msg=None, stock_lkas_msg=stock_lkas,
                           out=SimpleNamespace(steeringAngleDeg=0.0, gearShifter=structs.CarState.GearShifter.drive))
  
@@ -274,7 +275,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
                                          get_test_toggles(), lka_icon=2, lfa_icon=2)
      lkas_msgs = [msg for msg in msgs if msg[0] == 0x110]
      assert len(lkas_msgs) == 1
-@@ -2532,9 +2540,9 @@ class TestHyundaiFingerprint:
+@@ -2532,9 +2541,9 @@ class TestHyundaiFingerprint:
      parser.update([(1, lkas_msgs)])
  
      assert parser.can_valid
@@ -286,7 +287,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
  
    def test_gv70_electrified_uses_clean_damped_lkas_status_payload(self):
      CP = CarParams.new_message()
-@@ -2745,7 +2753,7 @@ class TestHyundaiFingerprint:
+@@ -2745,7 +2754,7 @@ class TestHyundaiFingerprint:
      CP.openpilotLongitudinalControl = False
      assert not suppress_redundant_gv70_brake_cancel(CP, brake_pressed=True, lat_active=True)
  
@@ -295,7 +296,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      CP = CarParams.new_message()
      CP.carFingerprint = CAR.KIA_EV9
      CP.flags = int(HyundaiFlags.CANFD | HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING |
-@@ -2793,10 +2801,13 @@ class TestHyundaiFingerprint:
+@@ -2793,10 +2802,13 @@ class TestHyundaiFingerprint:
      cs = SimpleNamespace(stock_lfa_msg=None, stock_lkas_msg=stock_lkas, lfa_block_msg=lfa_block_msg,
                           out=SimpleNamespace(steeringAngleDeg=-201.0))
  
@@ -310,7 +311,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
  
    @pytest.mark.parametrize(("standstill", "expected_lkas_msgs"), [(False, 1), (True, 0)])
    def test_ioniq_5_pe_standstill_lets_safety_forward_stock_lkas(self, standstill, expected_lkas_msgs):
-@@ -2895,7 +2906,7 @@ class TestHyundaiFingerprint:
+@@ -2895,7 +2907,7 @@ class TestHyundaiFingerprint:
      assert parser.vl["LKAS_ALT"]["LKAS_ANGLE_ACTIVE"] == 2
      assert parser.vl["LKAS_ALT"]["ADAS_ACIAnglTqRedcGainVal"] == pytest.approx(0.4)
  
@@ -319,7 +320,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      CP = CarParams.new_message()
      CP.carFingerprint = CAR.KIA_EV9
      CP.flags = int(HyundaiFlags.CANFD | HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING |
-@@ -2911,10 +2922,13 @@ class TestHyundaiFingerprint:
+@@ -2911,10 +2923,13 @@ class TestHyundaiFingerprint:
      cs = SimpleNamespace(stock_lfa_msg=None, stock_lkas_msg={}, lfa_block_msg=lfa_block_msg,
                           out=SimpleNamespace(steeringAngleDeg=0.0, gearShifter=structs.CarState.GearShifter.drive))
  
@@ -334,7 +335,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
  
    def test_ev9_active_angle_steering_still_suppresses_stock_lfa(self):
      CP = CarParams.new_message()
-@@ -2924,6 +2938,7 @@ class TestHyundaiFingerprint:
+@@ -2924,6 +2939,7 @@ class TestHyundaiFingerprint:
      CP.openpilotLongitudinalControl = False
  
      controller = CarController(DBC[CP.carFingerprint], CP)
@@ -342,7 +343,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      controller.frame = 5
      can_bus = CanBus(CP)
      parser = CANParser(DBC[CP.carFingerprint][Bus.pt], [("CAM_0x362", 0)], can_bus.ECAN)
-@@ -2934,6 +2949,9 @@ class TestHyundaiFingerprint:
+@@ -2934,6 +2950,9 @@ class TestHyundaiFingerprint:
      cs = SimpleNamespace(stock_lfa_msg=None, stock_lkas_msg={}, lfa_block_msg=lfa_block_msg,
                           out=SimpleNamespace(steeringAngleDeg=0.0, gearShifter=structs.CarState.GearShifter.drive))
  
@@ -352,7 +353,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      msgs = controller.create_canfd_msgs(0, False, 0.0, 0.0, 0.0, 0.0, False, cc.hudControl, cs, cc,
                                          get_test_toggles(), lka_icon=2, lfa_icon=2)
      suppress_msgs = [msg for msg in msgs if msg[0] == 0x362]
-@@ -2953,6 +2971,7 @@ class TestHyundaiFingerprint:
+@@ -2953,6 +2972,7 @@ class TestHyundaiFingerprint:
      CP.openpilotLongitudinalControl = False
  
      controller = CarController(DBC[CP.carFingerprint], CP)
@@ -360,7 +361,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      controller.frame = 5
      can_bus = CanBus(CP)
      parser = CANParser(DBC[CP.carFingerprint][Bus.pt], [("LKAS_ALT", 0)], can_bus.ACAN)
-@@ -2983,6 +3002,9 @@ class TestHyundaiFingerprint:
+@@ -2983,6 +3003,9 @@ class TestHyundaiFingerprint:
      cs = SimpleNamespace(stock_lfa_msg=None, stock_lkas_msg=stock_lkas, lfa_block_msg=lfa_block_msg,
                           out=SimpleNamespace(steeringAngleDeg=120.0, gearShifter=structs.CarState.GearShifter.drive))
  
@@ -370,7 +371,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      msgs = controller.create_canfd_msgs(0, True, 0.44, 120.0, 0.0, 0.0, False, cc.hudControl, cs, cc,
                                          get_test_toggles(), lka_icon=2, lfa_icon=2)
      lkas_msgs = [msg for msg in msgs if msg[0] == 0x110]
-@@ -3307,6 +3329,7 @@ class TestHyundaiFingerprint:
+@@ -3307,6 +3330,7 @@ class TestHyundaiFingerprint:
      CP.openpilotLongitudinalControl = True
  
      controller = CarController(DBC[CP.carFingerprint], CP)
@@ -378,7 +379,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      controller.frame = 1
      controller.ecu_disable_failed = True
      controller.long_active_ecu = False
-@@ -3367,10 +3390,16 @@ class TestHyundaiFingerprint:
+@@ -3367,10 +3391,16 @@ class TestHyundaiFingerprint:
        ),
      )
  
@@ -396,7 +397,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
  
    def test_kia_ev6_lkas_helper_preserves_stock_camera_fields_with_stock_long(self):
      CP = CarParams.new_message()
-@@ -3590,13 +3619,13 @@ class TestHyundaiFingerprint:
+@@ -3590,13 +3620,13 @@ class TestHyundaiFingerprint:
      assert parser.vl["LKAS_ALT"]["LKA_LHLnWrnSta"] == 0
      assert parser.vl["LKAS_ALT"]["LKA_RHLnWrnSta"] == 0
      assert parser.vl["LKAS_ALT"]["LKA_HndsoffSnd"] == 0
@@ -412,7 +413,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      assert parser.vl["LKAS_ALT"]["LKA_UsmMod"] == 0
      assert parser.vl["LKAS_ALT"]["LKA_MODE"] == 0
      assert parser.vl["LKAS_ALT"]["LKA_AVAILABLE"] == 0
-@@ -3607,10 +3636,11 @@ class TestHyundaiFingerprint:
+@@ -3607,10 +3637,11 @@ class TestHyundaiFingerprint:
      assert parser.vl["LKAS_ALT"]["STEER_REQ"] == 0
      assert parser.vl["LKAS_ALT"]["LFA_BUTTON"] == 0
      assert parser.vl["LKAS_ALT"]["LKA_ASSIST"] == 0
@@ -426,7 +427,7 @@ index 2ad5d32821b9da22cb7ff13f4f1aad1a042b1148..add91867460d87869ceab6967ba98d8e
      assert parser.vl["LKAS_ALT"]["ADAS_ACIAnglTqRedcGainVal"] == pytest.approx(0.0)
  
    def test_ev9_accelerator_brake_alt_spoof_matches_route_template(self):
-@@ -3836,6 +3866,7 @@ class TestHyundaiFingerprint:
+@@ -3836,6 +3867,7 @@ class TestHyundaiFingerprint:
      CP.openpilotLongitudinalControl = True
  
      controller = CarController(DBC[CP.carFingerprint], CP)
@@ -517,11 +518,11 @@ index 291b4c7072901119c56a59c0b5aea8b1eff621bc..e5c055724ba3c5b8c331c96ef10df0f8
      self._reset_speed_measurement(self.STANDSTILL_THRESHOLD + 1)
 diff --git a/opendbc/safety/tests/test_hyundai_ev9.py b/opendbc/safety/tests/test_hyundai_ev9.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..b776f80a8942f9e6ed2191a11b91f1f9a49a1461
+index 0000000000000000000000000000000000000000..14ca89f9e41db9227b5412553aae45ce8daa7ba7
 --- /dev/null
 +++ b/opendbc/safety/tests/test_hyundai_ev9.py
-@@ -0,0 +1,166 @@
-+"""EV9-specific model and standard steering envelope checks against native Panda hooks."""
+@@ -0,0 +1,151 @@
++"""EV9-specific model and low-speed envelope checks against native Panda hooks."""
 +import math
 +
 +import pytest
@@ -561,7 +562,7 @@ index 0000000000000000000000000000000000000000..b776f80a8942f9e6ed2191a11b91f1f9
 +  for beyond in (False, True):
 +    case = make_case(ev9, direct)
 +    speed = case._set_physical_angle_test_speed(physical_speed)
-+    limit = 3.0 + 9.81 * 0.06
++    limit = 4.2 if ev9 and speed <= 42 / 3.6 + 0.1 else 3.0 + 9.81 * 0.06
 +    slip, ratio, wheelbase = (-0.0005410588125765342, 16, 3.10) if ev9 else (-0.0006085930193026732, 13.7, 2.756)
 +    factor = 1 / (1 - slip * speed**2) / wheelbase
 +    angle = limit / speed**2 * ratio / factor * 180 / math.pi
@@ -574,21 +575,6 @@ index 0000000000000000000000000000000000000000..b776f80a8942f9e6ed2191a11b91f1f9
 +    case.safety.set_desired_angle_last(raw if kind == 'accel' else 0)
 +    assert bool(send_angle(case, raw / 10, direct)) == (not beyond), (ev9, direct, speed, kind, sign, raw)
 +
-+
-+@pytest.mark.parametrize('direct', [False, True])
-+@pytest.mark.parametrize('kind', ['accel', 'jerk'])
-+def test_ev9_rejects_former_low_speed_uplift(direct, kind):
-+  case = make_case(True, direct)
-+  speed = case._set_physical_angle_test_speed(10.0)
-+  # Exercise the former quantized 4.2 boundary, including its one-CAN-unit tolerance.
-+  factor = 1 / (1 + 0.0005410588125765342 * speed**2) / 3.10
-+  angle = 4.2 / speed**2 * 16 / factor * 180 / math.pi
-+  if kind == 'jerk':
-+    angle /= 100
-+  raw = int(angle * 10 + 1)
-+  case.safety.set_controls_allowed(True)
-+  case.safety.set_desired_angle_last(raw if kind == 'accel' else 0)
-+  assert not send_angle(case, raw / 10, direct)
 +
 +def test_ev9_flag_preserves_ev_gas_and_aol_behavior():
 +  case = make_case(True)
@@ -874,10 +860,10 @@ index 0000000000000000000000000000000000000000..c9d1a16b98ffba0aad307aa43d607e7d
 +  assert not case._tx(case._angle_cmd_msg(0, enabled=True))
 diff --git a/opendbc/safety/tests/test_hyundai_ev9_controller.py b/opendbc/safety/tests/test_hyundai_ev9_controller.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..f220ba9a489f008d13f34c54513d0a13a16d8707
+index 0000000000000000000000000000000000000000..3c2edca4f1d60ad867b36d3996d2ed609efdd589
 --- /dev/null
 +++ b/opendbc/safety/tests/test_hyundai_ev9_controller.py
-@@ -0,0 +1,517 @@
+@@ -0,0 +1,518 @@
 +"""Verify complete EV9 controller output against native Panda safety hooks."""
 +
 +import pytest
@@ -1212,8 +1198,8 @@ index 0000000000000000000000000000000000000000..f220ba9a489f008d13f34c54513d0a13
 +
 +
 +@pytest.mark.parametrize("direct", [False, True])
-+@pytest.mark.parametrize("configured_speed", [10, 40, 100])
-+def test_real_output_across_former_speed_gates(direct, configured_speed):
++@pytest.mark.parametrize("configured_speed", [32, 100])
++def test_real_output_across_controller_and_panda_speed_gates(direct, configured_speed):
 +  c, cs, cc, toggles = setup_controller(direct)
 +  toggles.hkg_tuning_angle_custom_limit_max_speed_kph = configured_speed
 +  safety = test_hyundai_canfd.TestHyundaiCanfdLKASteeringAltAngleLongEV(methodName="test_lateral_accel_limit")
@@ -1231,9 +1217,6 @@ index 0000000000000000000000000000000000000000..f220ba9a489f008d13f34c54513d0a13
 +    safety.safety.set_controls_allowed(True)
 +    safety.safety.set_timer(frame * 10_000)
 +    _, msgs = c.update(cc.as_reader(), cs, 1_000_000_000 + frame * 10_000_000, toggles)
-+    # The persisted manual-entry speed cannot restore the former elevated envelope.
-+    assert c.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL == pytest.approx(3.0 + 9.81 * 0.06)
-+    assert c.params.ANGLE_LIMITS.MAX_LATERAL_JERK == pytest.approx(3.0 + 9.81 * 0.06)
 +    selected = [m for m in msgs if m[0] == (0xCB if direct else 0x110)]
 +    assert len(selected) == 1
 +    addr, data, bus = selected[0]
@@ -1276,15 +1259,18 @@ index 0000000000000000000000000000000000000000..f220ba9a489f008d13f34c54513d0a13
 +
 +
 +@pytest.mark.parametrize("direct", [False, True])
-+@pytest.mark.parametrize("configured_speed", [10, 40, 100])
-+def test_saturated_speed_increase_resets_then_recovers(direct, configured_speed):
++@pytest.mark.parametrize("gate,configured_speed", [(32 / 3.6, 32), (42 / 3.6 + 1.1, 100)])
++def test_saturated_gate_drop_resets_then_recovers(direct, gate, configured_speed):
 +  from opendbc.car.lateral import get_max_angle_vm
 +
 +  c, cs, cc, toggles = setup_controller(direct)
 +  toggles.hkg_tuning_angle_custom_limit_max_speed_kph = configured_speed
-+  before = get_max_angle_vm(25 / 3.6, c.VM, c.params)
++  c._update_ev9_angle_limits(gate - 0.02, toggles)
++  before = (
++    get_max_angle_vm(max(gate - 1.02, 1), c.BASELINE_VM, c._ev9_safety_params) if configured_speed == 100 else get_max_angle_vm(gate - 0.02, c.VM, c.params)
++  )
 +  c.apply_angle_last = c.angle_filter.x = before
-+  cs.out.vEgoRaw = cs.out.vEgo = 30 / 3.6
++  cs.out.vEgoRaw = cs.out.vEgo = gate + 0.02
 +  cc.actuators.steeringAngleDeg = before
 +  _, msgs = c.update(cc.as_reader(), cs, 1_000_000_000, toggles)
 +  assert_steering_payloads(c, msgs, False)
@@ -1366,6 +1352,7 @@ index 0000000000000000000000000000000000000000..f220ba9a489f008d13f34c54513d0a13
 +  c, cs, cc, toggles = setup_controller(direct)
 +  toggles.hkg_shared_autonomy_mode = 0
 +  toggles.hkg_tuning_angle_custom_limit_max_speed_kph = 40
++  c._update_ev9_angle_limits(speed, toggles)
 +  boundary = min(c.params.ANGLE_LIMITS.STEER_ANGLE_MAX, get_max_angle_vm(speed, c.VM, c.params),
 +                 get_max_angle_vm(speed - 1, c.BASELINE_VM, c._ev9_safety_params))
 +  initial = sign * (boundary - 0.2)

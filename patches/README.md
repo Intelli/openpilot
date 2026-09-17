@@ -57,11 +57,8 @@ and signal-driven EV9 turn desires through predicted stops,
 and continuous inactive LKAS traffic with
 matching Panda forwarding. Actual manual handoff is reported through an appended
 actuator telemetry field; capacitive hands-on state includes its sample timestamp.
-The former EV9 low-speed steering-envelope increase has been removed: controller
-and Panda use standard StarPilot limits with EV9 geometry, and application curvature
-limiting includes the standard roll compensation and curvature cap. The saved speed
-setting now controls manual-handoff entry only. Longitudinal acceleration limits
-remain unchanged; see the migration guide for scope and verification. Recent-device investigation
+Numeric steering and acceleration limits are unchanged;
+see the migration guide for scope and verification. Recent-device investigation
 is documented in [the drive-review workflow](../docs/RECENT_DRIVE_REVIEW.md).
 
 `assets/openpilot/` preserves custom artwork and audio. Original helpers and

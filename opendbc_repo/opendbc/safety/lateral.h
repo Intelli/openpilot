@@ -374,9 +374,11 @@ bool steer_angle_cmd_checks_vm(int desired_angle, bool steer_control_enabled, co
   // TODO: remove the inaccurate breakpoint angle limiting function above and always use this one
 
   // Highway curves are rolled in the direction of the turn, add tolerance to compensate
-  static const float MAX_LATERAL_ACCEL = ISO_LATERAL_ACCEL + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^2
+  const float MAX_LATERAL_ACCEL = (limits.max_lateral_accel > 0.0F) ? limits.max_lateral_accel :
+                                  ISO_LATERAL_ACCEL + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^2 by default
   // Lower than ISO 11270 lateral jerk limit, which is 5.0 m/s^3
-  static const float MAX_LATERAL_JERK = 3.0 + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^3
+  const float MAX_LATERAL_JERK = (limits.max_lateral_jerk > 0.0F) ? limits.max_lateral_jerk :
+                                 3.0F + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^3 by default
 
   const float fudged_speed = SAFETY_MAX((vehicle_speed.min / VEHICLE_SPEED_FACTOR) - 1.0, 1.0);
   const float curvature_factor = get_curvature_factor(fudged_speed, params);

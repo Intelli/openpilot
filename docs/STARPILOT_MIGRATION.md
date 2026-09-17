@@ -47,24 +47,20 @@ Archived helpers under `patches/legacy-openpilot-tooling/` and
 | `01_customize_warnings_starpilot.patch` | 0.3-second steering-saturation timer |
 | `02_door_signals_starpilot.patch` | All four CAN-FD doors |
 | `03_modify_baseline_starpilot.patch` | EV9 vehicle model, safety identification and flag decoding |
-| `04_panda_safety_limits_starpilot.patch` | EV9 permissions, knob engagement and stock-LKAS forwarding ownership |
-| `05_steering_and_ev9_limits_starpilot.patch` | Controller/Panda envelope agreement, override effort, HOD and manual handoff |
+| `04_panda_safety_limits_starpilot.patch` | EV9 numeric safety limits and stock-LKAS forwarding ownership |
+| `05_steering_and_ev9_limits_starpilot.patch` | Controller limits, override effort, HOD and manual handoff |
 | `06_ev9_tests_starpilot.patch` | Vehicle/controller/native-safety regression tests |
 
 ### Limits and steering ownership
 
-- EV9 retains its vehicle geometry while using standard StarPilot steering
-  envelopes at all speeds: approximately 3.59 m/s² lateral acceleration and
-  3.59 m/s³ lateral jerk in the controller and Panda. The former 4.2 low-speed
-  increase is removed for steering-fault investigation. Longitudinal acceleration
-  continues to use StarPilot defaults.
-- Upper-level curvature uses the standard 3.0 m/s² envelope with roll compensation
-  and the 0.2 m⁻¹ curvature cap. Both steering transports retain controller and
-  Panda checks; this rollback does not establish that the vehicle fault is fixed.
-- The retained speed setting is labeled Manual Control Entry Speed and affects
-  manual-handoff entry only. Its application default remains 40 km/h, with a
-  32 km/h vehicle fallback without a broadcast. Saved values cannot increase
-  steering limits.
+- Preserve the historical EV9 steering envelopes; longitudinal acceleration uses
+  StarPilot defaults. Low-speed lateral acceleration/jerk limits are 4.2 m/s²
+  and 4.2 m/s³. Upper-level curvature uses the matching symmetric envelope below
+  the configured threshold; controller and Panda checks still apply.
+- The application threshold defaults to 40 km/h; the vehicle consumer falls back
+  to 32 km/h without a broadcast. Panda independently uses
+  `max(measured_speed - 1, 1) <= 42 / 3.6 + 0.1` (m/s), approximately 45.96 km/h
+  measured speed. Above the applicable gate, standard limits apply.
 - Ordinary clipping keeps steering active at the nearest valid command. An empty
   angle/rate intersection requires inactive control, as in Sunnypilot. A blanket
   hold at the last angle would bypass these checks.

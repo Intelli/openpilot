@@ -332,8 +332,8 @@ def test_direct_manual_does_not_revive_guard(guard):
 
 
 @pytest.mark.parametrize("direct", [False, True])
-@pytest.mark.parametrize("configured_speed", [10, 40, 100])
-def test_real_output_across_former_speed_gates(direct, configured_speed):
+@pytest.mark.parametrize("configured_speed", [32, 100])
+def test_real_output_across_controller_and_panda_speed_gates(direct, configured_speed):
   c, cs, cc, toggles = setup_controller(direct)
   toggles.hkg_tuning_angle_custom_limit_max_speed_kph = configured_speed
   safety = test_hyundai_canfd.TestHyundaiCanfdLKASteeringAltAngleLongEV(methodName="test_lateral_accel_limit")
@@ -351,9 +351,6 @@ def test_real_output_across_former_speed_gates(direct, configured_speed):
     safety.safety.set_controls_allowed(True)
     safety.safety.set_timer(frame * 10_000)
     _, msgs = c.update(cc.as_reader(), cs, 1_000_000_000 + frame * 10_000_000, toggles)
-    # The persisted manual-entry speed cannot restore the former elevated envelope.
-    assert c.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL == pytest.approx(3.0 + 9.81 * 0.06)
-    assert c.params.ANGLE_LIMITS.MAX_LATERAL_JERK == pytest.approx(3.0 + 9.81 * 0.06)
     selected = [m for m in msgs if m[0] == (0xCB if direct else 0x110)]
     assert len(selected) == 1
     addr, data, bus = selected[0]
@@ -396,15 +393,18 @@ def assert_steering_payloads(controller, msgs, active):
 
 
 @pytest.mark.parametrize("direct", [False, True])
-@pytest.mark.parametrize("configured_speed", [10, 40, 100])
-def test_saturated_speed_increase_resets_then_recovers(direct, configured_speed):
+@pytest.mark.parametrize("gate,configured_speed", [(32 / 3.6, 32), (42 / 3.6 + 1.1, 100)])
+def test_saturated_gate_drop_resets_then_recovers(direct, gate, configured_speed):
   from opendbc.car.lateral import get_max_angle_vm
 
   c, cs, cc, toggles = setup_controller(direct)
   toggles.hkg_tuning_angle_custom_limit_max_speed_kph = configured_speed
-  before = get_max_angle_vm(25 / 3.6, c.VM, c.params)
+  c._update_ev9_angle_limits(gate - 0.02, toggles)
+  before = (
+    get_max_angle_vm(max(gate - 1.02, 1), c.BASELINE_VM, c._ev9_safety_params) if configured_speed == 100 else get_max_angle_vm(gate - 0.02, c.VM, c.params)
+  )
   c.apply_angle_last = c.angle_filter.x = before
-  cs.out.vEgoRaw = cs.out.vEgo = 30 / 3.6
+  cs.out.vEgoRaw = cs.out.vEgo = gate + 0.02
   cc.actuators.steeringAngleDeg = before
   _, msgs = c.update(cc.as_reader(), cs, 1_000_000_000, toggles)
   assert_steering_payloads(c, msgs, False)
@@ -486,6 +486,7 @@ def test_steady_saturation_holds_valid_boundary_without_releasing(direct, sign, 
   c, cs, cc, toggles = setup_controller(direct)
   toggles.hkg_shared_autonomy_mode = 0
   toggles.hkg_tuning_angle_custom_limit_max_speed_kph = 40
+  c._update_ev9_angle_limits(speed, toggles)
   boundary = min(c.params.ANGLE_LIMITS.STEER_ANGLE_MAX, get_max_angle_vm(speed, c.VM, c.params),
                  get_max_angle_vm(speed - 1, c.BASELINE_VM, c._ev9_safety_params))
   initial = sign * (boundary - 0.2)
