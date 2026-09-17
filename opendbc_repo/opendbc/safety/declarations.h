@@ -133,9 +133,6 @@ typedef struct {
   const int max_angle_error;             // used to limit error between meas and cmd while enabled
   const float angle_error_min_speed;     // minimum speed to start limiting angle error
   const uint32_t frequency;              // Hz
-  // Vehicle-model angle checks: zero selects the standard road-roll-adjusted limits.
-  const float max_lateral_accel;
-  const float max_lateral_jerk;
 
   const bool angle_is_curvature;         // if true, we can apply max lateral acceleration limits
   const bool enforce_angle_error;        // enables max_angle_error check

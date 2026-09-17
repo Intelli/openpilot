@@ -541,12 +541,11 @@ class TestHyundaiFingerprint:
     assert get_angle_smoothing_alpha(ev9_cp, 20.0) == pytest.approx(get_angle_smoothing_alpha(other_cp, 20.0))
     assert get_angle_smoothing_alpha(other_cp, 20.0) == pytest.approx(0.0)
 
-  @pytest.mark.parametrize("speed,inside,outside", [(8.47, 210.0, 225.0), (20.0, 30.0, 40.0)])
+  @pytest.mark.parametrize("speed,inside,outside", [(8.47, 180.0, 200.0), (20.0, 30.0, 40.0)])
   @pytest.mark.parametrize("sign", [-1, 1])
   def test_ev9_direct_angle_waits_for_safety_envelope(self, speed, inside, outside, sign):
     CP = CarInterface.get_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], True, False, False, None)
     controller = CarController(DBC[CP.carFingerprint], CP)
-    controller._update_ev9_angle_limits(speed, get_test_toggles())
     limits = controller._ev9_safety_params
     assert direct_angle_request_allowed(speed, inside * sign, inside * sign, True, controller.BASELINE_VM, limits)
     assert not direct_angle_request_allowed(speed, outside * sign, inside * sign, True, controller.BASELINE_VM, limits)

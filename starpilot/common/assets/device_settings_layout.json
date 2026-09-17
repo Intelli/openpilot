@@ -20,7 +20,7 @@
       {
         "key": "HkgSharedAutonomyMode",
         "label": "Improved Manual Control",
-        "description": "Hands-on steering input hands control to you at or below the EV9 limits speed. Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off. Turn vehicle off to adjust.",
+        "description": "Hands-on steering input hands control to you at or below the manual-control entry speed. Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off. Turn vehicle off to adjust.",
         "data_type": "int",
         "ui_type": "dropdown",
         "settings_tier": "simple",
@@ -59,8 +59,8 @@
       },
       {
         "key": "HkgTuningAngleCustomLimitMaxSpeedKph",
-        "label": "EV9 Limits Speed",
-        "description": "Higher steering limits and manual-control entry apply at or below this speed. Turn vehicle off to adjust.",
+        "label": "Manual Control Entry Speed",
+        "description": "Improved Manual Control can begin at or below this speed. Steering limits are unchanged. Turn vehicle off to adjust.",
         "data_type": "int",
         "ui_type": "numeric",
         "settings_tier": "simple",

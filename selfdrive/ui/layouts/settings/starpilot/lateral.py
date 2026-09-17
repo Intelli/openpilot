@@ -365,7 +365,7 @@ class StarPilotLateralLayout(_SettingsPage):
   def _ev9_rows(self):
     rows = [SettingRow(
       "HkgSharedAutonomyMode", "toggle", tr_noop("Improved Manual Control"),
-      subtitle=tr_noop("Hands-on steering input hands control to you at or below the EV9 limits speed. " +
+      subtitle=tr_noop("Hands-on steering input hands control to you at or below the manual-control entry speed. " +
                        "Release the wheel, or hold low steering demand for 1 second, to resume. Override effort still applies when off."),
       get_state=lambda: self._ev9_value("HkgSharedAutonomyMode") != 0, set_state=self._ev9_set_manual,
       enabled=self._ev9_editable, disabled_label=tr_noop("Turn vehicle off to adjust."),
@@ -373,8 +373,8 @@ class StarPilotLateralLayout(_SettingsPage):
     for key, title, description, maximum, step, unit in (
       ("HkgTuningAngleOverrideEffortPercent", "Steering Override Effort",
        "Lower values ease manual steering override. 100% applies no additional effort reduction.", 100, 10, "%"),
-      ("HkgTuningAngleCustomLimitMaxSpeedKph", "EV9 Limits Speed",
-       "Higher steering limits and manual-control entry apply at or below this speed.", 40, 1, " km/h"),
+      ("HkgTuningAngleCustomLimitMaxSpeedKph", "Manual Control Entry Speed",
+       "Improved Manual Control can begin at or below this speed. Steering limits are unchanged.", 40, 1, " km/h"),
       ("HkgTuningEv9AlertsSpeedKph", "EV9 Alert Speed",
        "Warn about steering saturation above this speed. Desired steering angles of 90° or more can still warn below it.", 50, 1, " km/h"),
     ):

@@ -20,25 +20,18 @@ index a0d3fad8a4684f1afea2cb0246da1211789940ae..d4c6741671f888b4118cd4958556596b
      enum LongControlState @0xe40f3a917d908282{
        off @0;
 diff --git a/opendbc/car/hyundai/carcontroller.py b/opendbc/car/hyundai/carcontroller.py
-index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86e9245043 100644
+index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..ff7c1c24fe52c24e1974e7b34d221b9dab52b34e 100644
 --- a/opendbc/car/hyundai/carcontroller.py
 +++ b/opendbc/car/hyundai/carcontroller.py
-@@ -1,4 +1,4 @@
--from dataclasses import dataclass
-+from dataclasses import dataclass, replace
- 
- # Provenance: portions of HKG angle control are adapted from sunnypilot/opendbc's
- # hkg-angle-steering-2025 branch at cc4b08625. See CREDITS.md and THIRD_PARTY_NOTICES.md.
-@@ -11,6 +11,8 @@ from opendbc.car.common.conversions import Conversions as CV
+@@ -11,6 +11,7 @@ from opendbc.car.common.conversions import Conversions as CV
  from opendbc.car.hyundai import hyundaicanfd, hyundaican
  from opendbc.car.hyundai.hyundaicanfd import CanBus
  from opendbc.car.hyundai.lead_data import CanLeadDataState
-+from opendbc.car.hyundai.ev9 import (EV9AngleConfig, EV9ManualControlState, EV9_HIGH_LATERAL_LIMIT, EV9_PANDA_LIMIT_SPEED_MPS,
-+                                   apply_override_gain, ev9_hands_off, ev9_hands_on)
++from opendbc.car.hyundai.ev9 import EV9AngleConfig, EV9ManualControlState, apply_override_gain, ev9_hands_off, ev9_hands_on
  from opendbc.car.hyundai.values import HyundaiFlags, HyundaiSafetyFlags, HyundaiStarPilotFlags, Buttons, CarControllerParams, CAR, CANFD_ANGLE_LONGITUDINAL_CAR, \
                                          CANFD_RADAR_ECU_KEEPALIVE_CAR, CANFD_ALT_BUTTONS_RESUME_CAR, kia_ev6_gt_line_longitudinal_tuning, \
                                          KIA_EV6_GT_LINE_LONG_TUNING_TESTING_GROUND_ID
-@@ -401,6 +403,18 @@ def compute_torque_reduction_gain(steering_torque, v_ego, lat_active, last_gain)
+@@ -401,6 +402,18 @@ def compute_torque_reduction_gain(steering_torque, v_ego, lat_active, last_gain)
    return round(gain / 0.004) * 0.004
  
  
@@ -57,7 +50,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
  def process_hud_alert(enabled, fingerprint, hud_control):
    sys_warning = (hud_control.visualAlert in (VisualAlert.steerRequired, VisualAlert.ldw))
  
-@@ -488,6 +502,27 @@ class CarController(CarControllerBase):
+@@ -488,6 +501,14 @@ class CarController(CarControllerBase):
      )
      self._ray_lfa_packer = CANPacker("hyundai_kia_ray_lfa") if self._ray_lfa_8byte else None
  
@@ -66,26 +59,13 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
 +    self._ev9_manual = EV9ManualControlState()
 +    self._ev9_initialized_angle_transports = set()
 +    if CP.carFingerprint == CAR.KIA_EV9:
-+      # Never modify the class-level angle limits shared with other Hyundai controllers.
-+      self._ev9_stock_angle_limits = replace(self.params.ANGLE_LIMITS)
++      # Keep the standard StarPilot envelope for both steering transports.
 +      self._ev9_safety_params = CarControllerParams(CP)
-+
-+  def _update_ev9_angle_limits(self, v_ego_raw, toggles):
-+    self.ev9_angle_config = EV9AngleConfig.from_toggles(toggles)
-+    self.params.ANGLE_LIMITS = replace(self._ev9_stock_angle_limits)
-+    self._ev9_safety_params.ANGLE_LIMITS = replace(self._ev9_stock_angle_limits)
-+    if v_ego_raw <= self.ev9_angle_config.limit_speed_mps:
-+      self.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = EV9_HIGH_LATERAL_LIMIT
-+      self.params.ANGLE_LIMITS.MAX_LATERAL_JERK = EV9_HIGH_LATERAL_LIMIT
-+    # A larger configured controller speed never enlarges Panda's independent envelope.
-+    if max(v_ego_raw - 1.0, 1.0) <= EV9_PANDA_LIMIT_SPEED_MPS:
-+      self._ev9_safety_params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = EV9_HIGH_LATERAL_LIMIT
-+      self._ev9_safety_params.ANGLE_LIMITS.MAX_LATERAL_JERK = EV9_HIGH_LATERAL_LIMIT
 +
    def _update_dash_icon_state(self, CC):
      if CC.latActive:
        self._dash_lat_disengage_init = False
-@@ -569,18 +604,27 @@ class CarController(CarControllerBase):
+@@ -569,18 +590,27 @@ class CarController(CarControllerBase):
  
    def update(self, CC, CS, now_nanos, starpilot_toggles):
      actuators = CC.actuators
@@ -95,7 +75,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
  
 +    ev9_angle_control = self.CP.carFingerprint == CAR.KIA_EV9 and bool(self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING)
 +    if ev9_angle_control:
-+      self._update_ev9_angle_limits(CS.out.vEgoRaw, starpilot_toggles)
++      self.ev9_angle_config = EV9AngleConfig.from_toggles(starpilot_toggles)
 +    safety_params = self._ev9_safety_params if ev9_angle_control else self.params
 +
      if not self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
@@ -114,7 +94,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
      if self.CP.carFingerprint == CAR.HYUNDAI_IONIQ_5_PE and CS.out.standstill:
        angle_lat_active = False
      self.direct_angle_request_allowed = angle_lat_active
-@@ -602,7 +646,17 @@ class CarController(CarControllerBase):
+@@ -602,7 +632,17 @@ class CarController(CarControllerBase):
          apply_angle = apply_steer_angle_limits_vm(apply_angle or desired_angle, self.apply_angle_last, v_ego_raw,
                                                    measured_steering_angle, angle_lat_active, self.params, self.BASELINE_VM)
  
@@ -133,7 +113,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
          # Match Panda's 1 m/s speed tolerance so a shrinking absolute limit stays inside its jerk envelope.
          safety_v_ego = max(v_ego_raw - 1.0, 1.0)
          max_angle_delta = min(get_max_angle_delta_vm(safety_v_ego, self.BASELINE_VM, self.params),
-@@ -611,14 +665,50 @@ class CarController(CarControllerBase):
+@@ -611,14 +651,50 @@ class CarController(CarControllerBase):
                                      self.apply_angle_last - max_angle_delta,
                                      self.apply_angle_last + max_angle_delta))
  
@@ -186,7 +166,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
  
        self.apply_angle_last = apply_angle
        if not angle_lat_active:
-@@ -741,14 +831,16 @@ class CarController(CarControllerBase):
+@@ -741,14 +817,16 @@ class CarController(CarControllerBase):
      # *** CAN/CAN FD specific ***
      if self.CP.flags & HyundaiFlags.CANFD:
        can_sends.extend(self.create_canfd_msgs(now_nanos, apply_steer_req, apply_torque, apply_angle, set_speed_in_units, accel,
@@ -205,7 +185,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
        new_actuators.torque = 0
        new_actuators.torqueOutputCan = 0
      else:
-@@ -870,7 +962,7 @@ class CarController(CarControllerBase):
+@@ -870,7 +948,7 @@ class CarController(CarControllerBase):
      return can_sends
  
    def create_canfd_msgs(self, now_nanos, apply_steer_req, apply_torque, apply_angle, set_speed_in_units, accel, stopping,
@@ -214,7 +194,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
      can_sends = []
  
      lka_steering = self.CP.flags & HyundaiFlags.CANFD_LKA_STEERING
-@@ -900,7 +992,7 @@ class CarController(CarControllerBase):
+@@ -900,7 +978,7 @@ class CarController(CarControllerBase):
      ccnc_angle_long = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and \
        self.CP.flags & HyundaiFlags.CCNC and angle_lkas_alt and self.long_active_ecu
      steering_msg_active = apply_steer_req
@@ -223,7 +203,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
        # Angle LKAS_ALT cars fault if the angle-steering status drops inactive during torque limiting.
        # Hold the angle status active while lateral is active; VM/safety limits handle actuation.
        steering_msg_active = CC.latActive
-@@ -913,7 +1005,34 @@ class CarController(CarControllerBase):
+@@ -913,7 +991,34 @@ class CarController(CarControllerBase):
      forward_stock_lkas = self.CP.carFingerprint in CANFD_ANGLE_LONGITUDINAL_CAR and angle_lkas_alt and (
        angle_lkas_alt_standstill_handoff or not (drive_gear and (CC.latActive or CC.enabled))
      )
@@ -258,7 +238,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
      if not forward_stock_lkas and not ccnc_angle_long:
        can_sends.extend(hyundaicanfd.create_steering_messages(self.packer, self.CP, self.CAN, CC.enabled,
                                                               steering_msg_active, apply_torque, apply_angle,
-@@ -922,6 +1041,8 @@ class CarController(CarControllerBase):
+@@ -922,6 +1027,8 @@ class CarController(CarControllerBase):
                                                               lka_icon=lka_icon,
                                                               longitudinal_active=lfa_longitudinal_active))
      direct_steering_active = ccnc_angle_long and drive_gear and CC.latActive and self.direct_angle_request_allowed and not CS.angle_steering_fault
@@ -267,7 +247,7 @@ index 7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2..3113dfdb9510017049532c78daf8aa86
      inactive_steering_angle = float(np.clip(CS.angle_steering_angle,
                                              -self.params.ANGLE_LIMITS.STEER_ANGLE_MAX,
                                              self.params.ANGLE_LIMITS.STEER_ANGLE_MAX)) if ccnc_angle_long else 0.0
-@@ -934,11 +1055,15 @@ class CarController(CarControllerBase):
+@@ -934,11 +1041,15 @@ class CarController(CarControllerBase):
      if ccnc_angle_long and not drive_gear:
        can_sends.extend(hyundaicanfd.create_inactive_angle_steering_messages(self.packer, self.CAN,
                                                                               inactive_steering_angle))
@@ -324,10 +304,10 @@ index 40d68e42b372a79dbf86756749fa22d0f29d2dc0..1ea110c425df9ee04d7e7b37377463d4
        msgs.append(("CRUISE_BUTTONS_ALT", 50))
 diff --git a/opendbc/car/hyundai/ev9.py b/opendbc/car/hyundai/ev9.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..c94061b2d3b7ff7020c6fe17546f20c4bb3f7c17
+index 0000000000000000000000000000000000000000..02852aee12165e9b1929ccb6927b53a0d9f0be3f
 --- /dev/null
 +++ b/opendbc/car/hyundai/ev9.py
-@@ -0,0 +1,159 @@
+@@ -0,0 +1,157 @@
 +"""EV9 angle-control configuration and manual handoff; no persistent parameter I/O."""
 +from collections.abc import Mapping
 +from dataclasses import dataclass
@@ -335,8 +315,6 @@ index 0000000000000000000000000000000000000000..c94061b2d3b7ff7020c6fe17546f20c4
 +
 +from opendbc.car import DT_CTRL
 +
-+EV9_PANDA_LIMIT_SPEED_MPS = 42.0 / 3.6 + 0.1
-+EV9_HIGH_LATERAL_LIMIT = 4.2
 +_MISSING = object()
 +
 +
