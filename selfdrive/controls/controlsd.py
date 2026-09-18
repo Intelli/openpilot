@@ -303,6 +303,16 @@ def turn_lead_allowed(brand: str, lateral_control_mode: car.CarControl.Actuators
   return brand != "rivian" or lateral_control_mode != LateralControlMode.angle
 
 
+def turn_lead_engagement_weight(fingerprint, steer_control_type, measured_curvature, raw_curvature, lead_curvature, direction):
+  """EV9 angle steering hands current preview authority to model demand, not wheel catchup."""
+  if fingerprint == HYUNDAI_CAR.KIA_EV9 and steer_control_type == car.CarParams.SteerControlType.angle:
+    # Never retain old preview geometry or add lead against even a small model correction.
+    # The caller's max with model demand performs the handoff as that demand catches up.
+    return 0.0 if raw_curvature * direction < 0.0 else 1.0
+  engaged_ratio = abs(measured_curvature) / abs(lead_curvature)
+  return min(max((1.0 - engaged_ratio) / (1.0 - TURN_LEAD_ENGAGED_FRAC), 0.0), 1.0)
+
+
 # Turn-initiation lead. The model's action and the fixed 4/7 m probes are anchored in
 # METERS, so the seconds of warning they give shrinks with speed — at 12 mph a corner
 # enters the 7 m window only ~1.3 s out, too late to wind the wheel, which is why every
@@ -317,6 +327,8 @@ def turn_lead_allowed(brand: str, lateral_control_mode: car.CarControl.Actuators
 # wheel unwinds below the threshold, the lead re-fires — a 5 Hz demand sawtooth felt
 # as wiggle (2026-07-19 drive seg 7 t=49-50). The fade instead settles at a stable
 # ~2/3-of-lead equilibrium until the action takes over via the max-mag blend.
+# EV9 angle control instead retains only the CURRENT preview contribution until
+# model demand takes over; wheel-based fading caused repeated initiation retreats.
 # Stop-sign approaches stay quiet because the stopping plan compresses to the stop
 # line and reads ~straight until the car is nearly there (probes ~0 for 7 s of
 # blinker-on coasting at 9-12 m/s). Below TURN_LEAD_MIN_SPEED the lead must stay OFF,
@@ -602,8 +614,7 @@ class Controls:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
 
     trajectory = getattr(self, 'ev9_trajectory', None)
-    trajectory_was_active = bool(trajectory is not None and getattr(trajectory, 'was_active', False))
-    raw_model_curvature = new_desired_curvature
+    turn_lead_model_curvature = new_desired_curvature
     # Low-speed turn-intent hold (see CURVATURE_HOLD_* above). Curvature sign convention
     # here is positive for RIGHT turns (pauseturn log: left turn at +148 deg steering
     # angle logs desiredCurvature -0.07), so the blinker maps right=+1, left=-1.
@@ -741,8 +752,8 @@ class Controls:
       lead_curvature = max(min(lead_curvature, TURN_LEAD_CAP), -TURN_LEAD_CAP)
       if lead_curvature * blinker_dir > 0.0:
         speed_w = min(max((CS.vEgo - TURN_LEAD_MIN_SPEED) / (TURN_LEAD_FULL_SPEED - TURN_LEAD_MIN_SPEED), 0.0), 1.0)
-        engaged_ratio = abs(self.curvature) / abs(lead_curvature)
-        engage_w = min(max((1.0 - engaged_ratio) / (1.0 - TURN_LEAD_ENGAGED_FRAC), 0.0), 1.0)
+        engage_w = turn_lead_engagement_weight(self.CP.carFingerprint, self.CP.steerControlType, self.curvature,
+                                                turn_lead_model_curvature, lead_curvature, blinker_dir)
         lead_curvature *= speed_w * engage_w
         if lead_curvature * blinker_dir > max(new_desired_curvature * blinker_dir, 0.0):
           new_desired_curvature = lead_curvature
@@ -770,8 +781,6 @@ class Controls:
     # Select a single trajectory owner after all model-path shaping. The existing
     # jerk limiter, LaC, carcontroller filter and Panda remain downstream.
     if trajectory is not None:
-      if trajectory_was_active:
-        new_desired_curvature = raw_model_curvature
       decision = trajectory.update(self.sm, CS, CC.latActive, self.VM, lp, self.desired_curvature, new_desired_curvature)
       new_desired_curvature = decision.curvature
       if decision.active or trajectory.ownership_changed:

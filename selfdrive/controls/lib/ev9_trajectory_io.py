@@ -18,7 +18,8 @@ def decode_snapshot(message, CP, *, now, message_time, valid):
     vm.sR, vm.cF, vm.cR = values[:3]
     state = ExecutionState(stamp, (message.x, message.y, message.yaw), message.speed, message.wheelAngleDeg,
                            message.curvature, message.commandCurvature, message.delay, int(message.generation),
-                           message.enabled, message.manual, message.laneChange, message.drive, message.healthy)
+                           message.enabled, message.manual, message.laneChange, message.drive, message.healthy,
+                           tracking_active=bool(message.active))
     curvature = vm.calc_curvature(math.radians(state.wheel_angle_deg - message.angleOffsetDeg), state.speed, message.roll)
     if state.rejection(now) or not math.isclose(curvature, state.curvature, abs_tol=1e-7, rel_tol=1e-5):
       return None
