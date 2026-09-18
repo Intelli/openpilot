@@ -56,6 +56,13 @@ def joystick(started: bool, params: Params, CP: car.CarParams, starpilot_toggles
 def not_joystick(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started and not params.get_bool("JoystickDebugMode")
 
+
+def ev9_trajectory(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
+  from opendbc.car.hyundai.values import CAR, HyundaiFlags
+  from openpilot.selfdrive.controls.lib.ev9_trajectory import TrajectoryMode, parse_mode
+  return (started and CP.carFingerprint == CAR.KIA_EV9 and bool(CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING) and
+          parse_mode(params.get('EV9TrajectoryMode')) != TrajectoryMode.OFF and not params.get_bool('JoystickDebugMode'))
+
 def long_maneuver(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started and params.get_bool("LongitudinalManeuverMode") and not params.get_bool("LateralManeuverMode")
 
@@ -178,6 +185,7 @@ procs = [
   PythonProcess("calibrationd", "selfdrive.locationd.calibrationd", only_onroad),
   PythonProcess("torqued", "selfdrive.locationd.torqued", only_onroad),
   PythonProcess("controlsd", "selfdrive.controls.controlsd", and_(not_joystick, iscar)),
+  PythonProcess("ev9_trajectoryd", "selfdrive.controls.ev9_trajectoryd", ev9_trajectory),
   PythonProcess("joystickd", "tools.joystick.joystickd", or_(joystick, notcar)),
   PythonProcess("selfdrived", "selfdrive.selfdrived.selfdrived", only_onroad),
   PythonProcess("card", "selfdrive.car.card", only_onroad),

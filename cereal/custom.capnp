@@ -324,10 +324,68 @@ struct StarPilotLateralState @0xc2243c65e0340384 {
   unwindDetected @7 :Bool;
 }
 
-struct CustomReserved12 @0x9ccdc8676701b412 {
+struct EV9TrajectoryPlan @0x9ccdc8676701b412 {
+  feasible @0 :Bool;
+  executionValidated @1 :Bool;
+  reason @2 :Text;
+  planId @3 :UInt64;
+  generation @4 :UInt64;
+  sourceMonoTime @5 :UInt64;
+  validUntilMonoTime @6 :UInt64;
+  corridorRevision @7 :UInt64;
+  corridorValidUntilMonoTime @8 :UInt64;
+  frame @9 :Text;
+  originX @10 :Float64;
+  originY @11 :Float64;
+  originYaw @12 :Float64;
+  speed @13 :Float32;
+  initialCurvature @14 :Float32;
+  initialCommandCurvature @15 :Float32;
+  minCurvature @16 :Float32;
+  maxCurvature @17 :Float32;
+  distance @18 :List(Float32);
+  x @19 :List(Float32);
+  y @20 :List(Float32);
+  yaw @21 :List(Float32);
+  curvature @22 :List(Float32);
+  solveTime @23 :Float32;
+  geometryAvailable @24 :Bool;
+  originalPathInfeasible @25 :Bool;
 }
 
-struct CustomReserved13 @0xcd96dafb67a082d0 {
+struct EV9TrajectoryState @0xcd96dafb67a082d0 {
+  mode @0 :UInt8;
+  generation @1 :UInt64;
+  sourceMonoTime @2 :UInt64;
+  x @3 :Float64;
+  y @4 :Float64;
+  yaw @5 :Float64;
+  speed @6 :Float32;
+  wheelAngleDeg @7 :Float32;
+  curvature @8 :Float32;
+  commandCurvature @9 :Float32;
+  delay @10 :Float32;
+  enabled @11 :Bool;
+  manual @12 :Bool;
+  laneChange @13 :Bool;
+  drive @14 :Bool;
+  healthy @15 :Bool;
+  active @16 :Bool;
+  reason @17 :Text;
+  planId @18 :UInt64;
+  lateralError @19 :Float32;
+  headingError @20 :Float32;
+  angleFilterStateDeg @21 :Float32;  # controller filter x; not the requested curvature or final CAN target
+  angleStateValid @22 :Bool;  # fresh controller snapshot; does not certify individual MDPS freshness
+  angleStateMonoTime @23 :UInt64;  # controller snapshot time
+  directAngleControl @24 :Bool;  # actual direct ECU ownership, otherwise stock angle transport
+  selectedMdpsAngleDeg @25 :Float32;  # controller-selected sensor; not assumed to share the calibrated SAS zero
+  # Atomic effective VM snapshot matching the pose/curvature above; not a newer liveParameters sample.
+  steerRatio @26 :Float64;
+  tireStiffnessFront @27 :Float64;
+  tireStiffnessRear @28 :Float64;
+  angleOffsetDeg @29 :Float64;
+  roll @30 :Float64;
 }
 
 struct CustomReserved14 @0xb057204d7deadf3f {
