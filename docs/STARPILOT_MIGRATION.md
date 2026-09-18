@@ -64,6 +64,15 @@ Archived helpers under `patches/legacy-openpilot-tooling/` and
 - Ordinary clipping keeps steering active at the nearest valid command. An empty
   angle/rate intersection requires inactive control, as in Sunnypilot. A blanket
   hold at the last angle would bypass these checks.
+- EV9 direct OP-long steering caps the autonomous angle target at **±140°**
+  before filtering, including lateral-only operation. Greater turn demand holds
+  the bounded target without an added disengagement or boundary cooldown.
+  Existing driver override, manual wheel following and rate-limited reentry
+  remain in place, so those transitions can transmit angles beyond the target
+  cap. Inactive commands still follow the measured wheel within the existing
+  360° range. Stock ACC steering and other vehicles do not use this target cap.
+  This is a conservative test boundary, not a confirmed EV9 hardware limit or
+  a verified fix for EPS faults.
 - EV9 stock-LKAS traffic stays continuous while inactive, with measured angle and
   zero gain. Panda blocks duplicate factory steering traffic independently of
   the AOL latch; active commands still require permission and valid limits.

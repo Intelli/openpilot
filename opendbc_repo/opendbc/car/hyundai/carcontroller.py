@@ -11,7 +11,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.lead_data import CanLeadDataState
-from opendbc.car.hyundai.ev9 import (EV9AngleConfig, EV9ManualControlState, EV9_HIGH_LATERAL_LIMIT, EV9_PANDA_LIMIT_SPEED_MPS,
+from opendbc.car.hyundai.ev9 import (EV9AngleConfig, EV9ManualControlState, EV9_HIGH_LATERAL_LIMIT, EV9_OP_LONG_ANGLE_TARGET_MAX, EV9_PANDA_LIMIT_SPEED_MPS,
                                    apply_override_gain, ev9_hands_off, ev9_hands_on)
 from opendbc.car.hyundai.values import HyundaiFlags, HyundaiSafetyFlags, HyundaiStarPilotFlags, Buttons, CarControllerParams, CAR, CANFD_ANGLE_LONGITUDINAL_CAR, \
                                         CANFD_RADAR_ECU_KEEPALIVE_CAR, CANFD_ALT_BUTTONS_RESUME_CAR, kia_ev6_gt_line_longitudinal_tuning, \
@@ -635,6 +635,9 @@ class CarController(CarControllerBase):
       desired_angle = float(np.clip(actuators.steeringAngleDeg,
                                     -self.params.ANGLE_LIMITS.STEER_ANGLE_MAX,
                                     self.params.ANGLE_LIMITS.STEER_ANGLE_MAX))
+      if ev9_angle_control and direct_angle_control:
+        # Bound the autonomous target; manual following and smooth reentry can exceed it.
+        desired_angle = float(np.clip(desired_angle, -EV9_OP_LONG_ANGLE_TARGET_MAX, EV9_OP_LONG_ANGLE_TARGET_MAX))
       self.angle_filter.update_alpha(get_angle_smoothing_alpha(self.CP, CS.out.vEgo))
       desired_angle = self.angle_filter.update(desired_angle)
 
