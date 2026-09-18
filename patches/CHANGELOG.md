@@ -5,7 +5,8 @@ StarPilot commit `c3e4ec630f41c4baa43254a90f718abd1bf764a1`, recorded in
 [starpilot-upstream.json](../starpilot-upstream.json). The reviewed EV9 source is
 `f1b6e566dc`, plus the two-hour shutdown default and C4/Galaxy settings support
 (including the Lane Change Smoothing default of 10), and the EV9 startup
-longitudinal-status notice and EV9 OP-long cruise-knob engagement.
+longitudinal-status notice, EV9 OP-long cruise-knob engagement, and the EV9
+OP-long autonomous steering target cap.
 
 There are **17 enabled patches: 11 application patches and 6 vehicle patches**,
 covering 96 source files, including tests and artwork. Replaying them in order on
@@ -147,10 +148,16 @@ Owners: vehicle patches [03](opendbc/03_modify_baseline_starpilot.patch),
 - Intersects vehicle angle/rate bounds with the Panda-compatible envelope.
   Ordinary clipping keeps steering active at a valid bounded request; an empty
   intersection requires an inactive command.
+- Caps the EV9 direct OP-long autonomous angle target at **±140°** before
+  filtering, including lateral-only operation. Larger requests hold the bounded
+  target without a new disengagement rule. Existing manual wheel following and
+  smooth reentry may exceed that target cap; inactive commands retain measured
+  angle. Stock ACC steering and other vehicles are unchanged. The cap is a test
+  boundary, not an established hardware maximum or proven EPS-fault fix.
 
 The absolute **360° software angle ceiling**, native vehicle angle filtering,
 base torque-reduction law and longitudinal acceleration limits are unchanged.
-The 119.9° warning threshold is not a new steering-command ceiling. Upstream
+The separate 119.9° warning threshold still controls warning eligibility. Upstream
 curvature-rate limiting and any enabled lane-change smoothing still apply.
 
 ### Driver override and Improved Manual Control

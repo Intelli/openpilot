@@ -860,10 +860,10 @@ index 0000000000000000000000000000000000000000..c9d1a16b98ffba0aad307aa43d607e7d
 +  assert not case._tx(case._angle_cmd_msg(0, enabled=True))
 diff --git a/opendbc/safety/tests/test_hyundai_ev9_controller.py b/opendbc/safety/tests/test_hyundai_ev9_controller.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..3c2edca4f1d60ad867b36d3996d2ed609efdd589
+index 0000000000000000000000000000000000000000..93703c00799d04d4f5f1fbc9c0f4466ead97acd2
 --- /dev/null
 +++ b/opendbc/safety/tests/test_hyundai_ev9_controller.py
-@@ -0,0 +1,518 @@
+@@ -0,0 +1,620 @@
 +"""Verify complete EV9 controller output against native Panda safety hooks."""
 +
 +import pytest
@@ -1355,6 +1355,9 @@ index 0000000000000000000000000000000000000000..3c2edca4f1d60ad867b36d3996d2ed60
 +  c._update_ev9_angle_limits(speed, toggles)
 +  boundary = min(c.params.ANGLE_LIMITS.STEER_ANGLE_MAX, get_max_angle_vm(speed, c.VM, c.params),
 +                 get_max_angle_vm(speed - 1, c.BASELINE_VM, c._ev9_safety_params))
++  # Start just inside the applicable ceiling to test steady saturation, not recovery.
++  if direct:
++    boundary = min(boundary, 140.0)
 +  initial = sign * (boundary - 0.2)
 +  c.apply_angle_last = c.angle_filter.x = initial
 +  c.apply_torque_last = c.apply_torque_base_last = 0.5
@@ -1382,3 +1385,102 @@ index 0000000000000000000000000000000000000000..3c2edca4f1d60ad867b36d3996d2ed60
 +    addr, data, bus = steering[0]
 +    assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))
 +  assert c.apply_angle_last == pytest.approx(sign * boundary, abs=1e-4)
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('direct', [False, True])
++def test_ev9_target_saturation_stays_active_and_reverses(sign, direct):
++  from opendbc.safety.tests.test_hyundai_ev9 import make_case
++
++  c, cs, cc, toggles = setup_controller(direct)
++  toggles.hkg_shared_autonomy_mode = 0
++  safety = make_case(True, direct)
++  safety._set_physical_angle_test_speed(5.0)
++  safety.safety.set_controls_allowed(True)
++  for frame in range(600):
++    target_sign = sign if frame < 300 else -sign
++    cc.actuators.steeringAngleDeg = target_sign * 200
++    # A following wheel isolates planner saturation from manual handoff and faults.
++    measured = c.apply_angle_last
++    cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = measured
++    for _ in range(6):
++      safety._rx(safety.packer.make_can_msg_safety('MDPS', 1, {'STEERING_ANGLE': measured, 'STEERING_ANGLE_2': measured}))
++    safety.safety.set_timer(frame * 10_000)
++    _, msgs = c.update(cc.as_reader(), cs, 1_000_000_000 + frame * 10_000_000, toggles)
++    assert_steering_payloads(c, msgs, True)
++    addr, data, bus = next(m for m in msgs if m[0] == (0xCB if direct else 0x110))
++    assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))
++    if direct:
++      assert abs(c.apply_angle_last) <= 140.0 + 1e-6
++    if frame in (299, 599):
++      assert c.apply_angle_last == pytest.approx(target_sign * (140.0 if direct else 200), abs=0.01)
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('manual', [False, True])
++def test_ev9_target_cap_preserves_beyond_cap_measurement_and_reentry(sign, manual):
++  from opendbc.safety.tests.test_hyundai_ev9 import make_case
++
++  c, cs, cc, toggles = setup_controller(True)
++  toggles.hkg_shared_autonomy_mode = int(manual)
++  safety = make_case(True, True)
++  safety._set_physical_angle_test_speed(5.0)
++  safety.safety.set_controls_allowed(True)
++  measured = sign * 200
++  cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = measured
++  cc.actuators.steeringAngleDeg = sign * 240
++  for frame in range(4):
++    cc.latActive = frame > 0
++    cs.out.steeringPressed = manual
++    cs.out.steeringTorque = 200 if manual else 0
++    now = 1_000_000_000 + frame * 10_000_000
++    cs.hands_on_steering_grip = 3 if manual else 0
++    cs.hands_on_steering_ts_nanos = now
++    for _ in range(6):
++      safety._rx(safety.packer.make_can_msg_safety('MDPS', 1, {'STEERING_ANGLE': measured, 'STEERING_ANGLE_2': measured}))
++    safety.safety.set_timer(frame * 10_000)
++    previous = c.apply_angle_last
++    actuators, msgs = c.update(cc.as_reader(), cs, now, toggles)
++    assert_steering_payloads(c, msgs, frame > 0)
++    addr, data, bus = next(m for m in msgs if m[0] == 0xCB)
++    assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))
++    if frame == 0 or manual:
++      assert c.apply_angle_last == pytest.approx(measured)
++    else:
++      assert 140.0 < abs(c.apply_angle_last) < abs(previous)
++      assert abs(c.apply_angle_last - previous) <= 5 + 1e-6
++    if frame > 0:
++      assert actuators.manualSteeringOverride == manual
++      if manual:
++        assert c.apply_torque_last == pytest.approx(0.10)
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('target', [139.9, 140.0, 140.1])
++def test_ev9_target_cap_boundary_longitudinal_state_and_fault_recovery(sign, target):
++  from opendbc.safety.tests.test_hyundai_ev9 import make_case
++
++  c, cs, cc, toggles = setup_controller(True)
++  toggles.hkg_shared_autonomy_mode = 0
++  expected = sign * min(target, 140.0)
++  c.apply_angle_last = c.angle_filter.x = expected
++  cs.out.steeringAngleDeg = cs.mdps_steering_angle = cs.angle_steering_angle = expected
++  cc.actuators.steeringAngleDeg = sign * target
++  safety = make_case(True, True)
++  safety._set_physical_angle_test_speed(5.0)
++  safety.safety.set_desired_angle_last(round(expected * 10))
++  safety.safety.set_controls_allowed(True)
++  # Cap scope follows the configured transport, including AOL without longActive.
++  for frame, (long_active, fault) in enumerate([(False, False), (True, False), (True, True), (False, False)]):
++    cc.longActive = long_active
++    cs.angle_steering_fault = fault
++    for _ in range(6):
++      safety._rx(safety.packer.make_can_msg_safety('MDPS', 1, {
++        'STEERING_ANGLE': expected, 'STEERING_ANGLE_2': expected, 'LKA_ANGLE_FAULT': int(fault),
++      }))
++    safety.safety.set_timer(frame * 10_000)
++    _, msgs = c.update(cc.as_reader(), cs, 1_000_000_000 + frame * 10_000_000, toggles)
++    assert_steering_payloads(c, msgs, not fault)
++    assert c.apply_angle_last == pytest.approx(expected)
++    addr, data, bus = next(m for m in msgs if m[0] == 0xCB)
++    assert safety._tx(libsafety_py.make_CANPacket(addr, bus, data))

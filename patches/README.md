@@ -57,8 +57,11 @@ and signal-driven EV9 turn desires through predicted stops,
 and continuous inactive LKAS traffic with
 matching Panda forwarding. Actual manual handoff is reported through an appended
 actuator telemetry field; capacitive hands-on state includes its sample timestamp.
-Numeric steering and acceleration limits are unchanged;
-see the migration guide for scope and verification. Recent-device investigation
+Vehicle patch `05` also caps the EV9 direct OP-long autonomous angle target at
+±140° before filtering. Cap binding keeps assistance active, with existing
+manual-following and smooth-reentry exceptions; Panda limits and inactive
+measured-angle handling remain unchanged. See the migration guide for scope
+and verification. Recent-device investigation
 is documented in [the drive-review workflow](../docs/RECENT_DRIVE_REVIEW.md).
 
 `assets/openpilot/` preserves custom artwork and audio. Original helpers and
