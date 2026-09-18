@@ -107,6 +107,7 @@ class EV9TrajectoryControl:
       selected_mdps_angle_deg=mdps_angle if math.isfinite(mdps_angle) else 0.0,
     )
     proposal = None
+    revoke = False
     lease, revision = 0.0, 0
     message = sm['ev9TrajectoryPlan']
     stamp = sm.logMonoTime['ev9TrajectoryPlan']
@@ -118,9 +119,17 @@ class EV9TrajectoryControl:
       if stamp != self.last_message:
         self.last_message = stamp
         proposal = decode_plan(message) if message.feasible else None
+        revoke = not message.feasible and message.reason in (
+          'invalid_execution_state', 'invalid_or_stale_model', 'invalid_or_missing_geometry',
+          'invalid_configuration', 'unestablished_frame_alignment', 'unmatched_path_heading', 'invalid_path_time',
+          'invalid_lane_metadata', 'invalid_road_metadata', 'missing_model_pose', 'missing_capture_pose',
+          'invalid_mount_uncertainty', 'invalid_vehicle_model',
+          'crossed_or_missing_boundaries', 'changed_body_outside_observed_space', 'no_observed_body_deviation_room',
+          'tracking_complete',
+        )
     self.decision = self.tracker.update(
       self.state, baseline_curvature, mode=self.mode, proposal=proposal,
-      corridor_revision=revision, corridor_valid_until=lease,
+      corridor_revision=revision, corridor_valid_until=lease, revoke=revoke,
     )
     self.ownership_changed = self.was_active != self.decision.active
     self.was_active = self.decision.active
@@ -129,7 +138,7 @@ class EV9TrajectoryControl:
   def publish(self, pm, messaging):
     if self.state is None or self.mode == TrajectoryMode.OFF:
       return
-    data = messaging.new_message('ev9TrajectoryState')
+    data = messaging.new_message('ev9TrajectoryState', valid=True)
     s, out = self.state, data.ev9TrajectoryState
     out.mode, out.generation = int(self.mode), s.generation
     out.sourceMonoTime = int(s.time * 1e9)

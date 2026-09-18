@@ -60,6 +60,7 @@ class ExecutionState:
   angle_state_mono_time: int = 0  # controller snapshot time, not individual MDPS sample time
   direct_angle_control: bool = False
   selected_mdps_angle_deg: float = 0.0  # separate sensor reference; mapping to calibrated SAS must be validated
+  tracking_active: bool = False
 
   def rejection(self, now):
     values = (self.time, *self.pose, self.speed, self.wheel_angle_deg, self.curvature, self.command_curvature, self.delay, now)
@@ -146,10 +147,12 @@ class TrajectoryTracker:
     self.last_source_time = -math.inf
     self.reject_before = -math.inf
     self.last_mode = TrajectoryMode.OFF
+    self.corridor_valid_until = 0.0
 
   def reset(self, now):
     self.plan = None
     self.progress = 0
+    self.corridor_valid_until = 0.0
     self.reject_before = max(self.reject_before, now)
 
   @staticmethod
@@ -158,7 +161,7 @@ class TrajectoryTracker:
     c, s = math.cos(plan.origin[2]), math.sin(plan.origin[2])
     return np.array([c * dx + s * dy, -s * dx + c * dy]), wrap_angle(state.pose[2] - plan.origin[2])
 
-  def update(self, state, baseline_curvature, *, mode, proposal=None, corridor_revision=0, corridor_valid_until=0.0):
+  def update(self, state, baseline_curvature, *, mode, proposal=None, corridor_revision=0, corridor_valid_until=0.0, revoke=False):
     now = state.time
     mode = parse_mode(mode)
     if mode != self.last_mode:
@@ -171,11 +174,14 @@ class TrajectoryTracker:
     if reason:
       self.reset(now)
       return TrackingDecision(baseline_curvature, False, reason)
-    if not math.isfinite(corridor_valid_until) or not now <= corridor_valid_until <= now + MAX_PLAN_AGE:
+    if revoke:
       self.reset(now)
       return TrackingDecision(baseline_curvature, False, 'corridor_unavailable')
+    fresh_corridor = math.isfinite(corridor_valid_until) and now <= corridor_valid_until <= now + MAX_PLAN_AGE
     if proposal is not None:
       reason = proposal.rejection(state, now)
+      if not fresh_corridor:
+        reason = 'corridor_unavailable'
       if not reason and (proposal.source_time < self.reject_before or proposal.source_time < self.last_source_time or
                          proposal.plan_id <= self.last_plan_id or proposal.corridor_revision != corridor_revision):
         reason = 'superseded_plan'
@@ -190,15 +196,24 @@ class TrajectoryTracker:
           reason = 'initial_state_mismatch'
         else:
           self.plan, self.progress = proposal, nearest
+          self.corridor_valid_until = min(corridor_valid_until, proposal.valid_until)
           self.last_plan_id, self.last_source_time = proposal.plan_id, proposal.source_time
       if reason and self.plan is None:
         return TrackingDecision(baseline_curvature, False, reason)
     if self.plan is None:
       return TrackingDecision(baseline_curvature, False, 'no_replacement')
     plan = self.plan
+    # A replacement's revision/lease belongs to that replacement. Failed adoption
+    # must not revoke a still-valid incumbent or renew it from unrelated evidence.
+    if corridor_revision == plan.corridor_revision:
+      if not fresh_corridor:
+        self.reset(now)
+        return TrackingDecision(baseline_curvature, False, 'corridor_unavailable')
+      self.corridor_valid_until = min(corridor_valid_until, plan.valid_until)
+    if now > self.corridor_valid_until:
+      self.reset(now)
+      return TrackingDecision(baseline_curvature, False, 'corridor_unavailable')
     reason = plan.rejection(state, now, adopting=False)
-    if plan.corridor_revision != corridor_revision:
-      reason = 'corridor_changed'
     if reason:
       self.reset(now)
       return TrackingDecision(baseline_curvature, False, reason)

@@ -114,15 +114,27 @@ class ModelPathPlanner:
     if not np.isfinite([min_curvature, max_curvature, rate]).all() or not min_curvature < 0 < max_curvature or rate <= 0:
       return reject('invalid_vehicle_model')
     reference_curvature = np.gradient(yaw, distance)
+    turn = yaw[-1] - yaw[0]
     over_limit = (reference_curvature < min_curvature - 1e-6) | (reference_curvature > max_curvature + 1e-6)
     if not over_limit.any():
-      return reject('reference_within_capability')
+      if not state.tracking_active:
+        return reject('reference_within_capability')
+      # Finish through a fresh feasible reference instead of abandoning a turn
+      # merely because the next model frame falls below the capability threshold.
+      # Yield normally once the model action and the applied command agree to
+      # within one model frame of the same planned steering slew.
+      try:
+        action = model['action']['desiredCurvature'] if isinstance(model, dict) else model.action.desiredCurvature
+        baseline = -float(action)
+      except (KeyError, AttributeError, TypeError, ValueError):
+        return reject('invalid_or_missing_geometry')
+      if abs(turn) < math.radians(5) and math.isfinite(baseline) and abs(baseline - state.command_curvature) <= rate * .05:
+        return reject('tracking_complete')
     if np.any(over_limit & preserve):
       return reject('over_limit_without_observed_room')
-    turn = yaw[-1] - yaw[0]
-    if abs(turn) < math.radians(5):
+    if abs(turn) < math.radians(5) and not state.tracking_active:
       return reject('unsupported_turn_intent')
-    direction = math.copysign(1., turn)
+    direction = math.copysign(1., turn) if abs(turn) >= math.radians(5) else 0.
     # Preserve turn direction; an already opposite initial wheel may recover
     # within one metre. Independent checking below uses actual solved distance.
     opposite = min(0., direction * state.curvature)
@@ -150,7 +162,7 @@ class ModelPathPlanner:
     unknown = np.interp(result.reference_distance, distance, preserve.astype(float)) > 0
     if np.any(changed & unknown):
       return reject('changed_unobserved_pose')
-    if not changed.any():
+    if not changed.any() and not state.tracking_active:
       return reject('no_path_adjustment')
     # Measure geometric path displacement, not a difference in progress along
     # the same path. A different feasible arc length is an intended outcome.
@@ -161,9 +173,9 @@ class ModelPathPlanner:
     if np.max(nearest) > config.max_deviation + 1e-5:
       return reject('excessive_path_displacement')
     erosion = geometry.confidence['uncertainty_margin']
-    if not body_inside_observed(result.xy[changed], result.yaw[changed], geometry.left, geometry.right,
-                                front=config.front, rear=config.rear, half_width=config.half_width,
-                                left_margin=erosion[0], right_margin=erosion[1]):
+    if changed.any() and not body_inside_observed(result.xy[changed], result.yaw[changed], geometry.left, geometry.right,
+                                                 front=config.front, rear=config.rear, half_width=config.half_width,
+                                                 left_margin=erosion[0], right_margin=erosion[1]):
       return reject('changed_body_outside_observed_space')
     elapsed = self.clock() - started
     finished = now + elapsed

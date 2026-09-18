@@ -46,7 +46,7 @@ def run(cp, params, sm, pm, *, planner=None, clock=time.monotonic):
       status = (decision.reason, result.get('planId', 0), generation)
       if state is None and status == last_status:
         continue
-      msg = messaging.new_message('ev9TrajectoryPlan')
+      msg = messaging.new_message('ev9TrajectoryPlan', valid=True)
       msg.ev9TrajectoryPlan = result
       pm.send('ev9TrajectoryPlan', msg)
       last_status = status
