@@ -517,7 +517,7 @@ struct CarControl::Actuators {
 
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(e97275a919432828, 5, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(e97275a919432828, 7, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -2123,6 +2123,16 @@ public:
 
   inline bool getManualSteeringOverride() const;
 
+  inline float getEv9AngleFilterStateDeg() const;
+
+  inline float getEv9MeasuredAngleDeg() const;
+
+  inline bool getEv9AngleStateValid() const;
+
+  inline  ::uint64_t getEv9AngleStateMonoTime() const;
+
+  inline bool getEv9DirectAngleControl() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -2183,6 +2193,21 @@ public:
 
   inline bool getManualSteeringOverride();
   inline void setManualSteeringOverride(bool value);
+
+  inline float getEv9AngleFilterStateDeg();
+  inline void setEv9AngleFilterStateDeg(float value);
+
+  inline float getEv9MeasuredAngleDeg();
+  inline void setEv9MeasuredAngleDeg(float value);
+
+  inline bool getEv9AngleStateValid();
+  inline void setEv9AngleStateValid(bool value);
+
+  inline  ::uint64_t getEv9AngleStateMonoTime();
+  inline void setEv9AngleStateMonoTime( ::uint64_t value);
+
+  inline bool getEv9DirectAngleControl();
+  inline void setEv9DirectAngleControl(bool value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -6392,6 +6417,76 @@ inline bool CarControl::Actuators::Builder::getManualSteeringOverride() {
 inline void CarControl::Actuators::Builder::setManualSteeringOverride(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<288>() * ::capnp::ELEMENTS, value);
+}
+
+inline float CarControl::Actuators::Reader::getEv9AngleFilterStateDeg() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
+}
+
+inline float CarControl::Actuators::Builder::getEv9AngleFilterStateDeg() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
+}
+inline void CarControl::Actuators::Builder::setEv9AngleFilterStateDeg(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<10>() * ::capnp::ELEMENTS, value);
+}
+
+inline float CarControl::Actuators::Reader::getEv9MeasuredAngleDeg() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
+}
+
+inline float CarControl::Actuators::Builder::getEv9MeasuredAngleDeg() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
+}
+inline void CarControl::Actuators::Builder::setEv9MeasuredAngleDeg(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<11>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool CarControl::Actuators::Reader::getEv9AngleStateValid() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<289>() * ::capnp::ELEMENTS);
+}
+
+inline bool CarControl::Actuators::Builder::getEv9AngleStateValid() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<289>() * ::capnp::ELEMENTS);
+}
+inline void CarControl::Actuators::Builder::setEv9AngleStateValid(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<289>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t CarControl::Actuators::Reader::getEv9AngleStateMonoTime() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<6>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t CarControl::Actuators::Builder::getEv9AngleStateMonoTime() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<6>() * ::capnp::ELEMENTS);
+}
+inline void CarControl::Actuators::Builder::setEv9AngleStateMonoTime( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<6>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool CarControl::Actuators::Reader::getEv9DirectAngleControl() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<290>() * ::capnp::ELEMENTS);
+}
+
+inline bool CarControl::Actuators::Builder::getEv9DirectAngleControl() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<290>() * ::capnp::ELEMENTS);
+}
+inline void CarControl::Actuators::Builder::setEv9DirectAngleControl(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<290>() * ::capnp::ELEMENTS, value);
 }
 
 inline bool CarControl::CruiseControl::Reader::getCancel() const {

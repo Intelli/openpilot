@@ -28,6 +28,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import (
   update_lateral_fault_latch,
 )
 from openpilot.selfdrive.controls.lib.lane_centering import LaneCenteringController
+from openpilot.selfdrive.controls.lib.ev9_trajectory_control import EV9TrajectoryControl
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
@@ -394,8 +395,13 @@ class Controls:
     self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'lateralManeuverPlan', 'carState', 'carOutput',
                                    'starpilotCarControl',
-                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'radarState'], poll='selfdriveState')
-    self.pm = messaging.PubMaster(['carControl', 'controlsState', 'starpilotLateralState'])
+                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'radarState', 'ev9TrajectoryPlan'],
+                                  poll='selfdriveState', ignore_alive=['ev9TrajectoryPlan'], ignore_valid=['ev9TrajectoryPlan'],
+                                  ignore_avg_freq=['ev9TrajectoryPlan'])
+    self.pm = messaging.PubMaster(['carControl', 'controlsState', 'starpilotLateralState', 'ev9TrajectoryState'])
+    self.ev9_trajectory = EV9TrajectoryControl(self.CP, self.params) if (
+      self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9 and self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING and
+      self.CP.steerControlType == car.CarParams.SteerControlType.angle) else None
 
     self.steer_limited_by_safety = False
     self.curvature = 0.0
@@ -595,6 +601,9 @@ class Controls:
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
 
+    trajectory = getattr(self, 'ev9_trajectory', None)
+    trajectory_was_active = bool(trajectory is not None and getattr(trajectory, 'was_active', False))
+    raw_model_curvature = new_desired_curvature
     # Low-speed turn-intent hold (see CURVATURE_HOLD_* above). Curvature sign convention
     # here is positive for RIGHT turns (pauseturn log: left turn at +148 deg steering
     # angle logs desiredCurvature -0.07), so the blinker maps right=+1, left=-1.
@@ -757,6 +766,20 @@ class Controls:
       self.starpilot_toggles.lane_centering_pause_on_signal,
       bool(CS.leftBlinker or CS.rightBlinker),
       bool(CS.steeringPressed))
+
+    # Select a single trajectory owner after all model-path shaping. The existing
+    # jerk limiter, LaC, carcontroller filter and Panda remain downstream.
+    if trajectory is not None:
+      if trajectory_was_active:
+        new_desired_curvature = raw_model_curvature
+      decision = trajectory.update(self.sm, CS, CC.latActive, self.VM, lp, self.desired_curvature, new_desired_curvature)
+      new_desired_curvature = decision.curvature
+      if decision.active or trajectory.ownership_changed:
+        self.turn_hold_curvature = self.turn_hold_swept = self.turn_hold_handoff_t = self.turn_hold_standstill_t = 0.0
+        self.turn_hold_done = True
+        self.lane_centering.reset()
+        self.lc_smooth_release = self.lc_entry_sign = 0.0
+        self.lc_arrest_jerk_factor = 1.0
 
     jerk_factor = 1.0
     if self.starpilot_toggles.lane_change_pace < 10:
@@ -940,6 +963,9 @@ class Controls:
       cs.lateralControlState.torqueState = lac_log
 
     self.pm.send('controlsState', dat)
+
+    if getattr(self, 'ev9_trajectory', None) is not None:
+      self.ev9_trajectory.publish(self.pm, messaging)
 
     if hasattr(self.LaC, 'starpilot_lateral_state'):
       debug_dat = messaging.new_message('starpilotLateralState')

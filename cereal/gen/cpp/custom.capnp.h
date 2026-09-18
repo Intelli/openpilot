@@ -499,30 +499,30 @@ struct StarPilotLateralState {
   };
 };
 
-struct CustomReserved12 {
-  CustomReserved12() = delete;
+struct EV9TrajectoryPlan {
+  EV9TrajectoryPlan() = delete;
 
   class Reader;
   class Builder;
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(9ccdc8676701b412, 0, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(9ccdc8676701b412, 13, 7)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
   };
 };
 
-struct CustomReserved13 {
-  CustomReserved13() = delete;
+struct EV9TrajectoryState {
+  EV9TrajectoryState() = delete;
 
   class Reader;
   class Builder;
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(cd96dafb67a082d0, 0, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(cd96dafb67a082d0, 17, 1)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -2827,9 +2827,9 @@ private:
 };
 #endif  // !CAPNP_LITE
 
-class CustomReserved12::Reader {
+class EV9TrajectoryPlan::Reader {
 public:
-  typedef CustomReserved12 Reads;
+  typedef EV9TrajectoryPlan Reads;
 
   Reader() = default;
   inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
@@ -2844,6 +2844,65 @@ public:
   }
 #endif  // !CAPNP_LITE
 
+  inline bool getFeasible() const;
+
+  inline bool getExecutionValidated() const;
+
+  inline bool hasReason() const;
+  inline  ::capnp::Text::Reader getReason() const;
+
+  inline  ::uint64_t getPlanId() const;
+
+  inline  ::uint64_t getGeneration() const;
+
+  inline  ::uint64_t getSourceMonoTime() const;
+
+  inline  ::uint64_t getValidUntilMonoTime() const;
+
+  inline  ::uint64_t getCorridorRevision() const;
+
+  inline  ::uint64_t getCorridorValidUntilMonoTime() const;
+
+  inline bool hasFrame() const;
+  inline  ::capnp::Text::Reader getFrame() const;
+
+  inline double getOriginX() const;
+
+  inline double getOriginY() const;
+
+  inline double getOriginYaw() const;
+
+  inline float getSpeed() const;
+
+  inline float getInitialCurvature() const;
+
+  inline float getInitialCommandCurvature() const;
+
+  inline float getMinCurvature() const;
+
+  inline float getMaxCurvature() const;
+
+  inline bool hasDistance() const;
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader getDistance() const;
+
+  inline bool hasX() const;
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader getX() const;
+
+  inline bool hasY() const;
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader getY() const;
+
+  inline bool hasYaw() const;
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader getYaw() const;
+
+  inline bool hasCurvature() const;
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader getCurvature() const;
+
+  inline float getSolveTime() const;
+
+  inline bool getGeometryAvailable() const;
+
+  inline bool getOriginalPathInfeasible() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -2856,9 +2915,9 @@ private:
   friend class ::capnp::Orphanage;
 };
 
-class CustomReserved12::Builder {
+class EV9TrajectoryPlan::Builder {
 public:
-  typedef CustomReserved12 Builds;
+  typedef EV9TrajectoryPlan Builds;
 
   Builder() = delete;  // Deleted to discourage incorrect usage.
                        // You can explicitly initialize to nullptr instead.
@@ -2872,6 +2931,117 @@ public:
   inline ::kj::StringTree toString() const { return asReader().toString(); }
 #endif  // !CAPNP_LITE
 
+  inline bool getFeasible();
+  inline void setFeasible(bool value);
+
+  inline bool getExecutionValidated();
+  inline void setExecutionValidated(bool value);
+
+  inline bool hasReason();
+  inline  ::capnp::Text::Builder getReason();
+  inline void setReason( ::capnp::Text::Reader value);
+  inline  ::capnp::Text::Builder initReason(unsigned int size);
+  inline void adoptReason(::capnp::Orphan< ::capnp::Text>&& value);
+  inline ::capnp::Orphan< ::capnp::Text> disownReason();
+
+  inline  ::uint64_t getPlanId();
+  inline void setPlanId( ::uint64_t value);
+
+  inline  ::uint64_t getGeneration();
+  inline void setGeneration( ::uint64_t value);
+
+  inline  ::uint64_t getSourceMonoTime();
+  inline void setSourceMonoTime( ::uint64_t value);
+
+  inline  ::uint64_t getValidUntilMonoTime();
+  inline void setValidUntilMonoTime( ::uint64_t value);
+
+  inline  ::uint64_t getCorridorRevision();
+  inline void setCorridorRevision( ::uint64_t value);
+
+  inline  ::uint64_t getCorridorValidUntilMonoTime();
+  inline void setCorridorValidUntilMonoTime( ::uint64_t value);
+
+  inline bool hasFrame();
+  inline  ::capnp::Text::Builder getFrame();
+  inline void setFrame( ::capnp::Text::Reader value);
+  inline  ::capnp::Text::Builder initFrame(unsigned int size);
+  inline void adoptFrame(::capnp::Orphan< ::capnp::Text>&& value);
+  inline ::capnp::Orphan< ::capnp::Text> disownFrame();
+
+  inline double getOriginX();
+  inline void setOriginX(double value);
+
+  inline double getOriginY();
+  inline void setOriginY(double value);
+
+  inline double getOriginYaw();
+  inline void setOriginYaw(double value);
+
+  inline float getSpeed();
+  inline void setSpeed(float value);
+
+  inline float getInitialCurvature();
+  inline void setInitialCurvature(float value);
+
+  inline float getInitialCommandCurvature();
+  inline void setInitialCommandCurvature(float value);
+
+  inline float getMinCurvature();
+  inline void setMinCurvature(float value);
+
+  inline float getMaxCurvature();
+  inline void setMaxCurvature(float value);
+
+  inline bool hasDistance();
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder getDistance();
+  inline void setDistance( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value);
+  inline void setDistance(::kj::ArrayPtr<const float> value);
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder initDistance(unsigned int size);
+  inline void adoptDistance(::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value);
+  inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> disownDistance();
+
+  inline bool hasX();
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder getX();
+  inline void setX( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value);
+  inline void setX(::kj::ArrayPtr<const float> value);
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder initX(unsigned int size);
+  inline void adoptX(::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value);
+  inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> disownX();
+
+  inline bool hasY();
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder getY();
+  inline void setY( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value);
+  inline void setY(::kj::ArrayPtr<const float> value);
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder initY(unsigned int size);
+  inline void adoptY(::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value);
+  inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> disownY();
+
+  inline bool hasYaw();
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder getYaw();
+  inline void setYaw( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value);
+  inline void setYaw(::kj::ArrayPtr<const float> value);
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder initYaw(unsigned int size);
+  inline void adoptYaw(::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value);
+  inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> disownYaw();
+
+  inline bool hasCurvature();
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder getCurvature();
+  inline void setCurvature( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value);
+  inline void setCurvature(::kj::ArrayPtr<const float> value);
+  inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder initCurvature(unsigned int size);
+  inline void adoptCurvature(::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value);
+  inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> disownCurvature();
+
+  inline float getSolveTime();
+  inline void setSolveTime(float value);
+
+  inline bool getGeometryAvailable();
+  inline void setGeometryAvailable(bool value);
+
+  inline bool getOriginalPathInfeasible();
+  inline void setOriginalPathInfeasible(bool value);
+
 private:
   ::capnp::_::StructBuilder _builder;
   template <typename, ::capnp::Kind>
@@ -2882,9 +3052,9 @@ private:
 };
 
 #if !CAPNP_LITE
-class CustomReserved12::Pipeline {
+class EV9TrajectoryPlan::Pipeline {
 public:
-  typedef CustomReserved12 Pipelines;
+  typedef EV9TrajectoryPlan Pipelines;
 
   inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
   inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
@@ -2898,9 +3068,9 @@ private:
 };
 #endif  // !CAPNP_LITE
 
-class CustomReserved13::Reader {
+class EV9TrajectoryState::Reader {
 public:
-  typedef CustomReserved13 Reads;
+  typedef EV9TrajectoryState Reads;
 
   Reader() = default;
   inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
@@ -2915,6 +3085,69 @@ public:
   }
 #endif  // !CAPNP_LITE
 
+  inline  ::uint8_t getMode() const;
+
+  inline  ::uint64_t getGeneration() const;
+
+  inline  ::uint64_t getSourceMonoTime() const;
+
+  inline double getX() const;
+
+  inline double getY() const;
+
+  inline double getYaw() const;
+
+  inline float getSpeed() const;
+
+  inline float getWheelAngleDeg() const;
+
+  inline float getCurvature() const;
+
+  inline float getCommandCurvature() const;
+
+  inline float getDelay() const;
+
+  inline bool getEnabled() const;
+
+  inline bool getManual() const;
+
+  inline bool getLaneChange() const;
+
+  inline bool getDrive() const;
+
+  inline bool getHealthy() const;
+
+  inline bool getActive() const;
+
+  inline bool hasReason() const;
+  inline  ::capnp::Text::Reader getReason() const;
+
+  inline  ::uint64_t getPlanId() const;
+
+  inline float getLateralError() const;
+
+  inline float getHeadingError() const;
+
+  inline float getAngleFilterStateDeg() const;
+
+  inline bool getAngleStateValid() const;
+
+  inline  ::uint64_t getAngleStateMonoTime() const;
+
+  inline bool getDirectAngleControl() const;
+
+  inline float getSelectedMdpsAngleDeg() const;
+
+  inline double getSteerRatio() const;
+
+  inline double getTireStiffnessFront() const;
+
+  inline double getTireStiffnessRear() const;
+
+  inline double getAngleOffsetDeg() const;
+
+  inline double getRoll() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -2927,9 +3160,9 @@ private:
   friend class ::capnp::Orphanage;
 };
 
-class CustomReserved13::Builder {
+class EV9TrajectoryState::Builder {
 public:
-  typedef CustomReserved13 Builds;
+  typedef EV9TrajectoryState Builds;
 
   Builder() = delete;  // Deleted to discourage incorrect usage.
                        // You can explicitly initialize to nullptr instead.
@@ -2943,6 +3176,103 @@ public:
   inline ::kj::StringTree toString() const { return asReader().toString(); }
 #endif  // !CAPNP_LITE
 
+  inline  ::uint8_t getMode();
+  inline void setMode( ::uint8_t value);
+
+  inline  ::uint64_t getGeneration();
+  inline void setGeneration( ::uint64_t value);
+
+  inline  ::uint64_t getSourceMonoTime();
+  inline void setSourceMonoTime( ::uint64_t value);
+
+  inline double getX();
+  inline void setX(double value);
+
+  inline double getY();
+  inline void setY(double value);
+
+  inline double getYaw();
+  inline void setYaw(double value);
+
+  inline float getSpeed();
+  inline void setSpeed(float value);
+
+  inline float getWheelAngleDeg();
+  inline void setWheelAngleDeg(float value);
+
+  inline float getCurvature();
+  inline void setCurvature(float value);
+
+  inline float getCommandCurvature();
+  inline void setCommandCurvature(float value);
+
+  inline float getDelay();
+  inline void setDelay(float value);
+
+  inline bool getEnabled();
+  inline void setEnabled(bool value);
+
+  inline bool getManual();
+  inline void setManual(bool value);
+
+  inline bool getLaneChange();
+  inline void setLaneChange(bool value);
+
+  inline bool getDrive();
+  inline void setDrive(bool value);
+
+  inline bool getHealthy();
+  inline void setHealthy(bool value);
+
+  inline bool getActive();
+  inline void setActive(bool value);
+
+  inline bool hasReason();
+  inline  ::capnp::Text::Builder getReason();
+  inline void setReason( ::capnp::Text::Reader value);
+  inline  ::capnp::Text::Builder initReason(unsigned int size);
+  inline void adoptReason(::capnp::Orphan< ::capnp::Text>&& value);
+  inline ::capnp::Orphan< ::capnp::Text> disownReason();
+
+  inline  ::uint64_t getPlanId();
+  inline void setPlanId( ::uint64_t value);
+
+  inline float getLateralError();
+  inline void setLateralError(float value);
+
+  inline float getHeadingError();
+  inline void setHeadingError(float value);
+
+  inline float getAngleFilterStateDeg();
+  inline void setAngleFilterStateDeg(float value);
+
+  inline bool getAngleStateValid();
+  inline void setAngleStateValid(bool value);
+
+  inline  ::uint64_t getAngleStateMonoTime();
+  inline void setAngleStateMonoTime( ::uint64_t value);
+
+  inline bool getDirectAngleControl();
+  inline void setDirectAngleControl(bool value);
+
+  inline float getSelectedMdpsAngleDeg();
+  inline void setSelectedMdpsAngleDeg(float value);
+
+  inline double getSteerRatio();
+  inline void setSteerRatio(double value);
+
+  inline double getTireStiffnessFront();
+  inline void setTireStiffnessFront(double value);
+
+  inline double getTireStiffnessRear();
+  inline void setTireStiffnessRear(double value);
+
+  inline double getAngleOffsetDeg();
+  inline void setAngleOffsetDeg(double value);
+
+  inline double getRoll();
+  inline void setRoll(double value);
+
 private:
   ::capnp::_::StructBuilder _builder;
   template <typename, ::capnp::Kind>
@@ -2953,9 +3283,9 @@ private:
 };
 
 #if !CAPNP_LITE
-class CustomReserved13::Pipeline {
+class EV9TrajectoryState::Pipeline {
 public:
-  typedef CustomReserved13 Pipelines;
+  typedef EV9TrajectoryState Pipelines;
 
   inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
   inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
@@ -6459,6 +6789,984 @@ inline bool StarPilotLateralState::Builder::getUnwindDetected() {
 inline void StarPilotLateralState::Builder::setUnwindDetected(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryPlan::Reader::getFeasible() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryPlan::Builder::getFeasible() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setFeasible(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryPlan::Reader::getExecutionValidated() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryPlan::Builder::getExecutionValidated() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setExecutionValidated(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryPlan::Reader::hasReason() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline bool EV9TrajectoryPlan::Builder::hasReason() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::Text::Reader EV9TrajectoryPlan::Reader::getReason() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Text::Builder EV9TrajectoryPlan::Builder::getReason() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline void EV9TrajectoryPlan::Builder::setReason( ::capnp::Text::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::Text::Builder EV9TrajectoryPlan::Builder::initReason(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), size);
+}
+inline void EV9TrajectoryPlan::Builder::adoptReason(
+    ::capnp::Orphan< ::capnp::Text>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Text> EV9TrajectoryPlan::Builder::disownReason() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Reader::getPlanId() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Builder::getPlanId() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setPlanId( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Reader::getGeneration() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Builder::getGeneration() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setGeneration( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Reader::getSourceMonoTime() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Builder::getSourceMonoTime() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setSourceMonoTime( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Reader::getValidUntilMonoTime() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Builder::getValidUntilMonoTime() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setValidUntilMonoTime( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Reader::getCorridorRevision() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Builder::getCorridorRevision() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setCorridorRevision( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Reader::getCorridorValidUntilMonoTime() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<6>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryPlan::Builder::getCorridorValidUntilMonoTime() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<6>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setCorridorValidUntilMonoTime( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<6>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryPlan::Reader::hasFrame() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
+}
+inline bool EV9TrajectoryPlan::Builder::hasFrame() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::Text::Reader EV9TrajectoryPlan::Reader::getFrame() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Text::Builder EV9TrajectoryPlan::Builder::getFrame() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+inline void EV9TrajectoryPlan::Builder::setFrame( ::capnp::Text::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::Text::Builder EV9TrajectoryPlan::Builder::initFrame(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), size);
+}
+inline void EV9TrajectoryPlan::Builder::adoptFrame(
+    ::capnp::Orphan< ::capnp::Text>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Text> EV9TrajectoryPlan::Builder::disownFrame() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+
+inline double EV9TrajectoryPlan::Reader::getOriginX() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<7>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryPlan::Builder::getOriginX() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<7>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setOriginX(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<7>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryPlan::Reader::getOriginY() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<8>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryPlan::Builder::getOriginY() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<8>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setOriginY(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<8>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryPlan::Reader::getOriginYaw() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<9>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryPlan::Builder::getOriginYaw() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<9>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setOriginYaw(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<9>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryPlan::Reader::getSpeed() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryPlan::Builder::getSpeed() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setSpeed(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryPlan::Reader::getInitialCurvature() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<20>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryPlan::Builder::getInitialCurvature() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<20>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setInitialCurvature(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<20>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryPlan::Reader::getInitialCommandCurvature() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<21>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryPlan::Builder::getInitialCommandCurvature() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<21>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setInitialCommandCurvature(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<21>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryPlan::Reader::getMinCurvature() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<22>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryPlan::Builder::getMinCurvature() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<22>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setMinCurvature(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<22>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryPlan::Reader::getMaxCurvature() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<23>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryPlan::Builder::getMaxCurvature() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<23>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setMaxCurvature(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<23>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryPlan::Reader::hasDistance() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+}
+inline bool EV9TrajectoryPlan::Builder::hasDistance() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader EV9TrajectoryPlan::Reader::getDistance() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_reader.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::getDistance() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+inline void EV9TrajectoryPlan::Builder::setDistance( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), value);
+}
+inline void EV9TrajectoryPlan::Builder::setDistance(::kj::ArrayPtr<const float> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::initDistance(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::init(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), size);
+}
+inline void EV9TrajectoryPlan::Builder::adoptDistance(
+    ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::adopt(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> EV9TrajectoryPlan::Builder::disownDistance() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::disown(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+
+inline bool EV9TrajectoryPlan::Reader::hasX() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<3>() * ::capnp::POINTERS).isNull();
+}
+inline bool EV9TrajectoryPlan::Builder::hasX() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<3>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader EV9TrajectoryPlan::Reader::getX() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_reader.getPointerField(
+      ::capnp::bounded<3>() * ::capnp::POINTERS));
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::getX() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_builder.getPointerField(
+      ::capnp::bounded<3>() * ::capnp::POINTERS));
+}
+inline void EV9TrajectoryPlan::Builder::setX( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<3>() * ::capnp::POINTERS), value);
+}
+inline void EV9TrajectoryPlan::Builder::setX(::kj::ArrayPtr<const float> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<3>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::initX(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::init(_builder.getPointerField(
+      ::capnp::bounded<3>() * ::capnp::POINTERS), size);
+}
+inline void EV9TrajectoryPlan::Builder::adoptX(
+    ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::adopt(_builder.getPointerField(
+      ::capnp::bounded<3>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> EV9TrajectoryPlan::Builder::disownX() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::disown(_builder.getPointerField(
+      ::capnp::bounded<3>() * ::capnp::POINTERS));
+}
+
+inline bool EV9TrajectoryPlan::Reader::hasY() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::POINTERS).isNull();
+}
+inline bool EV9TrajectoryPlan::Builder::hasY() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader EV9TrajectoryPlan::Reader::getY() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_reader.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::POINTERS));
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::getY() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::POINTERS));
+}
+inline void EV9TrajectoryPlan::Builder::setY( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::POINTERS), value);
+}
+inline void EV9TrajectoryPlan::Builder::setY(::kj::ArrayPtr<const float> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::initY(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::init(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::POINTERS), size);
+}
+inline void EV9TrajectoryPlan::Builder::adoptY(
+    ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::adopt(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> EV9TrajectoryPlan::Builder::disownY() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::disown(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::POINTERS));
+}
+
+inline bool EV9TrajectoryPlan::Reader::hasYaw() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS).isNull();
+}
+inline bool EV9TrajectoryPlan::Builder::hasYaw() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader EV9TrajectoryPlan::Reader::getYaw() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_reader.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS));
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::getYaw() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS));
+}
+inline void EV9TrajectoryPlan::Builder::setYaw( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS), value);
+}
+inline void EV9TrajectoryPlan::Builder::setYaw(::kj::ArrayPtr<const float> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::initYaw(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::init(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS), size);
+}
+inline void EV9TrajectoryPlan::Builder::adoptYaw(
+    ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::adopt(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> EV9TrajectoryPlan::Builder::disownYaw() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::disown(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS));
+}
+
+inline bool EV9TrajectoryPlan::Reader::hasCurvature() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<6>() * ::capnp::POINTERS).isNull();
+}
+inline bool EV9TrajectoryPlan::Builder::hasCurvature() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<6>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader EV9TrajectoryPlan::Reader::getCurvature() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_reader.getPointerField(
+      ::capnp::bounded<6>() * ::capnp::POINTERS));
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::getCurvature() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::get(_builder.getPointerField(
+      ::capnp::bounded<6>() * ::capnp::POINTERS));
+}
+inline void EV9TrajectoryPlan::Builder::setCurvature( ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<6>() * ::capnp::POINTERS), value);
+}
+inline void EV9TrajectoryPlan::Builder::setCurvature(::kj::ArrayPtr<const float> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::set(_builder.getPointerField(
+      ::capnp::bounded<6>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>::Builder EV9TrajectoryPlan::Builder::initCurvature(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::init(_builder.getPointerField(
+      ::capnp::bounded<6>() * ::capnp::POINTERS), size);
+}
+inline void EV9TrajectoryPlan::Builder::adoptCurvature(
+    ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::adopt(_builder.getPointerField(
+      ::capnp::bounded<6>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>> EV9TrajectoryPlan::Builder::disownCurvature() {
+  return ::capnp::_::PointerHelpers< ::capnp::List<float,  ::capnp::Kind::PRIMITIVE>>::disown(_builder.getPointerField(
+      ::capnp::bounded<6>() * ::capnp::POINTERS));
+}
+
+inline float EV9TrajectoryPlan::Reader::getSolveTime() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<24>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryPlan::Builder::getSolveTime() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<24>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setSolveTime(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<24>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryPlan::Reader::getGeometryAvailable() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryPlan::Builder::getGeometryAvailable() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setGeometryAvailable(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryPlan::Reader::getOriginalPathInfeasible() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryPlan::Builder::getOriginalPathInfeasible() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryPlan::Builder::setOriginalPathInfeasible(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint8_t EV9TrajectoryState::Reader::getMode() const {
+  return _reader.getDataField< ::uint8_t>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint8_t EV9TrajectoryState::Builder::getMode() {
+  return _builder.getDataField< ::uint8_t>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setMode( ::uint8_t value) {
+  _builder.setDataField< ::uint8_t>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t EV9TrajectoryState::Reader::getGeneration() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryState::Builder::getGeneration() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setGeneration( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t EV9TrajectoryState::Reader::getSourceMonoTime() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryState::Builder::getSourceMonoTime() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setSourceMonoTime( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryState::Reader::getX() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryState::Builder::getX() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setX(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryState::Reader::getY() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryState::Builder::getY() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setY(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryState::Reader::getYaw() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryState::Builder::getYaw() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setYaw(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryState::Reader::getSpeed() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryState::Builder::getSpeed() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setSpeed(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryState::Reader::getWheelAngleDeg() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<12>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryState::Builder::getWheelAngleDeg() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<12>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setWheelAngleDeg(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<12>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryState::Reader::getCurvature() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<13>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryState::Builder::getCurvature() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<13>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setCurvature(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<13>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryState::Reader::getCommandCurvature() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<14>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryState::Builder::getCommandCurvature() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<14>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setCommandCurvature(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<14>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryState::Reader::getDelay() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<15>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryState::Builder::getDelay() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<15>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setDelay(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<15>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryState::Reader::getEnabled() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<8>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryState::Builder::getEnabled() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<8>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setEnabled(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<8>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryState::Reader::getManual() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<9>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryState::Builder::getManual() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<9>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setManual(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<9>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryState::Reader::getLaneChange() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryState::Builder::getLaneChange() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setLaneChange(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<10>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryState::Reader::getDrive() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryState::Builder::getDrive() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setDrive(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<11>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryState::Reader::getHealthy() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<12>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryState::Builder::getHealthy() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<12>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setHealthy(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<12>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryState::Reader::getActive() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<13>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryState::Builder::getActive() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<13>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setActive(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<13>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryState::Reader::hasReason() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline bool EV9TrajectoryState::Builder::hasReason() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::Text::Reader EV9TrajectoryState::Reader::getReason() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Text::Builder EV9TrajectoryState::Builder::getReason() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline void EV9TrajectoryState::Builder::setReason( ::capnp::Text::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::Text::Builder EV9TrajectoryState::Builder::initReason(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), size);
+}
+inline void EV9TrajectoryState::Builder::adoptReason(
+    ::capnp::Orphan< ::capnp::Text>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Text> EV9TrajectoryState::Builder::disownReason() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+
+inline  ::uint64_t EV9TrajectoryState::Reader::getPlanId() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<8>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryState::Builder::getPlanId() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<8>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setPlanId( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<8>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryState::Reader::getLateralError() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<18>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryState::Builder::getLateralError() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<18>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setLateralError(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<18>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryState::Reader::getHeadingError() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<19>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryState::Builder::getHeadingError() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<19>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setHeadingError(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<19>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryState::Reader::getAngleFilterStateDeg() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<20>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryState::Builder::getAngleFilterStateDeg() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<20>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setAngleFilterStateDeg(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<20>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryState::Reader::getAngleStateValid() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<14>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryState::Builder::getAngleStateValid() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<14>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setAngleStateValid(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<14>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::uint64_t EV9TrajectoryState::Reader::getAngleStateMonoTime() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t EV9TrajectoryState::Builder::getAngleStateMonoTime() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setAngleStateMonoTime( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<11>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool EV9TrajectoryState::Reader::getDirectAngleControl() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<15>() * ::capnp::ELEMENTS);
+}
+
+inline bool EV9TrajectoryState::Builder::getDirectAngleControl() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<15>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setDirectAngleControl(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<15>() * ::capnp::ELEMENTS, value);
+}
+
+inline float EV9TrajectoryState::Reader::getSelectedMdpsAngleDeg() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<21>() * ::capnp::ELEMENTS);
+}
+
+inline float EV9TrajectoryState::Builder::getSelectedMdpsAngleDeg() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<21>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setSelectedMdpsAngleDeg(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<21>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryState::Reader::getSteerRatio() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<12>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryState::Builder::getSteerRatio() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<12>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setSteerRatio(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<12>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryState::Reader::getTireStiffnessFront() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<13>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryState::Builder::getTireStiffnessFront() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<13>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setTireStiffnessFront(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<13>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryState::Reader::getTireStiffnessRear() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<14>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryState::Builder::getTireStiffnessRear() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<14>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setTireStiffnessRear(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<14>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryState::Reader::getAngleOffsetDeg() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<15>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryState::Builder::getAngleOffsetDeg() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<15>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setAngleOffsetDeg(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<15>() * ::capnp::ELEMENTS, value);
+}
+
+inline double EV9TrajectoryState::Reader::getRoll() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<16>() * ::capnp::ELEMENTS);
+}
+
+inline double EV9TrajectoryState::Builder::getRoll() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<16>() * ::capnp::ELEMENTS);
+}
+inline void EV9TrajectoryState::Builder::setRoll(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<16>() * ::capnp::ELEMENTS, value);
 }
 
 inline bool MapdDownloadLocationDetails::Reader::hasLocation() const {
