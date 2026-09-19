@@ -37,6 +37,15 @@ def wrap_angle(angle):
   return math.atan2(math.sin(angle), math.cos(angle))
 
 
+def path_turn_direction(yaw):
+  """Net spatial intent in left-positive coordinates; straight is not a reversal."""
+  values = np.asarray(yaw, dtype=float)
+  if values.ndim != 1 or len(values) < 2 or not np.isfinite(values).all():
+    return 0
+  turn = float(np.unwrap(values)[-1] - values[0])
+  return int(math.copysign(1, turn)) if abs(turn) >= math.radians(5) else 0
+
+
 @dataclass(frozen=True)
 class ExecutionState:
   time: float
@@ -61,16 +70,28 @@ class ExecutionState:
   direct_angle_control: bool = False
   selected_mdps_angle_deg: float = 0.0  # separate sensor reference; mapping to calibrated SAS must be validated
   tracking_active: bool = False
+  speed_limit_mps: float = MAX_TRAJECTORY_SPEED
+  model_capture_time: float = 0.0
+  model_capture_pose: tuple[float, float, float] | None = None
+
+  def odometry_rejection(self, now):
+    if not all(math.isfinite(v) for v in (self.time, *self.pose, self.speed, self.curvature, now)):
+      return 'invalid_odometry'
+    if not self.healthy or not self.drive or self.speed < 0 or not 0 <= now - self.time <= MAX_STATE_AGE:
+      return 'invalid_odometry'
+    return ''
+
 
   def rejection(self, now):
-    values = (self.time, *self.pose, self.speed, self.wheel_angle_deg, self.curvature, self.command_curvature, self.delay, now)
+    values = (self.time, *self.pose, self.speed, self.wheel_angle_deg, self.curvature, self.command_curvature, self.delay, self.speed_limit_mps, now)
     if not all(math.isfinite(x) for x in values):
       return 'invalid_state'
     if not 0 <= now - self.time <= MAX_STATE_AGE:
       return 'stale_state'
     if not self.enabled or self.manual or self.lane_change or not self.drive or not self.healthy:
       return 'driver_or_baseline_ownership'
-    if not MIN_TRAJECTORY_SPEED <= self.speed <= MAX_TRAJECTORY_SPEED or abs(self.wheel_angle_deg) > STEERING_CAPABILITY_DEG or not 0 <= self.delay <= 1.0:
+    if (not MIN_TRAJECTORY_SPEED <= self.speed <= min(self.speed_limit_mps, MAX_TRAJECTORY_SPEED) or
+        abs(self.wheel_angle_deg) > STEERING_CAPABILITY_DEG or not 0 <= self.delay <= 1.0):
       return 'unsupported_state'
     return ''
 
@@ -118,7 +139,8 @@ class TrajectoryPlan:
     if not self.min_curvature < 0 < self.max_curvature or np.min(self.curvature) < self.min_curvature - 1e-6 or \
        np.max(self.curvature) > self.max_curvature + 1e-6:
       return 'invalid_capability'
-    if abs(state.speed - self.speed) > 0.25 or not MIN_TRAJECTORY_SPEED <= self.speed <= MAX_TRAJECTORY_SPEED:
+    if (not math.isfinite(state.speed_limit_mps) or abs(state.speed - self.speed) > 0.25 or
+        not MIN_TRAJECTORY_SPEED <= self.speed <= min(state.speed_limit_mps, MAX_TRAJECTORY_SPEED)):
       return 'speed_mismatch'
     return ''
 
@@ -161,7 +183,7 @@ class TrajectoryTracker:
     c, s = math.cos(plan.origin[2]), math.sin(plan.origin[2])
     return np.array([c * dx + s * dy, -s * dx + c * dy]), wrap_angle(state.pose[2] - plan.origin[2])
 
-  def update(self, state, baseline_curvature, *, mode, proposal=None, corridor_revision=0, corridor_valid_until=0.0, revoke=False):
+  def update(self, state, baseline_curvature, *, mode, proposal=None, corridor_revision=0, corridor_valid_until=0.0, revoke=False, model_turn_direction=0):
     now = state.time
     mode = parse_mode(mode)
     if mode != self.last_mode:
@@ -177,9 +199,16 @@ class TrajectoryTracker:
     if revoke:
       self.reset(now)
       return TrackingDecision(baseline_curvature, False, 'corridor_unavailable')
+    intent_changed = self.plan is not None and model_turn_direction * path_turn_direction(self.plan.yaw) < 0
+    if intent_changed:
+      # A fresh compatible replacement may still adopt this tick. Do not let an
+      # unsuccessful solve keep driving the old turn merely because its lease lives.
+      self.plan, self.progress, self.corridor_valid_until = None, 0, 0.0
     fresh_corridor = math.isfinite(corridor_valid_until) and now <= corridor_valid_until <= now + MAX_PLAN_AGE
     if proposal is not None:
       reason = proposal.rejection(state, now)
+      if model_turn_direction * path_turn_direction(proposal.yaw) < 0:
+        reason = 'model_intent_changed'
       if not fresh_corridor:
         reason = 'corridor_unavailable'
       if not reason and (proposal.source_time < self.reject_before or proposal.source_time < self.last_source_time or
@@ -201,7 +230,9 @@ class TrajectoryTracker:
       if reason and self.plan is None:
         return TrackingDecision(baseline_curvature, False, reason)
     if self.plan is None:
-      return TrackingDecision(baseline_curvature, False, 'no_replacement')
+      if intent_changed:
+        self.reset(now)
+      return TrackingDecision(baseline_curvature, False, 'model_intent_changed' if intent_changed else 'no_replacement')
     plan = self.plan
     # A replacement's revision/lease belongs to that replacement. Failed adoption
     # must not revoke a still-valid incumbent or renew it from unrelated evidence.

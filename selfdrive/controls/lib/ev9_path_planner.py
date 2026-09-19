@@ -1,8 +1,8 @@
-"""Small, rolling EV9 path refiner; the existing controller still drives the car.
+"""Rolling EV9 model-path refiner; the existing controller still drives the car.
 
-The model owns driving intent. This layer can make a small same-direction path
-adjustment where observed geometry supports the changed body poses. It does not
-infer an intersection, choose another lane, or simulate the CAN controller live.
+The model owns driving intent. This layer adjusts timing and geometry within a
+bounded distance of that path, using reliable observed boundaries when available.
+Model-led adjustments without boundaries are not independent free-space proof.
 """
 from dataclasses import dataclass, replace
 import math
@@ -10,7 +10,9 @@ import time
 
 import numpy as np
 
-from openpilot.selfdrive.controls.lib.ev9_path_geometry import body_inside_observed
+from opendbc.car.hyundai.ev9 import EV9_HIGH_LATERAL_LIMIT
+from openpilot.selfdrive.controls.lib.drive_helpers import MIN_SPEED
+from openpilot.selfdrive.controls.lib.ev9_path_geometry import body_respects_observed
 from openpilot.selfdrive.controls.lib.ev9_path_frames import CameraMount
 from openpilot.selfdrive.controls.lib.ev9_path_history import RearBoundaryHistory
 from openpilot.selfdrive.controls.lib.ev9_path_input import PathGeometryConfig, build_path_input
@@ -19,7 +21,7 @@ from openpilot.selfdrive.controls.lib.ev9_trajectory import MAX_PLAN_AGE, STEERI
 
 # Explicit initial experimental profile, not an inferred physical calibration.
 # Mount sensitivity is included in the body envelope below. No angle derating.
-MODEL_GEOMETRY = PathGeometryConfig(CameraMount(2.0, 0.0), True, 3.975, 1.04, 1.1, margin=.08, max_deviation=.90)
+MODEL_GEOMETRY = PathGeometryConfig(CameraMount(2.0, 0.0), True, 3.975, 1.04, 1.1, margin=.08, max_deviation=1.0)
 MOUNT_LONGITUDINAL_UNCERTAINTY = .30
 MOUNT_LATERAL_UNCERTAINTY = .10
 PLANNING_ANGLE_RATE = 100.0
@@ -53,8 +55,9 @@ def remaining_reference(geometry, pose):
   xy = np.column_stack([np.interp(station, geometry.distance, v) for v in geometry.xy.T])
   yaw = np.interp(station, geometry.distance, np.unwrap(geometry.yaw))
   allowance = np.interp(station, geometry.distance, geometry.lateral_allowance)
+  heading_allowance = np.interp(station, geometry.distance, geometry.heading_allowance)
   preserve = np.interp(station, geometry.distance, geometry.preserve_reference_pose.astype(float)) > 0
-  return xy, yaw, station - start, allowance, preserve
+  return xy, yaw, station - start, allowance, heading_allowance, preserve
 
 
 class ModelPathPlanner:
@@ -103,20 +106,35 @@ class ModelPathPlanner:
     if not geometry.available:
       return reject(geometry.reason)
     initial_pose = relative_pose(state.pose, model_pose)
-    xy, yaw, distance, allowance, preserve = remaining_reference(geometry, initial_pose)
+    xy, yaw, distance, allowance, heading_allowance, preserve = remaining_reference(geometry, initial_pose)
     if len(distance) < 5 or distance[-1] < 10:
       return reject('insufficient_remaining_reference')
-    if np.linalg.norm(xy[0] - initial_pose[:2]) > .2 or abs(wrap_angle(yaw[0] - initial_pose[2])) > math.radians(3):
+    # A continuing refined path may be deliberately farther from the model than
+    # the old 15 cm prototype allowed. Use observed clearance here as in the
+    # solve; otherwise a valid wider turn cancels itself as the car follows it.
+    if (np.linalg.norm(xy[0] - initial_pose[:2]) > max(.2, allowance[0]) or
+        abs(wrap_angle(yaw[0] - initial_pose[2])) > max(math.radians(3), heading_allowance[0])):
       return reject('model_state_mismatch')
     min_curvature, max_curvature = sorted(vm.calc_curvature(math.radians(a - angle_offset_deg), state.speed, roll)
                                         for a in (-STEERING_CAPABILITY_DEG, STEERING_CAPABILITY_DEG))
     rate = abs(vm.curvature_factor(state.speed) / vm.sR * math.radians(PLANNING_ANGLE_RATE))
+    # The existing EV9 controller also enforces lateral acceleration and jerk.
+    # Account for those limits in geometry rather than planning steering that
+    # downstream controls will clip. The full 140 degrees remains available
+    # whenever these existing speed-dependent limits permit it.
+    controller_bound = EV9_HIGH_LATERAL_LIMIT / max(state.speed, MIN_SPEED)**2
+    min_curvature, max_curvature = max(min_curvature, -controller_bound), min(max_curvature, controller_bound)
+    rate = min(rate, controller_bound)
     if not np.isfinite([min_curvature, max_curvature, rate]).all() or not min_curvature < 0 < max_curvature or rate <= 0:
       return reject('invalid_vehicle_model')
     reference_curvature = np.gradient(yaw, distance)
     turn = yaw[-1] - yaw[0]
     over_limit = (reference_curvature < min_curvature - 1e-6) | (reference_curvature > max_curvature + 1e-6)
-    if not over_limit.any():
+    # Staying below 140 degrees does not make a late turn-in executable. The
+    # reference must also respect the same steering slew used by the solver.
+    over_rate = abs(np.diff(reference_curvature)) * state.speed > rate * np.diff(distance) + 1e-6
+    requires_change = over_limit | np.r_[over_rate, False] | np.r_[False, over_rate]
+    if not requires_change.any():
       if not state.tracking_active:
         return reject('reference_within_capability')
       # Finish through a fresh feasible reference instead of abandoning a turn
@@ -128,9 +146,12 @@ class ModelPathPlanner:
         baseline = -float(action)
       except (KeyError, AttributeError, TypeError, ValueError):
         return reject('invalid_or_missing_geometry')
-      if abs(turn) < math.radians(5) and math.isfinite(baseline) and abs(baseline - state.command_curvature) <= rate * .05:
+      spatial_agreement = (np.linalg.norm(xy[0] - initial_pose[:2]) <= .1 and
+                           abs(wrap_angle(yaw[0] - initial_pose[2])) <= math.radians(1))
+      if (abs(turn) < math.radians(5) and spatial_agreement and math.isfinite(baseline) and
+          abs(baseline - state.command_curvature) <= rate * .05):
         return reject('tracking_complete')
-    if np.any(over_limit & preserve):
+    if np.any(requires_change & preserve):
       return reject('over_limit_without_observed_room')
     if abs(turn) < math.radians(5) and not state.tracking_active:
       return reject('unsupported_turn_intent')
@@ -151,7 +172,7 @@ class ModelPathPlanner:
         self.native_unavailable = True
         return reject('native_planner_unavailable')
     result = self.solver.solve(xy, yaw, initial_pose, state.curvature, state.speed, upper, rate,
-                               -allowance, allowance, math.radians(3), preserve_reference=preserve, min_curvature=lower)
+                               -allowance, allowance, heading_allowance, preserve_reference=preserve, min_curvature=lower)
     if not result.feasible:
       return reject(result.reason)
     if np.any(direction * result.curvature < opposite * np.maximum(1. - result.distance, 0.) - 1e-6):
@@ -172,11 +193,13 @@ class ModelPathPlanner:
     nearest = np.min(np.linalg.norm(relative - fraction[:, :, None] * segments, axis=2), axis=1)
     if np.max(nearest) > config.max_deviation + 1e-5:
       return reject('excessive_path_displacement')
-    erosion = geometry.confidence['uncertainty_margin']
-    if changed.any() and not body_inside_observed(result.xy[changed], result.yaw[changed], geometry.left, geometry.right,
-                                                 front=config.front, rear=config.rear, half_width=config.half_width,
-                                                 left_margin=erosion[0], right_margin=erosion[1]):
-      return reject('changed_body_outside_observed_space')
+    # Missing edges do not become invented walls or verified free space.
+    # Applicable reliable observations constrain the full candidate, including
+    # conflicts already present in the original model path.
+    original_station = result.reference_distance + geometry.distance[-1] - distance[-1]
+    if not body_respects_observed(result.xy, result.yaw, geometry, reference_distance=original_station,
+                                  front=config.front, rear=config.rear, half_width=config.half_width):
+      return reject('observed_boundary_conflict')
     elapsed = self.clock() - started
     finished = now + elapsed
     if elapsed < 0 or elapsed > SOLVE_BUDGET or state.rejection(finished) or not 0 <= finished - model_time <= MAX_PLAN_AGE:

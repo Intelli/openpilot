@@ -1,12 +1,16 @@
 """Messaging adapter for EV9 trajectory ownership; never runs optimization."""
+from dataclasses import replace
 import math
 import os
 import time
 
 import numpy as np
 
+from openpilot.starpilot.common.ev9_tuning import ev9_limit_speed_mps
+from openpilot.selfdrive.controls.lib.ev9_trajectory_io import PoseHistory
+
 from openpilot.selfdrive.controls.lib.ev9_trajectory import (
-  EgoMotion, ExecutionState, TrackingDecision, TrajectoryMode, TrajectoryPlan, TrajectoryTracker, parse_mode,
+  EgoMotion, ExecutionState, TrackingDecision, TrajectoryMode, TrajectoryPlan, TrajectoryTracker, parse_mode, path_turn_direction,
 )
 
 
@@ -43,10 +47,12 @@ class EV9TrajectoryControl:
     self.mode = parse_mode(params.get('EV9TrajectoryMode'))
     self.tracker = TrajectoryTracker()
     self.motion = EgoMotion()
+    self.pose_history = PoseHistory()
     self.last_parameter_read = -math.inf
     self.last_message = 0
     self.last_mode = self.mode
     self.last_parameters = None
+    self.last_speed_limit = None
     self.last_transport = bool(CP.openpilotLongitudinalControl)
     self.decision = TrackingDecision(0.0, False, 'off')
     self.state = None
@@ -54,11 +60,12 @@ class EV9TrajectoryControl:
     self.was_active = False
     self.ownership_changed = False
 
-  def update(self, sm, CS, lat_active, VM, lp, previous_curvature, baseline_curvature):
+  def update(self, sm, CS, lat_active, VM, lp, previous_curvature, baseline_curvature, *, toggles=None):
     now = sm.logMonoTime['selfdriveState'] / 1e9 if 'REPLAY' in os.environ else time.monotonic()
     if now - self.last_parameter_read >= 1.0 or now < self.last_parameter_read:
       self.mode = parse_mode(self.params.get('EV9TrajectoryMode'))
       self.last_parameter_read = now
+    speed_limit = ev9_limit_speed_mps(toggles)
     output = sm['carOutput'].actuatorsOutput
     snapshot_ns = int(getattr(output, 'ev9AngleStateMonoTime', 0))
     snapshot_time = snapshot_ns / 1e9
@@ -84,13 +91,15 @@ class EV9TrajectoryControl:
     configuration = (VM.sR, VM.cF, VM.cR, lp.angleOffsetDeg, lp.roll, self.last_transport)
     odometry_reset = self.motion.generation != previous_generation
     configuration_reset = self.last_parameters is not None and (
-      material_configuration_change(configuration, self.last_parameters) or self.mode != self.last_mode)
+      material_configuration_change(configuration, self.last_parameters) or self.mode != self.last_mode or
+      speed_limit != self.last_speed_limit)
     if configuration_reset and not odometry_reset:
       self.motion.generation += 1
     # Retain the anchor between resets so many small changes cannot evade the bounds.
     if self.last_parameters is None or odometry_reset or configuration_reset:
       self.last_parameters = configuration
     self.last_mode = self.mode
+    self.last_speed_limit = speed_limit
     self.vehicle_configuration = (VM.sR, VM.cF, VM.cR, lp.angleOffsetDeg, lp.roll)
     healthy = bool(sm.all_checks(['carState', 'carOutput', 'modelV2', 'liveParameters', 'liveDelay'])) and bool(lp.valid)
     healthy = healthy and all(0 <= now - sm.logMonoTime[service] / 1e9 <= age for service, age in
@@ -105,7 +114,15 @@ class EV9TrajectoryControl:
       angle_filter_state_deg=filter_angle if math.isfinite(filter_angle) else 0.0,
       angle_state_valid=angle_state_valid, angle_state_mono_time=snapshot_ns, direct_angle_control=direct_angle_control,
       selected_mdps_angle_deg=mdps_angle if math.isfinite(mdps_angle) else 0.0,
+      speed_limit_mps=speed_limit,
     )
+    # Capture alignment is computed where every 100 Hz pose is available. The
+    # worker may miss intermediate conflated state messages while solving.
+    self.pose_history.add(self.state)
+    capture_time = float(sm['modelV2'].timestampEof) / 1e9
+    capture_pose = self.pose_history.at(capture_time, self.state.generation)
+    if capture_pose is not None and 0 <= now - capture_time <= .25:
+      self.state = replace(self.state, model_capture_time=capture_time, model_capture_pose=capture_pose)
     proposal = None
     revoke = False
     lease, revision = 0.0, 0
@@ -125,11 +142,22 @@ class EV9TrajectoryControl:
           'invalid_lane_metadata', 'invalid_road_metadata', 'missing_model_pose', 'missing_capture_pose',
           'invalid_mount_uncertainty', 'invalid_vehicle_model',
           'crossed_or_missing_boundaries', 'changed_body_outside_observed_space', 'no_observed_body_deviation_room',
+          'observed_boundary_conflict',
           'tracking_complete',
         )
+    model_direction = 0
+    model = sm['modelV2']
+    if sm.all_checks(['modelV2']) and 0 <= now - sm.logMonoTime['modelV2'] / 1e9 <= .25 and 0 <= now - model.timestampEof / 1e9 <= .25:
+      # Model yaw is right-positive; the tracked rear-axle path is left-positive.
+      # Instantaneous action curvature may disagree during an earlier turn-in.
+      yaw, x, y = (np.asarray(values, dtype=float) for values in (model.orientation.z, model.position.x, model.position.y))
+      path_time, heading_time = np.asarray(model.position.t), np.asarray(model.orientation.t)
+      if (len(yaw) >= 4 and yaw.shape == x.shape == y.shape == path_time.shape and
+          np.isfinite(np.r_[yaw, x, y, path_time]).all() and np.array_equal(path_time, heading_time) and np.all(np.diff(path_time) > 0)):
+        model_direction = path_turn_direction(-yaw)
     self.decision = self.tracker.update(
       self.state, baseline_curvature, mode=self.mode, proposal=proposal,
-      corridor_revision=revision, corridor_valid_until=lease, revoke=revoke,
+      corridor_revision=revision, corridor_valid_until=lease, revoke=revoke, model_turn_direction=model_direction,
     )
     self.ownership_changed = self.was_active != self.decision.active
     self.was_active = self.decision.active
@@ -144,6 +172,11 @@ class EV9TrajectoryControl:
     out.sourceMonoTime = int(s.time * 1e9)
     out.x, out.y, out.yaw = s.pose
     out.speed, out.wheelAngleDeg = s.speed, s.wheel_angle_deg
+    out.speedLimitKph = s.speed_limit_mps * 3.6
+    out.modelCapturePoseValid = s.model_capture_pose is not None
+    if s.model_capture_pose is not None:
+      out.modelCaptureMonoTime = round(s.model_capture_time * 1e9)
+      out.modelCaptureX, out.modelCaptureY, out.modelCaptureYaw = s.model_capture_pose
     out.curvature, out.commandCurvature, out.delay = s.curvature, s.command_curvature, s.delay
     out.enabled, out.manual, out.healthy = s.enabled, s.manual, s.healthy
     out.laneChange, out.drive = s.lane_change, s.drive
