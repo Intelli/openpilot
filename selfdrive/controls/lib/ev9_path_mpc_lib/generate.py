@@ -12,7 +12,7 @@ import sys
 
 import numpy as np
 
-N = 40
+N = 30  # Keep the full forecast; independent dense validation retains its spacing.
 
 
 def generate(output, arch=None):
@@ -74,9 +74,9 @@ def generate(output, arch=None):
   options.qp_solver_cond_N = 10
   options.hessian_approx = 'GAUSS_NEWTON'
   options.integrator_type = 'ERK'
-  options.sim_method_num_steps = 2  # Keep native nodes consistent with independent dense integration.
+  options.sim_method_num_steps = 3  # At least the physical integration resolution of the former 40-node/two-step mesh.
   options.nlp_solver_type = 'SQP'
-  options.nlp_solver_max_iter = 20
+  options.nlp_solver_max_iter = 8  # Independently validate integrated candidates even at the iteration limit.
   options.qp_solver_iter_max = 50
   ocp.code_export_directory = str(output)
   ocp.acados_lib_path = str(acados / arch / 'lib')

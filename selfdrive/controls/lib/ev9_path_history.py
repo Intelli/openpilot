@@ -100,9 +100,12 @@ class RearBoundaryHistory:
         segment = np.diff(old, axis=1)
         lengths = np.linalg.norm(segment, axis=2)
         arc = np.column_stack((np.zeros(len(old)), np.cumsum(lengths, axis=1)))
-        relative = points[None, :, None, :] - old[:, None, :-1, :]
-        fraction = np.clip(np.sum(relative*segment[:, None], axis=3)/np.sum(segment**2, axis=2)[:, None], 0., 1.)
-        distances = np.linalg.norm(relative-fraction[..., None]*segment[:, None], axis=3)
+        dx, dy = segment[:, None, :, 0], segment[:, None, :, 1]
+        x = points[None, :, None, 0]-old[:, None, :-1, 0]
+        y = points[None, :, None, 1]-old[:, None, :-1, 1]
+        fraction = np.clip((x*dx+y*dy)/(dx*dx+dy*dy), 0., 1.)
+        rx, ry = x-fraction*dx, y-fraction*dy
+        distances = np.sqrt(rx*rx+ry*ry)
         nearest = np.argmin(distances, axis=2)
         projected = arc[:, None, :-1] + fraction*lengths[:, None]
         progress = np.take_along_axis(projected, nearest[..., None], axis=2)[..., 0]

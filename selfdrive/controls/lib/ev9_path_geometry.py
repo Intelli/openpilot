@@ -51,20 +51,25 @@ def _inside(points, polygon):
   return np.sum(crossing & (x < at_x), axis=-1) % 2 == 1
 
 
-def _clearance(xy, yaw, polygon, margins, front, rear, half_width, *, side=0, reference_xy=None):
+def _clearance(xy, yaw, polygon, margins, front, rear, half_width, *, side=0, reference_xy=None, check_budget=None):
   """Exact rectangle-to-segment distance, negative for a non-contained body."""
   a, b = (polygon[:-1], polygon[1:]) if side else (polygon, np.roll(polygon, -1, axis=0))
   delta = b-a
   local = np.array([[-rear, -half_width], [front, -half_width], [front, half_width], [-rear, half_width]])
   output = np.empty(len(xy))
   for start in range(0, len(xy), 32):
+    if check_budget is not None:
+      check_budget()
     p, h = xy[start:start+32], yaw[start:start+32]
     c, s = np.cos(h), np.sin(h)
     corners = np.stack((p[:, 0, None] + c[:, None]*local[:, 0] - s[:, None]*local[:, 1],
                         p[:, 1, None] + s[:, None]*local[:, 0] + c[:, None]*local[:, 1]), axis=-1)
-    q = corners[:, :, None, :] - a
-    t = np.clip(np.sum(q*delta, axis=-1)/np.sum(delta**2, axis=-1), 0., 1.)
-    corner_distance = np.linalg.norm(q-t[..., None]*delta, axis=-1).min(axis=1)
+    dx, dy = delta[:, 0], delta[:, 1]
+    qx = corners[:, :, 0, None] - a[:, 0]
+    qy = corners[:, :, 1, None] - a[:, 1]
+    t = np.clip((qx*dx+qy*dy)/(dx*dx+dy*dy), 0., 1.)
+    rx, ry = qx-t*dx, qy-t*dy
+    corner_distance = np.sqrt((rx*rx+ry*ry).min(axis=1))
     relative = polygon[None, :, :]-p[:, None, :]
     vertices = np.stack((c[:, None]*relative[..., 0]+s[:, None]*relative[..., 1],
                          -s[:, None]*relative[..., 0]+c[:, None]*relative[..., 1]), axis=-1)
@@ -172,10 +177,14 @@ class ObservedBoundary:
 def boundary_association(reference_xy, points):
   """Nearest finite segment, with no tangent/side extrapolation past endpoints."""
   delta = np.diff(points, axis=0)
-  relative = np.asarray(reference_xy)[:, None]-points[:-1]
-  fraction = np.sum(relative*delta, axis=2)/np.sum(delta**2, axis=1)
-  distance = np.linalg.norm(relative-np.clip(fraction, 0., 1.)[..., None]*delta, axis=2)
-  index = np.argmin(distance, axis=1)
+  reference_xy = np.asarray(reference_xy)
+  dx, dy = delta[:, 0], delta[:, 1]
+  x = reference_xy[:, 0, None]-points[:-1, 0]
+  y = reference_xy[:, 1, None]-points[:-1, 1]
+  fraction = (x*dx+y*dy)/(dx*dx+dy*dy)
+  clipped = np.clip(fraction, 0., 1.)
+  rx, ry = x-clipped*dx, y-clipped*dy
+  index = np.argmin(rx*rx+ry*ry, axis=1)
   selected = fraction[np.arange(len(index)), index]
   return index, ((selected >= 0.) | (index > 0)) & ((selected <= 1.) | (index < len(delta)-1))
 
@@ -196,7 +205,7 @@ def signed_boundary_distance(points, boundary, side):
   return np.where(applicable, -side*_cross(tangent, points-closest), np.inf)
 
 
-def reliable_body_clearance(xy, yaw, boundaries, *, reference_xy, front, rear, half_width):
+def reliable_body_clearance(xy, yaw, boundaries, *, reference_xy, front, rear, half_width, check_budget=None):
   """Clearance to reliable finite segments and applicable side constraints."""
   xy, yaw, reference_xy = (np.asarray(value, dtype=float) for value in (xy, yaw, reference_xy))
   if (xy.ndim != 2 or xy.shape[1] != 2 or reference_xy.shape != xy.shape or yaw.shape != (len(xy),) or
@@ -212,11 +221,11 @@ def reliable_body_clearance(xy, yaw, boundaries, *, reference_xy, front, rear, h
         np.any(np.linalg.norm(np.diff(points, axis=0), axis=1) <= 1e-8)):
       raise ValueError('invalid_boundary')
     clearance = np.minimum(clearance, _clearance(xy, yaw, points, boundary.margin, front, rear, half_width,
-                                                side=boundary.side, reference_xy=reference_xy))
+                                                side=boundary.side, reference_xy=reference_xy, check_budget=check_budget))
   return clearance
 
 
-def body_respects_observed(xy, yaw, geometry, *, reference_distance, front, rear, half_width):
+def body_respects_observed(xy, yaw, geometry, *, reference_distance, front, rear, half_width, check_budget=None):
   """Check only supplied reliable evidence, including the swept finite segments.
 
   True with no reliable boundaries means model-path refinement is unverified
@@ -231,7 +240,8 @@ def body_respects_observed(xy, yaw, geometry, *, reference_distance, front, rear
     reference = np.column_stack([np.interp(station, geometry.distance, axis) for axis in geometry.xy.T])
     boundaries = geometry.reliable_boundaries
     def clearance(p, h, ref):
-      return reliable_body_clearance(p, h, boundaries, reference_xy=ref, front=front, rear=rear, half_width=half_width)
+      return reliable_body_clearance(p, h, boundaries, reference_xy=ref, front=front, rear=rear, half_width=half_width,
+                                     check_budget=check_budget)
     gap = clearance(xy, yaw, reference)
     if np.any(gap <= 1e-9):
       return False

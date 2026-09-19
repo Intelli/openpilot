@@ -7,6 +7,7 @@ from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
+from openpilot.starpilot.common.ev9_tuning import ev9_limit_speed_mps
 
 LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
@@ -48,6 +49,14 @@ TURN_DESIRES = {
   TurnDirection.turnLeft: log.Desire.turnLeft,
   TurnDirection.turnRight: log.Desire.turnRight,
 }
+
+
+def turn_lane_change_speed(toggles):
+  speed = toggles.minimum_lane_change_speed
+  if getattr(toggles, "car_model", None) == HYUNDAI_CAR.KIA_EV9:
+    # One split keeps turn intent and lane-change eligibility mutually exclusive.
+    speed = max(speed, ev9_limit_speed_mps(toggles))
+  return speed
 
 
 class DesireHelper:
@@ -227,12 +236,12 @@ class DesireHelper:
           return log.Desire.keepRight
     elif modifier in ("left", "sharpLeft"):
       turn_allowed = carstate.leftBlinker and not carstate.rightBlinker and not carstate.leftBlindspot
-      turn_allowed &= carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill
+      turn_allowed &= carstate.vEgo < turn_lane_change_speed(starpilot_toggles) and not carstate.standstill
       if turn_allowed and self._nav_turn_is_imminent(carstate, maneuver_distance):
         return log.Desire.turnLeft
     elif modifier in ("right", "sharpRight"):
       turn_allowed = carstate.rightBlinker and not carstate.leftBlinker and not carstate.rightBlindspot
-      turn_allowed &= carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill
+      turn_allowed &= carstate.vEgo < turn_lane_change_speed(starpilot_toggles) and not carstate.standstill
       if turn_allowed and self._nav_turn_is_imminent(carstate, maneuver_distance):
         return log.Desire.turnRight
 
@@ -245,7 +254,7 @@ class DesireHelper:
   def update(self, carstate, lateral_active, lane_change_prob, starpilotPlan, starpilot_toggles, controls_enabled=None):
     v_ego = carstate.vEgo
     one_blinker = carstate.leftBlinker != carstate.rightBlinker
-    below_lane_change_speed = v_ego < starpilot_toggles.minimum_lane_change_speed
+    below_lane_change_speed = v_ego < turn_lane_change_speed(starpilot_toggles)
 
     stop_imminent = (bool(getattr(starpilotPlan, "redLight", False))
                      or bool(getattr(starpilotPlan, "forcingStop", False))

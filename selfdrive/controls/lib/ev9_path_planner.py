@@ -70,6 +70,20 @@ def within_path_budget(points, reference, distance, lower, upper):
   Optimized progress may differ from reference progress; it cannot borrow room
   from a wider part of the lane elsewhere in the solver horizon.
   """
+  if not all(np.isfinite(value).all() for value in (points, reference, distance, lower, upper)):
+    return False
+  # A nearby point on the reference proves the nearest point is at least as
+  # close. Use only the smallest budget on either side, so this cheap proof
+  # cannot borrow room from another station. Project the unresolved poses only.
+  station = np.linspace(distance[0], distance[-1], len(points))
+  sampled = np.column_stack([np.interp(station, distance, axis) for axis in reference.T])
+  minimum = min(float(np.min(upper)), -float(np.max(lower)))
+  unresolved = ~(np.sum((points - sampled)**2, axis=1) <= (max(0., minimum) + 1e-5)**2)
+  if minimum < 0 or np.any(np.diff(distance) <= 0) or np.any(np.all(np.diff(reference, axis=0) == 0, axis=1)):
+    unresolved[:] = True
+  points = points[unresolved]
+  if not len(points):
+    return True
   segment_x, segment_y = np.diff(reference, axis=0).T
   delta_x = points[:, 0, None] - reference[None, :-1, 0]
   delta_y = points[:, 1, None] - reference[None, :-1, 1]
@@ -108,6 +122,12 @@ class ModelPathPlanner:
                                   solve_time=max(0., self.clock() - started),
                                   boundary_source=geometry.boundary_source if geometry is not None else 'none')
 
+    def check_budget():
+      elapsed = self.clock() - started
+      finished = now + elapsed
+      if elapsed < 0 or elapsed > SOLVE_BUDGET or state.rejection(finished) or not 0 <= finished - model_time <= MAX_PLAN_AGE:
+        raise TimeoutError("planning_deadline")
+
     if parse_mode(mode) == TrajectoryMode.OFF:
       self.boundary_history.reset()
       return reject('off')
@@ -124,8 +144,13 @@ class ModelPathPlanner:
     config = replace(self.geometry, front=self.geometry.front + self.mount_longitudinal_uncertainty,
                      rear=self.geometry.rear + self.mount_longitudinal_uncertainty,
                      half_width=self.geometry.half_width + self.mount_lateral_uncertainty)
-    geometry = build_path_input(model, config, source_time=model_time, now=now, model_valid=model_valid,
-                                boundary_history=self.boundary_history, capture_pose=model_pose, generation=state.generation)
+    try:
+      check_budget()
+      geometry = build_path_input(model, config, source_time=model_time, now=now, model_valid=model_valid,
+                                  boundary_history=self.boundary_history, capture_pose=model_pose, generation=state.generation,
+                                  check_budget=check_budget)
+    except TimeoutError:
+      return reject('planning_deadline')
     if not geometry.available:
       return reject(geometry.reason)
     initial_pose = relative_pose(state.pose, model_pose)
@@ -197,6 +222,10 @@ class ModelPathPlanner:
       except (OSError, RuntimeError):
         self.native_unavailable = True
         return reject('native_planner_unavailable')
+    try:
+      check_budget()
+    except TimeoutError:
+      return reject('planning_deadline')
     result = self.solver.solve(xy, yaw, initial_pose, state.curvature, max(state.speed, MIN_SPATIAL_RATE_SPEED), upper, rate,
                                lateral_lower, lateral_upper, heading_allowance, preserve_reference=preserve, min_curvature=lower)
     if not result.feasible:
@@ -219,9 +248,13 @@ class ModelPathPlanner:
     # Applicable reliable observations constrain the full candidate, including
     # conflicts already present in the original model path.
     original_station = result.reference_distance + geometry.distance[-1] - distance[-1]
-    if not body_respects_observed(result.xy, result.yaw, geometry, reference_distance=original_station,
-                                  front=config.front, rear=config.rear, half_width=config.half_width):
-      return reject('observed_boundary_conflict')
+    try:
+      check_budget()
+      if not body_respects_observed(result.xy, result.yaw, geometry, reference_distance=original_station,
+                                    front=config.front, rear=config.rear, half_width=config.half_width, check_budget=check_budget):
+        return reject('observed_boundary_conflict')
+    except TimeoutError:
+      return reject('planning_deadline')
     elapsed = self.clock() - started
     finished = now + elapsed
     if elapsed < 0 or elapsed > SOLVE_BUDGET or state.rejection(finished) or not 0 <= finished - model_time <= MAX_PLAN_AGE:
