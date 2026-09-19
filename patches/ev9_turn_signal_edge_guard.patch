@@ -1,0 +1,504 @@
+diff --git a/selfdrive/controls/controlsd.py b/selfdrive/controls/controlsd.py
+index 792a6107a2e0adef94c925fa7da5f261b4f038bb..e6aaab333877727fce66448050b02e6f1c10b689 100644
+--- a/selfdrive/controls/controlsd.py
++++ b/selfdrive/controls/controlsd.py
+@@ -30,6 +30,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import (
+ )
+ from openpilot.selfdrive.controls.lib.lane_centering import LaneCenteringController
+ from openpilot.selfdrive.controls.lib.ev9_trajectory_control import EV9TrajectoryControl
++from openpilot.selfdrive.controls.lib.ev9_turn_assist import ev9_turn_assist_authority
+ from openpilot.selfdrive.controls.lib.latcontrol import LatControl
+ from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
+ from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
+@@ -795,6 +796,23 @@ class Controls:
+             held_mag = min(lead_curvature * blinker_dir, abs(self.turn_hold_curvature) + CURVATURE_HOLD_RATCHET_RATE * DT_CTRL)
+             self.turn_hold_curvature = math.copysign(held_mag, lead_curvature)
+ 
++    # Guard only the EV9 lead's extended speed range, above the original 7 m/s
++    # ceiling. Low-speed lead/holds keep their existing behavior. Clearance can
++    # withdraw added assistance, never the underlying model command or a turn.
++    turn_assist_w = 1.0
++    assist_dir = math.copysign(1.0, new_desired_curvature)
++    if (ev9_angle_lead and CC.latActive and not lead_manual and
++        TURN_LEAD_MAX_SPEED < CS.vEgo < lead_speed_ceiling and
++        new_desired_curvature * assist_dir > max(turn_lead_model_curvature * assist_dir, 0.0)):
++      now_nanos = self.sm.logMonoTime['selfdriveState'] if REPLAY else time.monotonic_ns()
++      turn_assist_w = ev9_turn_assist_authority(
++        model_v2, new_desired_curvature, max(min(TURN_LEAD_T * CS.vEgo, TURN_LEAD_MAX_M), TURN_LEAD_MIN_M),
++        base_curvature=turn_lead_model_curvature,
++        model_age=(now_nanos - self.sm.logMonoTime['modelV2']) * 1e-9,
++        blindspot=CS.rightBlindspot if assist_dir > 0.0 else CS.leftBlindspot,
++        model_valid=bool(self.sm.all_checks(['modelV2'])))
++      new_desired_curvature = turn_lead_model_curvature + (new_desired_curvature - turn_lead_model_curvature) * turn_assist_w
++
+     new_desired_curvature = self.lane_centering.update(
+       new_desired_curvature, model_v2, CS.vEgo,
+       self.starpilot_toggles.lane_centering,
+diff --git a/selfdrive/controls/lib/ev9_turn_assist.py b/selfdrive/controls/lib/ev9_turn_assist.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6a86a1905aa616a44a2ed9864867fb14668f2619
+--- /dev/null
++++ b/selfdrive/controls/lib/ev9_turn_assist.py
+@@ -0,0 +1,98 @@
++"""Road-edge veto for extended-speed EV9 turn lead, independent of trajectory mode.
++
++This is a short constant-curvature body projection, not a drivable-space planner.
++Uncertain clearance withdraws only the added assistance; the model still owns
++the underlying command. Unobserved curbs/obstacles cannot be ruled out here.
++"""
++import math
++
++import numpy as np
++
++from openpilot.selfdrive.controls.lib.ev9_path_frames import static_model_points_to_rear_axle
++from openpilot.selfdrive.controls.lib.ev9_path_planner import (
++  MODEL_GEOMETRY, MOUNT_LATERAL_UNCERTAINTY, MOUNT_LONGITUDINAL_UNCERTAINTY,
++)
++
++MAX_MODEL_AGE = .2
++EDGE_STD_FULL = .3
++EDGE_STD_MAX = .5
++SWEEP_STEP = .5
++
++
++def _forward_edge_clear(points, xy, yaw, side, front, rear, half_width):
++  """Check padded rectangles against a finite forward-x edge, without extrapolation.
++
++  Segment/rectangle intersections cover concave edges and between-corner cuts.
++  Corner side checks also reject bodies entirely beyond the edge. The caller
++  pads the rectangle for uncertainty and motion between successive arc poses.
++  """
++  c, s = np.cos(yaw), np.sin(yaw)
++  local = np.array([[-rear, -half_width], [front, -half_width], [front, half_width], [-rear, half_width]])
++  corners_x = xy[:, 0, None] + c[:, None] * local[:, 0] - s[:, None] * local[:, 1]
++  corners_y = xy[:, 1, None] + s[:, None] * local[:, 0] + c[:, None] * local[:, 1]
++  if np.max(corners_x) > points[-1, 0]:
++    return False
++  observed = corners_x >= points[0, 0]
++  edge_y = np.interp(corners_x, points[:, 0], points[:, 1])
++  if np.any(observed & (side * (edge_y - corners_y) <= 0.)):
++    return False
++  relative = points[None, :, :] - xy[:, None, :]
++  vertices = np.stack((c[:, None] * relative[..., 0] + s[:, None] * relative[..., 1],
++                        -s[:, None] * relative[..., 0] + c[:, None] * relative[..., 1]), axis=-1)
++  delta = np.diff(vertices, axis=1)
++  start = vertices[:, :-1]
++  parallel = abs(delta) <= 1e-12
++  lower, upper = np.array([-rear, -half_width]), np.array([front, half_width])
++  outside = np.any(parallel & ((start < lower) | (start > upper)), axis=-1)
++  divisor = np.where(parallel, 1., delta)
++  ta, tb = (lower - start) / divisor, (upper - start) / divisor
++  enter = np.maximum(np.max(np.where(parallel, -np.inf, np.minimum(ta, tb)), axis=-1), 0.)
++  leave = np.minimum(np.min(np.where(parallel, np.inf, np.maximum(ta, tb)), axis=-1), 1.)
++  return not np.any(~outside & (enter <= leave))
++
++
++def ev9_turn_assist_authority(model, curvature, preview_distance, *, base_curvature=0., model_age, blindspot, model_valid):
++  """Return added-command authority, using controls' positive-RIGHT curvature.
++
++  Check the turn-side road edge directly, never substitute a lane line. Model
++  uncertainty is a heuristic, not a calibrated curb-detection probability.
++  Confidence fades authority before its cutoff; clearance is checked for that
++  actual blended command. The observed forward sweep includes the full body;
++  the part behind the camera remains unobserved (no endpoint extrapolation).
++  """
++  if (blindspot or not model_valid or not all(math.isfinite(v) for v in (curvature, base_curvature, preview_distance, model_age)) or
++      not -.01 <= model_age <= MAX_MODEL_AGE or not 0. < preview_distance <= 14. or curvature == 0.):
++    return 0.
++  try:
++    index = 1 if curvature > 0. else 0
++    std = float(model.roadEdgeStds[index])
++    if not math.isfinite(std) or not 0. <= std < EDGE_STD_MAX:
++      return 0.
++    authority = min((EDGE_STD_MAX - std) / (EDGE_STD_MAX - EDGE_STD_FULL), 1.)
++    authority = authority * authority * (3. - 2. * authority)
++    applied = base_curvature + authority * (curvature - base_curvature)
++    if applied * curvature <= 0. or abs(applied) * preview_distance >= math.pi / 2.:
++      return 0.
++
++    edge = model.roadEdges[index]
++    points = np.column_stack((edge.x, edge.y))
++    # Bounded model-size input and forward coverage; a truncated edge is not an opening.
++    if not 2 <= len(points) <= 33 or points[0, 0] > .1 or np.any(np.diff(points[:, 0]) <= 1e-6):
++      return 0.
++    points = static_model_points_to_rear_axle(points, MODEL_GEOMETRY.mount)
++    front = MODEL_GEOMETRY.front + MOUNT_LONGITUDINAL_UNCERTAINTY
++    rear = MODEL_GEOMETRY.rear + MOUNT_LONGITUDINAL_UNCERTAINTY
++    half_width = MODEL_GEOMETRY.half_width + MOUNT_LATERAL_UNCERTAINTY
++    radius = math.hypot(max(front, rear), half_width)
++    distance = np.linspace(0., preview_distance, math.ceil(preview_distance / SWEEP_STEP) + 1)
++    k = -applied  # Geometry uses positive LEFT.
++    yaw = k * distance
++    xy = np.column_stack((np.sin(yaw) / k, 2. * np.sin(yaw / 2.) ** 2 / k))
++    # Include between-sample motion of every body point, not only sampled corners.
++    motion_margin = .5 * (distance[1] - distance[0]) * (1. + radius * abs(k))
++    padding = MODEL_GEOMETRY.margin + std + motion_margin
++    clear = _forward_edge_clear(points, xy, yaw, -1 if curvature > 0. else 1,
++                                front + padding, rear + padding, half_width + padding)
++    return authority if clear else 0.
++  except (AttributeError, ValueError, TypeError, IndexError, OverflowError):
++    return 0.
+diff --git a/selfdrive/controls/tests/test_ev9_turn_assist.py b/selfdrive/controls/tests/test_ev9_turn_assist.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..73a0701345f5f6e164daea64a02acd7811d9f61e
+--- /dev/null
++++ b/selfdrive/controls/tests/test_ev9_turn_assist.py
+@@ -0,0 +1,114 @@
++from types import SimpleNamespace
++
++import numpy as np
++import pytest
++
++from openpilot.selfdrive.controls.lib.ev9_turn_assist import _forward_edge_clear, ev9_turn_assist_authority
++
++
++def model_edges(width=10., std=.1):
++  x = np.linspace(0., 40., 33)
++  return SimpleNamespace(roadEdges=[SimpleNamespace(x=x.copy(), y=np.full(33, -width)),
++                                    SimpleNamespace(x=x.copy(), y=np.full(33, width))], roadEdgeStds=[std, std])
++
++
++def authority(model, curvature=.05, distance=6., **kwargs):
++  options = dict(model_age=.05, blindspot=False, model_valid=True)
++  return ev9_turn_assist_authority(model, curvature, distance, **(options | kwargs))
++
++
++@pytest.mark.parametrize('direction', [-1., 1.])
++def test_clear_observed_space_allows_assistance(direction):
++  assert authority(model_edges(), direction * .05) == 1.
++
++
++@pytest.mark.parametrize('direction', [-1., 1.])
++def test_front_corner_is_checked_even_when_rear_axle_arc_is_clear(direction):
++  # Rear axle moves less than 0.8m sideways; front corner crosses the 3m edge.
++  assert authority(model_edges(width=3.), direction * .1, 4.) == 0.
++  assert authority(model_edges(width=6.), direction * .1, 4.) == 1.
++
++
++@pytest.mark.parametrize('direction', [-1., 1.])
++def test_only_turn_side_edge_is_used(direction):
++  model = model_edges()
++  other = 0 if direction > 0. else 1
++  model.roadEdgeStds[other] = 10.
++  model.roadEdges[other].y[:] = 0.
++  assert authority(model, direction * .05) == 1.
++  model.roadEdges[1 - other].y[:] = direction * 1.
++  assert authority(model, direction * .05) == 0.
++
++
++def test_edge_cutting_across_body_is_rejected():
++  model = model_edges()
++  model.roadEdges[1].y = np.where(model.roadEdges[1].x < 4., 6., .5)
++  assert authority(model) == 0.
++
++
++def test_concave_edge_between_corners_is_rejected():
++  points = np.array([[0., -2.], [2., -.5], [4., -2.], [20., -2.]])
++  # Front corners at x=4 are on the permitted side; the edge enters the side
++  # of the body between them and the unobserved rear corners.
++  assert not _forward_edge_clear(points, np.zeros((1, 2)), np.zeros(1), -1, 4., 1., 1.)
++
++
++def test_body_completely_beyond_edge_is_rejected_without_intersection():
++  model = model_edges()
++  model.roadEdges[1].y[:] = -10.
++  assert authority(model) == 0.
++
++
++def test_short_edge_is_unknown_not_an_opening():
++  model = model_edges()
++  model.roadEdges[1].x = np.linspace(0., 3., 33)
++  assert authority(model) == 0.
++
++
++@pytest.mark.parametrize('std', [-1., .5, .8, float('nan'), float('inf')])
++def test_unreliable_edge_cannot_authorize_assistance(std):
++  assert authority(model_edges(std=std)) == 0.
++
++
++def test_confidence_fades_before_cutoff():
++  values = [authority(model_edges(std=std), base_curvature=.01) for std in (.3, .35, .4, .45, .499, .5)]
++  assert values[0] == 1. and values[-1] == 0.
++  assert all(a > b for a, b in zip(values[:-1], values[1:], strict=True))
++
++
++def test_blended_command_is_checked_not_only_raw_proposal():
++  model = model_edges(width=3.5, std=.4)
++  # At half authority the weaker arc has room; increasing the baseline makes
++  # the actual blended command cross the edge and must be rejected.
++  assert authority(model, .1, 4., base_curvature=0.) == pytest.approx(.5)
++  assert authority(model, .1, 4., base_curvature=.09) == 0.
++
++
++@pytest.mark.parametrize('kwargs', [dict(blindspot=True), dict(model_valid=False), dict(model_age=.201),
++                                   dict(model_age=-.02), dict(model_age=float('nan'))])
++def test_missing_fresh_evidence_or_blindspot_withholds_assistance(kwargs):
++  assert authority(model_edges(), **kwargs) == 0.
++
++
++@pytest.mark.parametrize('fault', ['no_edge', 'no_std', 'nan', 'missing_y', 'duplicate_x', 'reversed_x', 'late_start', 'oversize'])
++def test_malformed_boundary_is_unknown(fault):
++  model = model_edges()
++  edge = model.roadEdges[1]
++  if fault == 'no_edge':
++    model.roadEdges = []
++  elif fault == 'no_std':
++    model.roadEdgeStds = []
++  elif fault == 'nan':
++    edge.y[5] = float('nan')
++  elif fault == 'missing_y':
++    edge.y = []
++  elif fault == 'duplicate_x':
++    edge.x[1] = edge.x[0]
++  elif fault == 'reversed_x':
++    edge.x = edge.x[::-1]
++  elif fault == 'late_start':
++    edge.x += 5.
++  elif fault == 'oversize':
++    edge.x = np.linspace(0., 40., 1000)
++    edge.y = np.full(1000, 10.)
++  assert authority(model) == 0.
+diff --git a/selfdrive/controls/tests/test_ev9_turn_assist_control.py b/selfdrive/controls/tests/test_ev9_turn_assist_control.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0601e01ea66c37fe780bb74f503251c69c934a5c
+--- /dev/null
++++ b/selfdrive/controls/tests/test_ev9_turn_assist_control.py
+@@ -0,0 +1,238 @@
++"""Exercise the edge-admission seam in real Controls, before downstream limits."""
++from collections import defaultdict
++from types import SimpleNamespace
++
++import cereal.messaging as messaging
++from cereal import log
++
++import pytest
++
++from openpilot.selfdrive.controls import controlsd
++from opendbc.car.hyundai.interface import CarInterface
++from opendbc.car.hyundai.values import CAR
++from opendbc.car.vehicle_model import VehicleModel
++from openpilot.selfdrive.controls.controlsd import Controls
++from openpilot.selfdrive.controls.lib.lane_centering import LaneCenteringController
++from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
++
++
++class SubMaster(dict):
++  def __init__(self):
++    services = (
++      'carState',
++      'carOutput',
++      'liveParameters',
++      'liveDelay',
++      'modelV2',
++      'selfdriveState',
++      'liveCalibration',
++      'longitudinalPlan',
++      'starpilotCarState',
++      'starpilotPlan',
++      'radarState',
++      'lateralManeuverPlan',
++    )
++    super().__init__((service, getattr(messaging.new_message(service), service)) for service in services)
++    self['onroadEvents'] = []
++    self.valid = defaultdict(lambda: True, lateralManeuverPlan=False)
++    self.logMonoTime = defaultdict(lambda: 10_000_000_000)
++
++  def all_checks(self, services):
++    return all(self.valid[service] for service in services)
++
++
++def make_controls(monkeypatch):
++  monkeypatch.setattr(controlsd, 'REPLAY', True)
++  c = Controls.__new__(Controls)
++  c.CP = CarInterface.get_non_essential_params(CAR.KIA_EV9)
++  c.CP.openpilotLongitudinalControl = False
++  c.CI = CarInterface
++  c.sm = SubMaster()
++  c.sm['carState'].vEgo = c.sm['carState'].vEgoRaw = 5.0
++  c.sm['selfdriveState'].enabled = c.sm['selfdriveState'].active = True
++  c.sm['liveCalibration'].calStatus = log.LiveCalibrationData.Status.calibrated
++  c.sm['starpilotPlan'].lateralCheck = True
++  c.sm['liveParameters'].stiffnessFactor = 1.0
++  c.sm['liveParameters'].steerRatio = c.CP.steerRatio
++  c.sm['liveDelay'].lateralDelay = 0.2
++  c.starpilot_toggles = SimpleNamespace(
++    max_desired_acceleration=2.0,
++    lane_centering=False,
++    lane_center_offset=0.0,
++    lane_centering_e2e_authority=0.0,
++    lane_centering_pause_on_signal=True,
++    lane_change_pace=10,
++    hkg_tuning_angle_custom_limit_max_speed_kph=40,
++  )
++  for field in (
++    'curvature',
++    'desired_curvature',
++    'lc_smooth_release',
++    'lc_entry_sign',
++    'lc_arrest_jerk_factor',
++    'turn_hold_curvature',
++    'turn_hold_standstill_t',
++    'turn_hold_swept',
++    'turn_hold_handoff_t',
++    'turn_blinker_swept',
++    'twitch_guard_remaining',
++  ):
++    setattr(c, field, 0.0)
++  c.turn_hold_done = c.steer_limited_by_safety = c.ecu_disable_failed = False
++  c.ecu_disable_failed_checked = True
++  c.calibrated_pose = None
++  c.VM = VehicleModel(c.CP)
++  c.LaC = LatControlAngle(c.CP, None, 0.01)
++  c.LoC = SimpleNamespace(long_control_state=0, reset=lambda: None, update=lambda *args, **kwargs: 0.0)
++  c.lane_centering = LaneCenteringController()
++  c.ev9_trajectory = None
++  return c
++
++
++
++def setup_case(monkeypatch, *, raw=.01, held=0., speed=8., weight=0., direction=1):
++  c = make_controls(monkeypatch)
++  c.sm['carState'].vEgo = c.sm['carState'].vEgoRaw = speed
++  c.sm['carState'].rightBlinker = direction > 0
++  c.sm['carState'].leftBlinker = direction < 0
++  c.sm['modelV2'].action.desiredCurvature = raw
++  c.turn_hold_curvature = held
++  calls, shaped = [], []
++
++  def authority(*args, **kwargs):
++    calls.append((args, kwargs))
++    return weight
++
++  def centering(curvature, *args):
++    shaped.append(curvature)
++    return curvature
++
++  monkeypatch.setattr(controlsd, 'ev9_turn_assist_authority', authority)
++  monkeypatch.setattr(controlsd, '_plan_dual_probe', lambda *args: .1 * direction)
++  c.lane_centering = SimpleNamespace(update=centering, reset=lambda: None)
++  return c, calls, shaped
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('weight', [0., .5, 1.])
++def test_extended_lead_guard_only_scales_added_assistance(monkeypatch, sign, weight):
++  c, calls, shaped = setup_case(monkeypatch, raw=sign*.01, direction=sign, weight=weight)
++  c.state_control()
++  assert len(calls) == 1
++  assert calls[0][0][1] == pytest.approx(sign*.085)
++  assert calls[0][1]['base_curvature'] == pytest.approx(sign*.01)
++  assert shaped[-1] == pytest.approx(sign*(.01+.075*weight))
++  # Even a complete veto leaves the original model's turn intact.
++  assert abs(shaped[-1]) >= .01 - 1e-8
++
++
++@pytest.mark.parametrize('speed,checked', [(0., False), (5., False), (7., False), (7.001, True), (10., True), (11.1, True), (11.12, False)])
++def test_guard_only_in_extended_speed_range(monkeypatch, speed, checked):
++  c, calls, shaped = setup_case(monkeypatch, raw=0., speed=speed)
++  c.state_control()
++  assert bool(calls) is checked
++  if checked:
++    assert shaped[-1] == pytest.approx(0.)
++  elif 3. < speed <= 7.:
++    assert shaped[-1] > 0.  # Original-speed assistance survives even a denying guard.
++
++
++@pytest.mark.parametrize('speed,checked', [(7., False), (8., True), (9.999, True), (10., False), (10.001, False)])
++def test_guard_uses_configured_ev9_limits_speed(monkeypatch, speed, checked):
++  c, calls, _ = setup_case(monkeypatch, raw=0., speed=speed)
++  c.starpilot_toggles.hkg_tuning_angle_custom_limit_max_speed_kph = 36
++  c.state_control()
++  assert bool(calls) is checked
++
++
++@pytest.mark.parametrize('ceiling_kph', [20, 25.2])
++def test_no_extended_range_when_configured_ceiling_is_low(monkeypatch, ceiling_kph):
++  c, calls, _ = setup_case(monkeypatch, raw=0., speed=6.)
++  c.starpilot_toggles.hkg_tuning_angle_custom_limit_max_speed_kph = ceiling_kph
++  c.state_control()
++  assert not calls
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++def test_retained_low_speed_hold_after_signal_cancels_is_unchanged(monkeypatch, sign):
++  c, calls, shaped = setup_case(monkeypatch, raw=sign*.01, held=sign*.04, speed=1., direction=0)
++  c.turn_hold_swept = .01
++  c.turn_hold_handoff_t = .02
++  c.state_control()
++  assert not calls
++  assert shaped[-1] == pytest.approx(sign*.04)
++  assert c.turn_hold_curvature == pytest.approx(sign*.04)
++  assert c.turn_hold_swept == pytest.approx(.01)
++
++
++@pytest.mark.parametrize('speed', [0., 5., 7.])
++def test_original_speed_prewind_and_lead_are_unchanged(monkeypatch, speed):
++  c, calls, shaped = setup_case(monkeypatch, speed=speed)
++  c.CP.steerAtStandstill = True
++  monkeypatch.setattr(controlsd, 'get_plan_spatial_curvature', lambda *args: .1)
++  monkeypatch.setattr(controlsd, 'get_plan_turn_onset_dist', lambda *args: 0.)
++  monkeypatch.setattr(controlsd, 'get_plan_reach', lambda *args: 30.)
++  c.state_control()
++  assert not calls
++  assert shaped[-1] > .01
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('same_side', [False, True])
++def test_blindspot_uses_extra_assist_direction(monkeypatch, sign, same_side):
++  c, calls, _ = setup_case(monkeypatch, raw=sign*.01, direction=sign)
++  c.sm['carState'].rightBlindspot = (sign > 0) == same_side
++  c.sm['carState'].leftBlindspot = (sign < 0) == same_side
++  c.state_control()
++  assert calls[0][1]['blindspot'] is same_side
++
++
++@pytest.mark.parametrize('raw', [.10, -.01])
++def test_guard_does_not_reduce_model_owned_turn(monkeypatch, raw):
++  c, calls, shaped = setup_case(monkeypatch, raw=raw)
++  c.state_control()
++  assert not calls
++  assert shaped[-1] == pytest.approx(raw)
++
++
++@pytest.mark.parametrize('manual', ['steeringPressed', 'manualSteeringOverride'])
++def test_manual_control_bypasses_extra_assistance(monkeypatch, manual):
++  c, calls, shaped = setup_case(monkeypatch)
++  if manual == 'steeringPressed':
++    c.sm['carState'].steeringPressed = True
++  else:
++    c.sm['carOutput'].actuatorsOutput.manualSteeringOverride = True
++  c.state_control()
++  assert not calls
++  assert shaped[-1] == pytest.approx(.01)
++
++
++def test_non_ev9_keeps_existing_lead(monkeypatch):
++  c, calls, shaped = setup_case(monkeypatch, speed=5.)
++  c.CP.carFingerprint = 'non-EV9'
++  c.state_control()
++  assert not calls
++  assert shaped[-1] > .01
++
++
++def test_lane_change_is_not_blocked_by_turn_guard(monkeypatch):
++  c, calls, shaped = setup_case(monkeypatch)
++  c.sm['modelV2'].meta.laneChangeState = log.LaneChangeState.laneChangeStarting
++  c.sm['modelV2'].meta.laneChangeDirection = log.LaneChangeDirection.right
++  c.state_control()
++  assert not calls
++  assert shaped[-1] == pytest.approx(.01)
++
++
++def test_small_opposing_model_command_suppresses_extra_lead(monkeypatch):
++  c, calls, shaped = setup_case(monkeypatch, raw=-.0001)
++  c.state_control()
++  assert not calls
++  assert shaped[-1] == pytest.approx(-.0001)
++
++
++def test_model_validity_is_forwarded(monkeypatch):
++  c, calls, _ = setup_case(monkeypatch)
++  c.sm.valid['modelV2'] = False
++  c.state_control()
++  assert calls[0][1]['model_valid'] is False

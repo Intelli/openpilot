@@ -1,0 +1,31 @@
+import shlex
+import sys
+
+Import('env', 'arch')
+
+gen = 'c_generated_code'
+model = ['expl_ode_fun', 'expl_vde_forw', 'expl_vde_adj']
+cost = ['y_fun', 'y_fun_jac_ut_xt', 'y_hess', 'y_0_fun', 'y_0_fun_jac_ut_xt', 'y_0_hess',
+        'y_e_fun', 'y_e_fun_jac_ut_xt', 'y_e_hess']
+constraints = ['h_fun', 'h_fun_jac_uxt_zt', 'h_e_fun', 'h_e_fun_jac_uxt_zt']
+sources = ([f'{gen}/acados_solver_ev9_path.c'] +
+           [f'{gen}/ev9_path_model/ev9_path_{name}.c' for name in model] +
+           [f'{gen}/ev9_path_cost/ev9_path_cost_{name}.c' for name in cost] +
+           [f'{gen}/ev9_path_constraints/ev9_path_constr_{name}.c' for name in constraints])
+headers = [f'{gen}/acados_solver_ev9_path.h', f'{gen}/ev9_path_model/ev9_path_model.h',
+           f'{gen}/ev9_path_cost/ev9_path_cost.h', f'{gen}/ev9_path_constraints/ev9_path_constraints.h']
+build_env = env.Clone()
+dependencies = [File('generate.py'), File('#third_party/acados/include/acados_c/ocp_nlp_interface.h')]
+dependencies += Glob('#third_party/acados/acados_template/*.py')
+dependencies += Glob('#third_party/acados/acados_template/c_templates_tera/*')
+command = [sys.executable, File('generate.py').srcnode().abspath, '--generate-only', '--arch', arch, '--output', Dir(gen).abspath]
+build_env.Command(sources + headers, dependencies, ' '.join(shlex.quote(arg) for arg in command))
+build_env.Clean(sources + headers, Dir(gen))
+build_env.Append(CCFLAGS=['-Wno-unused'])
+build_env.Append(CPPPATH=[Dir(gen).abspath])
+acados_relative = Dir('.').rel_path(Dir(f'#third_party/acados/{arch}/lib'))
+if arch == 'Darwin':
+  build_env.Append(LINKFLAGS=[f'-Wl,-rpath,@loader_path/{acados_relative}'])
+else:
+  build_env.Append(RPATH=[build_env.Literal(f'\\$$ORIGIN/{acados_relative}')], LINKFLAGS=['-Wl,--disable-new-dtags'])
+build_env.SharedLibrary('ev9_path_mpc', sources + ['wrapper.c'], LIBS=['m', 'acados', 'hpipm', 'blasfeo'])
