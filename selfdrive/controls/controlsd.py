@@ -19,6 +19,7 @@ from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR, HyundaiFlags
 from opendbc.car.hyundai.ev9 import EV9AngleConfig
 from opendbc.car.nissan.values import CAR as NISSAN_CAR
 from opendbc.car.vehicle_model import VehicleModel
+from openpilot.starpilot.common.ev9_tuning import ev9_limit_speed_mps
 from openpilot.selfdrive.controls.lib.drive_helpers import (
   MAX_LATERAL_JERK,
   clip_curvature,
@@ -313,6 +314,25 @@ def turn_lead_engagement_weight(fingerprint, steer_control_type, measured_curvat
   return min(max((1.0 - engaged_ratio) / (1.0 - TURN_LEAD_ENGAGED_FRAC), 0.0), 1.0)
 
 
+def ev9_turn_lead_authority(speed, acceleration, probe_distance, speed_ceiling):
+  """Continuous speed and stopping-distance envelopes, without delayed filter state."""
+  def smoothstep(value):
+    value = min(max(value, 0.0), 1.0)
+    return value * value * (3.0 - 2.0 * value)
+
+  if speed_ceiling <= TURN_LEAD_MIN_SPEED or speed <= TURN_LEAD_MIN_SPEED or speed >= speed_ceiling:
+    return 0.0
+  entry = smoothstep((speed - TURN_LEAD_MIN_SPEED) / (TURN_LEAD_FULL_SPEED - TURN_LEAD_MIN_SPEED))
+  # Fade the preview before its configured operating boundary rather than
+  # suddenly introducing a full preview as the car decelerates across it.
+  upper = smoothstep((speed_ceiling - speed) / min(2.0, speed_ceiling - TURN_LEAD_MIN_SPEED))
+  stop = 1.0
+  if acceleration < 0.0:
+    stopping_distance = speed * speed / (-2.0 * acceleration)
+    stop = smoothstep((stopping_distance / probe_distance - 1.0) / (TURN_LEAD_STOP_MARGIN - 1.0))
+  return entry * upper * stop
+
+
 # Turn-initiation lead. The model's action and the fixed 4/7 m probes are anchored in
 # METERS, so the seconds of warning they give shrinks with speed — at 12 mph a corner
 # enters the 7 m window only ~1.3 s out, too late to wind the wheel, which is why every
@@ -345,7 +365,7 @@ TURN_LEAD_MIN_M = 4.0
 TURN_LEAD_MAX_M = 14.0
 TURN_LEAD_MIN_SPEED = 3.0   # m/s: authority 0 here, ramps to full at FULL_SPEED
 TURN_LEAD_FULL_SPEED = 4.0  # m/s
-TURN_LEAD_MAX_SPEED = 7.0   # m/s (~15.7 mph)
+TURN_LEAD_MAX_SPEED = 7.0   # m/s (~15.7 mph), non-EV9; EV9 uses the existing Limits Speed setting
 TURN_LEAD_SCALE = 0.85
 TURN_LEAD_CAP = 0.12       # 1/m
 TURN_LEAD_ENGAGED_FRAC = 0.5   # engagement fade starts here, zero authority at 1.0
@@ -740,18 +760,26 @@ class Controls:
     # edge: a model actively steering against the blinker is correcting something the
     # lead must not fight (see the constants comment for the 2026-07-19 failures).
     lateral_control_mode = self.sm['carOutput'].actuatorsOutput.lateralControlMode
+    ev9_angle_lead = self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9 and self.CP.steerControlType == car.CarParams.SteerControlType.angle
+    lead_speed_ceiling = ev9_limit_speed_mps(self.starpilot_toggles) if ev9_angle_lead else TURN_LEAD_MAX_SPEED
+    lead_manual = CS.steeringPressed or self.sm['carOutput'].actuatorsOutput.manualSteeringOverride
     if (turn_lead_allowed(self.CP.brand, lateral_control_mode) and
         CC.latActive and blinker_dir != 0.0 and
         model_v2.meta.laneChangeState == LaneChangeState.off and
-        TURN_LEAD_MIN_SPEED <= CS.vEgo < TURN_LEAD_MAX_SPEED and
+        TURN_LEAD_MIN_SPEED <= CS.vEgo < lead_speed_ceiling and
+        (not ev9_angle_lead or not lead_manual) and
         new_desired_curvature * blinker_dir > -TURN_LEAD_MODEL_OPPOSE):
       d_near = max(min(TURN_LEAD_T * CS.vEgo, TURN_LEAD_MAX_M), TURN_LEAD_MIN_M)
+      # Non-EV9 retains the historical binary stop veto. EV9 weights stopping
+      # distance continuously below, without remembering a previous demand.
       stopping_short = CS.aEgo < TURN_LEAD_DECEL_GATE and \
           CS.vEgo ** 2 / (2.0 * -CS.aEgo) < TURN_LEAD_STOP_MARGIN * d_near
-      lead_curvature = 0.0 if stopping_short else _plan_dual_probe(model_v2, d_near, d_near + 3.0) * TURN_LEAD_SCALE
+      lead_curvature = 0.0 if stopping_short and not ev9_angle_lead else _plan_dual_probe(model_v2, d_near, d_near + 3.0) * TURN_LEAD_SCALE
       lead_curvature = max(min(lead_curvature, TURN_LEAD_CAP), -TURN_LEAD_CAP)
       if lead_curvature * blinker_dir > 0.0:
         speed_w = min(max((CS.vEgo - TURN_LEAD_MIN_SPEED) / (TURN_LEAD_FULL_SPEED - TURN_LEAD_MIN_SPEED), 0.0), 1.0)
+        if ev9_angle_lead:
+          speed_w = ev9_turn_lead_authority(CS.vEgo, CS.aEgo, d_near, lead_speed_ceiling)
         engage_w = turn_lead_engagement_weight(self.CP.carFingerprint, self.CP.steerControlType, self.curvature,
                                                 turn_lead_model_curvature, lead_curvature, blinker_dir)
         lead_curvature *= speed_w * engage_w
@@ -781,7 +809,8 @@ class Controls:
     # Select a single trajectory owner after all model-path shaping. The existing
     # jerk limiter, LaC, carcontroller filter and Panda remain downstream.
     if trajectory is not None:
-      decision = trajectory.update(self.sm, CS, CC.latActive, self.VM, lp, self.desired_curvature, new_desired_curvature)
+      decision = trajectory.update(self.sm, CS, CC.latActive, self.VM, lp, self.desired_curvature, new_desired_curvature,
+                                   toggles=self.starpilot_toggles)
       new_desired_curvature = decision.curvature
       if decision.active or trajectory.ownership_changed:
         self.turn_hold_curvature = self.turn_hold_swept = self.turn_hold_handoff_t = self.turn_hold_standstill_t = 0.0

@@ -18,3 +18,15 @@ def read_ev9_tuning(params):
       value = default
     values[attribute] = int(max(minimum, min(value, maximum)))
   return values
+
+
+def ev9_limit_speed_mps(toggles):
+  """Shared configured EV9 envelope; missing/invalid values use the 40 km/h default."""
+  key = 'hkg_tuning_angle_custom_limit_max_speed_kph'
+  try:
+    value = float(toggles.get(key, 40) if isinstance(toggles, dict) else getattr(toggles, key, 40))
+    if not math.isfinite(value):
+      value = 40.
+  except (TypeError, ValueError, OverflowError):
+    value = 40.
+  return max(10., min(value, 40.)) / 3.6

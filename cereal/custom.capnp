@@ -351,6 +351,7 @@ struct EV9TrajectoryPlan @0x9ccdc8676701b412 {
   solveTime @23 :Float32;
   geometryAvailable @24 :Bool;
   originalPathInfeasible @25 :Bool;
+  boundarySource @26 :Text;  # observed constraints versus model-led refinement; not free-space certification
 }
 
 struct EV9TrajectoryState @0xcd96dafb67a082d0 {
@@ -386,6 +387,12 @@ struct EV9TrajectoryState @0xcd96dafb67a082d0 {
   tireStiffnessRear @28 :Float64;
   angleOffsetDeg @29 :Float64;
   roll @30 :Float64;
+  speedLimitKph @31 :Float32 = 40;  # effective EV9 Limits Speed setting, shared by producer and consumer
+  modelCaptureMonoTime @32 :UInt64;
+  modelCaptureX @33 :Float64;
+  modelCaptureY @34 :Float64;
+  modelCaptureYaw @35 :Float64;
+  modelCapturePoseValid @36 :Bool;  # same generation, capture-interpolated from healthy controls odometry
 }
 
 struct CustomReserved14 @0xb057204d7deadf3f {

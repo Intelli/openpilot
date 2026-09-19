@@ -1,8 +1,8 @@
 """Fixed-size spatial path refinement using generated acados code.
 
 Coordinates are forward x, left y, counterclockwise yaw/curvature. This produces
-geometry, never an actuator command. The caller must independently validate the
-entire vehicle footprint against observed road bounds before publishing a plan.
+geometry, never an actuator command. The caller validates path displacement and
+the vehicle footprint against applicable reliable observations before publication.
 """
 from ctypes import CDLL, POINTER, c_double, c_int, c_void_p
 from dataclasses import dataclass
@@ -13,6 +13,8 @@ import time
 import numpy as np
 
 N = 40
+ACADOS_SUCCESS = 0
+ACADOS_MAXITER = 2
 
 
 @dataclass(frozen=True)
@@ -34,7 +36,7 @@ class Ev9PathMpc:
       library_path = Path(__file__).with_name('ev9_path_mpc_lib') / f'libev9_path_mpc{suffix}'
     self._library = CDLL(str(library_path))
     self._library.ev9_path_abi_version.restype = c_int
-    if self._library.ev9_path_abi_version() != 2:
+    if self._library.ev9_path_abi_version() != 3:
       raise RuntimeError('EV9 path MPC ABI mismatch')
     self._library.ev9_path_create.restype = c_void_p
     self._library.ev9_path_destroy.argtypes = [c_void_p]
@@ -111,13 +113,28 @@ class Ev9PathMpc:
         mask[i:i+2] = True
     if initial_curvature > raw[1, 0] + 1e-6 or initial_curvature < raw[6, 0] - 1e-6:
       return rejected('initial_curvature')
+    # Stage zero fixes the measured state. Its simultaneous path constraints
+    # must agree before we ask the QP to solve; adding iterations cannot resolve
+    # an initial pose outside a zero-width (unobserved) reference corridor.
+    initial_lateral = -np.sin(yaw[0]) * (pose[0] - xy[0, 0]) + np.cos(yaw[0]) * (pose[1] - xy[0, 1])
+    if initial_lateral < raw[3, 0] - 1e-5 or initial_lateral > raw[4, 0] + 1e-5:
+      return rejected('initial_lateral_bounds')
+    if abs(pose[2] - yaw[0]) > raw[5, 0] + 1e-5:
+      return rejected('initial_heading_bounds')
+    if preserve[0] and np.any(abs(pose - np.r_[xy[0], yaw[0]]) > 1e-5):
+      return rejected('initial_unobserved_pose')
+    # The forecast endpoint is a preference, not a mandatory pose/curvature.
+    # It may still be inside a turn that requires more than physical authority.
+    # Keep its curvature target achievable; the same hard capability and path
+    # bounds apply at every node, including the endpoint.
+    reference[-1, 3] = np.clip(reference[-1, 3], floors[-1], caps[-1])
     limits = np.ascontiguousarray(np.column_stack([interpolated[3], interpolated[4], interpolated[5], caps, rates, mask, floors]), dtype=np.float64)
     initial = np.ascontiguousarray(np.r_[pose, initial_curvature], dtype=np.float64)
     states = np.empty((N+1, 4), dtype=np.float64)
     controls = np.empty((N, 2), dtype=np.float64)
     arrays = [reference, limits, initial, states, controls]
     status = self._library.ev9_path_solve(self._capsule, arc[-1], *[v.ctypes.data_as(POINTER(c_double)) for v in arrays])
-    if status or not np.isfinite(states).all() or not np.isfinite(controls).all():
+    if status not in (ACADOS_SUCCESS, ACADOS_MAXITER) or not np.isfinite(states).all() or not np.isfinite(controls).all():
       return rejected(f'native_status_{status}')
     if np.any(controls[:, 1] < .7-1e-6) or np.any(controls[:, 1] > 1.3+1e-6):
       return rejected('segment_length_bounds')
@@ -140,12 +157,22 @@ class Ev9PathMpc:
         distances.append(distances[-1] + step)
     distance = np.array(distances)
     reference_distance = np.linspace(0., arc[-1], len(dense))
-    if np.max(np.abs(dense[::subdivisions] - states)) > 1e-4:
+    # Converged solver nodes must agree with independent integration. At the
+    # iteration limit, internal nodes may not have converged; only the integrated
+    # trajectory is considered, subject to every physical/path check below and
+    # the caller's displacement, footprint, intent and freshness checks.
+    if status == ACADOS_SUCCESS and np.max(np.abs(dense[::subdivisions] - states)) > 1e-4:
       return rejected('dynamics_residual')
     dense_ref = np.column_stack([np.interp(reference_distance, arc, v) for v in (*xy.T, yaw)])
     dense_bounds = np.array([np.interp(reference_distance, arc, v) for v in raw])
     lateral = -np.sin(dense_ref[:, 2]) * (dense[:, 0]-dense_ref[:, 0]) + np.cos(dense_ref[:, 2]) * (dense[:, 1]-dense_ref[:, 1])
-    if (np.any(dense[:, 3] > dense_bounds[1] + 1e-6) or np.any(dense[:, 3] < dense_bounds[6] - 1e-6) or
+    # Curvature and its reference-distance bounds are piecewise linear. Check
+    # their combined breakpoints so a narrow bound cannot fall between samples.
+    check_station = np.union1d(arc, station)
+    check_curvature = np.interp(check_station, station, dense[::subdivisions, 3])
+    if (np.any(check_curvature > np.interp(check_station, arc, raw[1]) + 1e-6) or
+        np.any(check_curvature < np.interp(check_station, arc, raw[6]) - 1e-6) or
+        np.any(dense[:, 3] > dense_bounds[1] + 1e-6) or np.any(dense[:, 3] < dense_bounds[6] - 1e-6) or
         np.any(np.abs(controls[:, 0]) > rates[:-1] + 1e-6) or
         np.any(lateral < dense_bounds[3] - 1e-5) or np.any(lateral > dense_bounds[4] + 1e-5) or
         np.any(np.abs(dense[:, 2]-dense_ref[:, 2]) > dense_bounds[5] + 1e-5)):
@@ -153,8 +180,6 @@ class Ev9PathMpc:
     preserved = np.interp(reference_distance, arc, preserve.astype(float)) > 0
     if np.any(np.abs(dense[preserved, :3] - dense_ref[preserved]) > 1e-5):
       return rejected('preserved_pose')
-    if (np.any(np.abs(dense[-1, :2] - xy[-1]) > .10001) or abs(dense[-1, 2]-yaw[-1]) > .01001 or
-        abs(dense[-1, 3]-reference[-1, 3]) > .00201):
-      return rejected('terminal_agreement')
-    return PathMpcResult(True, 'candidate_requires_road_validation', dense[:, :2], dense[:, 2], dense[:, 3], distance,
+    reason = 'candidate_requires_road_validation' if status == ACADOS_SUCCESS else 'iteration_limit_candidate_requires_road_validation'
+    return PathMpcResult(True, reason, dense[:, :2], dense[:, 2], dense[:, 3], distance,
                          time.monotonic()-started, reference_distance)

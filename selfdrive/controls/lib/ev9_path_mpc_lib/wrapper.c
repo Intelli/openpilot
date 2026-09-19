@@ -1,7 +1,9 @@
 #include <math.h>
 #include "acados_solver_ev9_path.h"
+#include "acados/utils/types.h"
 
-int ev9_path_abi_version(void) { return EV9_PATH_N == 40 ? 2 : 0; }
+// Version 3 returns initialized states/controls for ACADOS_MAXITER as well.
+int ev9_path_abi_version(void) { return EV9_PATH_N == 40 ? 3 : 0; }
 
 void *ev9_path_create(void) {
   ev9_path_solver_capsule *capsule = ev9_path_acados_create_capsule();
@@ -42,15 +44,10 @@ int ev9_path_solve(void *pointer, double length, const double *reference, const 
     if (i == 0) {
       ocp_nlp_constraints_model_set(config, dims, input, i, "lbx", (void *)initial);
       ocp_nlp_constraints_model_set(config, dims, input, i, "ubx", (void *)initial);
-    } else if (i == EV9_PATH_N) {
-      double low[4] = {r[0]-.1, r[1]-.1, r[2]-fmin(.01,b[2]), fmax(b[6],r[3]-.002)};
-      double high[4] = {r[0]+.1, r[1]+.1, r[2]+fmin(.01,b[2]), fmin(b[3],r[3]+.002)};
-      if (b[5]) {
-        for (int j = 0; j < 3; j++) low[j] = high[j] = r[j];
-      }
-      ocp_nlp_constraints_model_set(config, dims, input, i, "lbx", low);
-      ocp_nlp_constraints_model_set(config, dims, input, i, "ubx", high);
     } else {
+      // A forecast may end inside the turn. Its last pose is a cost target,
+      // subject to the same path, heading and physical limits as other nodes.
+      // Hard terminal pose matching can contradict the 140-degree capability.
       double low[4] = {-1e6, -1e6, r[2]-b[2], b[6]}, high[4] = {1e6, 1e6, r[2]+b[2], b[3]};
       if (b[5]) {
         for (int j = 0; j < 3; j++) low[j] = high[j] = r[j];
@@ -66,10 +63,10 @@ int ev9_path_solve(void *pointer, double length, const double *reference, const 
     }
   }
   int status = ev9_path_acados_solve(capsule);
-  if (status) return status;
+  if (status != ACADOS_SUCCESS && status != ACADOS_MAXITER) return status;
   for (int i = 0; i <= EV9_PATH_N; i++) {
     ocp_nlp_out_get(config, dims, output, i, "x", states + 4*i);
     if (i < EV9_PATH_N) ocp_nlp_out_get(config, dims, output, i, "u", rates+2*i);
   }
-  return 0;
+  return status;
 }

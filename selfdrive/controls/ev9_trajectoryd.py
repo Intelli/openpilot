@@ -20,22 +20,27 @@ def run(cp, params, sm, pm, *, planner=None, clock=time.monotonic):
       mode = parse_mode(params.get('EV9TrajectoryMode'))
       snapshot = decode_snapshot(sm['ev9TrajectoryState'], cp, now=now,
                                  message_time=sm.logMonoTime['ev9TrajectoryState'] / 1e9,
-                                 valid=sm.all_checks(['ev9TrajectoryState']))
+                                 valid=sm.all_checks(['ev9TrajectoryState']), require_eligible=False)
       state, vm, roll, offset = snapshot if snapshot is not None else (None, None, 0., 0.)
       if state is not None:
         history.add(state)
+      else:
+        history.reset()
       if mode == TrajectoryMode.OFF:
         planner.reset()
         last_status = None
         continue
-      if state is None:
+      if state is None or state.rejection(now):
         planner.reset()
         decision = PathPlanningDecision('invalid_execution_state')
       elif sm.updated['modelV2']:
         model = sm['modelV2']
         model_time = model.timestampEof / 1e9
+        capture_pose = state.model_capture_pose if state.model_capture_time == model_time else None
+        if capture_pose is None:
+          capture_pose = history.at(model_time, state.generation)
         decision = planner.update(model, state, vm, model_time=model_time,
-                                  model_pose=history.at(model_time, state.generation), now=now, mode=mode,
+                                  model_pose=capture_pose, now=now, mode=mode,
                                   model_valid=sm.all_checks(['modelV2']), roll=roll, angle_offset_deg=offset)
       else:
         # Never renew an old plan on a controls tick. Its original capture-time
@@ -44,7 +49,7 @@ def run(cp, params, sm, pm, *, planner=None, clock=time.monotonic):
       generation = state.generation if state is not None else int(sm['ev9TrajectoryState'].generation)
       result = plan_message(decision, generation=generation, source_time=state.time if state is not None else now)
       status = (decision.reason, result.get('planId', 0), generation)
-      if state is None and status == last_status:
+      if decision.reason == 'invalid_execution_state' and status == last_status:
         continue
       msg = messaging.new_message('ev9TrajectoryPlan', valid=True)
       msg.ev9TrajectoryPlan = result

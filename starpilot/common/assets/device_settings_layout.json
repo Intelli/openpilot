@@ -60,7 +60,7 @@
       {
         "key": "HkgTuningAngleCustomLimitMaxSpeedKph",
         "label": "EV9 Limits Speed",
-        "description": "Higher steering limits and manual-control entry apply at or below this speed. Turn vehicle off to adjust.",
+        "description": "Sets the maximum speed for higher steering limits, manual-control entry, early-turn assistance, and EV9 trajectory planning. Turn vehicle off to adjust.",
         "data_type": "int",
         "ui_type": "numeric",
         "settings_tier": "simple",
