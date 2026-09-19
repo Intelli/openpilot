@@ -60,7 +60,7 @@
 #define EV9_PATH_NY0    6
 #define EV9_PATH_NY     6
 #define EV9_PATH_NYN    4
-#define EV9_PATH_N      40
+#define EV9_PATH_N      30
 #define EV9_PATH_NH     1
 #define EV9_PATH_NPHI   0
 #define EV9_PATH_NHN    1

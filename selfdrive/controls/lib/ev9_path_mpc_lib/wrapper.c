@@ -2,8 +2,8 @@
 #include "acados_solver_ev9_path.h"
 #include "acados/utils/types.h"
 
-// Version 3 returns initialized states/controls for ACADOS_MAXITER as well.
-int ev9_path_abi_version(void) { return EV9_PATH_N == 40 ? 3 : 0; }
+// Version 4 bounds SQP work; MAXITER still returns initialized states/controls.
+int ev9_path_abi_version(void) { return EV9_PATH_N == 30 ? 4 : 0; }
 
 void *ev9_path_create(void) {
   ev9_path_solver_capsule *capsule = ev9_path_acados_create_capsule();

@@ -71,7 +71,8 @@ def _boundary(line, mount):
   return static_model_points_to_rear_axle(np.column_stack((x, y)), mount)
 
 
-def build_path_input(model, config, *, source_time, now, model_valid, horizon_distance=None, boundary_history=None, capture_pose=None, generation=0):
+def build_path_input(model, config, *, source_time, now, model_valid, horizon_distance=None, boundary_history=None, capture_pose=None, generation=0,
+                     check_budget=None):
   """Build a geometry proposal from the complete observed path or explicit prefix.
 
   Lane probability selects lane versus road geometry, not an execution gate.
@@ -199,7 +200,7 @@ def build_path_input(model, config, *, source_time, now, model_valid, horizon_di
       boundaries.append(ObservedBoundary(lines[index], 1 if index == 0 else -1, float(erosion[index]), sources[index],
                                          stds[index], score, applicability[index]))
       side_clearance[index] = reliable_body_clearance(xy, yaw, boundaries[-1:], reference_xy=xy,
-                                                       front=config.front, rear=config.rear, half_width=config.half_width)
+                                                       front=config.front, rear=config.rear, half_width=config.half_width, check_budget=check_budget)
   clearance = np.min(side_clearance, axis=0)
   # Unknown space does not freeze the model pose. Reliable constraints remain
   # binding in the final validator, including when the original path conflicts.

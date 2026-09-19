@@ -14,7 +14,7 @@ import numpy as np
 
 from openpilot.selfdrive.controls.lib.ev9_trajectory import MAX_SAMPLES
 
-N = 40
+N = 30  # Preserve the complete forecast with fewer optimization intervals.
 ACADOS_SUCCESS = 0
 ACADOS_MAXITER = 2
 DENSE_SPACING = .05
@@ -51,7 +51,7 @@ class Ev9PathMpc:
       library_path = Path(__file__).with_name('ev9_path_mpc_lib') / f'libev9_path_mpc{suffix}'
     self._library = CDLL(str(library_path))
     self._library.ev9_path_abi_version.restype = c_int
-    if self._library.ev9_path_abi_version() != 3:
+    if self._library.ev9_path_abi_version() != 4:
       raise RuntimeError('EV9 path MPC ABI mismatch')
     self._library.ev9_path_create.restype = c_void_p
     self._library.ev9_path_destroy.argtypes = [c_void_p]

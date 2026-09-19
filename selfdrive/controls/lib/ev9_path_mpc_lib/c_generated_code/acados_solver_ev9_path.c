@@ -398,7 +398,7 @@ void ev9_path_acados_create_5_set_nlp_in(ev9_path_solver_capsule* capsule, const
     if (new_time_steps) {
         ev9_path_acados_update_time_steps(capsule, N, new_time_steps);
     } else {// all time_steps are identical
-        double time_step = 0.025;
+        double time_step = 0.03333333333333333;
         for (int i = 0; i < N; i++)
         {
             ocp_nlp_in_set(nlp_config, nlp_dims, nlp_in, i, "Ts", &time_step);
@@ -681,7 +681,7 @@ void ev9_path_acados_create_6_set_opts(ev9_path_solver_capsule* capsule)
 
     // set up sim_method_num_steps
     // all sim_method_num_steps are identical
-    int sim_method_num_steps = 2;
+    int sim_method_num_steps = 3;
     for (int i = 0; i < N; i++)
         ocp_nlp_solver_opts_set_at_stage(nlp_config, nlp_opts, i, "dynamics_num_steps", &sim_method_num_steps);
 
@@ -733,7 +733,7 @@ void ev9_path_acados_create_6_set_opts(ev9_path_solver_capsule* capsule)
     double nlp_solver_tol_comp = 1e-6;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "tol_comp", &nlp_solver_tol_comp);
 
-    int nlp_solver_max_iter = 20;
+    int nlp_solver_max_iter = 8;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "max_iter", &nlp_solver_max_iter);
 
     int initialize_t_slacks = 0;
@@ -1122,7 +1122,7 @@ void ev9_path_acados_print_stats(ev9_path_solver_capsule* capsule)
     ocp_nlp_get(capsule->nlp_config, capsule->nlp_solver, "stat_m", &stat_m);
 
     
-    double stat[240];
+    double stat[96];
     ocp_nlp_get(capsule->nlp_config, capsule->nlp_solver, "statistics", stat);
 
     int nrow = sqp_iter+1 < stat_m ? sqp_iter+1 : stat_m;

@@ -242,3 +242,108 @@ def test_lane_budget_mirrors_with_turn_side():
   result = run(model, config)
   assert np.all(result.lateral_upper > 1.)
   np.testing.assert_array_equal(result.lateral_upper, -result.lateral_lower)
+
+
+def _projected_budget_check(points, reference, distance, lower, upper):
+  """Scalar oracle: project every point before selecting its local side budget."""
+  for point in points:
+    candidates = []
+    for i, (start, end) in enumerate(zip(reference[:-1], reference[1:], strict=True)):
+      segment = end - start
+      fraction = np.clip(np.dot(point - start, segment) / np.dot(segment, segment), 0., 1.)
+      delta = point - (start + fraction * segment)
+      candidates.append((np.dot(delta, delta), i, fraction))
+    squared, i, fraction = min(candidates, key=lambda value: value[0])
+    station = distance[i] + fraction * (distance[i + 1] - distance[i])
+    segment, delta = reference[i + 1] - reference[i], point - reference[i]
+    side = segment[0] * delta[1] - segment[1] * delta[0]
+    budget = np.interp(station, distance, upper if side >= 0 else -lower)
+    if not squared <= (budget + 1e-5)**2:
+      return False
+  return True
+
+
+def test_nearest_budget_fast_proof_matches_full_projection():
+  from openpilot.selfdrive.controls.lib.ev9_path_planner import within_path_budget
+
+  rng = np.random.default_rng(3501)
+  for _ in range(250):
+    reference = np.cumsum(rng.normal(size=(12, 2)), axis=0)
+    distance = np.r_[0., np.cumsum(np.linalg.norm(np.diff(reference, axis=0), axis=1))]
+    lower, upper = -rng.uniform(.01, 2., 12), rng.uniform(.01, 2., 12)
+    station = np.linspace(0., distance[-1], 19)
+    sampled = np.column_stack([np.interp(station, distance, axis) for axis in reference.T])
+    # Includes points proved cheaply and points requiring nearest-station projection.
+    points = sampled + rng.normal(size=sampled.shape) * rng.choice([.001, .1, 1., 3.])
+    assert within_path_budget(points, reference, distance, lower, upper) == _projected_budget_check(
+      points, reference, distance, lower, upper)
+
+
+def test_nearest_budget_rejects_nonfinite_inputs_and_preserves_local_side():
+  from openpilot.selfdrive.controls.lib.ev9_path_planner import within_path_budget
+
+  reference = np.array([[0., 0.], [5., 0.], [10., 0.]])
+  distance = np.array([0., 5., 10.])
+  lower, upper = np.array([-.2, -.2, -.2]), np.array([2., 2., .2])
+  assert within_path_budget(np.array([[5., 1.8]]), reference, distance, lower, upper)
+  assert not within_path_budget(np.array([[10., 1.8]]), reference, distance, lower, upper)
+  assert not within_path_budget(np.array([[5., -.3]]), reference, distance, lower, upper)
+  args = [np.array([[0., 0.], [5., 0.], [10., 0.]]), reference, distance, lower, upper]
+  for index in range(len(args)):
+    for invalid in (np.nan, np.inf, -np.inf):
+      broken = [value.copy() for value in args]
+      broken[index].flat[0] = invalid
+      assert not within_path_budget(*broken)
+
+
+def test_geometry_budget_stops_before_next_pose_block():
+  import pytest
+  from openpilot.selfdrive.controls.lib.ev9_path_geometry import _clearance
+
+  calls = []
+  def check_budget():
+    calls.append(None)
+    if len(calls) == 2:
+      raise TimeoutError('planning_deadline')
+
+  xy = np.column_stack((np.linspace(0., 10., 65), np.zeros(65)))
+  polygon = np.array([[-5., -5.], [20., -5.], [20., 5.], [-5., 5.]])
+  with pytest.raises(TimeoutError, match='planning_deadline'):
+    _clearance(xy, np.zeros(65), polygon, 0., 1., 1., 1., check_budget=check_budget)
+  assert len(calls) == 2
+
+
+def test_input_and_body_budget_timeout_propagates():
+  import pytest
+  from openpilot.selfdrive.controls.lib.ev9_path_geometry import body_respects_observed
+
+  def expired():
+    raise TimeoutError('planning_deadline')
+
+  model, config = fixture()
+  with pytest.raises(TimeoutError, match='planning_deadline'):
+    build_path_input(model, config, source_time=1., now=1., model_valid=True, check_budget=expired)
+  geometry = build_path_input(model, config, source_time=1., now=1., model_valid=True)
+  assert geometry.available
+  with pytest.raises(TimeoutError, match='planning_deadline'):
+    body_respects_observed(geometry.xy, geometry.yaw, geometry, reference_distance=geometry.distance,
+                           front=1., rear=1., half_width=1., check_budget=expired)
+
+
+def test_planner_geometry_timeout_is_deadline_not_boundary_conflict(monkeypatch):
+  from types import SimpleNamespace
+  from openpilot.selfdrive.controls.lib import ev9_path_planner as planner_module
+
+  clock = [1.]
+  def slow_geometry(*args, check_budget, **kwargs):
+    clock[0] += .051
+    check_budget()
+    raise AssertionError('expired geometry continued')
+
+  monkeypatch.setattr(planner_module, 'build_path_input', slow_geometry)
+  planner = planner_module.ModelPathPlanner(clock=lambda: clock[0])
+  state = SimpleNamespace(rejection=lambda now: '', generation=0)
+  result = planner.update({}, state, None, model_time=1., model_pose=(0., 0., 0.), now=1., mode=2,
+                          model_valid=True, roll=0., angle_offset_deg=0.)
+  assert result.reason == 'planning_deadline'
+  assert result.solve_time >= .05

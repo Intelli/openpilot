@@ -541,7 +541,7 @@ def test_ev9_signal_turn_keeps_readiness_and_blindspot_guards(guard):
   helper = DesireHelper()
   helper._update_nav_params = lambda: None
   toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=guard != "disabled", nav_desires_allowed=False)
-  cs = make_car_state(vEgo=10.0 if guard == "speed" else 5.0, rightBlinker=True,
+  cs = make_car_state(vEgo=40.0 / 3.6 if guard == "speed" else 5.0, rightBlinker=True,
                       standstill=guard == "standstill", leftBlinker=guard == "both_signals",
                       rightBlindspot=guard == "same_blindspot", leftBlindspot=guard == "opposite_blindspot")
   helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=True), toggles)
@@ -601,4 +601,48 @@ def test_nav_lane_positioning_requires_driver_confirmation():
     make_toggles(nav_desires_allowed=True, nav_lane_positioning_allowed=False, nudgeless=True),
   )
 
+  assert helper.desire == log.Desire.none
+
+
+@pytest.mark.parametrize("car_model,cap_kph,min_speed,split", [
+  (CAR.KIA_EV9, 40.0, 8.9408, 40.0 / 3.6),
+  (CAR.KIA_EV9, 10.0, 8.9408, 8.9408),
+  (CAR.KIA_EV9, 40.0, 13.0, 13.0),
+  (None, 40.0, 8.9408, 8.9408),
+])
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("offset", [-0.001, 0.0, 0.001])
+def test_shared_turn_lane_change_split(car_model, cap_kph, min_speed, split, side, offset):
+  helper = DesireHelper()
+  helper._update_nav_params = lambda: None
+  toggles = make_toggles(car_model=car_model, hkg_tuning_angle_custom_limit_max_speed_kph=cap_kph,
+                         minimum_lane_change_speed=min_speed, use_turn_desires=True)
+  cs = make_car_state(vEgo=split + offset, **{f"{side}Blinker": True})
+  helper.update(cs, True, 0.0, make_plan(), toggles)
+  expected_turn = log.Desire.turnLeft if side == "left" else log.Desire.turnRight
+  assert helper.desire == (expected_turn if offset < 0 else log.Desire.none)
+  assert helper.lane_change_state == (LaneChangeState.off if offset < 0 else LaneChangeState.preLaneChange)
+
+  # Navigation uses the same split even when ordinary signal turn desires are disabled.
+  helper._nav_instruction_state = {"valid": True, "maneuverModifier": side, "maneuverDistance": 5.0}
+  toggles.use_turn_desires = False
+  assert helper._navigation_desire(cs, True, make_plan(), toggles) == (expected_turn if offset < 0 else log.Desire.none)
+
+
+def test_ev9_slowing_below_shared_split_clears_waiting_lane_change():
+  helper = DesireHelper()
+  helper._update_nav_params = lambda: None
+  toggles = make_toggles(car_model=CAR.KIA_EV9, minimum_lane_change_speed=8.9408, use_turn_desires=True)
+  cs = make_car_state(vEgo=12.0, leftBlinker=True, brakePressed=True)
+  helper.update(cs, True, 0.0, make_plan(), toggles)
+  helper.update(cs, True, 0.0, make_plan(), toggles)
+  assert helper.lane_change_state == LaneChangeState.preLaneChange
+  assert helper.lane_change_brake_latched
+  cs.vEgo = 10.0
+  helper.update(cs, True, 0.0, make_plan(), toggles)
+  assert helper.lane_change_state == LaneChangeState.off
+  assert helper.lane_change_direction == LaneChangeDirection.none
+  assert helper.desire == log.Desire.turnLeft
+  cs.leftBlindspot = True
+  helper.update(cs, True, 0.0, make_plan(), toggles)
   assert helper.desire == log.Desire.none
