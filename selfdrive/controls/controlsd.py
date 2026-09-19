@@ -30,6 +30,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import (
 )
 from openpilot.selfdrive.controls.lib.lane_centering import LaneCenteringController
 from openpilot.selfdrive.controls.lib.ev9_trajectory_control import EV9TrajectoryControl
+from openpilot.selfdrive.controls.lib.ev9_turn_assist import ev9_turn_assist_authority
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
@@ -794,6 +795,25 @@ class Controls:
              lead_curvature * blinker_dir > abs(self.turn_hold_curvature):
             held_mag = min(lead_curvature * blinker_dir, abs(self.turn_hold_curvature) + CURVATURE_HOLD_RATCHET_RATE * DT_CTRL)
             self.turn_hold_curvature = math.copysign(held_mag, lead_curvature)
+
+    # Signal lead and retained low-speed holds are independent of trajectory mode.
+    # Require turn-side clearance for their extra demand, including after the
+    # blinker cancels. Preserve the underlying model command and driver override.
+    turn_assist_w = 1.0
+    assist_dir = math.copysign(1.0, new_desired_curvature)
+    if (ev9_angle_lead and CC.latActive and not lead_manual and
+        new_desired_curvature * assist_dir > max(turn_lead_model_curvature * assist_dir, 0.0)):
+      now_nanos = self.sm.logMonoTime['selfdriveState'] if REPLAY else time.monotonic_ns()
+      turn_assist_w = ev9_turn_assist_authority(
+        model_v2, new_desired_curvature, max(min(TURN_LEAD_T * CS.vEgo, TURN_LEAD_MAX_M), TURN_LEAD_MIN_M),
+        base_curvature=turn_lead_model_curvature,
+        model_age=(now_nanos - self.sm.logMonoTime['modelV2']) * 1e-9,
+        blindspot=CS.rightBlindspot if assist_dir > 0.0 else CS.leftBlindspot,
+        model_valid=bool(self.sm.all_checks(['modelV2'])))
+      new_desired_curvature = turn_lead_model_curvature + (new_desired_curvature - turn_lead_model_curvature) * turn_assist_w
+      if turn_assist_w < 1.0:
+        # Do not retain a denied floor and resurrect it on the following frame.
+        self.turn_hold_curvature = self.turn_hold_swept = self.turn_hold_handoff_t = self.turn_hold_standstill_t = 0.0
 
     new_desired_curvature = self.lane_centering.update(
       new_desired_curvature, model_v2, CS.vEgo,
