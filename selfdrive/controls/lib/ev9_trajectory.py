@@ -13,8 +13,9 @@ import numpy as np
 
 
 STEERING_CAPABILITY_DEG = 140.0
-MIN_TRAJECTORY_SPEED = 0.5
+MIN_TRAJECTORY_SPEED = 0.0
 MAX_TRAJECTORY_SPEED = 40.0 / 3.6
+MIN_TRAJECTORY_DISTANCE = 1.0
 MAX_PLAN_AGE = 0.25
 MAX_STATE_AGE = 0.05
 MAX_SAMPLES = 4096
@@ -31,6 +32,11 @@ def parse_mode(value):
     return TrajectoryMode(int(value or 0))
   except (ValueError, TypeError):
     return TrajectoryMode.OFF
+
+
+def required_plan_distance(speed, delay):
+  """Observed path must cover response preview and travel during the plan lease."""
+  return max(MIN_TRAJECTORY_DISTANCE, speed * (delay + MAX_PLAN_AGE) + .1)
 
 
 def wrap_angle(angle):
@@ -73,6 +79,7 @@ class ExecutionState:
   speed_limit_mps: float = MAX_TRAJECTORY_SPEED
   model_capture_time: float = 0.0
   model_capture_pose: tuple[float, float, float] | None = None
+  standstill: bool = False  # Tracking waits; a fresh model may still be planned while stopped.
 
   def odometry_rejection(self, now):
     if not all(math.isfinite(v) for v in (self.time, *self.pose, self.speed, self.curvature, now)):
@@ -134,7 +141,7 @@ class TrajectoryPlan:
       return 'invalid_plan'
     if not all(np.isfinite(a).all() for a in (self.distance, self.xy, self.yaw, self.curvature)):
       return 'invalid_plan'
-    if abs(self.distance[0]) > 1e-6 or np.any(np.diff(self.distance) <= 0) or self.distance[-1] < 10:
+    if abs(self.distance[0]) > 1e-6 or np.any(np.diff(self.distance) <= 0) or self.distance[-1] < required_plan_distance(self.speed, state.delay):
       return 'invalid_plan'
     if not self.min_curvature < 0 < self.max_curvature or np.min(self.curvature) < self.min_curvature - 1e-6 or \
        np.max(self.curvature) > self.max_curvature + 1e-6:
@@ -168,6 +175,7 @@ class TrajectoryTracker:
     self.last_plan_id = 0
     self.last_source_time = -math.inf
     self.reject_before = -math.inf
+    self.last_stop_time = -math.inf
     self.last_mode = TrajectoryMode.OFF
     self.corridor_valid_until = 0.0
 
@@ -196,6 +204,10 @@ class TrajectoryTracker:
     if reason:
       self.reset(now)
       return TrackingDecision(baseline_curvature, False, reason)
+    if state.standstill or state.speed == 0:
+      self.last_stop_time = max(self.last_stop_time, now)
+      self.reset(now)
+      return TrackingDecision(baseline_curvature, False, 'standstill')
     if revoke:
       self.reset(now)
       return TrackingDecision(baseline_curvature, False, 'corridor_unavailable')
@@ -211,7 +223,8 @@ class TrajectoryTracker:
         reason = 'model_intent_changed'
       if not fresh_corridor:
         reason = 'corridor_unavailable'
-      if not reason and (proposal.source_time < self.reject_before or proposal.source_time < self.last_source_time or
+      if not reason and (proposal.source_time <= self.last_stop_time or proposal.source_time < self.reject_before or
+                         proposal.source_time < self.last_source_time or
                          proposal.plan_id <= self.last_plan_id or proposal.corridor_revision != corridor_revision):
         reason = 'superseded_plan'
       if not reason:

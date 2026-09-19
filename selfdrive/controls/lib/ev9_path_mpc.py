@@ -12,9 +12,12 @@ import time
 
 import numpy as np
 
+from openpilot.selfdrive.controls.lib.ev9_trajectory import MAX_SAMPLES
+
 N = 40
 ACADOS_SUCCESS = 0
 ACADOS_MAXITER = 2
+DENSE_SPACING = .05
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,18 @@ class PathMpcResult:
   distance: np.ndarray
   solve_time: float
   reference_distance: np.ndarray
+
+
+def _integrate_controls(initial, controls, length, subdivisions):
+  """Independently integrate linear curvature with the existing Simpson rule."""
+  rate = np.repeat(controls[:, 0], subdivisions)
+  step = np.repeat(controls[:, 1] * length / N / subdivisions, subdivisions)
+  curvature = initial[3] + np.r_[0., np.cumsum(rate * step)]
+  yaw = initial[2] + np.r_[0., np.cumsum(curvature[:-1] * step + rate * step**2 / 2)]
+  middle_yaw = yaw[:-1] + curvature[:-1] * step / 2 + rate * step**2 / 8
+  x = initial[0] + np.r_[0., np.cumsum(step / 6 * (np.cos(yaw[:-1]) + 4*np.cos(middle_yaw) + np.cos(yaw[1:])))]
+  y = initial[1] + np.r_[0., np.cumsum(step / 6 * (np.sin(yaw[:-1]) + 4*np.sin(middle_yaw) + np.sin(yaw[1:])))]
+  return np.column_stack((x, y, yaw, curvature)), np.r_[0., np.cumsum(step)]
 
 
 class Ev9PathMpc:
@@ -91,26 +106,35 @@ class Ev9PathMpc:
     if np.any(raw[[0, 2]] <= 0) or np.any(raw[6] >= raw[1]) or np.any(raw[3] > raw[4]) or np.any(raw[5] < 0):
       return rejected('invalid_bounds')
     arc = np.r_[0., np.cumsum(np.linalg.norm(np.diff(xy, axis=0), axis=1))]
-    if np.any(np.diff(arc) <= 1e-6) or not 1 <= arc[-1] <= 100:
+    if not np.isfinite(arc).all() or np.any(np.diff(arc) <= 1e-6) or arc[-1] < 1:
       return rejected('invalid_distance')
+    # Capacity follows the published dense-plan contract, not an arbitrary
+    # 100 m horizon cutoff. Keep the complete supplied forecast, never trim it
+    # simply to avoid an inconvenient bend or boundary.
+    if arc[-1] > ((MAX_SAMPLES - 1) // N) * N * DENSE_SPACING / 1.3:
+      return rejected('path_capacity')
+    subdivisions = max(1, int(np.ceil((1.3 * arc[-1] / N) / DENSE_SPACING)))
     yaw = np.unwrap(yaw)
     station = np.linspace(0., arc[-1], N + 1)
     reference = np.column_stack([np.interp(station, arc, v) for v in (*xy.T, yaw, np.gradient(yaw, arc))])
     interpolated = np.array([np.interp(station, arc, v) for v in raw])
-    # Enforce the most restrictive physical limit across each complete segment.
-    caps, floors = interpolated[1].copy(), interpolated[6].copy()
-    rates = interpolated[2] / interpolated[0]
-    mask = np.zeros(N + 1, dtype=bool)
-    for i in range(N):
-      inside = (arc >= station[i]) & (arc <= station[i+1])
-      minimum = min(interpolated[1, i], interpolated[1, i+1], np.min(raw[1, inside], initial=np.inf))
-      caps[i:i+2] = np.minimum(caps[i:i+2], minimum)
-      maximum = max(interpolated[6, i], interpolated[6, i+1], np.max(raw[6, inside], initial=-np.inf))
-      floors[i:i+2] = np.maximum(floors[i:i+2], maximum)
-      rates[i] = min(rates[i], rates[i+1], np.min(raw[2, inside] / raw[0, inside], initial=np.inf))
-      unknown = preserve[inside].any() or preserve[max(0, np.searchsorted(arc, station[i])-1):min(len(arc), np.searchsorted(arc, station[i+1])+1)].any()
-      if unknown:
-        mask[i:i+2] = True
+    # Enforce each segment's most restrictive endpoint or interior raw bound,
+    # then share it with both neighboring nodes. No narrow bound is skipped.
+    inside = (arc[None, :] >= station[:-1, None]) & (arc[None, :] <= station[1:, None])
+    caps = np.minimum(np.minimum(interpolated[1, :-1], interpolated[1, 1:]), np.min(np.where(inside, raw[1], np.inf), axis=1))
+    floors = np.maximum(np.maximum(interpolated[6, :-1], interpolated[6, 1:]), np.max(np.where(inside, raw[6], -np.inf), axis=1))
+    rates = np.minimum(np.minimum(interpolated[2, :-1]/interpolated[0, :-1], interpolated[2, 1:]/interpolated[0, 1:]),
+                       np.min(np.where(inside, raw[2]/raw[0], np.inf), axis=1))
+    caps = np.minimum(np.r_[interpolated[1, 0], caps], np.r_[caps, interpolated[1, -1]])
+    floors = np.maximum(np.r_[interpolated[6, 0], floors], np.r_[floors, interpolated[6, -1]])
+    rates = np.r_[rates, interpolated[2, -1]/interpolated[0, -1]]
+    # Preserve intervals include their bracketing raw samples, not only points
+    # falling inside a solver stage. Prefix counts avoid repeated tiny slices.
+    prefix = np.r_[0, np.cumsum(preserve)]
+    starts = np.maximum(0, np.searchsorted(arc, station[:-1])-1)
+    ends = np.minimum(len(arc), np.searchsorted(arc, station[1:])+1)
+    unknown = prefix[ends] > prefix[starts]
+    mask = np.r_[False, unknown] | np.r_[unknown, False]
     if initial_curvature > raw[1, 0] + 1e-6 or initial_curvature < raw[6, 0] - 1e-6:
       return rejected('initial_curvature')
     # Stage zero fixes the measured state. Its simultaneous path constraints
@@ -140,22 +164,7 @@ class Ev9PathMpc:
       return rejected('segment_length_bounds')
     # Reconstruct a dynamically consistent dense path; never interpolate poses
     # independently of the optimized curvature. Exact yaw, Simpson xy integral.
-    subdivisions = max(1, int(np.ceil((1.3 * arc[-1] / N) / .05)))
-    dense = np.empty((N * subdivisions + 1, 4))
-    dense[0] = initial
-    j = 0
-    distances = [0.]
-    for rate, scale in controls:
-      step = arc[-1] / N / subdivisions * scale
-      for _ in range(subdivisions):
-        x, y, psi, k = dense[j]
-        middle_yaw = psi + k * step / 2 + rate * step**2 / 8
-        end_yaw = psi + k * step + rate * step**2 / 2
-        dense[j+1] = (x + step / 6 * (np.cos(psi) + 4*np.cos(middle_yaw) + np.cos(end_yaw)),
-                      y + step / 6 * (np.sin(psi) + 4*np.sin(middle_yaw) + np.sin(end_yaw)), end_yaw, k + rate * step)
-        j += 1
-        distances.append(distances[-1] + step)
-    distance = np.array(distances)
+    dense, distance = _integrate_controls(initial, controls, arc[-1], subdivisions)
     reference_distance = np.linspace(0., arc[-1], len(dense))
     # Converged solver nodes must agree with independent integration. At the
     # iteration limit, internal nodes may not have converged; only the integrated

@@ -137,7 +137,7 @@ int ev9_path_acados_sim_create(sim_solver_capsule * capsule)
  
     tmp_int = 4;
     sim_opts_set(ev9_path_sim_config, ev9_path_sim_opts, "num_stages", &tmp_int);
-    tmp_int = 1;
+    tmp_int = 2;
     sim_opts_set(ev9_path_sim_config, ev9_path_sim_opts, "num_steps", &tmp_int);
     tmp_bool = 0;
     sim_opts_set(ev9_path_sim_config, ev9_path_sim_opts, "jac_reuse", &tmp_bool);
