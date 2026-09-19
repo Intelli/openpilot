@@ -796,12 +796,13 @@ class Controls:
             held_mag = min(lead_curvature * blinker_dir, abs(self.turn_hold_curvature) + CURVATURE_HOLD_RATCHET_RATE * DT_CTRL)
             self.turn_hold_curvature = math.copysign(held_mag, lead_curvature)
 
-    # Signal lead and retained low-speed holds are independent of trajectory mode.
-    # Require turn-side clearance for their extra demand, including after the
-    # blinker cancels. Preserve the underlying model command and driver override.
+    # Guard only the EV9 lead's extended speed range, above the original 7 m/s
+    # ceiling. Low-speed lead/holds keep their existing behavior. Clearance can
+    # withdraw added assistance, never the underlying model command or a turn.
     turn_assist_w = 1.0
     assist_dir = math.copysign(1.0, new_desired_curvature)
     if (ev9_angle_lead and CC.latActive and not lead_manual and
+        TURN_LEAD_MAX_SPEED < CS.vEgo < lead_speed_ceiling and
         new_desired_curvature * assist_dir > max(turn_lead_model_curvature * assist_dir, 0.0)):
       now_nanos = self.sm.logMonoTime['selfdriveState'] if REPLAY else time.monotonic_ns()
       turn_assist_w = ev9_turn_assist_authority(
@@ -811,9 +812,6 @@ class Controls:
         blindspot=CS.rightBlindspot if assist_dir > 0.0 else CS.leftBlindspot,
         model_valid=bool(self.sm.all_checks(['modelV2'])))
       new_desired_curvature = turn_lead_model_curvature + (new_desired_curvature - turn_lead_model_curvature) * turn_assist_w
-      if turn_assist_w < 1.0:
-        # Do not retain a denied floor and resurrect it on the following frame.
-        self.turn_hold_curvature = self.turn_hold_swept = self.turn_hold_handoff_t = self.turn_hold_standstill_t = 0.0
 
     new_desired_curvature = self.lane_centering.update(
       new_desired_curvature, model_v2, CS.vEgo,

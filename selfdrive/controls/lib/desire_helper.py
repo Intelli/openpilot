@@ -66,6 +66,7 @@ class DesireHelper:
     self.lane_change_completed = False
 
     self.lane_change_wait_timer = 0.0
+    self.lane_change_brake_latched = False
     self.nav_desires_allowed = False
     self.nav_lane_positioning_allowed = False
     self._nav_instruction_state_raw: object = None
@@ -284,11 +285,18 @@ class DesireHelper:
         blindspot_detected = ((carstate.leftBlindspot and self.lane_change_direction == LaneChangeDirection.left) or
                               (carstate.rightBlindspot and self.lane_change_direction == LaneChangeDirection.right))
 
-        if torque_applied:
-          self.lane_change_wait_timer = starpilot_toggles.lane_change_delay
-        else:
-          torque_applied |= nudgeless_enabled
-          torque_applied &= self.lane_change_wait_timer >= starpilot_toggles.lane_change_delay
+        # Match Sunnypilot's automatic-initiation safeguards. A brake press
+        # while waiting remains a veto after release; a deliberate nudge can
+        # still initiate, but never through a currently occupied blindspot.
+        self.lane_change_brake_latched |= bool(carstate.brakePressed)
+        delay = starpilot_toggles.lane_change_delay
+        self.lane_change_wait_timer += DT_MDL
+        if blindspot_detected and delay > 0:
+          self.lane_change_wait_timer = -1.0 if delay == 0.05 else delay - 1.0
+
+        if not torque_applied:
+          torque_applied = nudgeless_enabled and not self.lane_change_brake_latched
+          torque_applied &= self.lane_change_wait_timer > delay
 
           desired_lane_width = starpilotPlan.laneWidthLeft if self.lane_change_direction == LaneChangeDirection.left else starpilotPlan.laneWidthRight
           torque_applied &= desired_lane_width >= starpilot_toggles.lane_detection_width
@@ -302,8 +310,6 @@ class DesireHelper:
           self.lane_change_completed = starpilot_toggles.one_lane_change
 
           self.lane_change_wait_timer = 0.0
-
-        self.lane_change_wait_timer += DT_MDL
 
       # LaneChangeState.laneChangeStarting
       elif self.lane_change_state == LaneChangeState.laneChangeStarting:
@@ -360,6 +366,12 @@ class DesireHelper:
       self.lane_change_completed = False
 
       self.lane_change_wait_timer = 0.0
+
+    # Legacy reset is tied to the lane-change state, not just signal release.
+    # Disengagement/timeout also clears the cycle, without rearming a held signal.
+    if self.lane_change_state == LaneChangeState.off and self.lane_change_direction == LaneChangeDirection.none:
+      self.lane_change_wait_timer = 0.0
+      self.lane_change_brake_latched = False
 
     nav_desire = self._navigation_desire(carstate, lateral_active, starpilotPlan, starpilot_toggles)
     if nav_desire != log.Desire.none and self.lane_change_state == LaneChangeState.off:

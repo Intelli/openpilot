@@ -17,6 +17,7 @@ def make_car_state(**overrides):
     "steeringPressed": False,
     "steeringTorque": 0.0,
     "standstill": False,
+    "brakePressed": False,
     "cruiseState": SimpleNamespace(enabled=True),
   }
   defaults.update(overrides)

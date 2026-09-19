@@ -1,4 +1,4 @@
-"""Road-edge veto for additional EV9 turn lead/hold, independent of trajectory mode.
+"""Road-edge veto for extended-speed EV9 turn lead, independent of trajectory mode.
 
 This is a short constant-curvature body projection, not a drivable-space planner.
 Uncertain clearance withdraws only the added assistance; the model still owns
