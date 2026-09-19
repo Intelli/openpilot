@@ -1,4 +1,5 @@
 """Messaging adapter for EV9 trajectory ownership; never runs optimization."""
+from collections import deque
 from dataclasses import replace
 import math
 import os
@@ -29,7 +30,7 @@ def decode_plan(message):
 
 
 def material_configuration_change(current, anchor):
-  """Bound cumulative estimator drift relative to the last frame reset.
+  """Bound cumulative estimator drift from the adopted plan or last frame reset.
 
   These are frame invalidation thresholds, not steering authority reductions.
   Routine estimator refreshes must retain enough odometry for camera capture time.
@@ -48,6 +49,7 @@ class EV9TrajectoryControl:
     self.tracker = TrajectoryTracker()
     self.motion = EgoMotion()
     self.pose_history = PoseHistory()
+    self.configuration_history = deque(maxlen=60)
     self.last_parameter_read = -math.inf
     self.last_message = 0
     self.last_mode = self.mode
@@ -95,9 +97,13 @@ class EV9TrajectoryControl:
       speed_limit != self.last_speed_limit)
     if configuration_reset and not odometry_reset:
       self.motion.generation += 1
-    # Retain the anchor between resets so many small changes cannot evade the bounds.
+    # Retain the anchor until reset or validated adoption; small changes cannot
+    # accumulate unnoticed while an unchanged plan remains in use.
     if self.last_parameters is None or odometry_reset or configuration_reset:
       self.last_parameters = configuration
+    if odometry_reset or configuration_reset:
+      self.configuration_history.clear()
+    self.configuration_history.append((now, self.motion.generation, configuration))
     self.last_mode = self.mode
     self.last_speed_limit = speed_limit
     self.vehicle_configuration = (VM.sR, VM.cF, VM.cR, lp.angleOffsetDeg, lp.roll)
@@ -114,7 +120,7 @@ class EV9TrajectoryControl:
       angle_filter_state_deg=filter_angle if math.isfinite(filter_angle) else 0.0,
       angle_state_valid=angle_state_valid, angle_state_mono_time=snapshot_ns, direct_angle_control=direct_angle_control,
       selected_mdps_angle_deg=mdps_angle if math.isfinite(mdps_angle) else 0.0,
-      speed_limit_mps=speed_limit,
+      speed_limit_mps=speed_limit, standstill=bool(CS.standstill),
     )
     # Capture alignment is computed where every 100 Hz pose is available. The
     # worker may miss intermediate conflated state messages while solving.
@@ -155,10 +161,19 @@ class EV9TrajectoryControl:
       if (len(yaw) >= 4 and yaw.shape == x.shape == y.shape == path_time.shape and
           np.isfinite(np.r_[yaw, x, y, path_time]).all() and np.array_equal(path_time, heading_time) and np.all(np.diff(path_time) > 0)):
         model_direction = path_turn_direction(-yaw)
+    previous_plan = self.tracker.plan
     self.decision = self.tracker.update(
       self.state, baseline_curvature, mode=self.mode, proposal=proposal,
       corridor_revision=revision, corridor_valid_until=lease, revoke=revoke, model_turn_direction=model_direction,
     )
+    adopted = self.tracker.plan
+    if self.decision.active and adopted is not None and adopted is not previous_plan:
+      # A fresh adopted path already used its source calibration. Bound future
+      # drift from that exact configuration, never from delivery-time estimates.
+      for stamp, generation, configuration in reversed(self.configuration_history):
+        if generation == adopted.generation and abs(stamp - adopted.source_time) <= 2e-9:
+          self.last_parameters = configuration
+          break
     self.ownership_changed = self.was_active != self.decision.active
     self.was_active = self.decision.active
     return self.decision

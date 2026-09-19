@@ -20,7 +20,8 @@ def decode_snapshot(message, CP, *, now, message_time, valid, require_eligible=T
     state = ExecutionState(stamp, (message.x, message.y, message.yaw), message.speed, message.wheelAngleDeg,
                            message.curvature, message.commandCurvature, message.delay, int(message.generation),
                            message.enabled, message.manual, message.laneChange, message.drive, message.healthy,
-                           tracking_active=bool(message.active), speed_limit_mps=float(getattr(message, 'speedLimitKph', 40.)) / 3.6)
+                           standstill=bool(getattr(message, 'standstill', message.speed == 0)), tracking_active=bool(message.active),
+                           speed_limit_mps=float(getattr(message, 'speedLimitKph', 40.)) / 3.6)
     curvature = vm.calc_curvature(math.radians(state.wheel_angle_deg - message.angleOffsetDeg), state.speed, message.roll)
     # Ownership, speed and wheel authority decide whether to plan, not whether
     # a fresh healthy odometry sample can locate an earlier camera capture.

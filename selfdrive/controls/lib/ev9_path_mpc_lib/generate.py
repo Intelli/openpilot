@@ -74,6 +74,7 @@ def generate(output, arch=None):
   options.qp_solver_cond_N = 10
   options.hessian_approx = 'GAUSS_NEWTON'
   options.integrator_type = 'ERK'
+  options.sim_method_num_steps = 2  # Keep native nodes consistent with independent dense integration.
   options.nlp_solver_type = 'SQP'
   options.nlp_solver_max_iter = 20
   options.qp_solver_iter_max = 50

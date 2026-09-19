@@ -13,6 +13,7 @@ import numpy as np
 
 from openpilot.selfdrive.controls.lib.ev9_path_geometry import ObservedBoundary, boundary_association, reliable_body_clearance
 from openpilot.selfdrive.controls.lib.ev9_path_frames import CameraMount, model_path_to_rear_axle, static_model_points_to_rear_axle
+from openpilot.selfdrive.controls.lib.ev9_trajectory import MIN_TRAJECTORY_DISTANCE
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class PathGeometryConfig:
   rear: float
   half_width: float
   margin: float = 0.1
-  max_deviation: float = 1.0  # An optimization limit, never evidence of available space.
+  max_deviation: float = 1.0  # Model-led fallback; reliable inner lanes may supply additional room.
   lane_probability: float = 0.5
   uncertainty_multiplier: float = 2.0  # Rejection margin, not a calibrated probability guarantee.
   boundary_std_max: float = .5  # Heuristic reliability cutoff, metres; not a calibrated confidence guarantee.
@@ -48,6 +49,8 @@ class PathInput:
   execution_authorized: bool = field(default=False, init=False)
   heading_allowance: np.ndarray = field(default_factory=lambda: np.empty(0))
   reliable_boundaries: tuple[ObservedBoundary, ...] = ()
+  lateral_lower: np.ndarray = field(default_factory=lambda: np.empty(0))
+  lateral_upper: np.ndarray = field(default_factory=lambda: np.empty(0))
 
 
 def _get(value, key):
@@ -117,11 +120,11 @@ def build_path_input(model, config, *, source_time, now, model_valid, horizon_di
       return reject('invalid_path_time')
     xy, yaw = model_path_to_rear_axle(np.column_stack((x, y)), heading, config.mount)
     distance = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(xy, axis=0), axis=1))]
-    if np.any(np.diff(distance) <= 1e-5) or distance[-1] < 3:
+    if np.any(np.diff(distance) <= 1e-5) or distance[-1] < MIN_TRAJECTORY_DISTANCE:
       return reject('insufficient_reference')
     complete = True
     if horizon_distance is not None:
-      if not math.isfinite(horizon_distance) or not 3 <= horizon_distance <= distance[-1]:
+      if not math.isfinite(horizon_distance) or not MIN_TRAJECTORY_DISTANCE <= horizon_distance <= distance[-1]:
         return reject('invalid_requested_horizon')
       complete = horizon_distance == distance[-1]
       end = int(np.searchsorted(distance, horizon_distance, side='right'))
@@ -185,6 +188,7 @@ def build_path_input(model, config, *, source_time, now, model_valid, horizon_di
   corners = np.stack((xy[:, 0, None]+c*local[:, 0]-sn*local[:, 1], xy[:, 1, None]+sn*local[:, 0]+c*local[:, 1]), axis=-1)
   applicability = np.zeros((2, len(xy)), dtype=bool)
   confidence = np.zeros((2, len(xy)))
+  side_clearance = np.full((2, len(xy)), np.inf)
   for index in range(2):
     if reliable[index]:
       _, applicability[index] = boundary_association(xy, lines[index])
@@ -194,10 +198,22 @@ def build_path_input(model, config, *, source_time, now, model_valid, horizon_di
       confidence[index] = applicability[index]*score
       boundaries.append(ObservedBoundary(lines[index], 1 if index == 0 else -1, float(erosion[index]), sources[index],
                                          stds[index], score, applicability[index]))
-  clearance = reliable_body_clearance(xy, yaw, boundaries, reference_xy=xy, front=config.front, rear=config.rear, half_width=config.half_width)
+      side_clearance[index] = reliable_body_clearance(xy, yaw, boundaries[-1:], reference_xy=xy,
+                                                       front=config.front, rear=config.rear, half_width=config.half_width)
+  clearance = np.min(side_clearance, axis=0)
   # Unknown space does not freeze the model pose. Reliable constraints remain
   # binding in the final validator, including when the original path conflicts.
-  allowance = np.full(len(xy), config.max_deviation)
+  room = np.full((2, len(xy)), config.max_deviation)
+  for index in range(2):
+    # Only an observed inner lane can justify expanding toward that side.
+    # A road edge says nothing about the intervening lane's traffic direction.
+    # Complete body coverage and positive margin are required; finite ends and
+    # unknown space retain the original model-led budget. This is optimization
+    # room at reference heading, not a substitute for final swept-body checking.
+    if reliable[index] and sources[index] == 'inner_lanes':
+      observed = body_applicability[index] & np.isfinite(side_clearance[index])
+      room[index] = np.where(observed, np.maximum(room[index], side_clearance[index]), room[index])
+  allowance = np.max(room, axis=0)
   radius = math.hypot(max(config.front, config.rear), config.half_width)
   heading_allowance = np.full(len(xy), min(np.pi/2, config.max_deviation/radius))
   try:
@@ -216,4 +232,5 @@ def build_path_input(model, config, *, source_time, now, model_valid, horizon_di
          boundary_confidence_policy='heuristic scalar std <= boundary_std_max; not full-horizon free-space confidence',
          boundary_std_max=config.boundary_std_max, observed_free_space_certified=False),
     source_time, complete, heading_allowance=heading_allowance, reliable_boundaries=tuple(boundaries),
+    lateral_lower=-room[1], lateral_upper=room[0],
   )

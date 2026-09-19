@@ -59,6 +59,14 @@ def run(cp, params, sm, pm, *, planner=None, clock=time.monotonic):
     planner.close()
 
 
+def create_submaster():
+  # Solver work conflates incoming samples: this consumer's receive frequency
+  # does not measure publisher health. Keep Event validity and liveness checks;
+  # decode_snapshot and the planner separately enforce source/capture freshness.
+  services = ['modelV2', 'ev9TrajectoryState']
+  return messaging.SubMaster(services, poll='ev9TrajectoryState', ignore_avg_freq=services)
+
+
 def main():
   params = Params()
   cp = messaging.log_from_bytes(params.get('CarParams', block=True), car.CarParams)
@@ -66,7 +74,7 @@ def main():
   if cp.carFingerprint != CAR.KIA_EV9 or not cp.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
     return
   # Collect pose history at controls frequency; solve only on new model frames.
-  sm = messaging.SubMaster(['modelV2', 'ev9TrajectoryState'], poll='ev9TrajectoryState')
+  sm = create_submaster()
   pm = messaging.PubMaster(['ev9TrajectoryPlan'])
   run(cp, params, sm, pm)
 

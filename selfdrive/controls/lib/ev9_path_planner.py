@@ -16,7 +16,9 @@ from openpilot.selfdrive.controls.lib.ev9_path_geometry import body_respects_obs
 from openpilot.selfdrive.controls.lib.ev9_path_frames import CameraMount
 from openpilot.selfdrive.controls.lib.ev9_path_history import RearBoundaryHistory
 from openpilot.selfdrive.controls.lib.ev9_path_input import PathGeometryConfig, build_path_input
-from openpilot.selfdrive.controls.lib.ev9_trajectory import MAX_PLAN_AGE, STEERING_CAPABILITY_DEG, TrajectoryMode, TrajectoryPlan, parse_mode, wrap_angle
+from openpilot.selfdrive.controls.lib.ev9_trajectory import (
+  MAX_PLAN_AGE, STEERING_CAPABILITY_DEG, TrajectoryMode, TrajectoryPlan, parse_mode, required_plan_distance, wrap_angle,
+)
 
 
 # Explicit initial experimental profile, not an inferred physical calibration.
@@ -25,6 +27,7 @@ MODEL_GEOMETRY = PathGeometryConfig(CameraMount(2.0, 0.0), True, 3.975, 1.04, 1.
 MOUNT_LONGITUDINAL_UNCERTAINTY = .30
 MOUNT_LATERAL_UNCERTAINTY = .10
 PLANNING_ANGLE_RATE = 100.0
+MIN_SPATIAL_RATE_SPEED = .5  # Finite, conservative slew conversion while crawling or stopped.
 SOLVE_BUDGET = .05
 
 
@@ -54,10 +57,30 @@ def remaining_reference(geometry, pose):
   station = np.r_[start, geometry.distance[geometry.distance > start + 1e-5]]
   xy = np.column_stack([np.interp(station, geometry.distance, v) for v in geometry.xy.T])
   yaw = np.interp(station, geometry.distance, np.unwrap(geometry.yaw))
-  allowance = np.interp(station, geometry.distance, geometry.lateral_allowance)
+  lower = np.interp(station, geometry.distance, geometry.lateral_lower)
+  upper = np.interp(station, geometry.distance, geometry.lateral_upper)
   heading_allowance = np.interp(station, geometry.distance, geometry.heading_allowance)
   preserve = np.interp(station, geometry.distance, geometry.preserve_reference_pose.astype(float)) > 0
-  return xy, yaw, station - start, allowance, heading_allowance, preserve
+  return xy, yaw, station - start, lower, upper, heading_allowance, preserve
+
+
+def within_path_budget(points, reference, distance, lower, upper):
+  """Geometric displacement uses the room at the nearest reference station.
+
+  Optimized progress may differ from reference progress; it cannot borrow room
+  from a wider part of the lane elsewhere in the solver horizon.
+  """
+  segment_x, segment_y = np.diff(reference, axis=0).T
+  delta_x = points[:, 0, None] - reference[None, :-1, 0]
+  delta_y = points[:, 1, None] - reference[None, :-1, 1]
+  fraction = np.clip((delta_x * segment_x + delta_y * segment_y) / (segment_x**2 + segment_y**2), 0., 1.)
+  squared = (delta_x - fraction * segment_x)**2 + (delta_y - fraction * segment_y)**2
+  index = np.argmin(squared, axis=1)
+  rows = np.arange(len(points))
+  station = distance[index] + fraction[rows, index] * np.diff(distance)[index]
+  side = segment_x[index] * delta_y[rows, index] - segment_y[index] * delta_x[rows, index]
+  budget = np.where(side >= 0., np.interp(station, distance, upper), -np.interp(station, distance, lower))
+  return bool(np.all(squared[rows, index] <= (budget + 1e-5)**2))
 
 
 class ModelPathPlanner:
@@ -106,13 +129,15 @@ class ModelPathPlanner:
     if not geometry.available:
       return reject(geometry.reason)
     initial_pose = relative_pose(state.pose, model_pose)
-    xy, yaw, distance, allowance, heading_allowance, preserve = remaining_reference(geometry, initial_pose)
-    if len(distance) < 5 or distance[-1] < 10:
+    xy, yaw, distance, lateral_lower, lateral_upper, heading_allowance, preserve = remaining_reference(geometry, initial_pose)
+    if len(distance) < 5 or distance[-1] < required_plan_distance(state.speed, state.delay):
       return reject('insufficient_remaining_reference')
     # A continuing refined path may be deliberately farther from the model than
     # the old 15 cm prototype allowed. Use observed clearance here as in the
     # solve; otherwise a valid wider turn cancels itself as the car follows it.
-    if (np.linalg.norm(xy[0] - initial_pose[:2]) > max(.2, allowance[0]) or
+    initial_lateral = np.array([-math.sin(yaw[0]), math.cos(yaw[0])]) @ (np.asarray(initial_pose[:2]) - xy[0])
+    initial_room = lateral_upper[0] if initial_lateral >= 0 else -lateral_lower[0]
+    if (np.linalg.norm(xy[0] - initial_pose[:2]) > max(.2, initial_room) or
         abs(wrap_angle(yaw[0] - initial_pose[2])) > max(math.radians(3), heading_allowance[0])):
       return reject('model_state_mismatch')
     min_curvature, max_curvature = sorted(vm.calc_curvature(math.radians(a - angle_offset_deg), state.speed, roll)
@@ -156,12 +181,13 @@ class ModelPathPlanner:
     if abs(turn) < math.radians(5) and not state.tracking_active:
       return reject('unsupported_turn_intent')
     direction = math.copysign(1., turn) if abs(turn) >= math.radians(5) else 0.
-    # Preserve turn direction; an already opposite initial wheel may recover
-    # within one metre. Independent checking below uses actual solved distance.
-    opposite = min(0., direction * state.curvature)
-    recovery = opposite * np.maximum(1. - distance, 0.)
-    lower = np.maximum(min_curvature, recovery) if direction > 0 else np.full(len(distance), min_curvature)
-    upper = np.minimum(max_curvature, -recovery) if direction < 0 else np.full(len(distance), max_curvature)
+    # A forecast can bend both ways despite its net turn direction. Permit
+    # those opposing bends and physical recovery from an opposite initial wheel,
+    # without inventing stronger countersteer than either already requires.
+    # The turn itself retains full physical authority; spatial/heading bounds
+    # preserve the local model shape. There is no arbitrary recovery distance.
+    lower = max(min_curvature, min(0., state.curvature, float(np.min(reference_curvature)))) if direction > 0 else min_curvature
+    upper = min(max_curvature, max(0., state.curvature, float(np.max(reference_curvature)))) if direction < 0 else max_curvature
     if self.solver is None:
       if self.native_unavailable:
         return reject('native_planner_unavailable')
@@ -171,11 +197,11 @@ class ModelPathPlanner:
       except (OSError, RuntimeError):
         self.native_unavailable = True
         return reject('native_planner_unavailable')
-    result = self.solver.solve(xy, yaw, initial_pose, state.curvature, state.speed, upper, rate,
-                               -allowance, allowance, heading_allowance, preserve_reference=preserve, min_curvature=lower)
+    result = self.solver.solve(xy, yaw, initial_pose, state.curvature, max(state.speed, MIN_SPATIAL_RATE_SPEED), upper, rate,
+                               lateral_lower, lateral_upper, heading_allowance, preserve_reference=preserve, min_curvature=lower)
     if not result.feasible:
       return reject(result.reason)
-    if np.any(direction * result.curvature < opposite * np.maximum(1. - result.distance, 0.) - 1e-6):
+    if direction * (result.yaw[-1] - result.yaw[0]) < -1e-6:
       return reject('opposite_turn_recovery')
     reference_xy = np.column_stack([np.interp(result.reference_distance, distance, v) for v in xy.T])
     reference_yaw = np.interp(result.reference_distance, distance, yaw)
@@ -187,11 +213,7 @@ class ModelPathPlanner:
       return reject('no_path_adjustment')
     # Measure geometric path displacement, not a difference in progress along
     # the same path. A different feasible arc length is an intended outcome.
-    segments = np.diff(xy, axis=0)
-    relative = result.xy[:, None, :] - xy[None, :-1, :]
-    fraction = np.clip(np.sum(relative * segments, axis=2) / np.sum(segments**2, axis=1), 0., 1.)
-    nearest = np.min(np.linalg.norm(relative - fraction[:, :, None] * segments, axis=2), axis=1)
-    if np.max(nearest) > config.max_deviation + 1e-5:
+    if not within_path_budget(result.xy, xy, distance, lateral_lower, lateral_upper):
       return reject('excessive_path_displacement')
     # Missing edges do not become invented walls or verified free space.
     # Applicable reliable observations constrain the full candidate, including
