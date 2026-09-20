@@ -1,0 +1,12 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index ec6813d989e84baf2748ed04d02bcf49b4931e63..392256c97f3f864597620c02513feb453dde375f 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -150,6 +150,7 @@ build-backend = "hatchling.build"
+ 
+ [tool.hatch.build.targets.wheel]
+ packages = [ "." ]
++dev-mode-dirs = [ "." ]
+ 
+ [tool.hatch.metadata]
+ allow-direct-references = true

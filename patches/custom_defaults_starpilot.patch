@@ -1,0 +1,209 @@
+diff --git a/common/params_keys.h b/common/params_keys.h
+index 7e6ecc9f288f61650b50852d50caf2ef86d09800..c49f4a5f826d01473ee0e63a3141f02fa178921b 100644
+--- a/common/params_keys.h
++++ b/common/params_keys.h
+@@ -29,7 +29,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"CarParamsCache", {CLEAR_ON_MANAGER_START, BYTES}},
+     {"CarParamsPersistent", {PERSISTENT, BYTES}},
+     {"CarParamsPrevRoute", {PERSISTENT, BYTES}},
+-    {"CompletedTrainingVersion", {PERSISTENT, STRING, "0"}},
++    {"CompletedTrainingVersion", {PERSISTENT, STRING, "0.2.0"}},
+     {"ControlsReady", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
+     {"CurrentBootlog", {PERSISTENT, STRING}},
+     {"CurrentRoute", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, STRING}},
+@@ -66,7 +66,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"GsmMetered", {PERSISTENT, BOOL, "1", std::nullopt, 0, SETTINGS_SIMPLE}},
+     {"GsmRoaming", {PERSISTENT, BOOL}},
+     {"HardwareSerial", {PERSISTENT, STRING}},
+-    {"HasAcceptedTerms", {PERSISTENT, STRING, "0"}},
++    {"HasAcceptedTerms", {PERSISTENT, STRING, "2"}},
+     // Internal kill switch; the platform verification allowlist remains the hard safety gate.
+     {"HondaBoschARadar", {PERSISTENT, BOOL, "1"}},
+     {"HondaGasFactorParams", {PERSISTENT, FLOAT}},
+@@ -78,7 +78,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"IsEngaged", {PERSISTENT, BOOL}},
+     {"IsLdwEnabled", {PERSISTENT, BOOL}},
+     {"IsLiveStreaming", {CLEAR_ON_MANAGER_START, BOOL}},
+-    {"IsMetric", {PERSISTENT, BOOL}},
++    {"IsMetric", {PERSISTENT, BOOL, "1"}},
+     {"IsOffroad", {CLEAR_ON_MANAGER_START, BOOL}},
+     {"IsOnroad", {PERSISTENT, BOOL}},
+     {"IsRHD", {PERSISTENT, BOOL, std::nullopt, std::nullopt, 0, SETTINGS_SIMPLE}},
+@@ -200,6 +200,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"AllowImpossibleAcceleration", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"AlwaysOnLateral", {PERSISTENT, BOOL, "1", "0", 0, SETTINGS_SIMPLE}},
+     {"AlwaysOnLateralLKAS", {PERSISTENT, BOOL, "1", "0", 2}},
++    {"EV9MainCruiseAOLMigrated", {PERSISTENT, BOOL, "0", "0"}},
+     {"ApiCache_DriveStats", {PERSISTENT, JSON, "{}", "{}"}},
+     {"AutomaticallyDownloadModels", {PERSISTENT, BOOL, "1", "0", 1}},
+     {"AutomaticUpdates", {PERSISTENT, BOOL, "1", "1", 0}},
+@@ -224,9 +225,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"DisableWideRoad", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"CancelModelDownload", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+     {"CancelThemeDownload", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+-    {"CarMake", {PERSISTENT, STRING, "mock", "mock", 0, SETTINGS_SIMPLE}},
+-    {"CarModel", {PERSISTENT, STRING, "MOCK", "MOCK", 0, SETTINGS_SIMPLE}},
+-    {"CarModelName", {PERSISTENT, STRING, "", "", 0}},
++    {"CarMake", {PERSISTENT, STRING, "Kia", "mock", 0, SETTINGS_SIMPLE}},
++    {"CarModel", {PERSISTENT, STRING, "KIA_EV9", "MOCK", 0, SETTINGS_SIMPLE}},
++    {"CarModelName", {PERSISTENT, STRING, "Kia EV9 2025-26", "", 0}},
+     {"CECurves", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
+     {"CECurvesLead", {PERSISTENT, BOOL, "0", "0", 1}},
+     {"CELead", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+@@ -308,7 +309,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"DebugMode", {CLEAR_ON_OFFROAD_TRANSITION, BOOL, "0", "0"}},
+     {"DecelerationProfile", {PERSISTENT, INT, "1", "0", 2, SETTINGS_SIMPLE}},
+     {"DeveloperMetrics", {PERSISTENT, BOOL, "1", "0", 3}},
+-    {"DeveloperSidebar", {PERSISTENT, BOOL, "1", "0", 3}},
++    {"DeveloperSidebar", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"DeveloperSidebarMetric1", {PERSISTENT, INT, "1", "0", 3}},
+     {"DeveloperSidebarMetric2", {PERSISTENT, INT, "2", "0", 3}},
+     {"DeveloperSidebarMetric3", {PERSISTENT, INT, "3", "0", 3}},
+@@ -322,7 +323,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"GalaxyMobileDefault", {PERSISTENT | DONT_LOG, BOOL, "1", "1", 0, SETTINGS_SIMPLE}},
+     {"DeveloperWidgets", {PERSISTENT, BOOL, "1", "0", 3}},
+     {"DeviceManagement", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+-    {"DeviceShutdown", {PERSISTENT, INT, "6", "6", 1, SETTINGS_SIMPLE}},
++    {"DeviceShutdown", {PERSISTENT, INT, "2", "6", 1, SETTINGS_SIMPLE}},
+     {"DisableOnroadUploads", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+     {"DisableOpenpilotLongitudinal", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},
+     {"DiscordUsername", {PERSISTENT, STRING, "", "", 0}},
+@@ -382,7 +383,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"NAPRadarOffset", {PERSISTENT, FLOAT, "0.0", "0.0", 0, SETTINGS_SIMPLE}},
+     {"ForceAutoTune", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"ForceAutoTuneOff", {PERSISTENT, BOOL, "1", "0", 2}},
+-    {"ForceFingerprint", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
++    {"ForceFingerprint", {PERSISTENT, BOOL, "1", "0", 2, SETTINGS_SIMPLE}},
+     {"ForceOffroad", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+     {"ForceOnroad", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+     {"ForceStops", {PERSISTENT, BOOL, "1", "0", 2, SETTINGS_SIMPLE}},
+@@ -419,7 +420,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"StarPilotTogglesUpdated", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+     {"GoatScream", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
+     {"GoatScreamCriticalAlerts", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
+-    {"GreenLightAlert", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},
++    {"GreenLightAlert", {PERSISTENT, BOOL, "1", "0", 0, SETTINGS_SIMPLE}},
+     {"HideAlerts", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+     {"HideChangingLanesBanner", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+     {"HideDistanceProfileBanner", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+@@ -457,8 +458,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"LaneChanges", {PERSISTENT, BOOL, "1", "1", 0, SETTINGS_SIMPLE}},
+     {"LaneChangeCloseGap", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
+     {"LaneChangeCloseGapSeconds", {PERSISTENT, FLOAT, "0.6", "0.6", 1, SETTINGS_SIMPLE}},
+-    {"LaneChangeSmoothing", {PERSISTENT, INT, "5", "10", 1, SETTINGS_SIMPLE}},
+-    {"LaneChangeTime", {PERSISTENT, FLOAT, "1.0", "0.0", 1, SETTINGS_SIMPLE}},
++    {"LaneChangeSmoothing", {PERSISTENT, INT, "10", "10", 1, SETTINGS_SIMPLE}},
++    {"LaneChangeTime", {PERSISTENT, FLOAT, "0.05", "0.0", 1, SETTINGS_SIMPLE}},
+     {"LaneDetectionWidth", {PERSISTENT, FLOAT, "0.0", "0.0", 1, SETTINGS_SIMPLE}},
+     {"LaneLinesColor", {PERSISTENT, STRING, "", "", 2, SETTINGS_SIMPLE}},
+     {"LaneLinesWidth", {PERSISTENT, FLOAT, "4.0", "2.0", 2, SETTINGS_SIMPLE}},
+@@ -466,7 +467,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"MapsDownloadProgress", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
+     {"MapsDownloadSizeCache", {PERSISTENT, STRING, "{}", "{}"}},
+     {"LateralTune", {PERSISTENT, BOOL, "1", "0", 1}},
+-    {"LeadDepartingAlert", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},
++    {"LeadDepartingAlert", {PERSISTENT, BOOL, "1", "0", 0, SETTINGS_SIMPLE}},
+     {"LeadDetectionThreshold", {PERSISTENT, INT, "35", "50", 3}},
+     {"LeadIndicator", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+     {"LeadInfo", {PERSISTENT, BOOL, "0", "0", 3}},
+@@ -545,7 +546,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"NNFFModelName", {CLEAR_ON_MANAGER_START, STRING, "", "", 0}},
+     {"NoLogging", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+     {"NoUploads", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+-    {"NudgelessLaneChange", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},
++    {"NudgelessLaneChange", {PERSISTENT, BOOL, "1", "0", 0, SETTINGS_SIMPLE}},
+     {"NudgelessLaneChangeOnlyWhenEngaged", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
+     {"NumericalTemp", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"Offset1", {PERSISTENT, FLOAT, "5.0", "0.0", 0}},
+@@ -572,8 +573,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"PathColor", {PERSISTENT, STRING, "", "", 2, SETTINGS_SIMPLE}},
+     {"PathEdgesColor", {PERSISTENT, STRING, "", "", 2, SETTINGS_SIMPLE}},
+     {"PathEdgeWidth", {PERSISTENT, FLOAT, "20.0", "0.0", 2, SETTINGS_SIMPLE}},
++    {"PathWarningHighlight", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+     {"PathWidth", {PERSISTENT, FLOAT, "6.1", "5.9", 2, SETTINGS_SIMPLE}},
+-    {"PauseAOLOnBrake", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
++    {"PauseAOLOnBrake", {PERSISTENT, INT, "0", "0", 1, SETTINGS_SIMPLE}},
+     {"PauseLateralOnSignal", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
+     {"PauseLateralSpeed", {PERSISTENT, FLOAT, "0.0", "0.0", 1, SETTINGS_SIMPLE}},
+     {"LateralResumeDelay", {PERSISTENT, FLOAT, "0.0", "0.0", 1, SETTINGS_SIMPLE}},
+@@ -595,7 +597,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"QOLVisuals", {PERSISTENT, BOOL, "1", "0", 0, SETTINGS_SIMPLE}},
+     {"RadarTakeoffs", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+     {"RadarTracksUI", {PERSISTENT, BOOL, "0", "0", 3}},
+-    {"RainbowPath", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
++    {"RainbowPath", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+     {"RandomEvents", {PERSISTENT, BOOL, "0", "0", 1}},
+     {"RandomThemes", {PERSISTENT, BOOL, "0", "0", 1}},
+     {"RandomThemesHolidays", {PERSISTENT, BOOL, "0", "0", 1}},
+@@ -654,7 +656,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"SidebarMetrics", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"SidebarOpen", {PERSISTENT, BOOL, "0", "0", 0}},
+     {"SignalAnimation", {PERSISTENT, STRING, "stock", "stock", 0}},
+-    {"SignalMetrics", {PERSISTENT, BOOL, "0", "0", 3}},
++    {"SignalMetrics", {PERSISTENT, BOOL, "1", "0", 3}},
+     {"SignalToDownload", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
+     {"SimpleMode", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},
+     {"SLCAbbreviatedSources", {PERSISTENT, BOOL, "0", "0", 3}},
+@@ -719,7 +721,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"StockDongleId", {PERSISTENT, STRING, "", ""}},
+     {"StopAccel", {PERSISTENT, FLOAT, "0.0", "0.0", 3}},
+     {"StopAccelStock", {PERSISTENT, FLOAT, "0.0", "0.0", 3}},
+-    {"StoppedTimer", {PERSISTENT, BOOL, "0", "0", 1, SETTINGS_SIMPLE}},
++    {"StoppedTimer", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+     {"StoppingDecelRate", {PERSISTENT, FLOAT, "0.0", "0.0", 3}},
+     {"StoppingDecelRateStock", {PERSISTENT, FLOAT, "0.0", "0.0", 3}},
+     {"StarButtonControl", {PERSISTENT, INT, "0", "0", 2, SETTINGS_SIMPLE}},
+@@ -748,7 +750,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"TruckTuning", {PERSISTENT, BOOL, "0", "0", 3}},
+     {"TuningLevel", {PERSISTENT, INT, "0", "0", 0}},
+     {"TuningLevelConfirmed", {PERSISTENT, BOOL, "0", "0", 0}},
+-    {"TurnDesires", {PERSISTENT, BOOL, "0", "0", 2}},
++    {"TurnDesires", {PERSISTENT, BOOL, "1", "0", 2}},
+     {"TurnSteeringLimitMuteSpeed", {PERSISTENT, INT, "0", "0", 0}},
+     {"UnlockDoors", {PERSISTENT, BOOL, "1", "0", 0}},
+     {"Updated", {PERSISTENT, STRING, "0", "0"}},
+@@ -793,4 +795,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"WheelIcon", {PERSISTENT, STRING, "stock", "stock", 0}},
+     {"WheelSpeed", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
+     {"WheelToDownload", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
++
++    // EV9 Edition tuning
++    {"HkgTuningAngleCustomLimitMaxSpeedKph", {PERSISTENT, INT, "40", "32", 2, SETTINGS_SIMPLE}},
++    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT, INT, "10", "100", 2, SETTINGS_SIMPLE}},
++    {"HkgSharedAutonomyMode", {PERSISTENT, INT, "0", "0", 2, SETTINGS_SIMPLE}},
++    {"HkgTuningEv9AlertsSpeedKph", {PERSISTENT, INT, "50", "50", 2, SETTINGS_SIMPLE}},
++    {"EV9Path", {PERSISTENT, BOOL, "1", "0", 1, SETTINGS_SIMPLE}},
+ };
+diff --git a/starpilot/common/starpilot_variables.py b/starpilot/common/starpilot_variables.py
+index b9c59e699ea63a325316bbfb114f80eb5a8b9fd2..d8249c9d1ad15aff05ef2020a91deeb0333aa34f 100644
+--- a/starpilot/common/starpilot_variables.py
++++ b/starpilot/common/starpilot_variables.py
+@@ -240,7 +240,7 @@ DEVELOPER_SIDEBAR_METRICS = {
+ 
+ DEVICE_SHUTDOWN_MIN_HOURS = 1
+ DEVICE_SHUTDOWN_MAX_HOURS = 30
+-DEVICE_SHUTDOWN_DEFAULT_HOURS = 6
++DEVICE_SHUTDOWN_DEFAULT_HOURS = 2
+ 
+ 
+ def device_shutdown_seconds(hours):
+@@ -875,7 +875,8 @@ class StarPilotVariables:
+       car_model_name = self.params.get("CarModelName")
+       if car_model_name and "2019-21" in car_model_name:
+         self.params.put("CarModelName", car_model_name.replace("2019-21", "2018-21"))
+-    toggle.force_fingerprint = self.get_value("ForceFingerprint", condition=car_model != self.default_values["CarModel"])
++    # A real vehicle can be the default; only missing or mock selections disable the override.
++    toggle.force_fingerprint = self.get_value("ForceFingerprint", condition=bool(car_model) and car_model != "MOCK")
+     if toggle.force_fingerprint:
+       toggle.car_model = car_model
+ 
+@@ -1159,7 +1160,8 @@ class StarPilotVariables:
+     toggle.lane_changes_require_cruise = toggle.car_model == HYUNDAI_CAR.KIA_XCEED_PHEV
+     toggle.lane_change_delay = self.get_value("LaneChangeTime", cast=float, condition=toggle.lane_changes)
+     toggle.lane_detection_width = self.get_value("LaneDetectionWidth", cast=float, condition=toggle.lane_changes, conversion=distance_conversion)
+-    toggle.minimum_lane_change_speed = self.get_value("MinimumLaneChangeSpeed", cast=float, condition=toggle.lane_changes, conversion=speed_conversion)
++    # This setting is in mph, matching its UI and the legacy 20 mph threshold.
++    toggle.minimum_lane_change_speed = self.get_value("MinimumLaneChangeSpeed", cast=float, condition=toggle.lane_changes, conversion=CV.MPH_TO_MS)
+     toggle.lane_change_close_gap = self.get_value("LaneChangeCloseGap", condition=toggle.lane_changes)
+     toggle.lane_change_close_gap_seconds = self.get_value(
+       "LaneChangeCloseGapSeconds", cast=float, condition=toggle.lane_change_close_gap, default=0.6, min=0.25, max=1.0,

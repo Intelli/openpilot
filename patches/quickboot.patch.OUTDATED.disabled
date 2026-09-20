@@ -1,0 +1,147 @@
+diff --git b/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc a/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
+index 9eb8da71ec..0294360926 100644
+--- b/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
++++ a/selfdrive/ui/sunnypilot/qt/offroad/settings/developer_panel.cc
+@@ -32,12 +32,22 @@ DeveloperPanelSP::DeveloperPanelSP(SettingsWindow *parent) : DeveloperPanel(pare
+   addItem(enableCopyparty);
+ 
+   // Quickboot Mode Toggle
+-  prebuiltToggle = new ParamControlSP("QuickBootToggle", tr("Enable Quickboot Mode"), tr(""), "", this, true);
++  prebuiltToggle = new ParamControlSP("UsePrebuiltToggle", tr("Enable Quickboot Mode"), tr(""), "", this, true);
+   addItem(prebuiltToggle);
+ 
+   QObject::connect(prebuiltToggle, &ParamControl::toggleFlipped, [=](bool state) {
+     QString prebuiltPath = "/data/openpilot/prebuilt";
+-    state ? QFile(prebuiltPath).open(QIODevice::WriteOnly) : QFile::remove(prebuiltPath);
++    bool pending_rebuild = params.getBool("QuickBootPendingRebuild");
++
++    if (state) {
++      if (!pending_rebuild) {
++        QFile(prebuiltPath).open(QIODevice::WriteOnly);
++      }
++    } else {
++      QFile::remove(prebuiltPath);
++      params.putBool("QuickBootPendingRebuild", false);
++    }
++
+     prebuiltToggle->refresh();
+   });
+   prebuiltToggle->setVisible(false);
+@@ -59,21 +69,26 @@ DeveloperPanelSP::DeveloperPanelSP(SettingsWindow *parent) : DeveloperPanel(pare
+ }
+ 
+ void DeveloperPanelSP::updateToggles(bool offroad) {
+-  bool disable_updates = params.getBool("DisableUpdates");
+   bool is_release = params.getBool("IsReleaseBranch") || params.getBool("IsReleaseSpBranch");
+   bool is_tested = params.getBool("IsTestedBranch");
+   bool is_development = params.getBool("IsDevelopmentBranch");
+-
+   prebuiltToggle->setVisible(!is_release && !is_tested && !is_development);
+-  prebuiltToggle->setEnabled(disable_updates);
+-  params.putBool("QuickBootToggle", QFile::exists("/data/openpilot/prebuilt"));
++  prebuiltToggle->setEnabled(true);
+   prebuiltToggle->refresh();
+ 
+-  prebuiltToggle->setDescription(disable_updates
+-    ? tr("When toggled on, this creates a prebuilt file to allow accelerated boot times. When toggled off, "
+-         "it immediately removes the prebuilt file so compilation of locally edited cpp files can be made. "
+-         "<br><br><b>To edit C++ files locally on device, you MUST first turn off this toggle so the changes can recompile.</b>")
+-    : tr("Quickboot mode requires updates to be disabled.<br>Enable 'Disable Updates' in the Software panel first."));
++  const bool quickboot_pref = params.getBool("UsePrebuiltToggle");
++  const bool prebuilt_exists = QFile::exists("/data/openpilot/prebuilt");
++  const bool pending_rebuild = params.getBool("QuickBootPendingRebuild");
++
++  QString description = tr("When toggled on, this creates a prebuilt file to allow accelerated boot times. When toggled off, "
++                           "it immediately removes the prebuilt file so compilation of locally edited cpp files can be made. "
++                           "<br><br><b>To edit C++ files locally on device, you MUST first turn off this toggle so the changes can recompile.</b>");
++
++  if (quickboot_pref && (!prebuilt_exists || pending_rebuild)) {
++    description += tr("<br><br>Quickboot is temporarily disabled while an update or rebuild is in progress. It will be restored automatically afterwards.");
++  }
++
++  prebuiltToggle->setDescription(description);
+   prebuiltToggle->showDescription();
+ 
+   enableGithubRunner->setVisible(!is_release);
+diff --git b/system/manager/build.py a/system/manager/build.py
+index ae130f4b04..310230bc34 100755
+--- b/system/manager/build.py
++++ a/system/manager/build.py
+@@ -86,6 +86,24 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
+     cache_size -= f.stat().st_size
+     f.unlink()
+ 
++  try:
++    from openpilot.common.params import Params
++
++    params = Params()
++    quickboot_pref = params.get("UsePrebuiltToggle")
++    if quickboot_pref is None:
++      quickboot_pref = params.get("UsePrebuiltToggle", return_default=True)
++      if quickboot_pref is None:
++        quickboot_pref = True
++      params.put_bool("UsePrebuiltToggle", bool(quickboot_pref))
++
++    if bool(quickboot_pref):
++      prebuilt_marker = Path(BASEDIR) / "prebuilt"
++      prebuilt_marker.touch(exist_ok=True)
++      params.put_bool("QuickBootPendingRebuild", False)
++  except Exception:
++    cloudlog.exception("failed to finalize quickboot state after build")
++
+ 
+ if __name__ == "__main__":
+   spinner = Spinner()
+diff --git b/system/updated/updated.py a/system/updated/updated.py
+index 181e410fa6..7a20b7a096 100755
+--- b/system/updated/updated.py
++++ a/system/updated/updated.py
+@@ -173,10 +173,27 @@ def init_overlay() -> None:
+   cloudlog.info(f"git diff output:\n{git_diff}")
+ 
+ 
++def remove_prebuilt_artifact(path: Path) -> None:
++  try:
++    if path.is_dir():
++      shutil.rmtree(path)
++    else:
++      path.unlink(missing_ok=True)
++  except FileNotFoundError:
++    pass
++  except Exception:
++    cloudlog.exception(f"failed to remove prebuilt path: {path}")
++
++
+ def finalize_update() -> None:
+   """Take the current OverlayFS merged view and finalize a copy outside of
+   OverlayFS, ready to be swapped-in at BASEDIR. Copy using shutil.copytree"""
+ 
++  params = Params()
++  quickboot_enabled = params.get_bool("UsePrebuiltToggle")
++  if quickboot_enabled:
++    params.put_bool("QuickBootPendingRebuild", True)
++
+   # Remove the update ready flag and any old updates
+   cloudlog.info("creating finalized version of the overlay")
+   set_consistent_flag(False)
+@@ -189,6 +206,10 @@ def finalize_update() -> None:
+   run(["git", "reset", "--hard"], FINALIZED)
+   run(["git", "submodule", "foreach", "--recursive", "git", "reset", "--hard"], FINALIZED)
+ 
++  if quickboot_enabled:
++    remove_prebuilt_artifact(Path(FINALIZED) / "prebuilt")
++    remove_prebuilt_artifact(Path(BASEDIR) / "prebuilt")
++
+   set_consistent_flag(True)
+   cloudlog.info("done finalizing overlay")
+ 
+@@ -386,6 +407,9 @@ class Updater:
+     r = [run(cmd, OVERLAY_MERGED) for cmd in cmds]
+     cloudlog.info("git reset success: %s", '\n'.join(r))
+ 
++    if self.params.get_bool("UsePrebuiltToggle"):
++      remove_prebuilt_artifact(Path(OVERLAY_MERGED) / "prebuilt")
++
+     # TODO: show agnos download progress
+     if AGNOS:
+       handle_agnos_update()

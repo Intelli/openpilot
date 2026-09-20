@@ -1,0 +1,166 @@
+diff --git a/opendbc/safety/declarations.h b/opendbc/safety/declarations.h
+index bfeb2a2813dee1283ed77e11e783f59192af3550..c6f54fe2c30234c585655490af600102684892f2 100644
+--- a/opendbc/safety/declarations.h
++++ b/opendbc/safety/declarations.h
+@@ -133,6 +133,9 @@ typedef struct {
+   const int max_angle_error;             // used to limit error between meas and cmd while enabled
+   const float angle_error_min_speed;     // minimum speed to start limiting angle error
+   const uint32_t frequency;              // Hz
++  // Vehicle-model angle checks: zero selects the standard road-roll-adjusted limits.
++  const float max_lateral_accel;
++  const float max_lateral_jerk;
+ 
+   const bool angle_is_curvature;         // if true, we can apply max lateral acceleration limits
+   const bool enforce_angle_error;        // enables max_angle_error check
+diff --git a/opendbc/safety/lateral.h b/opendbc/safety/lateral.h
+index 96cc056f15cae0020c45bd8ca1880d73982a070e..723f994826be53ca68868ba72bb0539bf2849545 100644
+--- a/opendbc/safety/lateral.h
++++ b/opendbc/safety/lateral.h
+@@ -374,9 +374,11 @@ bool steer_angle_cmd_checks_vm(int desired_angle, bool steer_control_enabled, co
+   // TODO: remove the inaccurate breakpoint angle limiting function above and always use this one
+ 
+   // Highway curves are rolled in the direction of the turn, add tolerance to compensate
+-  static const float MAX_LATERAL_ACCEL = ISO_LATERAL_ACCEL + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^2
++  const float MAX_LATERAL_ACCEL = (limits.max_lateral_accel > 0.0F) ? limits.max_lateral_accel :
++                                  ISO_LATERAL_ACCEL + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^2 by default
+   // Lower than ISO 11270 lateral jerk limit, which is 5.0 m/s^3
+-  static const float MAX_LATERAL_JERK = 3.0 + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^3
++  const float MAX_LATERAL_JERK = (limits.max_lateral_jerk > 0.0F) ? limits.max_lateral_jerk :
++                                 3.0F + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^3 by default
+ 
+   const float fudged_speed = SAFETY_MAX((vehicle_speed.min / VEHICLE_SPEED_FACTOR) - 1.0, 1.0);
+   const float curvature_factor = get_curvature_factor(fudged_speed, params);
+diff --git a/opendbc/safety/modes/hyundai_canfd.h b/opendbc/safety/modes/hyundai_canfd.h
+index 48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb..fbf1c50726b2205266b62ffa3ef9e940d4a6ae65 100644
+--- a/opendbc/safety/modes/hyundai_canfd.h
++++ b/opendbc/safety/modes/hyundai_canfd.h
+@@ -70,6 +70,7 @@ static bool hyundai_ccnc = false;
+ static bool hyundai_canfd_ccnc_angle_long = false;
+ static bool hyundai_canfd_lka_alt_drive_gear = false;
+ static uint8_t hyundai_canfd_inactive_accel_tx_count = 0U;
++static bool hyundai_canfd_ev9_cancel_engage_pending = false;
+ 
+ static unsigned int hyundai_canfd_get_lka_addr(void) {
+   return hyundai_canfd_lka_steering_alt ? 0x110U : 0x50U;
+@@ -100,12 +101,33 @@ static bool hyundai_canfd_lka_alt_openpilot_allowed(void) {
+          (!hyundai_ev_gas_signal || hyundai_canfd_lka_alt_drive_gear);
+ }
+ 
++static bool hyundai_canfd_ev9_lkas_owned(void) {
++  return hyundai_canfd_ev9 && hyundai_canfd_lka_steering_alt && !hyundai_canfd_ccnc_angle_long;
++}
++
+ static bool hyundai_canfd_lka_alt_stock_forwarding(void) {
++  if (hyundai_canfd_ev9_lkas_owned()) {
++    return false;
++  }
+   return hyundai_canfd_lka_steering_alt && hyundai_canfd_angle_steering && !hyundai_canfd_lka_alt_openpilot_allowed();
+ }
+ 
+ static void hyundai_canfd_rx_all_hook(const CANPacket_t *msg) {
+   SAFETY_UNUSED(msg);
++  if (hyundai_canfd_ev9_cancel_engage_pending) {
++    // RX validation runs after this hook. Retire an interrupted intent before a
++    // subsequent good frame can recover validity and complete the old release.
++    for (int i = 0; i < current_safety_config.rx_checks_len; i++) {
++      const RxStatus *status = &current_safety_config.rx_checks[i].status;
++      if (status->msg_seen && (!status->valid_checksum || !status->valid_quality_flag ||
++                              (status->wrong_counters >= MAX_WRONG_COUNTERS))) {
++        hyundai_canfd_ev9_cancel_engage_pending = false;
++      }
++    }
++    if (safety_rx_checks_invalid || relay_malfunction) {
++      hyundai_canfd_ev9_cancel_engage_pending = false;
++    }
++  }
+ }
+ 
+ static bool hyundai_canfd_fwd_hook(int bus_num, int addr) {
+@@ -157,7 +179,41 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
+ 
+         hyundai_lkas_button_check(GET_BIT(msg, 39U));
+       }
++      const int previous_cruise_button = cruise_button_prev;
++      const bool main_button_pressed = main_button && !main_button_prev;
+       hyundai_common_cruise_buttons_check(cruise_button, main_button);
++      if (hyundai_canfd_ev9 && hyundai_longitudinal) {
++        // Main ON is a one-shot engagement request. Holding or releasing it must
++        // not re-enable after an override or fault, and cancel takes precedence.
++        if (main_button_pressed) {
++          hyundai_canfd_ev9_cancel_engage_pending = false;
++          if (!acc_main_on) {
++            controls_allowed = false;
++          } else if ((cruise_button == HYUNDAI_BTN_NONE) && (previous_cruise_button == HYUNDAI_BTN_NONE) &&
++                     !(brake_pressed && vehicle_moving) && !(regen_braking && vehicle_moving) && !steering_disengage &&
++                     !safety_rx_checks_invalid && !relay_malfunction) {
++            // Match SET: gas still blocks acceleration, and an already-held
++            // brake or regen at standstill is handled by generic RX checks.
++            controls_allowed = true;
++          }
++        }
++        // The EV9 pause knob acts as SET only when its complete press began inactive.
++        // Do not infer software engagement from stock SCC state in OP-long mode.
++        if (cruise_button == HYUNDAI_BTN_CANCEL) {
++          if (previous_cruise_button != HYUNDAI_BTN_CANCEL) {
++            hyundai_canfd_ev9_cancel_engage_pending = (previous_cruise_button == HYUNDAI_BTN_NONE) &&
++                                                     !controls_allowed_prev && !main_button_pressed;
++          }
++          controls_allowed = false;
++        } else {
++          if ((previous_cruise_button == HYUNDAI_BTN_CANCEL) && (cruise_button == HYUNDAI_BTN_NONE) &&
++              hyundai_canfd_ev9_cancel_engage_pending && acc_main_on && !brake_pressed && !gas_pressed &&
++              !regen_braking && !steering_disengage && !safety_rx_checks_invalid && !relay_malfunction) {
++            controls_allowed = true;
++          }
++          hyundai_canfd_ev9_cancel_engage_pending = false;
++        }
++      }
+       if (!controls_allowed_prev && controls_allowed) {
+         hyundai_canfd_inactive_accel_tx_count = 0U;
+       }
+@@ -205,6 +261,10 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
+   }
+ 
+   hyundai_common_reset_acc_main_on_mismatches();
++  // A hold interrupted by another disengagement condition requires a fresh press.
++  if (!acc_main_on || brake_pressed || gas_pressed || regen_braking || steering_disengage) {
++    hyundai_canfd_ev9_cancel_engage_pending = false;
++  }
+ }
+ 
+ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+@@ -224,9 +284,15 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+     .min_valid_request_rt_interval = 810000,  // 810ms; a ~10% buffer on cutting every 90 frames
+     .has_steer_req_tolerance = true,
+   };
++  // Match the original EV9 low-speed gate, including the existing 1 m/s speed tolerance.
++  // This is a step at 42 km/h + 0.1 m/s of tolerated speed, not a taper.
++  const float ev9_tolerated_speed = SAFETY_MAX((vehicle_speed.min / VEHICLE_SPEED_FACTOR) - 1.0F, 1.0F);
++  const bool ev9_high_limits = hyundai_canfd_ev9 && (ev9_tolerated_speed <= ((42.0F / 3.6F) + 0.1F));
+   const AngleSteeringLimits HYUNDAI_CANFD_ANGLE_STEERING_LIMITS = {
+     .max_angle = 3600,
+     .angle_deg_to_can = 10,
++    .max_lateral_accel = ev9_high_limits ? 4.2F : 0.0F,
++    .max_lateral_jerk = ev9_high_limits ? 4.2F : 0.0F,
+     .frequency = 100U,
+   };
+   const AngleSteeringParams HYUNDAI_CANFD_ANGLE_STEERING_PARAMS = {
+@@ -270,6 +336,10 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+     if (hyundai_canfd_angle_steering) {
+       const int lkas_angle_active = (msg->data[9] >> 4U) & 0x3U;
+       const bool steer_angle_req = lkas_angle_active != 1;
++      // Continuous inactive EV9 LKAS traffic does not grant permission to actuate.
++      if (hyundai_canfd_ev9_lkas_owned() && steer_angle_req && !hyundai_canfd_lka_alt_openpilot_allowed()) {
++        tx = false;
++      }
+ 
+       int desired_angle = (msg->data[11] << 6U) | (msg->data[10] >> 2U);
+       desired_angle = to_signed(desired_angle, 14);
+@@ -503,6 +573,7 @@ static safety_config hyundai_canfd_init(uint16_t param) {
+                                   hyundai_canfd_lka_steering_alt && hyundai_canfd_angle_steering && hyundai_ccnc;
+   hyundai_canfd_lka_alt_drive_gear = false;
+   hyundai_canfd_inactive_accel_tx_count = 0U;
++  hyundai_canfd_ev9_cancel_engage_pending = false;
+ 
+   safety_config ret;
+   if (hyundai_longitudinal) {

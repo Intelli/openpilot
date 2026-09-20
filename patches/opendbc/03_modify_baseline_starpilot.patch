@@ -1,0 +1,123 @@
+diff --git a/opendbc/car/hyundai/carcontroller.py b/opendbc/car/hyundai/carcontroller.py
+index 82eadae1b7972cd1ab255af415eee8ad8274a391..7fc0b8192bbf8abc5f9f72c6ba00cb4c88891dc2 100644
+--- a/opendbc/car/hyundai/carcontroller.py
++++ b/opendbc/car/hyundai/carcontroller.py
+@@ -76,6 +76,7 @@ REDNECK_BUTTON_COPIES_TIME = 7
+ REDNECK_BUTTON_COPIES_TIME_IMPERIAL = [REDNECK_BUTTON_COPIES_TIME + 3, 70]
+ REDNECK_BUTTON_COPIES_TIME_METRIC = [REDNECK_BUTTON_COPIES_TIME, 40]
+ ANGLE_SAFETY_BASELINE_MODEL = str(CAR.KIA_SPORTAGE_HEV_2026)
++EV9_ANGLE_SAFETY_BASELINE_MODEL = str(CAR.KIA_EV9)
+ DEFAULT_ANGLE_SMOOTHING_VEGO_BP = [5.0, 10.0, 20.0]
+ DEFAULT_ANGLE_SMOOTHING_ALPHA_V = [0.2, 0.1, 0.0]
+ EV9_STOP_REQUEST_SPEED = 0.47
+@@ -367,9 +368,10 @@ def update_genesis_g90_longitudinal_tuning(state: GenesisG90LongitudinalTuningSt
+   return state
+ 
+ 
+-def get_baseline_safety_cp():
++def get_baseline_safety_cp(car_fingerprint=None):
+   from opendbc.car.hyundai.interface import CarInterface
+-  return CarInterface.get_non_essential_params(ANGLE_SAFETY_BASELINE_MODEL)
++  baseline = EV9_ANGLE_SAFETY_BASELINE_MODEL if car_fingerprint == CAR.KIA_EV9 else ANGLE_SAFETY_BASELINE_MODEL
++  return CarInterface.get_non_essential_params(baseline)
+ 
+ 
+ def get_angle_smoothing_alpha(CP, v_ego: float) -> float:
+@@ -452,7 +454,7 @@ class CarController(CarControllerBase):
+     self.packer = CANPacker(dbc_names[Bus.pt])
+     self.angle_limit_counter = 0
+     self.VM = VehicleModel(CP)
+-    self.BASELINE_VM = VehicleModel(get_baseline_safety_cp()) if CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING else self.VM
++    self.BASELINE_VM = VehicleModel(get_baseline_safety_cp(CP.carFingerprint)) if CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING else self.VM
+     self.angle_filter = FirstOrderFilter(0.0, 0.2, DT_CTRL)
+     self.direct_angle_request_allowed = True
+ 
+@@ -595,7 +597,8 @@ class CarController(CarControllerBase):
+       apply_angle = apply_steer_angle_limits_vm(desired_angle, self.apply_angle_last, v_ego_raw,
+                                                 measured_steering_angle, angle_lat_active, self.params, self.VM)
+ 
+-      if str(self.CP.carFingerprint) != ANGLE_SAFETY_BASELINE_MODEL:
++      baseline_model = EV9_ANGLE_SAFETY_BASELINE_MODEL if self.CP.carFingerprint == CAR.KIA_EV9 else ANGLE_SAFETY_BASELINE_MODEL
++      if str(self.CP.carFingerprint) != baseline_model:
+         apply_angle = apply_steer_angle_limits_vm(apply_angle or desired_angle, self.apply_angle_last, v_ego_raw,
+                                                   measured_steering_angle, angle_lat_active, self.params, self.BASELINE_VM)
+ 
+diff --git a/opendbc/car/hyundai/interface.py b/opendbc/car/hyundai/interface.py
+index df79374d0e6a4779e5e9ecd7493d51353ab8ea27..49c79c4c7c9e9d4682b86fd47c1a9612e657a181 100644
+--- a/opendbc/car/hyundai/interface.py
++++ b/opendbc/car/hyundai/interface.py
+@@ -199,6 +199,8 @@ class CarInterface(CarInterfaceBase):
+       if ret.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
+         ret.steerControlType = structs.CarParams.SteerControlType.angle
+         ret.safetyConfigs[-1].safetyParam |= HyundaiSafetyFlags.CANFD_ANGLE_STEERING.value
++        if candidate == CAR.KIA_EV9:
++          ret.safetyConfigs[-1].safetyParam |= HyundaiSafetyFlags.CANFD_EV9.value
+       if candidate == CAR.HYUNDAI_IONIQ_6:
+         # Keep lateral active through stops: zeroing torque at standstill dropped the
+         # stop-turn hold and forced a rate-limit re-ramp from zero on every pull-away
+diff --git a/opendbc/car/hyundai/values.py b/opendbc/car/hyundai/values.py
+index d7cfa094c71bb4f5af660c4b52e73f11cf054ec5..cde38bb24f5918c638e803b18ea291c80a0288c3 100644
+--- a/opendbc/car/hyundai/values.py
++++ b/opendbc/car/hyundai/values.py
+@@ -107,6 +107,8 @@ class HyundaiSafetyFlags(IntFlag):
+   ALT_LIMITS = 64
+   CANFD_LKA_STEERING_ALT = 128
+   FCEV_GAS = 256
++  # Contextual alias: only Hyundai CAN-FD EV angle steering uses this as EV9 identity.
++  CANFD_EV9 = 256
+   ALT_LIMITS_2 = 512
+   CANFD_ANGLE_STEERING = 1024
+   NON_SCC = 4096
+diff --git a/opendbc/safety/modes/hyundai_canfd.h b/opendbc/safety/modes/hyundai_canfd.h
+index 6dc25b733f4d21bc97750c344c6cf2a6c00251cf..48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb 100644
+--- a/opendbc/safety/modes/hyundai_canfd.h
++++ b/opendbc/safety/modes/hyundai_canfd.h
+@@ -65,6 +65,7 @@
+ static bool hyundai_canfd_alt_buttons = false;
+ static bool hyundai_canfd_lka_steering_alt = false;
+ static bool hyundai_canfd_angle_steering = false;
++static bool hyundai_canfd_ev9 = false;
+ static bool hyundai_ccnc = false;
+ static bool hyundai_canfd_ccnc_angle_long = false;
+ static bool hyundai_canfd_lka_alt_drive_gear = false;
+@@ -229,9 +230,9 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+     .frequency = 100U,
+   };
+   const AngleSteeringParams HYUNDAI_CANFD_ANGLE_STEERING_PARAMS = {
+-    .slip_factor = -0.0006085930193026732,
+-    .steer_ratio = 13.7,
+-    .wheelbase = 2.756,
++    .slip_factor = hyundai_canfd_ev9 ? -0.0005410588125765342 : -0.0006085930193026732,
++    .steer_ratio = hyundai_canfd_ev9 ? 16.0 : 13.7,
++    .wheelbase = hyundai_canfd_ev9 ? 3.10 : 2.756,
+   };
+ 
+   bool tx = true;
+@@ -365,6 +366,8 @@ static safety_config hyundai_canfd_init(uint16_t param) {
+   const uint16_t HYUNDAI_PARAM_CANFD_ALT_BUTTONS = 32;
+   const uint16_t HYUNDAI_PARAM_CANFD_ANGLE_STEERING = 1024;
+   const uint16_t HYUNDAI_PARAM_CCNC = 32768U;
++  const uint16_t HYUNDAI_PARAM_CANFD_EV9 = 256U;
++  const uint16_t HYUNDAI_PARAM_EV_GAS = 1U;
+ 
+   static const CanMsg HYUNDAI_CANFD_LKA_STEERING_TX_MSGS[] = {
+     HYUNDAI_CANFD_LKA_STEERING_COMMON_TX_MSGS(0, 1)
+@@ -479,7 +482,17 @@ static safety_config hyundai_canfd_init(uint16_t param) {
+     {0x7C4, 2, 8, .check_relay = true},  /* camera support frame */ \
+     {0xEA, 2, 24, .check_relay = true},  /* MDPS support frame */ \
+ 
+-  hyundai_common_init(param);
++  // EV9 bit 256 identifies the vehicle, and bit 128 selects LKAS_ALT.
++  // Neither may enable the common FCEV or main-button-latches-LKAS features.
++  hyundai_canfd_ev9 = GET_FLAG(param, HYUNDAI_PARAM_CANFD_EV9) &&
++                      GET_FLAG(param, HYUNDAI_PARAM_CANFD_ANGLE_STEERING) && GET_FLAG(param, HYUNDAI_PARAM_EV_GAS);
++  const uint16_t ev9_common_aliases = HYUNDAI_PARAM_CANFD_EV9 | HYUNDAI_PARAM_CANFD_LKA_STEERING_ALT;
++  hyundai_common_init(hyundai_canfd_ev9 ? (param & (uint16_t)~ev9_common_aliases) : param);
++  if (hyundai_canfd_ev9 && !hyundai_longitudinal) {
++    // Stock SCC publishes main availability independently of cruise engagement.
++    // Do not XOR that received state between SCC frames when the main button is pressed.
++    hyundai_aol_main_lkas_sync = true;
++  }
+ 
+   gen_crc_lookup_table_16(0x1021, hyundai_canfd_crc_lut);
+   hyundai_canfd_alt_buttons = GET_FLAG(param, HYUNDAI_PARAM_CANFD_ALT_BUTTONS);

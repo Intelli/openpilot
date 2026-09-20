@@ -1,0 +1,2147 @@
+diff --git a/selfdrive/car/card.py b/selfdrive/car/card.py
+index 5f793ac5945adf85f04fa50eebeafe11221c8308..f871c3c4fca2692a496ce6f5eab8a37f46eb954f 100644
+--- a/selfdrive/car/card.py
++++ b/selfdrive/car/card.py
+@@ -28,6 +28,7 @@ from openpilot.selfdrive.car.cruise import (
+ )
+ from openpilot.selfdrive.car.redneck_cruise import RedneckCruise, select_redneck_target_speed
+ from openpilot.selfdrive.car.car_specific import MockCarState
++from openpilot.selfdrive.car.ev9_cruise_buttons import EV9CruiseButtons
+ 
+ from openpilot.starpilot.common.favorite_slots import (
+   FAVORITE_ACTION_ACCEL_COUNTER,
+@@ -220,6 +221,7 @@ class Car:
+ 
+     self.mock_carstate = MockCarState()
+     self.v_cruise_helper = VCruiseHelper(self.CP, self.FPCP)
++    self.ev9_cruise_buttons = EV9CruiseButtons()
+     self.redneck_cruise = RedneckCruise(self.CP, self.FPCP) if self.CP.brand in ("hyundai", "subaru") and \
+       self.FPCP.redneckCruiseAvailable and not self.FPCP.pcmCruiseSpeed else None
+ 
+@@ -293,13 +295,17 @@ class Car:
+     CS, FPCS = self.CI.update(can_list, self.starpilot_toggles)
+     if self.CP.brand == 'mock':
+       CS, FPCS = self.mock_carstate.update(CS, FPCS)
+-    self._inject_favorite_virtual_cruise_events(CS)
+ 
+     # Update radar tracks from CAN
+     RD: structs.RadarDataT | None = self.RI.update(can_list)
+ 
+     self.sm.update(0)
+ 
++    # Use software engagement, not stock ACC_REQ or temporary actuator overrides.
++    enabled = self.sm['carControl'].enabled if self.sm.seen['carControl'] and self.sm.all_checks(['carControl']) else None
++    self.ev9_cruise_buttons.update(self.CP, CS, enabled=enabled, cruise_initialized=self.v_cruise_helper.v_cruise_initialized)
++    self._inject_favorite_virtual_cruise_events(CS)
++
+     can_rcv_valid = len(can_strs) > 0
+ 
+     # Check for CAN timeout
+@@ -360,7 +366,10 @@ class Car:
+ 
+     if any(be.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for be in CS.buttonEvents):
+       self.resume_prev_button = True
+-    elif any(be.type in (ButtonType.decelCruise, ButtonType.setCruise) for be in CS.buttonEvents):
++    elif (any(be.type in (ButtonType.decelCruise, ButtonType.setCruise) for be in CS.buttonEvents) or
++          (self.CP.carFingerprint == "KIA_EV9" and self.CP.openpilotLongitudinalControl and CS.buttonEnable and
++           any(be.type == ButtonType.mainCruise and be.pressed for be in CS.buttonEvents))):
++      # EV9 main ON uses SET initialization, even after an earlier RES engagement.
+       self.resume_prev_button = False
+ 
+     FPCS = self.starpilot_card.update(CS, FPCS, self.sm, self.starpilot_toggles)
+diff --git a/selfdrive/car/ev9_cruise_buttons.py b/selfdrive/car/ev9_cruise_buttons.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d5fefc151c97154a9fe5f9bdfb82edea4e9c478
+--- /dev/null
++++ b/selfdrive/car/ev9_cruise_buttons.py
+@@ -0,0 +1,79 @@
++"""EV9 OP-long main engagement and knob actions, latched from press through release."""
++from opendbc.car import ButtonType, structs
++from opendbc.car.hyundai.values import CAR
++
++
++class EV9CruiseButtons:
++  def __init__(self):
++    self._pressed: dict[int, int] = {}
++    self._blocked: set[int] = set()
++    self._main_pressed = False
++    self._knob_pressed: set[int] = set()
++
++  def update(self, CP, CS, *, enabled: bool | None, cruise_initialized: bool) -> None:
++    if CP.carFingerprint != CAR.KIA_EV9 or not CP.openpilotLongitudinalControl or CP.pcmCruise:
++      self._pressed.clear()
++      self._blocked.clear()
++      self._main_pressed = False
++      self._knob_pressed.clear()
++      return
++
++    # An unknown software state cannot authorize a new knob-press engagement.
++    # Still emit the matching release so cruise-speed button timers can clear.
++    if enabled is None:
++      self._blocked.update(self._pressed)
++    if self._pressed.get(ButtonType.cancel) == ButtonType.decelCruise and self._engagement_interrupted(CS):
++      self._blocked.add(ButtonType.cancel)
++
++    events = []
++    button_enable = False
++    knob_buttons = (ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel)
++    main_conflict = bool(self._knob_pressed) or any(b.type in knob_buttons for b in CS.buttonEvents)
++    main_pressed = any(b.type == ButtonType.mainCruise and b.pressed for b in CS.buttonEvents)
++    knob_transition = (any(b.pressed and b.type in knob_buttons for b in CS.buttonEvents) and
++                       any(not b.pressed and b.type in knob_buttons for b in CS.buttonEvents))
++    for button in CS.buttonEvents:
++      original = button.type.raw
++      mapped = original
++      blocked = False
++      if original == ButtonType.mainCruise:
++        main_on_press = button.pressed and not self._main_pressed
++        self._main_pressed = button.pressed
++        # CarState has already toggled main availability. Keep the physical event
++        # for AOL, and request engagement only on this accepted ON press.
++        main_ready = (CS.cruiseState.available and CS.canValid and not CS.canTimeout and not CS.steeringDisengage and
++                      not ((CS.brakePressed or CS.regenBraking) and not CS.standstill))
++        button_enable |= main_on_press and enabled is False and not main_conflict and main_ready
++      if original in knob_buttons:
++        if button.pressed:
++          self._knob_pressed.add(original)
++        else:
++          self._knob_pressed.discard(original)
++      if original in (ButtonType.accelCruise, ButtonType.cancel):
++        if button.pressed:
++          if original not in self._pressed:
++            if enabled is False and (original == ButtonType.cancel or not cruise_initialized):
++              mapped = ButtonType.decelCruise
++            self._pressed[original] = mapped
++            if original == ButtonType.cancel and (knob_transition or main_pressed):
++              self._blocked.add(original)
++          mapped = self._pressed[original]
++          if original == ButtonType.cancel and mapped == ButtonType.decelCruise and self._engagement_interrupted(CS):
++            self._blocked.add(original)
++        else:
++          mapped = self._pressed.pop(original, original)
++          blocked = original in self._blocked or (original == ButtonType.cancel and knob_transition)
++          self._blocked.discard(original)
++
++      events.append(structs.CarState.ButtonEvent(type=mapped, pressed=button.pressed))
++      if not button.pressed and mapped in (ButtonType.accelCruise, ButtonType.decelCruise):
++        button_enable |= not blocked and (mapped == original or enabled is not None)
++
++    CS.buttonEvents = events
++    # CarInterface computed this from the physical events before normalization.
++    CS.buttonEnable = button_enable
++
++  @staticmethod
++  def _engagement_interrupted(CS) -> bool:
++    return (not CS.cruiseState.available or not CS.canValid or CS.canTimeout or CS.brakePressed or CS.gasPressed or
++            CS.regenBraking or CS.steeringDisengage)
+diff --git a/selfdrive/car/tests/test_ev9_cruise_buttons.py b/selfdrive/car/tests/test_ev9_cruise_buttons.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8fee4bb26f8b58b8db99cbdc2daa4ccafc3cf3d0
+--- /dev/null
++++ b/selfdrive/car/tests/test_ev9_cruise_buttons.py
+@@ -0,0 +1,376 @@
++from types import SimpleNamespace
++
++import pytest
++
++from opendbc.car import ButtonType, structs
++from opendbc.car.hyundai.values import CAR
++from openpilot.selfdrive.car.cruise import VCruiseHelper, V_CRUISE_UNSET
++from openpilot.selfdrive.car.ev9_cruise_buttons import EV9CruiseButtons
++
++
++def setup(*, fingerprint=CAR.KIA_EV9, op_long=True, pcm_cruise=False):
++  cp = structs.CarParams(brand="hyundai", carFingerprint=fingerprint, openpilotLongitudinalControl=op_long, pcmCruise=pcm_cruise)
++  cs = structs.CarState(vEgo=20, canValid=True, gearShifter="drive", cruiseState={"available": True})
++  return cp, cs, EV9CruiseButtons(), VCruiseHelper(cp)
++
++
++def event(button, pressed):
++  return structs.CarState.ButtonEvent(type=button, pressed=pressed)
++
++
++def update(buttons, cp, cs, button, pressed, *, enabled=False, initialized=False):
++  cs.buttonEvents = [event(button, pressed)] if button is not None else []
++  buttons.update(cp, cs, enabled=enabled, cruise_initialized=initialized)
++  return [(b.type.raw, b.pressed) for b in cs.buttonEvents]
++
++
++@pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel])
++def test_any_knob_action_can_set_initial_speed_on_release(button):
++  cp, cs, buttons, cruise = setup()
++  assert update(buttons, cp, cs, button, True) == [(ButtonType.decelCruise, True)]
++  assert not cs.buttonEnable
++  assert update(buttons, cp, cs, button, False) == [(ButtonType.decelCruise, False)]
++  assert cs.buttonEnable
++  # The real resumeBlocked predicate cannot match either normalized edge.
++  assert not any(b.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for b in cs.buttonEvents)
++  cruise.initialize_v_cruise(cs, False, False, SimpleNamespace(set_speed_limit=False))
++  assert cruise.v_cruise_kph == 72
++
++
++@pytest.mark.parametrize("button,expected", [(ButtonType.accelCruise, 100), (ButtonType.decelCruise, 72), (ButtonType.cancel, 72)])
++def test_resume_retains_speed_but_set_and_knob_press_use_current_speed(button, expected):
++  cp, cs, buttons, cruise = setup()
++  cruise.v_cruise_kph = cruise.v_cruise_kph_last = 100
++  for pressed in (True, False):
++    update(buttons, cp, cs, button, pressed, initialized=True)
++  assert cs.buttonEnable
++  resume = any(b.type == ButtonType.accelCruise for b in cs.buttonEvents)
++  cruise.initialize_v_cruise(cs, False, resume, SimpleNamespace(set_speed_limit=False))
++  assert cruise.v_cruise_kph == expected
++
++
++@pytest.mark.parametrize("button,expected", [(ButtonType.accelCruise, 73), (ButtonType.decelCruise, 71)])
++def test_engaged_up_down_keep_normal_speed_adjustment(button, expected):
++  cp, cs, buttons, cruise = setup()
++  toggles = SimpleNamespace(cruise_increase=1, cruise_increase_long=5, set_speed_limit=False)
++  cruise.initialize_v_cruise(cs, False, False, toggles)
++  for pressed in (True, False):
++    assert update(buttons, cp, cs, button, pressed, enabled=True, initialized=True) == [(button, pressed)]
++    cruise.update_v_cruise(cs, True, True, False, toggles)
++  assert cruise.v_cruise_kph == expected
++
++
++def test_active_cancel_never_becomes_set_after_disengagement_during_hold():
++  cp, cs, buttons, _ = setup()
++  assert update(buttons, cp, cs, ButtonType.cancel, True, enabled=True) == [(ButtonType.cancel, True)]
++  assert not cs.buttonEnable
++  # Repeated pressed samples and a software state change cannot reinterpret the hold.
++  assert update(buttons, cp, cs, ButtonType.cancel, True) == [(ButtonType.cancel, True)]
++  assert update(buttons, cp, cs, ButtonType.cancel, False) == [(ButtonType.cancel, False)]
++  assert not cs.buttonEnable
++  # A separate subsequent physical press can engage.
++  update(buttons, cp, cs, ButtonType.cancel, True)
++  update(buttons, cp, cs, ButtonType.cancel, False)
++  assert cs.buttonEnable
++
++
++def test_initial_resume_mapping_is_stable_even_if_speed_initializes_during_hold():
++  cp, cs, buttons, _ = setup()
++  update(buttons, cp, cs, ButtonType.accelCruise, True)
++  assert update(buttons, cp, cs, ButtonType.accelCruise, False, enabled=True, initialized=True) == [(ButtonType.decelCruise, False)]
++
++
++def test_unknown_engagement_state_does_not_convert_cancel_to_set():
++  cp, cs, buttons, _ = setup()
++  update(buttons, cp, cs, ButtonType.cancel, True, enabled=None)
++  assert update(buttons, cp, cs, ButtonType.cancel, False) == [(ButtonType.cancel, False)]
++  assert not cs.buttonEnable
++
++
++@pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.cancel])
++def test_loss_of_engagement_telemetry_during_new_set_request_blocks_release(button):
++  cp, cs, buttons, _ = setup()
++  update(buttons, cp, cs, button, True)
++  update(buttons, cp, cs, None, False, enabled=None)
++  assert update(buttons, cp, cs, button, False) == [(ButtonType.decelCruise, False)]
++  assert not cs.buttonEnable
++
++
++def test_unpaired_cancel_release_cannot_engage():
++  cp, cs, buttons, _ = setup()
++  assert update(buttons, cp, cs, ButtonType.cancel, False) == [(ButtonType.cancel, False)]
++  assert not cs.buttonEnable
++
++
++@pytest.mark.parametrize("field,value", [
++  ("brakePressed", True), ("gasPressed", True), ("regenBraking", True), ("steeringDisengage", True),
++  ("canValid", False), ("canTimeout", True), ("available", False),
++])
++@pytest.mark.parametrize("interrupt_at_press", [False, True])
++def test_interrupted_knob_press_needs_a_fresh_press(field, value, interrupt_at_press):
++  cp, cs, buttons, _ = setup()
++  target = cs.cruiseState if field == "available" else cs
++  if not interrupt_at_press:
++    update(buttons, cp, cs, ButtonType.cancel, True)
++  setattr(target, field, value)
++  update(buttons, cp, cs, ButtonType.cancel if interrupt_at_press else None, True)
++  setattr(target, field, not value)
++  update(buttons, cp, cs, ButtonType.cancel, False)
++  assert not cs.buttonEnable
++  update(buttons, cp, cs, ButtonType.cancel, True)
++  update(buttons, cp, cs, ButtonType.cancel, False)
++  assert cs.buttonEnable
++
++
++@pytest.mark.parametrize("before_cancel", [True, False])
++def test_direct_switch_between_cancel_and_other_knob_action_cannot_engage_cancel(before_cancel):
++  cp, cs, buttons, _ = setup()
++  first, second = (ButtonType.accelCruise, ButtonType.cancel) if before_cancel else (ButtonType.cancel, ButtonType.accelCruise)
++  update(buttons, cp, cs, first, True)
++  cs.buttonEvents = [event(first, False), event(second, True)]
++  buttons.update(cp, cs, enabled=False, cruise_initialized=False)
++  if before_cancel:
++    update(buttons, cp, cs, second, False)
++  assert not cs.buttonEnable
++
++
++@pytest.mark.parametrize("config", [
++  {"op_long": False, "pcm_cruise": True}, {"pcm_cruise": True}, {"fingerprint": CAR.HYUNDAI_IONIQ_5_PE},
++])
++@pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel, ButtonType.mainCruise])
++def test_stock_fallback_and_other_cars_remain_unchanged(config, button):
++  cp, cs, buttons, _ = setup(**config)
++  for pressed in (True, False):
++    cs.buttonEnable = True
++    assert update(buttons, cp, cs, button, pressed) == [(button, pressed)]
++    assert cs.buttonEnable
++
++
++def test_fallback_discards_pending_engagement_remap():
++  cp, cs, buttons, _ = setup()
++  update(buttons, cp, cs, ButtonType.cancel, True)
++  cp.openpilotLongitudinalControl = False
++  cp.pcmCruise = True
++  cs.buttonEnable = False
++  assert update(buttons, cp, cs, ButtonType.cancel, False) == [(ButtonType.cancel, False)]
++  assert not cs.buttonEnable
++
++
++def test_non_knob_events_remain_available_for_lateral_and_distance_controls():
++  cp, cs, buttons, cruise = setup()
++  assert cruise.v_cruise_kph == V_CRUISE_UNSET
++  for button in (ButtonType.lkas, ButtonType.gapAdjustCruise):
++    for pressed in (True, False):
++      assert update(buttons, cp, cs, button, pressed) == [(button, pressed)]
++      assert not cs.buttonEnable
++
++
++def test_main_on_requests_engagement_once_and_preserves_aol_event():
++  cp, cs, buttons, _ = setup()
++  assert update(buttons, cp, cs, ButtonType.mainCruise, True) == [(ButtonType.mainCruise, True)]
++  assert cs.buttonEnable
++  for button, pressed in ((None, False), (ButtonType.mainCruise, True), (ButtonType.mainCruise, False)):
++    update(buttons, cp, cs, button, pressed)
++    assert not cs.buttonEnable
++  cs.cruiseState.available = False  # CarState applies main OFF before this helper.
++  update(buttons, cp, cs, ButtonType.mainCruise, True, enabled=True)
++  assert not cs.buttonEnable
++
++
++@pytest.mark.parametrize("enabled", [None, True])
++def test_main_does_not_engage_from_unknown_or_already_enabled_state(enabled):
++  cp, cs, buttons, _ = setup()
++  update(buttons, cp, cs, ButtonType.mainCruise, True, enabled=enabled)
++  assert not cs.buttonEnable
++  update(buttons, cp, cs, ButtonType.mainCruise, True)
++  assert not cs.buttonEnable
++  update(buttons, cp, cs, ButtonType.mainCruise, False)
++  assert not cs.buttonEnable
++
++
++@pytest.mark.parametrize("field,value", [
++  ("brakePressed", True), ("regenBraking", True), ("steeringDisengage", True),
++  ("canValid", False), ("canTimeout", True), ("available", False),
++])
++def test_main_refusal_does_not_engage_on_hold_release_or_recovery(field, value):
++  cp, cs, buttons, _ = setup()
++  target = cs.cruiseState if field == "available" else cs
++  setattr(target, field, value)
++  update(buttons, cp, cs, ButtonType.mainCruise, True)
++  assert not cs.buttonEnable
++  setattr(target, field, not value)
++  for button, pressed in ((None, False), (ButtonType.mainCruise, True), (ButtonType.mainCruise, False)):
++    update(buttons, cp, cs, button, pressed)
++    assert not cs.buttonEnable
++  update(buttons, cp, cs, ButtonType.mainCruise, True)
++  assert cs.buttonEnable
++
++
++@pytest.mark.parametrize("pedal", ["gasPressed", "brakePressed"])
++def test_main_preserves_set_pedal_override_and_standstill_pre_enable(pedal):
++  from openpilot.selfdrive.car.car_specific import CarSpecificEvents
++  from openpilot.selfdrive.selfdrived.events import ET, Events
++  from openpilot.selfdrive.selfdrived.state import State, StateMachine
++
++  cp, cs, buttons, _ = setup()
++  cs.standstill = pedal == "brakePressed"
++  cs.vEgo = 0 if cs.standstill else 20
++  setattr(cs, pedal, True)
++  update(buttons, cp, cs, ButtonType.mainCruise, True)
++  assert cs.buttonEnable
++  car_events, state = CarSpecificEvents(cp), StateMachine()
++  events = car_events.update(cs, cs, structs.CarControl())
++  enabled, _ = state.update(events, Events(starpilot=True), False)
++  assert enabled
++  assert state.state == (State.preEnabled if cs.standstill else State.overriding)
++  assert events.contains(ET.PRE_ENABLE if cs.standstill else ET.OVERRIDE_LONGITUDINAL)
++
++  setattr(cs, pedal, False)
++  update(buttons, cp, cs, ButtonType.mainCruise, False, enabled=True)
++  assert not cs.buttonEnable
++  events = car_events.update(cs, cs, structs.CarControl(enabled=True))
++  enabled, active = state.update(events, Events(starpilot=True), False)
++  assert enabled and active
++  assert state.state == State.enabled
++
++
++@pytest.mark.parametrize("knob", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel])
++@pytest.mark.parametrize("held", [False, True])
++def test_main_does_not_engage_during_knob_action(knob, held):
++  cp, cs, buttons, _ = setup()
++  if held:
++    cs.cruiseState.available = False
++    update(buttons, cp, cs, knob, True)
++    cs.cruiseState.available = True
++  cs.buttonEvents = [event(ButtonType.mainCruise, True)] + ([] if held else [event(knob, True)])
++  buttons.update(cp, cs, enabled=False, cruise_initialized=False)
++  assert not cs.buttonEnable
++  if knob == ButtonType.cancel:
++    update(buttons, cp, cs, knob, False)
++    assert not cs.buttonEnable
++
++
++@pytest.mark.parametrize("blocked_event", [None, "calibrationIncomplete", "doorOpen", "seatbeltNotLatched", "accFaulted", "wrongGear"])
++def test_main_engagement_uses_normal_state_machine_and_main_off_disables(blocked_event):
++  from opendbc.car.hyundai.carstate import CarState
++  from openpilot.selfdrive.car.car_specific import CarSpecificEvents
++  from openpilot.selfdrive.selfdrived.events import EventName, Events
++  from openpilot.selfdrive.selfdrived.state import StateMachine
++
++  cp, cs, buttons, _ = setup()
++  hyundai_state = SimpleNamespace(main_cruise_on=False)
++  car_events, state = CarSpecificEvents(cp), StateMachine()
++  enabled = False
++
++  def step(button=None, pressed=False, block=None):
++    nonlocal enabled
++    cs.buttonEvents = [] if button is None else [event(button, pressed)]
++    cs.cruiseState.available = True  # Incoming fault-free TCS availability.
++    cs.cruiseState.available = CarState.update_main_cruise(hyundai_state, cs)
++    buttons.update(cp, cs, enabled=enabled, cruise_initialized=False)
++    events = car_events.update(cs, cs, structs.CarControl(enabled=enabled))
++    if block:
++      events.add(getattr(EventName, block))
++    enabled, _ = state.update(events, Events(starpilot=True), False)
++
++  step(ButtonType.mainCruise, True, blocked_event)
++  assert enabled == (blocked_event is None)
++  step()  # No delayed engagement after a refusal clears.
++  assert enabled == (blocked_event is None)
++  step(ButtonType.mainCruise, False)
++  assert enabled == (blocked_event is None)
++  step(ButtonType.mainCruise, True)
++  assert not enabled
++  step(ButtonType.mainCruise, False)
++  assert not enabled
++  step(ButtonType.mainCruise, True)
++  assert enabled
++
++
++@pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel])
++@pytest.mark.parametrize("main_available", [False, True])
++def test_real_engagement_state_machine_and_cancel_release(button, main_available):
++  from openpilot.selfdrive.car.car_specific import CarSpecificEvents
++  from openpilot.selfdrive.selfdrived.events import Events
++  from openpilot.selfdrive.selfdrived.state import StateMachine
++
++  cp, cs, buttons, _ = setup()
++  cs.cruiseState.available = main_available
++  car_events = CarSpecificEvents(cp)
++  state = StateMachine()
++  enabled = False
++  for pressed in (True, False):
++    update(buttons, cp, cs, button, pressed, enabled=enabled)
++    events = car_events.update(cs, cs, structs.CarControl(enabled=enabled))
++    enabled, _ = state.update(events, Events(starpilot=True), False)
++    assert enabled == (not pressed and main_available)
++
++  if main_available:
++    for pressed in (True, False):
++      update(buttons, cp, cs, ButtonType.cancel, pressed, enabled=enabled)
++      events = car_events.update(cs, cs, structs.CarControl(enabled=enabled))
++      enabled, _ = state.update(events, Events(starpilot=True), False)
++      assert not enabled
++
++
++@pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel, ButtonType.mainCruise])
++def test_card_normalizes_before_speed_handling_and_publish(monkeypatch, button):
++  from cereal import custom
++  from openpilot.selfdrive.car import card
++
++  cp, cs, buttons, cruise = setup()
++  if button == ButtonType.mainCruise:
++    cruise.v_cruise_kph = cruise.v_cruise_kph_last = 100
++  control = structs.CarControl()
++
++  class SubMaster(dict):
++    seen = {"carControl": True}
++
++    def update(self, _timeout):
++      pass
++
++    def all_checks(self, _services):
++      return True
++
++  car = card.Car.__new__(card.Car)
++  car.CP = cp
++  car.CI = SimpleNamespace(update=lambda *_: (cs, custom.StarPilotCarState.new_message()))
++  car.RI = SimpleNamespace(update=lambda _: None)
++  car._inject_favorite_virtual_cruise_events = lambda _: None
++  car.sm = SubMaster(carControl=control, starpilotPlan=custom.StarPilotPlan.new_message())
++  car.can_sock = None
++  car.can_rcv_cum_timeout_counter = 0
++  car.ev9_cruise_buttons = buttons
++  car.v_cruise_helper = cruise
++  car.params_memory = SimpleNamespace(get_float=lambda _: 0)
++  car.starpilot_toggles = SimpleNamespace(speed_limit_controller=False, set_speed_limit=False)
++  car.is_metric = True
++  car.experimental_mode = False
++  car.CC_prev = structs.CarControl()
++  car.resume_prev_button = True
++  car.starpilot_card = SimpleNamespace(update=lambda _cs, fpcs, *_: fpcs)
++  monkeypatch.setattr(card.messaging, "drain_sock_raw", lambda *_, **__: [])
++  monkeypatch.setattr(card, "can_capnp_to_list", lambda _: [])
++
++  for pressed in (True, False):
++    cs.buttonEvents = [event(button, pressed)]
++    output, _, _ = car.state_update()
++    assert output.buttonEvents[0].type == (ButtonType.mainCruise if button == ButtonType.mainCruise else ButtonType.decelCruise)
++    assert output.buttonEnable == (pressed if button == ButtonType.mainCruise else not pressed)
++    assert not car.resume_prev_button
++
++  car.CS_prev = output.as_reader()
++  control.enabled = True
++  cs.buttonEvents = []
++  output, _, _ = car.state_update()
++  assert output.vCruise == 72
++
++  # Favorites may adjust speed, but their virtual edges must not acquire the
++  # physical knob's permission to engage longitudinal control.
++  control.enabled = False
++  car.CC_prev = structs.CarControl(enabled=True)
++  car._inject_favorite_virtual_cruise_events = lambda state: setattr(state, "buttonEvents", [event(ButtonType.accelCruise, False)])
++  cs.buttonEvents = []
++  output, _, _ = car.state_update()
++  assert output.buttonEvents[0].type == ButtonType.accelCruise
++  assert not output.buttonEnable
+diff --git a/selfdrive/controls/controlsd.py b/selfdrive/controls/controlsd.py
+index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..413363e80a88a33b7e4b439755786840cd5dffc8 100644
+--- a/selfdrive/controls/controlsd.py
++++ b/selfdrive/controls/controlsd.py
+@@ -15,12 +15,14 @@ from opendbc.car.car_helpers import interfaces
+ from opendbc.car.chrysler.values import pacifica_hybrid_aol_stock_acc_mode
+ from opendbc.car.gm.values import CAR as GM_CAR
+ from opendbc.car.honda.values import CAR as HONDA_CAR
+-from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
++from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR, HyundaiFlags
++from opendbc.car.hyundai.ev9 import EV9AngleConfig
+ from opendbc.car.nissan.values import CAR as NISSAN_CAR
+ from opendbc.car.vehicle_model import VehicleModel
+ from openpilot.selfdrive.controls.lib.drive_helpers import (
+   MAX_LATERAL_JERK,
+   clip_curvature,
++  get_calibrated_lateral_active,
+   get_kona_non_scc_lateral_active,
+   get_lateral_active,
+   update_lateral_fault_latch,
+@@ -542,6 +544,10 @@ class Controls:
+                                         CS.steerFaultTemporary, CS.steerFaultPermanent,
+                                         standstill, self.CP.steerAtStandstill,
+                                         self.sm['starpilotPlan'].lateralCheck)
++    if self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9:
++      # AOL and normal soft-disabling state can both retain a lateral request.
++      # Neither may actuate using incomplete, invalid, or stale calibration.
++      CC.latActive = get_calibrated_lateral_active(CC.latActive, self.sm)
+     # EcuDisableFailed is set when car started in READY mode (ECU disable was rejected)
+     # Disable longitudinal so stock ACC works instead
+     self.update_ecu_disable_failed()
+@@ -782,18 +788,25 @@ class Controls:
+           jerk_factor = self.lc_arrest_jerk_factor + rise_alpha * (jerk_factor - self.lc_arrest_jerk_factor)
+       self.lc_arrest_jerk_factor = jerk_factor
+ 
++    ev9_limit_speed = None
++    if self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9 and self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING and \
++        self.CP.steerControlType == car.CarParams.SteerControlType.angle:
++      ev9_limit_speed = EV9AngleConfig.from_toggles(self.starpilot_toggles).limit_speed_mps
+     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll,
+-                                                               jerk_factor)
++                                                               jerk_factor, ev9_angle_limit_speed_mps=ev9_limit_speed)
+     lat_smooth_seconds = get_control_lateral_smooth_seconds(self.CP.brand, CS.vEgo, self.CP.lateralSmoothSeconds)
+     lat_delay = self.sm["liveDelay"].lateralDelay + lat_smooth_seconds
+ 
+     actuators.curvature = self.desired_curvature
++    angle_kwargs = {}
++    if isinstance(self.LaC, LatControlAngle):
++      angle_kwargs["now_nanos"] = self.sm.logMonoTime['selfdriveState'] if REPLAY else time.monotonic_ns()
+     steer, lateral_output, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+                                                      self.steer_limited_by_safety, self.desired_curvature,
+                                                      curvature_limited, lat_delay,
+                                                      self.calibrated_pose,
+                                                      self.sm['modelV2'],
+-                                                     self.starpilot_toggles)
++                                                     self.starpilot_toggles, **angle_kwargs)
+     actuators.torque = float(steer)
+     if self.CP.steerControlType == car.CarParams.SteerControlType.curvatureDEPRECATED:
+       actuators.curvature = float(lateral_output)
+@@ -875,7 +888,7 @@ class Controls:
+       hudControl.leftLaneDepart = self.sm['driverAssistance'].leftLaneDeparture
+       hudControl.rightLaneDepart = self.sm['driverAssistance'].rightLaneDeparture
+ 
+-    if self.sm['selfdriveState'].active:
++    if CC.latActive:
+       CO = self.sm['carOutput']
+       if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
+         output_healthy = (
+@@ -889,6 +902,8 @@ class Controls:
+         )
+       else:
+         self.steer_limited_by_safety = abs(CC.actuators.torque - CO.actuatorsOutput.torque) > 1e-2
++    else:
++      self.steer_limited_by_safety = False
+ 
+     # TODO: both controlsState and carControl valids should be set by
+     #       sm.all_checks(), but this creates a circular dependency
+diff --git a/selfdrive/controls/lib/desire_helper.py b/selfdrive/controls/lib/desire_helper.py
+index 8d1330b4987b0c8ce7e8cd733f5872a2a996f9aa..a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22 100644
+--- a/selfdrive/controls/lib/desire_helper.py
++++ b/selfdrive/controls/lib/desire_helper.py
+@@ -3,6 +3,7 @@ import json
+ import numpy as np
+ 
+ from cereal import log
++from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
+ from openpilot.common.constants import CV
+ from openpilot.common.params import Params
+ from openpilot.common.realtime import DT_MDL
+@@ -332,8 +333,13 @@ class DesireHelper:
+ 
+     self.prev_one_blinker = one_blinker
+ 
++    ev9_signal_turn = getattr(starpilot_toggles, "car_model", None) == HYUNDAI_CAR.KIA_EV9
++    signal_side_blocked = (carstate.leftBlinker and carstate.leftBlindspot) or (carstate.rightBlinker and carstate.rightBlindspot)
++    # Preserve the EV9 driver's signal intent through predicted stops, as in Sunnypilot.
++    # A detected object on the requested side still vetoes the turn.
++    signal_turn_allowed = not signal_side_blocked if ev9_signal_turn else not self.turn_stop_hold
+     if lateral_active and one_blinker and below_lane_change_speed and not carstate.standstill \
+-        and starpilot_toggles.use_turn_desires and not self.turn_stop_hold:
++        and starpilot_toggles.use_turn_desires and signal_turn_allowed:
+       self.turn_direction = TurnDirection.turnLeft if carstate.leftBlinker else TurnDirection.turnRight
+       self.desire = TURN_DESIRES[self.turn_direction]
+     else:
+diff --git a/selfdrive/controls/lib/drive_helpers.py b/selfdrive/controls/lib/drive_helpers.py
+index 8a2a1881f874dcc673a63fc6f4fdeb51d77348a0..0ef74d6e19dc066512381aea90d7f927e2ac527c 100644
+--- a/selfdrive/controls/lib/drive_helpers.py
++++ b/selfdrive/controls/lib/drive_helpers.py
+@@ -1,4 +1,6 @@
+ import numpy as np
++from cereal import log
++from opendbc.car.hyundai.ev9 import EV9_HIGH_LATERAL_LIMIT
+ from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
+ from openpilot.common.realtime import DT_CTRL, DT_MDL
+ 
+@@ -22,7 +24,8 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
+   alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
+   return alpha * val + (1 - alpha) * prev_val
+ 
+-def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0, lat_accel_factor=1.0) -> tuple[float, bool]:
++def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0, lat_accel_factor=1.0,
++                   *, ev9_angle_limit_speed_mps: float | None = None) -> tuple[float, bool]:
+   # This function respects ISO lateral jerk and acceleration limits + a max curvature
+   v_ego = max(v_ego, MIN_SPEED)
+   max_curvature_rate = (MAX_LATERAL_JERK * jerk_factor) / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
+@@ -30,8 +33,10 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0,
+                           prev_curvature - max_curvature_rate * DT_CTRL,
+                           prev_curvature + max_curvature_rate * DT_CTRL)
+ 
+-  effective_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL * lat_accel_factor
+-  roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
++  ev9_low_speed = ev9_angle_limit_speed_mps is not None and v_ego <= ev9_angle_limit_speed_mps
++  base_lat_accel = EV9_HIGH_LATERAL_LIMIT if ev9_low_speed else MAX_LATERAL_ACCEL_NO_ROLL
++  effective_lat_accel = base_lat_accel * lat_accel_factor
++  roll_compensation = 0.0 if ev9_low_speed else roll * ACCELERATION_DUE_TO_GRAVITY
+   min_curvature = (-effective_lat_accel + roll_compensation) / v_ego ** 2
+   max_curvature = (effective_lat_accel + roll_compensation) / v_ego ** 2
+   if lat_accel_factor < 1.0:
+@@ -39,15 +44,18 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0,
+     # (e.g. lane change on a curve); it only limits further growth.
+     min_curvature = min(min_curvature, prev_curvature)
+     max_curvature = max(max_curvature, prev_curvature)
+-  # Saturation is reported against the stock envelope only: riding an intentionally
++  # Saturation is reported against the unshaped vehicle envelope only: riding an intentionally
+   # tightened lane-change ceiling is comfort shaping, not steering saturation, and
+   # must not trip the "Turn Exceeds Steering Limit" alert.
+-  stock_min_curvature = (-MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation) / v_ego ** 2
+-  stock_max_curvature = (MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation) / v_ego ** 2
++  stock_min_curvature = (-base_lat_accel + roll_compensation) / v_ego ** 2
++  stock_max_curvature = (base_lat_accel + roll_compensation) / v_ego ** 2
+   limited_accel = bool(new_curvature < stock_min_curvature or new_curvature > stock_max_curvature)
+   new_curvature, _ = clamp(new_curvature, min_curvature, max_curvature)
+ 
+-  new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
++  # EV9 tight turns retain downstream vehicle-model and Panda limits.
++  limited_max_curv = False
++  if not ev9_low_speed:
++    new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+   return float(new_curvature), limited_accel or limited_max_curv
+ 
+ 
+@@ -69,6 +77,14 @@ def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.
+ get_accel_from_plan_tomb_raider = get_accel_from_plan
+ 
+ 
++def lateral_calibration_ready(sm) -> bool:
++  return sm.all_checks(['liveCalibration']) and sm['liveCalibration'].calStatus == log.LiveCalibrationData.Status.calibrated
++
++
++def get_calibrated_lateral_active(requested: bool, sm) -> bool:
++  return requested and lateral_calibration_ready(sm)
++
++
+ def get_lateral_active(enabled: bool, active: bool, always_on_lateral_enabled: bool,
+                        steer_fault_temporary: bool, steer_fault_permanent: bool,
+                        standstill: bool, steer_at_standstill: bool, lateral_check: bool,
+diff --git a/selfdrive/controls/tests/test_drive_helpers.py b/selfdrive/controls/tests/test_drive_helpers.py
+index 8ec54a9bdb7b340b341cc21de50f9164e8583f54..c57f0a90b120b03a655d049b947a6cb16ba428d7 100644
+--- a/selfdrive/controls/tests/test_drive_helpers.py
++++ b/selfdrive/controls/tests/test_drive_helpers.py
+@@ -1,4 +1,31 @@
+-from openpilot.selfdrive.controls.lib.drive_helpers import get_kona_non_scc_lateral_active, get_lateral_active
++from types import SimpleNamespace
++
++import pytest
++from cereal import log
++
++from openpilot.selfdrive.controls.lib.drive_helpers import get_calibrated_lateral_active, get_kona_non_scc_lateral_active, get_lateral_active
++
++
++@pytest.mark.parametrize("normal_active,aol", [(False, True), (True, False), (True, True)])
++@pytest.mark.parametrize("status,healthy,expected", [
++  ("uncalibrated", True, False), ("invalid", True, False), ("recalibrating", True, False),
++  ("calibrated", False, False), ("calibrated", True, True),
++])
++def test_final_ev9_calibration_gate_blocks_stale_aol_and_normal_requests(normal_active, aol, status, healthy, expected):
++  class CalibrationSM(dict):
++    def all_checks(self, services):
++      assert services == ['liveCalibration']
++      return healthy
++
++  sm = CalibrationSM(liveCalibration=SimpleNamespace(calStatus=getattr(log.LiveCalibrationData.Status, status), calPerc=100))
++  request = get_lateral_active(normal_active, normal_active, aol, False, False, False, False, True)
++  assert request
++  assert get_calibrated_lateral_active(request, sm) is expected
++
++
++def test_final_calibration_gate_cannot_create_a_lateral_request():
++  sm = SimpleNamespace(all_checks=lambda _: True)
++  assert not get_calibrated_lateral_active(False, sm)
+ 
+ 
+ def test_get_lateral_active_requires_enabled_without_aol():
+diff --git a/selfdrive/controls/tests/test_ev9_curvature_limits.py b/selfdrive/controls/tests/test_ev9_curvature_limits.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..054adf1890311007d9d671de690b7a7a77f3f1cc
+--- /dev/null
++++ b/selfdrive/controls/tests/test_ev9_curvature_limits.py
+@@ -0,0 +1,48 @@
++import pytest
++
++from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
++from openpilot.common.realtime import DT_CTRL
++from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature, MAX_LATERAL_JERK
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('roll', [-0.1, 0.1])
++def test_ev9_low_speed_uses_symmetric_acceleration_without_roll(sign, roll):
++  result, limited = clip_curvature(10, sign * 0.1, sign * 0.1, roll, ev9_angle_limit_speed_mps=40 / 3.6)
++  assert result == pytest.approx(sign * 4.2 / 100)
++  assert limited
++
++
++@pytest.mark.parametrize('speed', [40 / 3.6, 40 / 3.6 + 0.001])
++def test_threshold_includes_boundary_and_restores_stock_above(speed):
++  result, limited = clip_curvature(speed, 0.1, 0.1, 0.05, ev9_angle_limit_speed_mps=40 / 3.6)
++  accel = 4.2 if speed <= 40 / 3.6 else 3.0 + 0.05 * ACCELERATION_DUE_TO_GRAVITY
++  assert result == pytest.approx(accel / speed**2)
++  assert limited
++
++
++def test_omitted_vehicle_threshold_keeps_stock_roll_and_curvature_caps():
++  assert clip_curvature(1, 0.5, 0.5, 0)[0] == 0.2
++  assert clip_curvature(1, 0.5, 0.5, 0, ev9_angle_limit_speed_mps=40 / 3.6) == (0.5, False)
++  result, limited = clip_curvature(10, 0.1, 0.1, 0.1)
++  assert result == pytest.approx((3 + 0.1 * ACCELERATION_DUE_TO_GRAVITY) / 100)
++  assert limited
++
++
++@pytest.mark.parametrize('threshold', [None, 40 / 3.6])
++def test_jerk_comfort_factor_remains_effective(threshold):
++  result, limited = clip_curvature(10, 0, 0.1, 0, jerk_factor=0.25, ev9_angle_limit_speed_mps=threshold)
++  assert result == pytest.approx(MAX_LATERAL_JERK * 0.25 / 100 * DT_CTRL)
++  assert not limited
++
++
++def test_ev9_acceleration_comfort_limits_growth_without_false_saturation():
++  result, limited = clip_curvature(10, 0.02, 0.022, 0, lat_accel_factor=0.5, ev9_angle_limit_speed_mps=40 / 3.6)
++  assert result == pytest.approx(0.0205)
++  assert not limited
++  result, limited = clip_curvature(10, 0.021, 0.025, 0, lat_accel_factor=0.5, ev9_angle_limit_speed_mps=40 / 3.6)
++  assert result == pytest.approx(0.021)
++  assert not limited
++  result, limited = clip_curvature(10, 0.03, 0.035, 0, lat_accel_factor=0.5, ev9_angle_limit_speed_mps=40 / 3.6)
++  assert result == 0.03  # Preserve an existing curve, prohibit further growth.
++  assert not limited
+diff --git a/selfdrive/controls/tests/test_navigation_desires.py b/selfdrive/controls/tests/test_navigation_desires.py
+index 13128651ed9982725eb70968398666aa86697ece..1b5ad4ceddaaaf053991cac74bea213999f9291d 100644
+--- a/selfdrive/controls/tests/test_navigation_desires.py
++++ b/selfdrive/controls/tests/test_navigation_desires.py
+@@ -1,6 +1,8 @@
+ from types import SimpleNamespace
+ 
++import pytest
+ from cereal import log
++from opendbc.car.hyundai.values import CAR
+ 
+ from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper, LaneChangeDirection, LaneChangeState
+ 
+@@ -521,6 +523,30 @@ def test_turn_desire_released_after_stop_completes():
+   assert helper.desire == log.Desire.turnRight
+ 
+ 
++@pytest.mark.parametrize("side", ["left", "right"])
++def test_ev9_signal_turn_survives_predicted_stop_with_aol_only(side):
++  helper = DesireHelper()
++  helper._update_nav_params = lambda: None
++  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=True, nav_desires_allowed=False)
++  cs = make_car_state(vEgo=5.0, cruiseState=SimpleNamespace(enabled=False), **{side + "Blinker": True})
++  expected = log.Desire.turnLeft if side == "left" else log.Desire.turnRight
++  for plan in (make_plan(redLight=True), make_plan(), make_plan(forcingStop=True), make_plan(stopSignConfirmed=True)):
++    helper.update(cs, True, 0.0, plan, toggles, controls_enabled=False)
++    assert helper.desire == expected
++
++
++@pytest.mark.parametrize("guard", ["inactive", "standstill", "speed", "disabled", "both_signals", "same_blindspot", "opposite_blindspot"])
++def test_ev9_signal_turn_keeps_readiness_and_blindspot_guards(guard):
++  helper = DesireHelper()
++  helper._update_nav_params = lambda: None
++  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=guard != "disabled", nav_desires_allowed=False)
++  cs = make_car_state(vEgo=10.0 if guard == "speed" else 5.0, rightBlinker=True,
++                      standstill=guard == "standstill", leftBlinker=guard == "both_signals",
++                      rightBlindspot=guard == "same_blindspot", leftBlindspot=guard == "opposite_blindspot")
++  helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=True), toggles)
++  assert helper.desire == (log.Desire.turnRight if guard == "opposite_blindspot" else log.Desire.none)
++
++
+ def test_nav_desires_disabled_leave_desire_unchanged():
+   helper = DesireHelper()
+   helper._update_nav_params = lambda: None
+diff --git a/selfdrive/controls/tests/test_steering_saturation_publish.py b/selfdrive/controls/tests/test_steering_saturation_publish.py
+index 0d7623483dacab3a092361bfe0523643a5aef62b..79ddf8b03700e02f7858badd633983d470f08a81 100644
+--- a/selfdrive/controls/tests/test_steering_saturation_publish.py
++++ b/selfdrive/controls/tests/test_steering_saturation_publish.py
+@@ -1,3 +1,4 @@
++import math
+ from types import SimpleNamespace
+ 
+ import cereal.messaging as messaging
+@@ -6,8 +7,15 @@ import pytest
+ from cereal import car, custom, log
+ from opendbc.car.tesla.interface import CarInterface
+ from opendbc.car.tesla.values import CAR, TeslaSafetyFlags
++from opendbc.car.hyundai.interface import CarInterface as HyundaiInterface
++from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
+ from openpilot.selfdrive.controls import controlsd
+ from openpilot.selfdrive.controls.controlsd import Controls
++from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
++from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
++from openpilot.selfdrive.selfdrived.events import Events
++from openpilot.selfdrive.selfdrived.selfdrived import SelfdriveD
++from openpilot.selfdrive.selfdrived.state import StateMachine
+ 
+ 
+ REQUESTED_ANGLE = -14.5
+@@ -160,3 +168,108 @@ def test_replay_genuine_limiter_error_remains_visible(monkeypatch):
+   controls = run_publish(monkeypatch, True, FRESH_TIME_NANOS, real_limit_error=3.0)
+ 
+   assert controls.steer_limited_by_safety
++
++
++@pytest.mark.parametrize("normal_active", [False, True])
++@pytest.mark.parametrize("angle_control", [False, True])
++def test_lateral_inactive_clears_previous_limit_feedback(normal_active, angle_control):
++  controls = make_controls(make_car_output(), make_starpilot_car_control(), FRESH_TIME_NANOS)
++  cp = controls.CP.as_builder()
++  if not angle_control:
++    cp.steerControlType = car.CarParams.SteerControlType.torque
++    cp.lateralTuning.init("torque")
++  controls.CP = cp.as_reader()
++  state = log.SelfdriveState.new_message()
++  state.active = normal_active
++  controls.sm.messages["selfdriveState"] = state.as_reader()
++  controls.steer_limited_by_safety = True
++  cc = car.CarControl.new_message()
++  cc.enabled = normal_active
++  cc.latActive = False
++  cc.actuators.steeringAngleDeg = REQUESTED_ANGLE
++  lac_log = (log.ControlsState.LateralAngleState if angle_control else log.ControlsState.LateralTorqueState).new_message()
++
++  controls.publish(cc, lac_log)
++
++  assert not controls.steer_limited_by_safety
++
++
++@pytest.mark.parametrize("sign", [-1, 1])
++@pytest.mark.parametrize("requested,output,measured,pressed,speed,active,expected", [
++  (120, 90, 90, False, 10, True, True),  # Controller command clipping during AOL.
++  (120, 120, 90, False, 10, True, True),  # EPS undertracking without command clipping.
++  (120, 120, 120, False, 10, True, False),
++  (89, 89, 45, False, 10, True, False),
++  (120, 90, 90, True, 10, True, False),
++  (120, 90, 90, False, 0.5, True, True),
++  (120, 90, 90, False, 10, False, False),
++])
++def test_ev9_aol_feedback_reaches_visible_audible_alert(sign, requested, output, measured, pressed, speed, active, expected):
++  cp = HyundaiInterface.get_non_essential_params(HYUNDAI_CAR.KIA_EV9)
++  car_output = make_car_output()
++  car_output.actuatorsOutput.steeringAngleDeg = sign * output
++  controls = make_controls(car_output, make_starpilot_car_control(), FRESH_TIME_NANOS)
++  controls.CP = cp.as_reader()
++  controls.sm.messages["selfdriveState"] = log.SelfdriveState.new_message().as_reader()
++  cs = car.CarState.new_message()
++  cs.canValid = True
++  cs.vEgo = speed
++  cs.steeringAngleDeg = sign * measured
++  cs.steeringPressed = pressed
++  controls.sm.messages["carState"] = cs.as_reader()
++  controls.LaC = LatControlAngle(cp, None, 0.01)
++  controls.curvature = sign * 0.015
++  controls.starpilot_toggles = SimpleNamespace(goat_scream_alert=False)
++  model = log.ModelDataV2.new_message()
++  model.action.desiredCurvature = sign * 0.04
++  controls.sm.messages["modelV2"] = model.as_reader()
++  cc = car.CarControl.new_message()
++  cc.enabled = False
++  cc.latActive = active
++  cc.actuators.steeringAngleDeg = sign * requested
++
++  selfdrive = SelfdriveD.__new__(SelfdriveD)
++  selfdrive.CP = cp.as_reader()
++  selfdrive.sm = controls.sm
++  selfdrive.starpilot_toggles = controls.starpilot_toggles
++  selfdrive.events = Events()
++  selfdrive.starpilot_events = Events(starpilot=True)
++  selfdrive.state_machine = StateMachine()
++  selfdrive.AM = AlertManager()
++  selfdrive.starpilot_AM = AlertManager()
++  selfdrive.personality = log.LongitudinalPersonality.standard
++  selfdrive.is_metric = True
++  selfdrive.last_steering_pressed_frame = 0
++  selfdrive.last_steer_saturated_alert_time = 0.0
++  vm = SimpleNamespace(get_steer_from_curvature=lambda *args: math.radians(sign * requested))
++
++  for frame in range(300, 400):
++    controls.sm.frame = frame
++    _, _, lac_log = controls.LaC.update(active, cs, vm, SimpleNamespace(roll=0.0, angleOffsetDeg=0.0),
++                                      controls.steer_limited_by_safety, 0.04, False, 0, None, model, controls.starpilot_toggles)
++    controls.publish(cc, lac_log)
++    controls.sm.messages["controlsState"] = controls.pm.sent["controlsState"].controlsState.as_reader()
++    selfdrive.events.clear()
++    selfdrive.starpilot_events.clear()
++    selfdrive.update_steering_saturation_events(cs)
++    selfdrive.enabled, selfdrive.active = selfdrive.state_machine.update(selfdrive.events, selfdrive.starpilot_events, active)
++    selfdrive.update_alerts(cs)
++
++  assert not selfdrive.enabled and not selfdrive.active
++  assert not controls.sm["selfdriveState"].active
++  assert (log.OnroadEvent.EventName.steerSaturated in selfdrive.events.names) is expected
++  if expected:
++    assert selfdrive.AM.current_alert.alert_text_1 == "Turn Exceeds Steering Limit"
++    assert selfdrive.AM.current_alert.audible_alert == log.SelfdriveState.AudibleAlert.promptRepeat
++  else:
++    assert selfdrive.AM.current_alert.alert_text_1 == ""
++    assert selfdrive.AM.current_alert.audible_alert == log.SelfdriveState.AudibleAlert.none
++
++  # Deactivation clears both the feedback and its timer, rather than carrying an old warning into the next session.
++  cc.latActive = False
++  _, _, lac_log = controls.LaC.update(False, cs, vm, SimpleNamespace(roll=0.0, angleOffsetDeg=0.0),
++                                    True, 0.04, True, 0, None, model, controls.starpilot_toggles)
++  controls.publish(cc, lac_log)
++  assert not controls.steer_limited_by_safety
++  assert not lac_log.saturated
++  assert controls.LaC.sat_time == 0
+diff --git a/starpilot/common/ev9_tuning.py b/starpilot/common/ev9_tuning.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..c364ea885bf0648502476cb4382694e869721134
+--- /dev/null
++++ b/starpilot/common/ev9_tuning.py
+@@ -0,0 +1,20 @@
++import math
++
++
++def read_ev9_tuning(params):
++  """Read off the realtime path; broadcast these values even before fingerprinting."""
++  settings = (
++    ("HkgTuningAngleCustomLimitMaxSpeedKph", "hkg_tuning_angle_custom_limit_max_speed_kph", 40, 10, 40),
++    ("HkgTuningAngleOverrideEffortPercent", "hkg_tuning_angle_override_effort_percent", 10, 10, 100),
++    ("HkgSharedAutonomyMode", "hkg_shared_autonomy_mode", 0, 0, 2),
++  )
++  values = {}
++  for key, attribute, default, minimum, maximum in settings:
++    try:
++      value = float(params.get(key))
++      if not math.isfinite(value):
++        value = default
++    except (TypeError, ValueError):
++      value = default
++    values[attribute] = int(max(minimum, min(value, maximum)))
++  return values
+diff --git a/starpilot/common/starpilot_variables.py b/starpilot/common/starpilot_variables.py
+index 6a0dc692a91e3d4b627acd7dac94137e74078d43..6bb525b554cc526882b04e9d68161c89bfa96211 100644
+--- a/starpilot/common/starpilot_variables.py
++++ b/starpilot/common/starpilot_variables.py
+@@ -29,6 +29,7 @@ from openpilot.common.params import Params
+ from openpilot.selfdrive.controls.lib.latcontrol_torque import KP
+ from openpilot.selfdrive.modeld.constants import ModelConstants
+ from openpilot.starpilot.common.model_versions import is_tinygrad_model_version
++from openpilot.starpilot.common.ev9_tuning import read_ev9_tuning
+ from openpilot.starpilot.common.lateral_delay import full_lateral_delay
+ from openpilot.starpilot.common.lateral_only_experimental import lateral_only_experimental_available
+ from openpilot.starpilot.common.longitudinal_mode import read_mode_values
+@@ -198,6 +199,7 @@ CANCEL_BUTTON_MAPPINGS = (
+ )
+ 
+ AOL_LKAS_MIGRATION_KEY = "AOLLKASMigratedToButtonControl"
++EV9_MAIN_AOL_MIGRATION_KEY = "EV9MainCruiseAOLMigrated"
+ FORD_LKAS_MIGRATION_KEY = "FordLKASButtonControlMigrated"
+ 
+ 
+@@ -362,9 +364,16 @@ def get_starpilot_toggles(sm=messaging.SubMaster(["starpilotPlan"]), *, read_per
+   # Only startup/state-management callers should synchronously read the backing
+   # files; doing so from every 100 Hz control loop can stall critical processes.
+   if read_persisted_force_params:
++    # Startup overrides must not mutate the cached broadcast used by realtime callers.
++    toggles = SimpleNamespace(**vars(toggles))
+     if not hasattr(get_starpilot_toggles, "_params"):
+       get_starpilot_toggles._params = Params(return_defaults=True)
+ 
++    # A forked card can inherit an older broadcast than the saved offroad selection.
++    car_model = normalize_legacy_car_model(get_starpilot_toggles._params.get("CarModel"))
++    toggles.force_fingerprint = get_starpilot_toggles._params.get_bool("ForceFingerprint") and bool(car_model) and car_model != "MOCK"
++    if toggles.force_fingerprint:
++      toggles.car_model = car_model
+     toggles.force_offroad = get_starpilot_toggles._params.get_bool("ForceOffroad")
+     toggles.force_onroad = get_starpilot_toggles._params.get_bool("ForceOnroad")
+     # Controller selection happens before the first live StarPilot broadcast. Do
+@@ -373,6 +382,7 @@ def get_starpilot_toggles(sm=messaging.SubMaster(["starpilotPlan"]), *, read_per
+     # Controller selection happens before the first live StarPilot broadcast.
+     # Realtime callers use the serialized value to avoid blocking reads.
+     toggles.rivian_angle_control = get_starpilot_toggles._params.get_bool("RivianAngleControl")
++    vars(toggles).update(read_ev9_tuning(get_starpilot_toggles._params))
+   return toggles
+ 
+ @cache
+@@ -444,6 +454,20 @@ def migrate_ford_lkas_button_default(car_make: str, params: Params | None = None
+   return True
+ 
+ 
++def migrate_ev9_main_cruise_aol(car_model: str, params: Params | None = None) -> bool:
++  params = params or Params(return_defaults=True)
++  if car_model != HYUNDAI_CAR.KIA_EV9 or params.get_bool(EV9_MAIN_AOL_MIGRATION_KEY):
++    return False
++
++  if (params.get_bool("AlwaysOnLateral") and
++      params.get_int("LKASButtonControl") == BUTTON_FUNCTIONS["AOL_TOGGLE"] and
++      params.get_int("MainCruiseButtonControl") == BUTTON_FUNCTIONS["NOTHING"]):
++    params.put_int("MainCruiseButtonControl", BUTTON_FUNCTIONS["AOL_TOGGLE"])
++
++  params.put_bool(EV9_MAIN_AOL_MIGRATION_KEY, True)
++  return True
++
++
+ class StarPilotVariables:
+   def __init__(self):
+     self.params = Params(return_defaults=True)
+@@ -636,6 +660,7 @@ class StarPilotVariables:
+     # CarParams uses this value to select the matching Panda safety configuration.
+     toggle.tesla_cooperative_steering = self.params.get_bool("TeslaCoopSteering")
+     toggle.rivian_angle_control = self.params.get_bool("RivianAngleControl")
++    vars(toggle).update(read_ev9_tuning(self.params))
+ 
+     fallback_platform = GM_CAR.CHEVROLET_BOLT_ACC_2022_2023 if HARDWARE.get_device_type() == "pc" else MOCK.MOCK
+ 
+@@ -663,6 +688,7 @@ class StarPilotVariables:
+     toggle.car_make = CP.brand
+     migrate_ford_lkas_button_default(toggle.car_make, self.params)
+     toggle.car_model = CP.carFingerprint
++    migrate_ev9_main_cruise_aol(toggle.car_model, self.params)
+     toggle.disable_openpilot_long = self.get_value("DisableOpenpilotLongitudinal", condition=not alpha_longitudinal)
+     friction = CP.lateralTuning.torque.friction
+     if not math.isfinite(friction):
+@@ -862,7 +888,9 @@ class StarPilotVariables:
+       toggle.always_on_lateral and toggle.lkas_allowed_for_aol and lkas_button_assigned_to_aol and not toggle.ford_lkas_aol_toggle
+     )
+     toggle.always_on_lateral_main = toggle.always_on_lateral and not prohibited_main_aol
+-    toggle.always_on_lateral_pause_speed = self.get_value("PauseAOLOnBrake", cast=float, condition=toggle.always_on_lateral)
++    toggle.always_on_lateral_pause_speed = self.get_value(
++      "PauseAOLOnBrake", cast=float, condition=toggle.always_on_lateral, conversion=CV.MPH_TO_MS,
++    )
+ 
+     main_cruise_button_control = self.get_button_function("MainCruiseButtonControl")
+     toggle.main_cruise_aol_toggle = _main_cruise_aol_allowed(main_cruise_button_control)
+diff --git a/starpilot/common/tests/test_ev9_tuning.py b/starpilot/common/tests/test_ev9_tuning.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7cd470c777a8775b29907e06e54e7ac986b8bcbd
+--- /dev/null
++++ b/starpilot/common/tests/test_ev9_tuning.py
+@@ -0,0 +1,51 @@
++import json
++from types import SimpleNamespace
++
++import pytest
++
++from opendbc.car.hyundai.ev9 import EV9AngleConfig
++from openpilot.starpilot.common.ev9_tuning import read_ev9_tuning
++
++
++def test_defaults_reach_native_ev9_controller():
++  values = read_ev9_tuning({})
++  config = EV9AngleConfig.from_toggles(SimpleNamespace(**json.loads(json.dumps(values))))
++  assert config.limit_speed_mps == pytest.approx(40 / 3.6)
++  assert config.override_effort_scale == 0.1
++  assert config.shared_autonomy_mode == 0
++
++
++@pytest.mark.parametrize('raw', [None, '', 'broken', 'nan', 'inf', '-inf'])
++def test_invalid_values_use_application_defaults(raw):
++  values = read_ev9_tuning(dict.fromkeys([
++    'HkgTuningAngleCustomLimitMaxSpeedKph', 'HkgTuningAngleOverrideEffortPercent', 'HkgSharedAutonomyMode',
++  ], raw))
++  assert values == read_ev9_tuning({})
++
++
++def test_persisted_values_override_stale_startup_broadcast(monkeypatch):
++  from openpilot.starpilot.common import starpilot_variables as spv
++
++  values = {'HkgTuningAngleCustomLimitMaxSpeedKph': b'25', 'HkgTuningAngleOverrideEffortPercent': '70', 'HkgSharedAutonomyMode': '2'}
++  monkeypatch.setattr(spv.get_starpilot_toggles, '_params', SimpleNamespace(get=values.get, get_bool=lambda _key: False), raising=False)
++  sm = {'starpilotPlan': SimpleNamespace(starpilotToggles='{"hkg_shared_autonomy_mode": 0}')}
++  config = EV9AngleConfig.from_toggles(spv.get_starpilot_toggles(sm, read_persisted_force_params=True))
++  assert config.limit_speed_mps == pytest.approx(25 / 3.6)
++  assert config.override_effort_scale == 0.7
++  assert config.shared_autonomy_mode == 2
++
++
++def test_tuning_bounds_match_supported_ui_range():
++  values = read_ev9_tuning({'HkgTuningAngleCustomLimitMaxSpeedKph': 100, 'HkgTuningAngleOverrideEffortPercent': -1, 'HkgSharedAutonomyMode': 9})
++  assert EV9AngleConfig.from_toggles(values) == EV9AngleConfig(40 / 3.6, 0.1, 2)
++
++
++def test_realtime_toggles_do_not_read_params(monkeypatch):
++  from openpilot.starpilot.common import starpilot_variables as spv
++
++  def unexpected_read(_key):
++    raise AssertionError('Realtime Params read')
++  monkeypatch.setattr(spv.get_starpilot_toggles, '_params', SimpleNamespace(get=unexpected_read, get_bool=unexpected_read), raising=False)
++  payload = json.dumps(read_ev9_tuning({'HkgTuningAngleCustomLimitMaxSpeedKph': '30'}))
++  config = EV9AngleConfig.from_toggles(spv.get_starpilot_toggles({'starpilotPlan': SimpleNamespace(starpilotToggles=payload)}))
++  assert config.limit_speed_mps == pytest.approx(30 / 3.6)
+diff --git a/starpilot/common/tests/test_starpilot_variables.py b/starpilot/common/tests/test_starpilot_variables.py
+index dd1d71e80bada04c785e53f18316b1c0b11af8b2..80a4820725d781e6a8f893660dae06f4fa28f93d 100644
+--- a/starpilot/common/tests/test_starpilot_variables.py
++++ b/starpilot/common/tests/test_starpilot_variables.py
+@@ -1,5 +1,7 @@
+ from types import SimpleNamespace
+ 
++import pytest
++
+ from openpilot.starpilot.common import starpilot_variables as spv
+ 
+ 
+@@ -62,7 +64,7 @@ def test_get_starpilot_toggles_uses_last_non_empty_broadcast(monkeypatch):
+ 
+ 
+ def test_get_starpilot_toggles_uses_persisted_force_torque_request(monkeypatch):
+-  params = SimpleNamespace(get_bool=lambda key: key == "ForceTorqueController")
++  params = SimpleNamespace(get_bool=lambda key: key == "ForceTorqueController", get=lambda _key: None)
+   monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
+ 
+   payload = '{"force_torque_controller": false}'
+@@ -90,7 +92,7 @@ def test_get_starpilot_toggles_realtime_path_does_not_read_persisted_force_param
+ 
+ 
+ def test_get_starpilot_toggles_uses_live_rivian_angle_request(monkeypatch):
+-  params = SimpleNamespace(get_bool=lambda key: key == "RivianAngleControl")
++  params = SimpleNamespace(get_bool=lambda key: key == "RivianAngleControl", get=lambda _key: None)
+   monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
+ 
+   payload = '{"rivian_angle_control": false}'
+@@ -102,6 +104,135 @@ def test_get_starpilot_toggles_uses_live_rivian_angle_request(monkeypatch):
+   assert toggles.rivian_angle_control is True
+ 
+ 
++@pytest.mark.parametrize("broadcast_force", [False, True])
++def test_startup_manual_ev9_selection_overrides_stale_broadcast_without_mutating_it(monkeypatch, broadcast_force):
++  import json
++
++  payload = json.dumps({"force_fingerprint": broadcast_force, "car_model": "MOCK", "force_torque_controller": False})
++  sm = {"starpilotPlan": SimpleNamespace(starpilotToggles=payload)}
++  params = SimpleNamespace(get_bool=lambda key: key == "ForceFingerprint", get=lambda key: "KIA_EV9" if key == "CarModel" else None)
++  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
++  monkeypatch.delattr(spv.get_starpilot_toggles, "_last_toggles_text", raising=False)
++  spv.process_starpilot_toggles.cache_clear()
++
++  broadcast = spv.get_starpilot_toggles(sm)
++  startup = spv.get_starpilot_toggles(sm, read_persisted_force_params=True)
++  assert startup.force_fingerprint is True
++  assert startup.car_model == "KIA_EV9"
++  assert startup is not broadcast
++
++  def unexpected_read(key):
++    raise AssertionError(f"unexpected realtime parameter read: {key}")
++
++  params.get = params.get_bool = unexpected_read
++  realtime = spv.get_starpilot_toggles(sm)
++  assert realtime.force_fingerprint is broadcast_force
++  assert realtime.car_model == "MOCK"
++
++
++@pytest.mark.parametrize("selected,force,expected_force,expected_model", [
++  ("KIA_EV9", False, False, "STALE_MODEL"),
++  (None, True, False, "STALE_MODEL"),
++  ("", True, False, "STALE_MODEL"),
++  ("MOCK", True, False, "STALE_MODEL"),
++  (b"MOCK", True, False, "STALE_MODEL"),
++  (b"KIA_EV9", True, True, "KIA_EV9"),
++  *[(old, True, True, new) for old, new in spv.LEGACY_CARMODEL_MIGRATIONS.items()],
++])
++def test_startup_fingerprint_selection_gating_and_normalization(monkeypatch, selected, force, expected_force, expected_model):
++  params = SimpleNamespace(get_bool=lambda key: force if key == "ForceFingerprint" else False,
++                           get=lambda key: selected if key == "CarModel" else None)
++  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
++  monkeypatch.delattr(spv.get_starpilot_toggles, "_last_toggles_text", raising=False)
++  payload = '{"force_fingerprint": true, "car_model": "STALE_MODEL"}'
++  toggles = spv.get_starpilot_toggles({"starpilotPlan": SimpleNamespace(starpilotToggles=payload)}, read_persisted_force_params=True)
++  assert toggles.force_fingerprint is expected_force
++  assert toggles.car_model == expected_model
++
++
++def test_startup_refreshes_persisted_selection_with_inherited_last_broadcast(monkeypatch):
++  values = {"CarModel": "KIA_EV9", "ForceFingerprint": True}
++  params = SimpleNamespace(get_bool=lambda key: bool(values.get(key, False)), get=lambda key: values.get(key))
++  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
++  payload = '{"force_fingerprint": false, "car_model": "MOCK"}'
++  monkeypatch.setattr(spv.get_starpilot_toggles, "_last_toggles_text", payload, raising=False)
++  # The default SubMaster remains empty in a forked card process. No update() is called.
++  assert not spv.get_starpilot_toggles.__defaults__[0]["starpilotPlan"].starpilotToggles
++  first = spv.get_starpilot_toggles(read_persisted_force_params=True)
++  assert first.force_fingerprint is True
++  assert first.car_model == "KIA_EV9"
++
++  values["CarModel"] = "HYUNDAI_IONIQ_6"
++  second = spv.get_starpilot_toggles(read_persisted_force_params=True)
++  assert second.force_fingerprint is True
++  assert second.car_model == "HYUNDAI_IONIQ_6"
++  assert first.car_model == "KIA_EV9"
++
++  values["ForceFingerprint"] = False
++  third = spv.get_starpilot_toggles(read_persisted_force_params=True)
++  assert third.force_fingerprint is False
++  assert third.car_model == "MOCK"
++  assert second.force_fingerprint is True
++
++
++def test_startup_without_broadcast_refreshes_cached_fallback_selection(monkeypatch):
++  fallback = SimpleNamespace(force_fingerprint=False, car_model="MOCK")
++  monkeypatch.setattr(spv, "StarPilotVariables", lambda: SimpleNamespace(starpilot_toggles=fallback))
++  monkeypatch.delattr(spv.get_starpilot_toggles, "_last_toggles_text", raising=False)
++  params = SimpleNamespace(get_bool=lambda key: key == "ForceFingerprint", get=lambda key: "KIA_EV9" if key == "CarModel" else None)
++  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
++  spv.process_starpilot_toggles.cache_clear()
++  try:
++    # Simulate the fallback object cached by manager before a child starts.
++    assert spv.process_starpilot_toggles("") is fallback
++    startup = spv.get_starpilot_toggles(read_persisted_force_params=True)
++    assert startup.force_fingerprint is True
++    assert startup.car_model == "KIA_EV9"
++    assert fallback.force_fingerprint is False
++    assert fallback.car_model == "MOCK"
++  finally:
++    spv.process_starpilot_toggles.cache_clear()
++
++
++@pytest.mark.parametrize("candidate", [None, "MOCK"])
++def test_startup_manual_ev9_selection_reaches_real_car_interface(monkeypatch, candidate):
++  from opendbc.car import car_helpers, gen_empty_fingerprint, structs
++  from opendbc.car.hyundai.values import CAR, HyundaiFlags, HyundaiSafetyFlags
++  from opendbc.car.vin import VIN_UNKNOWN
++
++  params = SimpleNamespace(get_bool=lambda key: key == "ForceFingerprint", get=lambda key: "KIA_EV9" if key == "CarModel" else None,
++                           put_nonblocking=lambda _key, _value: None)
++  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
++  payload = '{"force_fingerprint": false, "car_model": "MOCK", "disable_openpilot_long": false}'
++  toggles = spv.get_starpilot_toggles({"starpilotPlan": SimpleNamespace(starpilotToggles=payload)}, read_persisted_force_params=True)
++  monkeypatch.setattr(car_helpers, "fingerprint", lambda *_args: (
++    candidate, gen_empty_fingerprint(), VIN_UNKNOWN, [], structs.CarParams.FingerprintSource.can, True,
++  ))
++  interface = car_helpers.get_car(None, None, None, False, False, params, starpilot_toggles=toggles)
++  assert interface.CP.carFingerprint == CAR.KIA_EV9
++  assert interface.CP.steerControlType == structs.CarParams.SteerControlType.angle
++  assert interface.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING
++  safety_param = interface.CP.safetyConfigs[-1].safetyParam
++  for flag in (HyundaiSafetyFlags.CANFD_EV9, HyundaiSafetyFlags.CANFD_ANGLE_STEERING, HyundaiSafetyFlags.EV_GAS):
++    assert safety_param & flag
++  assert interface.CC.BASELINE_VM.l == pytest.approx(3.10)
++  assert interface.CC.BASELINE_VM.sR == pytest.approx(16.0)
++
++
++def test_startup_uses_compiled_ev9_defaults_without_saved_selection(monkeypatch, tmp_path):
++  params = spv.Params(str(tmp_path), return_defaults=True)
++  raw_params = spv.Params(str(tmp_path))
++  assert raw_params.get("ForceFingerprint") is None
++  assert raw_params.get("CarModel") is None
++  monkeypatch.setattr(spv.get_starpilot_toggles, "_params", params, raising=False)
++  payload = '{"force_fingerprint": false, "car_model": "MOCK"}'
++  toggles = spv.get_starpilot_toggles({"starpilotPlan": SimpleNamespace(starpilotToggles=payload)}, read_persisted_force_params=True)
++  assert toggles.force_fingerprint is True
++  assert toggles.car_model == "KIA_EV9"
++  assert raw_params.get("ForceFingerprint") is None
++  assert raw_params.get("CarModel") is None
++
++
+ class _FakeParams:
+   def __init__(self, floats=None, ints=None, bools=None):
+     self.floats = dict(floats or {})
+@@ -151,6 +282,24 @@ def test_ford_lkas_default_migrates_from_experimental_to_aol_toggle():
+   assert params.get_int("LKASButtonControl") == spv.BUTTON_FUNCTIONS["EXPERIMENTAL_MODE"]
+ 
+ 
++def test_ev9_main_aol_migration_is_once_only():
++  params = _FakeParams(ints={"LKASButtonControl": 9, "MainCruiseButtonControl": 0}, bools={"AlwaysOnLateral": True})
++  assert spv.migrate_ev9_main_cruise_aol(spv.HYUNDAI_CAR.KIA_EV9, params)
++  assert params.get_int("MainCruiseButtonControl") == 9
++  params.put_int("MainCruiseButtonControl", 0)
++  assert not spv.migrate_ev9_main_cruise_aol(spv.HYUNDAI_CAR.KIA_EV9, params)
++  assert params.get_int("MainCruiseButtonControl") == 0
++
++
++@pytest.mark.parametrize(("model", "aol", "lkas", "main"), [
++  ("OTHER_CAR", True, 9, 0), ("KIA_EV9", False, 9, 0), ("KIA_EV9", True, 5, 0), ("KIA_EV9", True, 9, 10),
++])
++def test_ev9_main_aol_migration_preserves_other_choices(model, aol, lkas, main):
++  params = _FakeParams(ints={"LKASButtonControl": lkas, "MainCruiseButtonControl": main}, bools={"AlwaysOnLateral": aol})
++  spv.migrate_ev9_main_cruise_aol(model, params)
++  assert params.get_int("MainCruiseButtonControl") == main
++
++
+ def test_ford_lkas_default_migration_preserves_custom_mapping():
+   params = _FakeParams(ints={"LKASButtonControl": spv.BUTTON_FUNCTIONS["BOOKMARK"]})
+ 
+@@ -263,6 +412,23 @@ def test_missing_bounded_value_uses_explicit_default():
+   assert value == 1.0
+ 
+ 
++@pytest.mark.parametrize("speed_mph", [0, 10, 100])
++def test_aol_brake_slider_value_round_trips_and_converts_to_mps(monkeypatch, tmp_path, speed_mph):
++  params_cls = spv.Params
++
++  def isolated_params(_path=None, memory=False, return_defaults=False):
++    return params_cls(str(tmp_path / ("memory" if memory else "params")), return_defaults=return_defaults)
++
++  monkeypatch.setattr(spv, "Params", isolated_params)
++  params = isolated_params()
++  params.put_bool("AlwaysOnLateral", True)
++  params.put_int("PauseAOLOnBrake", speed_mph)
++  assert params.get_int("PauseAOLOnBrake") == speed_mph
++
++  variables = spv.StarPilotVariables()
++  assert variables.starpilot_toggles.always_on_lateral_pause_speed == pytest.approx(speed_mph * spv.CV.MPH_TO_MS)
++
++
+ def test_disabled_conditional_experimental_toggles_are_off(monkeypatch, tmp_path):
+   params_cls = spv.Params
+ 
+@@ -310,11 +476,57 @@ def test_big_ui_exposes_developer_toggles_without_persisting_developer_ui(monkey
+ 
+ 
+ def test_device_shutdown_hours_convert_directly_to_seconds():
++  assert spv.device_shutdown_seconds(1) == 60 * 60
+   assert spv.device_shutdown_seconds(6) == 6 * 60 * 60
+   assert spv.device_shutdown_seconds(0) == 60 * 60
+   assert spv.device_shutdown_seconds(31) == 30 * 60 * 60
+ 
+ 
++def test_compiled_terms_and_shutdown_defaults_preserve_saved_preferences(tmp_path):
++  from openpilot.system.version import terms_version
++
++  params = spv.Params(str(tmp_path), return_defaults=True)
++  raw_params = spv.Params(str(tmp_path))
++  assert raw_params.get("HasAcceptedTerms") is None
++  assert raw_params.get("DeviceShutdown") is None
++  assert params.get("HasAcceptedTerms") == terms_version == "2"
++  assert params.get_int("DeviceShutdown") == spv.DEVICE_SHUTDOWN_DEFAULT_HOURS == 2
++  assert spv.device_shutdown_seconds(params.get_int("DeviceShutdown")) == 2 * 3600
++
++  raw_params.put("HasAcceptedTerms", "0")
++  raw_params.put_int("DeviceShutdown", 6)
++  assert params.get("HasAcceptedTerms") == "0"
++  assert spv.device_shutdown_seconds(params.get_int("DeviceShutdown")) == 6 * 3600
++
++
++@pytest.mark.parametrize("metric", [False, True])
++@pytest.mark.parametrize("saved_speed", [None, 25])
++def test_lane_change_threshold_stays_in_mph_when_display_units_change(monkeypatch, tmp_path, metric, saved_speed):
++  from openpilot.common.constants import CV
++
++  params_cls = spv.Params
++
++  def isolated_params(_path=None, memory=False, return_defaults=False):
++    return params_cls(str(tmp_path / ("memory" if memory else "params")), return_defaults=return_defaults)
++
++  monkeypatch.setattr(spv, "Params", isolated_params)
++  monkeypatch.setattr(spv, "HD_PATH", tmp_path / "use_HD")
++  monkeypatch.setattr(spv, "KONIK_PATH", tmp_path / "use_konik")
++  params = isolated_params()
++  params.put_bool("IsMetric", metric)
++  params.put_bool("LaneChanges", True)
++  if saved_speed is not None:
++    params.put_float("MinimumLaneChangeSpeed", saved_speed)
++  variables = spv.StarPilotVariables()
++
++  for display_metric in (metric, not metric, metric):
++    params.put_bool("IsMetric", display_metric)
++    variables.update()
++    assert variables.starpilot_toggles.is_metric is display_metric
++    assert variables.starpilot_toggles.minimum_lane_change_speed == pytest.approx((saved_speed or 20) * CV.MPH_TO_MS)
++    assert variables.starpilot_toggles.device_shutdown_time == 2 * 3600
++
++
+ def test_favorite_button_flags_map_to_three_slots():
+   toggle = SimpleNamespace()
+ 
+diff --git a/starpilot/controls/starpilot_card.py b/starpilot/controls/starpilot_card.py
+index d2247d89ce0ef549777875bb9efc02eb2efa8301..a0590413cc72fba00cd6c2222d28ae7e64ff32d2 100644
+--- a/starpilot/controls/starpilot_card.py
++++ b/starpilot/controls/starpilot_card.py
+@@ -5,6 +5,7 @@ from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR, HyundaiFlags
+ from opendbc.safety import ALTERNATIVE_EXPERIENCE
+ from openpilot.common.params import Params
+ from openpilot.selfdrive.car.cruise import CRUISE_LONG_PRESS, ButtonType
++from openpilot.selfdrive.controls.lib.drive_helpers import lateral_calibration_ready
+ from openpilot.selfdrive.selfdrived.events import ET
+ 
+ from openpilot.starpilot.common.experimental_state import (
+@@ -71,6 +72,7 @@ class StarPilotCard:
+     self.hyundai_aol_ready = False
+     self.g70_main_cruise_aol_pending = False
+     self.g70_main_cruise_aol_pending_frames = 0
++    self.ev9_main_cruise_on = False
+     self.prev_cruise_available = None
+     self.prev_active = False
+     self.prev_cruise_enabled = False
+@@ -104,6 +106,9 @@ class StarPilotCard:
+       self.always_on_lateral_supported and
+       bool(FPCP.alternativeExperience & ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL)
+     )
++    self.prev_always_on_lateral = self.always_on_lateral_set
++    self.aol_rearm_required = False
++    self.aol_calibration_ready = False
+     self.long_press_threshold = CRUISE_LONG_PRESS
+     self.very_long_press_threshold = CRUISE_LONG_PRESS * 5
+ 
+@@ -159,10 +164,11 @@ class StarPilotCard:
+     return max(0, current - previous)
+ 
+   def _toggle_controller_aol(self, carState, starpilot_toggles):
+-    if not self.always_on_lateral_supported or not getattr(starpilot_toggles, "always_on_lateral", False):
++    if not self.always_on_lateral_supported or not self.aol_calibration_ready or not getattr(starpilot_toggles, "always_on_lateral", False):
+       return False
+     if self.hyundai_aol_needs_engagement:
+       self.hyundai_aol_ready = True
++    self.aol_rearm_required = False
+     self.always_on_lateral_allowed = not self.always_on_lateral_allowed
+     if carState.cruiseState.enabled or self.pause_lateral:
+       self.pause_lateral = not self.always_on_lateral_allowed
+@@ -214,6 +220,26 @@ class StarPilotCard:
+       self.params.put_bool_nonblocking("ExperimentalMode", not sm["selfdriveState"].experimentalMode)
+ 
+   def update(self, carState, starpilotCarState, sm, starpilot_toggles):
++    # The safety configuration is fixed at startup, but switching AOL off must
++    # immediately revoke the software request and discard the old session.
++    live_aol = starpilot_toggles.always_on_lateral
++    self.aol_calibration_ready = lateral_calibration_ready(sm)
++    aol_ready = live_aol and self.aol_calibration_ready
++    if not self.aol_calibration_ready:
++      # Refuse an incomplete/invalid calibration and discard any prior request.
++      # Calibration finishing later must not silently engage steering.
++      self.always_on_lateral_allowed = False
++      self.aol_rearm_required = True
++      self.hyundai_aol_ready = False
++      self.g70_main_cruise_aol_pending = False
++      self.g70_main_cruise_aol_pending_frames = 0
++    if not live_aol:
++      self.always_on_lateral_allowed = False
++      self.aol_rearm_required = True
++      if self.prev_always_on_lateral:
++        self.pause_lateral = False
++        self.hyundai_aol_ready = False
++    self.prev_always_on_lateral = live_aol
+     self.switchback_mode_enabled = self.params_memory.get_bool("SwitchbackModeEnabled")
+     self._handle_favorite_traffic_mode_action(sm)
+ 
+@@ -249,12 +275,25 @@ class StarPilotCard:
+       ]
+ 
+     button_event_types = [self._button_type_raw(be) for be in carState.buttonEvents]
++    ev9 = getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.KIA_EV9
++    if ev9 and any(be_type == ButtonType.mainCruise and be.pressed
++                   for be, be_type in zip(carState.buttonEvents, button_event_types, strict=False)):
++      # Track the physical main-button request even when AOL is unavailable or
++      # calibration rejects it. LKAS and delayed stock SCC must not change its phase.
++      # Stock EV9 cruise availability is only a fault gate, not the main ON/OFF state.
++      self.ev9_main_cruise_on = not self.ev9_main_cruise_on
+     button_aol_supported = self.always_on_lateral_supported and (
+       self.CP.brand == "hyundai" or starpilot_toggles.lkas_allowed_for_aol
+     )
+     if getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.HYUNDAI_SONATA_HYBRID:
+       button_aol_supported = self.always_on_lateral_supported and bool(starpilot_toggles.lkas_allowed_for_aol)
+     button_managed_aol = starpilot_toggles.always_on_lateral_lkas or (button_aol_supported and starpilot_toggles.main_cruise_aol_toggle)
++    ev9_main_aol_managed = ev9 and starpilot_toggles.main_cruise_aol_toggle
++    ev9_main_aol_op_long = ev9_main_aol_managed and getattr(self.CP, "openpilotLongitudinalControl", False)
++    if ev9_main_aol_managed and live_aol and not self.aol_calibration_ready:
++      # A rejected request must not return through a delayed stock-SCC enable
++      # after calibration finishes. A fresh accepted steering toggle clears this.
++      self.pause_lateral = True
+     g70_main_cruise_aol_managed = (
+       getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.GENESIS_G70_2020
+       and starpilot_toggles.main_cruise_aol_toggle
+@@ -277,14 +316,17 @@ class StarPilotCard:
+ 
+     if button_aol_supported:
+       for be, be_type in zip(carState.buttonEvents, button_event_types, strict=False):
+-        if be_type == ButtonType.lkas and be.pressed and starpilot_toggles.always_on_lateral_lkas:
++        if be_type == ButtonType.lkas and be.pressed and aol_ready and starpilot_toggles.always_on_lateral_lkas:
++          self.aol_rearm_required = False
+           if hyundai_aol_needs_engagement:
+             self.hyundai_aol_ready = True
+           self.always_on_lateral_allowed = not self.always_on_lateral_allowed
+-          if carState.cruiseState.enabled or self.pause_lateral:
++          if carState.cruiseState.enabled or self.pause_lateral or ev9_main_aol_op_long:
++            # Preserve an explicit EV9 OP-long steering OFF through a later SET/RES.
+             self.pause_lateral = not self.always_on_lateral_allowed
+         elif be_type == ButtonType.mainCruise and be.pressed:
+-          if starpilot_toggles.main_cruise_aol_toggle:
++          if aol_ready and starpilot_toggles.main_cruise_aol_toggle:
++            self.aol_rearm_required = False
+             if hyundai_aol_needs_engagement:
+               self.hyundai_aol_ready = True
+             if g70_main_cruise_aol_managed:
+@@ -293,11 +335,25 @@ class StarPilotCard:
+               self.g70_main_cruise_aol_pending = True
+               self.g70_main_cruise_aol_pending_frames = 0
+             else:
+-              self.always_on_lateral_allowed = not self.always_on_lateral_allowed
++              if ev9_main_aol_op_long:
++                # CarState already applied this press to software cruise readiness.
++                # Match it so independent LKAS presses cannot invert the main action.
++                self.always_on_lateral_allowed = carState.cruiseState.available
++              elif ev9_main_aol_managed:
++                self.always_on_lateral_allowed = self.ev9_main_cruise_on and carState.cruiseState.available
++              else:
++                self.always_on_lateral_allowed = not self.always_on_lateral_allowed
++              if ev9_main_aol_managed:
++                # Explicit OFF must also block normal lateral on later engagement,
++                # whether from delayed stock SCC or OP-long SET/RES.
++                self.pause_lateral = not self.always_on_lateral_allowed
+           elif starpilot_toggles.main_cruise_slc_adopt and starpilot_toggles.speed_limit_controller:
+             self.params_memory.put_bool("SLCAdoptSpeedLimit", True)
+ 
+     cruise_available_changed = self.prev_cruise_available is not None and carState.cruiseState.available != self.prev_cruise_available
++    fresh_engagement = sm["selfdriveState"].active and not self.prev_active
++    if aol_ready and (fresh_engagement or (cruise_available_changed and carState.cruiseState.available)):
++      self.aol_rearm_required = False
+     ford_lateral_session_started = self.CP.brand == "ford" and (
+       (cruise_available_changed and carState.cruiseState.available) or
+       (carState.cruiseState.enabled and not self.prev_cruise_enabled)
+@@ -316,7 +372,7 @@ class StarPilotCard:
+           self.g70_main_cruise_aol_pending = False
+           self.g70_main_cruise_aol_pending_frames = 0
+ 
+-    if starpilot_toggles.always_on_lateral_main and not button_managed_aol:
++    if aol_ready and starpilot_toggles.always_on_lateral_main and not button_managed_aol and not self.aol_rearm_required:
+       car_fingerprint = getattr(self.CP, "carFingerprint", None)
+       pcm_cruise = getattr(self.CP, "pcmCruise", False)
+       if pacifica_hybrid_aol_requires_set_press(car_fingerprint, pcm_cruise):
+@@ -331,7 +387,7 @@ class StarPilotCard:
+ 
+     # On rising edge of engagement (SET press enabling lat+long), auto-enable AOL
+     # so that lateral persists when braking disengages longitudinal
+-    if sm["selfdriveState"].active and not self.prev_active and self.always_on_lateral_set and starpilot_toggles.always_on_lateral_lkas:
++    if aol_ready and fresh_engagement and self.always_on_lateral_set and starpilot_toggles.always_on_lateral_lkas and not ev9_main_aol_managed:
+       if hyundai_aol_needs_engagement:
+         self.hyundai_aol_ready = True
+       self.always_on_lateral_allowed = True
+@@ -340,14 +396,14 @@ class StarPilotCard:
+     self.prev_cruise_enabled = carState.cruiseState.enabled
+     self.prev_cruise_available = carState.cruiseState.available
+ 
+-    if not self.always_on_lateral_supported:
++    if not self.always_on_lateral_supported or not aol_ready:
+       self.always_on_lateral_allowed = False
+ 
+-    self.always_on_lateral_enabled = self.always_on_lateral_allowed and self.always_on_lateral_set
++    self.always_on_lateral_enabled = live_aol and self.always_on_lateral_allowed and self.always_on_lateral_set
+     self.always_on_lateral_enabled &= carState.gearShifter not in NON_DRIVING_GEARS
+     self.always_on_lateral_enabled &= not hyundai_aol_needs_engagement or self.hyundai_aol_ready
+     self.always_on_lateral_enabled &= sm["starpilotPlan"].lateralCheck
+-    self.always_on_lateral_enabled &= sm["liveCalibration"].calPerc >= 1
++    self.always_on_lateral_enabled &= self.aol_calibration_ready
+     self.always_on_lateral_enabled &= not aol_blocked_by_immediate_disable(
+       sm["selfdriveState"].alertType, sm["starpilotSelfdriveState"].alertType,
+     )
+diff --git a/starpilot/controls/tests/test_starpilot_card.py b/starpilot/controls/tests/test_starpilot_card.py
+index c1b81c92c7595bd0b9d347960e382f7a42aebb6e..59ead33925976405c9941c15a66fc9e854491fb3 100644
+--- a/starpilot/controls/tests/test_starpilot_card.py
++++ b/starpilot/controls/tests/test_starpilot_card.py
+@@ -1,6 +1,7 @@
+ from types import SimpleNamespace
+ 
+ import pytest
++from cereal import log
+ 
+ from opendbc.car.chrysler.values import CAR as CHRYSLER_CAR
+ 
+@@ -52,6 +53,12 @@ class FakeSM(dict):
+   def __init__(self, *args, updated=None, **kwargs):
+     super().__init__(*args, **kwargs)
+     self.updated = updated or {}
++    self.valid = {"liveCalibration": True}
++    self.alive = {"liveCalibration": True}
++    self.freq_ok = {"liveCalibration": True}
++
++  def all_checks(self, services):
++    return all(self.valid[s] and self.alive[s] and self.freq_ok[s] for s in services)
+ 
+ 
+ def make_sm():
+@@ -60,7 +67,7 @@ def make_sm():
+     "selfdriveState": SimpleNamespace(active=False, alertType=[], experimentalMode=False),
+     "starpilotSelfdriveState": SimpleNamespace(alertType=[]),
+     "starpilotPlan": SimpleNamespace(lateralCheck=True),
+-    "liveCalibration": SimpleNamespace(calPerc=100),
++    "liveCalibration": SimpleNamespace(calPerc=100, calStatus=log.LiveCalibrationData.Status.calibrated),
+   }, updated={"starpilotPlan": False})
+ 
+ 
+@@ -279,6 +286,439 @@ def make_wrapped_button_event(button_type, pressed):
+   return SimpleNamespace(type=SimpleNamespace(raw=int(button_type)), pressed=pressed)
+ 
+ 
++@pytest.mark.parametrize("status", ["uncalibrated", "recalibrating", "invalid"])
++@pytest.mark.parametrize("percent", [0, 1, 99, 100])
++@pytest.mark.parametrize("source", ["lkas", "main", "controller", "cruise_available"])
++def test_aol_rejects_uncalibrated_requests_without_delayed_activation(monkeypatch, tmp_path, status, percent, source):
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  card = spc.StarPilotCard(
++    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9),
++    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
++  )
++  sm = make_sm()
++  sm["liveCalibration"].calPerc = percent
++  sm["liveCalibration"].calStatus = getattr(log.LiveCalibrationData.Status, status)
++  cs = make_car_state(available=True)
++  out = SimpleNamespace(distancePressed=False)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=source == "lkas",
++                         main_cruise_aol_toggle=source == "main", always_on_lateral_main=source == "cruise_available")
++
++  def request():
++    if source in ("lkas", "main"):
++      button = spc.ButtonType.lkas if source == "lkas" else spc.ButtonType.mainCruise
++      cs.buttonEvents = [SimpleNamespace(type=button, pressed=True)]
++    elif source == "controller":
++      key = spc.CONTROLLER_ACTION_COUNTERS[spc.CONTROLLER_ACTION_TOGGLE_AOL]
++      card.params_memory.put_int(key, card.params_memory.get_int(key) + 1)
++
++  request()
++  result = card.update(cs, out, sm, toggles)
++  assert not result.alwaysOnLateralAllowed
++  assert not result.alwaysOnLateralEnabled
++  cs.buttonEvents = []
++  sm["liveCalibration"].calPerc = 100
++  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
++  result = card.update(cs, out, sm, toggles)
++  assert not result.alwaysOnLateralAllowed
++  assert not result.alwaysOnLateralEnabled
++
++  if source == "cruise_available":
++    cs.cruiseState.available = False
++    card.update(cs, out, sm, toggles)
++    cs.cruiseState.available = True
++  else:
++    if source == "main":
++      # The rejected ON still counts: cycle main OFF before requesting ON again.
++      request()
++      result = card.update(cs, out, sm, toggles)
++      assert not result.alwaysOnLateralAllowed
++      assert result.pauseLateral
++      cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=False)]
++      card.update(cs, out, sm, toggles)
++    request()
++  card.update(cs, out, sm, toggles)
++  cs.buttonEvents = []
++  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
++
++
++@pytest.mark.parametrize("status", ["uncalibrated", "recalibrating", "invalid"])
++def test_aol_calibration_loss_discards_enabled_session(monkeypatch, tmp_path, status):
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
++                           SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
++  sm = make_sm()
++  cs = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
++  out = SimpleNamespace(distancePressed=False)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True)
++  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
++  cs.buttonEvents = []
++  sm["liveCalibration"].calStatus = getattr(log.LiveCalibrationData.Status, status)
++  result = card.update(cs, out, sm, toggles)
++  assert not result.alwaysOnLateralAllowed
++  assert not result.alwaysOnLateralEnabled
++  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
++  assert not card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
++
++
++@pytest.mark.parametrize("health_field", ["valid", "alive", "freq_ok"])
++def test_aol_rejects_unhealthy_calibration_service_and_does_not_resume_automatically(monkeypatch, tmp_path, health_field):
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
++                           SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
++  sm = make_sm()
++  cs = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
++  out = SimpleNamespace(distancePressed=False)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True)
++  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
++  cs.buttonEvents = []
++  getattr(sm, health_field)["liveCalibration"] = False
++  result = card.update(cs, out, sm, toggles)
++  assert not result.alwaysOnLateralAllowed
++  assert not result.alwaysOnLateralEnabled
++  getattr(sm, health_field)["liveCalibration"] = True
++  assert not card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
++
++
++def test_ev9_rejected_main_request_stays_paused_through_delayed_pcm_enable(monkeypatch, tmp_path):
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  card = spc.StarPilotCard(
++    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9),
++    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
++  )
++  sm = make_sm()
++  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.uncalibrated
++  cs = make_car_state(available=True, button_events=[SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)])
++  out = SimpleNamespace(distancePressed=False)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, main_cruise_aol_toggle=True)
++  result = card.update(cs, out, sm, toggles)
++  assert result.pauseLateral
++  assert not result.alwaysOnLateralAllowed
++
++  cs.buttonEvents = []
++  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
++  cs.cruiseState.enabled = True
++  sm["selfdriveState"].active = True
++  result = card.update(cs, out, sm, toggles)
++  assert result.pauseLateral
++  assert not result.alwaysOnLateralAllowed
++  assert not result.alwaysOnLateralEnabled
++
++  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
++  result = card.update(cs, out, sm, toggles)
++  assert not result.alwaysOnLateralAllowed  # Second physical press turns main OFF.
++  assert result.pauseLateral
++  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=False)]
++  assert not card.update(cs, out, sm, toggles).alwaysOnLateralAllowed
++  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
++  result = card.update(cs, out, sm, toggles)
++  assert result.alwaysOnLateralAllowed
++  assert not result.pauseLateral
++
++
++@pytest.mark.parametrize("main_managed", [False, True])
++def test_aol_live_disable_clears_session_and_requires_fresh_enable(monkeypatch, tmp_path, main_managed):
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  card = spc.StarPilotCard(
++    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
++    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
++  )
++  sm = make_sm()
++  cs = make_car_state(available=True)
++  out = SimpleNamespace(distancePressed=False)
++  on = make_toggles(always_on_lateral=True, always_on_lateral_lkas=not main_managed,
++                    always_on_lateral_main=main_managed)
++  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)] if not main_managed else []
++  assert card.update(cs, out, sm, on).alwaysOnLateralEnabled
++  card.pause_lateral = True
++  cs.buttonEvents = []
++  off = make_toggles()
++  result = card.update(cs, out, sm, off)
++  assert not result.alwaysOnLateralAllowed
++  assert not result.alwaysOnLateralEnabled
++  assert not result.pauseLateral
++  assert card.always_on_lateral_set  # Startup safety permission is not rewritten.
++
++  # A live switch back on cannot restore the discarded request from cruise main.
++  assert not card.update(cs, out, sm, on).alwaysOnLateralEnabled
++  if main_managed:
++    cs.cruiseState.available = False
++    card.update(cs, out, sm, on)
++    cs.cruiseState.available = True
++  else:
++    cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)]
++  assert card.update(cs, out, sm, on).alwaysOnLateralEnabled
++
++
++def test_aol_live_enable_cannot_bypass_startup_safety_permission(monkeypatch, tmp_path):
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
++                           SimpleNamespace(alternativeExperience=0))
++  cs = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
++  result = card.update(cs, SimpleNamespace(distancePressed=False), make_sm(),
++                       make_toggles(always_on_lateral=True, always_on_lateral_lkas=True))
++  assert not result.alwaysOnLateralEnabled
++
++
++@pytest.mark.parametrize(("threshold", "speed", "expected"), [(0.0, 0.5, True), (10 * 0.44704, 4.0, False), (10 * 0.44704, 5.0, True)])
++def test_aol_brake_pause_uses_speed_threshold_without_clearing_session(monkeypatch, tmp_path, threshold, speed, expected):
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD),
++                           SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
++  cs = make_car_state(brake_pressed=True, button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
++  cs.vEgo = speed
++  result = card.update(cs, SimpleNamespace(distancePressed=False), make_sm(),
++                       make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, always_on_lateral_pause_speed=threshold))
++  assert result.alwaysOnLateralAllowed
++  assert result.alwaysOnLateralEnabled is expected
++
++
++def test_ev9_main_aol_off_wins_over_delayed_stock_cruise_engagement(monkeypatch, tmp_path):
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  card = spc.StarPilotCard(
++    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9),
++    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
++  )
++  sm = make_sm()
++  out = SimpleNamespace(distancePressed=False)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, main_cruise_aol_toggle=True)
++  cs = make_car_state(available=True, brake_pressed=True, button_events=[SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)])
++  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
++  cs.buttonEvents = []
++  cs.brakePressed = True
++  assert card.update(cs, out, sm, toggles).alwaysOnLateralEnabled
++
++  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
++  result = card.update(cs, out, sm, toggles)
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  cs.buttonEvents = []
++  cs.cruiseState.enabled = True
++  sm["selfdriveState"].active = True
++  result = card.update(cs, out, sm, toggles)
++  assert not result.alwaysOnLateralAllowed
++  assert not result.alwaysOnLateralEnabled
++  assert result.pauseLateral
++
++  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
++  result = card.update(cs, out, sm, toggles)
++  assert result.alwaysOnLateralAllowed
++  assert not result.pauseLateral
++
++
++@pytest.mark.parametrize("disruption", ["calibration_loss", "fault", "live_disabled", "assignment_disabled", "lkas"])
++@pytest.mark.parametrize("stock_enabled", [False, True])
++def test_ev9_stock_main_phase_survives_independent_aol_changes(monkeypatch, tmp_path, disruption, stock_enabled):
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  card = spc.StarPilotCard(
++    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9,
++                    openpilotLongitudinalControl=False),
++    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
++  )
++  cs, sm = make_car_state(available=disruption != "fault"), make_sm()
++  out = SimpleNamespace(distancePressed=False)
++  toggles = make_toggles(always_on_lateral=disruption != "live_disabled", always_on_lateral_lkas=True,
++                         main_cruise_aol_toggle=disruption != "assignment_disabled")
++
++  def step(button=None, pressed=True):
++    cs.buttonEvents = [] if button is None else [make_wrapped_button_event(button, pressed)]
++    return card.update(cs, out, sm, toggles)
++
++  result = step(spc.ButtonType.mainCruise)
++  assert result.alwaysOnLateralAllowed is (disruption in ("calibration_loss", "lkas"))
++  step(spc.ButtonType.mainCruise, pressed=False)
++  if disruption == "calibration_loss":
++    sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.invalid
++    assert not step().alwaysOnLateralAllowed
++    sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
++  elif disruption == "lkas":
++    assert not step(spc.ButtonType.lkas).alwaysOnLateralAllowed
++    step(spc.ButtonType.lkas, pressed=False)
++  cs.cruiseState.available = True
++  toggles.always_on_lateral = True
++  toggles.main_cruise_aol_toggle = True
++  assert not step().alwaysOnLateralAllowed
++
++  # OFF follows the physical main phase even though AOL is already off.
++  result = step(spc.ButtonType.mainCruise)
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  step(spc.ButtonType.mainCruise, pressed=False)
++  # Stock SCC may appear late or remain invisible throughout fallback operation.
++  cs.cruiseState.enabled = stock_enabled
++  sm["selfdriveState"].active = stock_enabled
++  result = step()
++  assert not result.alwaysOnLateralAllowed
++  assert not result.alwaysOnLateralEnabled
++  assert result.pauseLateral
++
++  result = step(spc.ButtonType.mainCruise)
++  assert result.alwaysOnLateralAllowed
++  assert result.alwaysOnLateralEnabled
++  assert not result.pauseLateral
++  assert step(spc.ButtonType.mainCruise, pressed=False).alwaysOnLateralEnabled
++  cs.cruiseState.enabled = False
++  cs.brakePressed = True
++  assert step(spc.ButtonType.cancel).alwaysOnLateralEnabled
++  assert step(spc.ButtonType.cancel, pressed=False).alwaysOnLateralEnabled
++
++
++@pytest.fixture
++def ev9_op_long_buttons(monkeypatch, tmp_path):
++  from opendbc.car import structs
++  from opendbc.car.hyundai.carstate import CarState
++  from opendbc.car.interfaces import CarStateBase
++  from openpilot.selfdrive.car.ev9_cruise_buttons import EV9CruiseButtons
++
++  monkeypatch.setattr(spc, "Params", FakeParams)
++  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
++  cp = SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9,
++                       openpilotLongitudinalControl=True, pcmCruise=False)
++  card = spc.StarPilotCard(cp, SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
++  hyundai_state = SimpleNamespace(CP=cp, main_cruise_on=False)
++  cs, sm = make_car_state(), make_sm()
++  cs.canValid, cs.canTimeout, cs.regenBraking, cs.steeringDisengage = True, False, False, False
++  buttons = EV9CruiseButtons()
++  out = SimpleNamespace(distancePressed=False)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, main_cruise_aol_toggle=True)
++
++  def step(button_type=None, pressed=True, available=True):
++    cs.buttonEvents = [] if button_type is None else [structs.CarState.ButtonEvent(type=button_type, pressed=pressed)]
++    # Match card.py ordering: CarState applies the press before StarPilotCard.
++    cs.cruiseState.available = available
++    if cp.openpilotLongitudinalControl:
++      cs.cruiseState.available = CarState.update_main_cruise(hyundai_state, cs)
++    cs.buttonEnable = CarStateBase.update_button_enable(hyundai_state, cs.buttonEvents)
++    buttons.update(cp, cs, enabled=sm["selfdriveState"].active, cruise_initialized=True)
++    return card.update(cs, out, sm, toggles)
++
++  return cp, cs, sm, step
++
++
++@pytest.mark.parametrize("lkas_first", [False, True])
++def test_ev9_op_long_main_requests_long_and_enables_aol_without_inverting_prior_lkas(ev9_op_long_buttons, lkas_first):
++  _, cs, sm, step = ev9_op_long_buttons
++  if lkas_first:
++    assert step(spc.ButtonType.lkas).alwaysOnLateralAllowed
++    assert not cs.cruiseState.available
++  result = step(spc.ButtonType.mainCruise)
++  assert cs.cruiseState.available
++  assert cs.buttonEnable
++  assert result.alwaysOnLateralAllowed
++  assert result.alwaysOnLateralEnabled
++  assert not result.pauseLateral
++  sm["selfdriveState"].active = True
++  step(spc.ButtonType.mainCruise, pressed=False)
++  assert not cs.buttonEnable
++  assert step().alwaysOnLateralEnabled
++
++  result = step(spc.ButtonType.mainCruise)
++  assert not cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++
++
++@pytest.mark.parametrize("enable_button", [spc.ButtonType.accelCruise, spc.ButtonType.decelCruise])
++def test_ev9_op_long_lkas_off_survives_set_resume_and_main_off(ev9_op_long_buttons, enable_button):
++  _, cs, sm, step = ev9_op_long_buttons
++  step(spc.ButtonType.mainCruise)
++  assert cs.buttonEnable
++  assert not cs.cruiseState.enabled  # Stock ACC_REQ does not establish software engagement.
++  sm["selfdriveState"].active = True
++  result = step(spc.ButtonType.lkas)
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  assert cs.cruiseState.available  # LKAS does not disarm cruise.
++  sm["selfdriveState"].active = False  # Driver cancels longitudinal, then uses SET/RES.
++  step(enable_button)
++  step(enable_button, pressed=False)
++  assert cs.buttonEnable
++  sm["selfdriveState"].active = True
++  result = step()
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++
++  result = step(spc.ButtonType.mainCruise)
++  assert not cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed  # Main OFF cannot turn steering back on.
++  assert result.pauseLateral
++  result = step(spc.ButtonType.lkas)
++  assert result.alwaysOnLateralAllowed
++  assert not result.pauseLateral
++  assert not cs.cruiseState.available
++
++
++@pytest.mark.parametrize("status", ["uncalibrated", "invalid"])
++def test_ev9_op_long_refused_main_requires_fresh_main_on(ev9_op_long_buttons, status):
++  _, cs, sm, step = ev9_op_long_buttons
++  sm["liveCalibration"].calStatus = getattr(log.LiveCalibrationData.Status, status)
++  result = step(spc.ButtonType.mainCruise)
++  assert cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
++  step(spc.ButtonType.decelCruise)
++  step(spc.ButtonType.decelCruise, pressed=False)
++  assert cs.buttonEnable
++  sm["selfdriveState"].active = True
++  result = step()
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++
++  result = step(spc.ButtonType.mainCruise)
++  assert not cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  step(spc.ButtonType.mainCruise, pressed=False)
++  result = step(spc.ButtonType.mainCruise)
++  assert cs.cruiseState.available
++  assert result.alwaysOnLateralAllowed
++  assert not result.pauseLateral
++
++
++def test_ev9_op_long_main_fault_refusal_does_not_enable_after_fault_clears(ev9_op_long_buttons):
++  _, cs, _, step = ev9_op_long_buttons
++  result = step(spc.ButtonType.mainCruise, available=False)
++  assert not cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  result = step()
++  assert cs.cruiseState.available
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++
++
++@pytest.mark.parametrize("refusal", [None, "calibration", "fault"])
++def test_ev9_main_uses_stock_phase_after_runtime_long_fallback(ev9_op_long_buttons, refusal):
++  cp, cs, sm, step = ev9_op_long_buttons
++  if refusal == "calibration":
++    sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.uncalibrated
++  result = step(spc.ButtonType.mainCruise, available=refusal != "fault")
++  assert result.alwaysOnLateralAllowed is (refusal is None)
++  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
++  step(spc.ButtonType.mainCruise, pressed=False)
++  # ECU-disable fallback mutates the existing CP after StarPilotCard construction.
++  cp.openpilotLongitudinalControl = False
++  cp.pcmCruise = True
++  result = step(spc.ButtonType.mainCruise)
++  assert cs.cruiseState.available  # Received stock main remains available.
++  assert not cs.buttonEnable
++  assert not result.alwaysOnLateralAllowed
++  assert result.pauseLateral
++  step(spc.ButtonType.mainCruise, pressed=False)
++  result = step(spc.ButtonType.mainCruise)
++  assert result.alwaysOnLateralAllowed
++  assert not result.pauseLateral
++
++
+ @pytest.mark.parametrize(
+   ("car_fingerprint", "expect_normalized_release"),
+   (
+@@ -329,7 +769,7 @@ def test_honda_lkas_button_can_toggle_always_on_lateral(monkeypatch, tmp_path):
+   car_state = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
+   starpilot_car_state = SimpleNamespace(distancePressed=False)
+   sm = make_sm()
+-  toggles = make_toggles(always_on_lateral_lkas=True, lkas_allowed_for_aol=True)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, lkas_allowed_for_aol=True)
+ 
+   ret = card.update(car_state, starpilot_car_state, sm, toggles)
+ 
+@@ -870,7 +1310,7 @@ def test_honda_lkas_button_pauses_lateral_when_cruise_is_active(monkeypatch, tmp
+   starpilot_car_state = SimpleNamespace(distancePressed=False)
+   sm = make_sm()
+   sm["selfdriveState"].active = True
+-  toggles = make_toggles(always_on_lateral_lkas=True, lkas_allowed_for_aol=True)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, lkas_allowed_for_aol=True)
+   card.prev_active = True
+ 
+   ret = card.update(car_state, starpilot_car_state, sm, toggles)
+@@ -1089,7 +1529,7 @@ def test_honda_main_aol_follows_cruise_main_without_manual_aol_button_mapping(mo
+     SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
+   )
+ 
+-  toggles = make_toggles(always_on_lateral_main=True, lkas_allowed_for_aol=True)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_main=True, lkas_allowed_for_aol=True)
+   ret = card.update(make_car_state(available=True), SimpleNamespace(distancePressed=False), make_sm(), toggles)
+ 
+   assert ret.alwaysOnLateralAllowed is True
+@@ -1106,7 +1546,7 @@ def test_hyundai_main_aol_persists_after_brake_disengage_without_manual_aol_butt
+   )
+ 
+   sm = make_sm()
+-  toggles = make_toggles(always_on_lateral_main=True)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_main=True)
+   starpilot_car_state = SimpleNamespace(distancePressed=False)
+ 
+   sm["selfdriveState"].active = True
+@@ -1136,7 +1576,7 @@ def test_aol_persists_through_longitudinal_speed_too_low_disable(monkeypatch, tm
+ 
+   ret = card.update(
+     make_car_state(available=True), SimpleNamespace(distancePressed=False), sm,
+-    make_toggles(always_on_lateral_main=True),
++    make_toggles(always_on_lateral=True, always_on_lateral_main=True),
+   )
+ 
+   assert ret.alwaysOnLateralAllowed is True
+@@ -1156,7 +1596,7 @@ def test_aol_still_stops_for_other_immediate_disables(monkeypatch, tmp_path):
+ 
+   ret = card.update(
+     make_car_state(available=True), SimpleNamespace(distancePressed=False), sm,
+-    make_toggles(always_on_lateral_main=True),
++    make_toggles(always_on_lateral=True, always_on_lateral_main=True),
+   )
+ 
+   assert ret.alwaysOnLateralAllowed is True
+@@ -1172,7 +1612,7 @@ def test_non_button_aol_platform_keeps_main_aol_when_main_cruise_is_mapped(monke
+     SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
+   )
+ 
+-  toggles = make_toggles(always_on_lateral_main=True, main_cruise_aol_toggle=True)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_main=True, main_cruise_aol_toggle=True)
+   ret = card.update(make_car_state(available=True), SimpleNamespace(distancePressed=False), make_sm(), toggles)
+ 
+   assert ret.alwaysOnLateralAllowed is True
+@@ -1187,7 +1627,7 @@ def test_main_aol_still_follows_cruise_main_for_other_platforms(monkeypatch, tmp
+                            SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
+ 
+   ret = card.update(make_car_state(available=True), SimpleNamespace(distancePressed=False), make_sm(),
+-                    make_toggles(always_on_lateral_main=True))
++                    make_toggles(always_on_lateral=True, always_on_lateral_main=True))
+ 
+   assert ret.alwaysOnLateralAllowed is True
+   assert ret.alwaysOnLateralEnabled is True
+@@ -1203,7 +1643,7 @@ def test_pacifica_hybrid_main_aol_waits_for_set_press(monkeypatch, tmp_path):
+   )
+ 
+   sm = make_sm()
+-  toggles = make_toggles(always_on_lateral_main=True)
++  toggles = make_toggles(always_on_lateral=True, always_on_lateral_main=True)
+   starpilot_car_state = SimpleNamespace(distancePressed=False)
+   car_state = make_car_state(available=True, enabled=False)
+ 
