@@ -112,12 +112,14 @@ class TestStarPilotSync(unittest.TestCase):
     self.sync("--allow", success=False)
     self.assertEqual((self.local / "app.txt").read_text(), "unsaved\n")
 
-  def test_maintenance_docs_and_planner_archive_survive_missing_and_colliding_upstream_files(self):
+  def test_maintenance_docs_and_archives_survive_missing_and_colliding_upstream_files(self):
     archive = {
       "docs/MAINTENANCE.md": "ongoing maintenance workflow\n",
       "docs/EV9_BEHAVIOR.md": "current EV9 behavior\n",
+      "docs/C3X_UPDATE_WORKFLOW.md": "local device update workflow\n",
       "patches/archive/ev9_custom_planner.patch": "retired planner recovery patch\n",
       "patches/archive/EV9_CUSTOM_PLANNER.md": "retired planner provenance\n",
+      "patches/archive/EV9_STARTUP_TEST.md": "reverted startup experiment history\n",
     }
     for path, contents in archive.items():
       self.write(self.local, path, contents)

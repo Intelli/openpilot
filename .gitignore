@@ -109,10 +109,6 @@ Pipfile
 .history
 .ionide
 
-# Local maintenance references
-/patches/PR_TRACKER.md
-/docs/C3X_UPDATE_WORKFLOW.md
-
 # Keep prebuilt runtime artifacts trackable
 !cereal/messaging/bridge
 !system/camerad/camerad

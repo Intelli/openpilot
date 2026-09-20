@@ -20,6 +20,11 @@ signal intent and warning policies.
 - Maintenance tooling and the documents explicitly listed in `sync-upstream.sh`
   are preserved directly. Application customizations belong in patches; do not
   preserve application paths to bypass replay.
+- Keep local-only maintenance references (`patches/PR_TRACKER.md` and
+  `docs/C3X_UPDATE_WORKFLOW.md`) in `.git/info/exclude`. Local exclusions survive
+  sync without overriding upstream's `.gitignore`; they are not shared with a
+  fresh clone. Sync preserves these documents when present, and patch exports
+  exclude them. Ignore rules do not create or restore missing local documents.
 
 ## Upstream sync
 
