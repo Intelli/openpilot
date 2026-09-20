@@ -69,3 +69,52 @@ def test_frequency_exemption_does_not_relax_snapshot_freshness():
   assert decode_snapshot(msg, cp, now=10.06, message_time=10.06, valid=True) is None
   assert decode_snapshot(msg, cp, now=10.01, message_time=9.9, valid=True) is None
   assert decode_snapshot(msg, cp, now=10.01, message_time=10., valid=False) is None
+
+
+def test_worker_rechecks_freshness_after_preparation_delay():
+  from types import SimpleNamespace
+  from openpilot.selfdrive.controls.ev9_trajectoryd import run
+
+  cp = CarInterface.get_non_essential_params(CAR.KIA_EV9)
+  vm = VehicleModel(cp)
+  msg = messaging.new_message('ev9TrajectoryState').ev9TrajectoryState
+  msg.sourceMonoTime = 10_000_000_000
+  msg.steerRatio, msg.tireStiffnessFront, msg.tireStiffnessRear = vm.sR, vm.cF, vm.cR
+  msg.speed, msg.delay = 2., .3
+  msg.enabled = msg.drive = msg.healthy = True
+  now, sent = [10.], []
+
+  class Subscriber(dict):
+    def __init__(self):
+      super().__init__(ev9TrajectoryState=msg, modelV2=SimpleNamespace(timestampEof=10_000_000_000))
+      self.updated = dict(modelV2=True)
+      self.logMonoTime = dict(ev9TrajectoryState=10_000_000_000)
+      self.calls = 0
+
+    def update(self, timeout):
+      if self.calls:
+        raise StopIteration
+      self.calls += 1
+
+    def all_checks(self, services):
+      return True
+
+  class Planner:
+    def reset(self):
+      pass
+
+    def close(self):
+      pass
+
+    def update(self, *args, **kwargs):
+      raise AssertionError('started planning from a stale execution snapshot')
+
+  def read_mode(key):
+    now[0] += .06
+    return '2'
+
+  pm = SimpleNamespace(send=lambda _, event: sent.append(event.ev9TrajectoryPlan.to_dict()))
+  with pytest.raises(StopIteration):
+    run(cp, SimpleNamespace(get=read_mode), Subscriber(), pm, planner=Planner(), clock=lambda: now[0])
+  assert len(sent) == 1 and sent[0]['reason'] == 'invalid_execution_state'
+  assert not sent[0]['feasible']

@@ -46,22 +46,27 @@ def relative_pose(pose, origin):
   return (c * dx + s * dy, -s * dx + c * dy, wrap_angle(pose[2] - origin[2]))
 
 
-def remaining_reference(geometry, pose):
+def remaining_path(xy, yaw, distance, pose):
   """Trim only the already-traversed prefix, never the inconvenient turn exit."""
-  segment = np.diff(geometry.xy, axis=0)
+  segment = np.diff(xy, axis=0)
   length = np.linalg.norm(segment, axis=1)
-  fraction = np.clip(np.sum((np.asarray(pose[:2]) - geometry.xy[:-1]) * segment, axis=1) / length**2, 0., 1.)
-  projections = geometry.xy[:-1] + fraction[:, None] * segment
+  fraction = np.clip(np.sum((np.asarray(pose[:2]) - xy[:-1]) * segment, axis=1) / length**2, 0., 1.)
+  projections = xy[:-1] + fraction[:, None] * segment
   nearest = int(np.argmin(np.linalg.norm(projections - pose[:2], axis=1)))
-  start = geometry.distance[nearest] + fraction[nearest] * length[nearest]
-  station = np.r_[start, geometry.distance[geometry.distance > start + 1e-5]]
-  xy = np.column_stack([np.interp(station, geometry.distance, v) for v in geometry.xy.T])
-  yaw = np.interp(station, geometry.distance, np.unwrap(geometry.yaw))
+  start = distance[nearest] + fraction[nearest] * length[nearest]
+  station = np.r_[start, distance[distance > start + 1e-5]]
+  xy = np.column_stack([np.interp(station, distance, v) for v in xy.T])
+  yaw = np.interp(station, distance, np.unwrap(yaw))
+  return xy, yaw, station - start, station
+
+
+def remaining_reference(geometry, pose):
+  xy, yaw, distance, station = remaining_path(geometry.xy, geometry.yaw, geometry.distance, pose)
   lower = np.interp(station, geometry.distance, geometry.lateral_lower)
   upper = np.interp(station, geometry.distance, geometry.lateral_upper)
   heading_allowance = np.interp(station, geometry.distance, geometry.heading_allowance)
   preserve = np.interp(station, geometry.distance, geometry.preserve_reference_pose.astype(float)) > 0
-  return xy, yaw, station - start, lower, upper, heading_allowance, preserve
+  return xy, yaw, distance, lower, upper, heading_allowance, preserve
 
 
 def within_path_budget(points, reference, distance, lower, upper):
@@ -97,6 +102,29 @@ def within_path_budget(points, reference, distance, lower, upper):
   return bool(np.all(squared[rows, index] <= (budget + 1e-5)**2))
 
 
+def reference_capability(xy, yaw, distance, state, vm, roll, angle_offset_deg):
+  min_curvature, max_curvature = sorted(vm.calc_curvature(math.radians(a - angle_offset_deg), state.speed, roll)
+                                      for a in (-STEERING_CAPABILITY_DEG, STEERING_CAPABILITY_DEG))
+  rate = abs(vm.curvature_factor(state.speed) / vm.sR * math.radians(PLANNING_ANGLE_RATE))
+  # The existing EV9 controller also enforces lateral acceleration and jerk.
+  # Account for those limits in geometry rather than planning steering that
+  # downstream controls will clip. The full 140 degrees remains available
+  # whenever these existing speed-dependent limits permit it.
+  controller_bound = EV9_HIGH_LATERAL_LIMIT / max(state.speed, MIN_SPEED)**2
+  min_curvature, max_curvature = max(min_curvature, -controller_bound), min(max_curvature, controller_bound)
+  rate = min(rate, controller_bound)
+  if not np.isfinite([min_curvature, max_curvature, rate]).all() or not min_curvature < 0 < max_curvature or rate <= 0:
+    raise ValueError('invalid_vehicle_model')
+  reference_curvature = np.gradient(yaw, distance)
+  turn = yaw[-1] - yaw[0]
+  over_limit = (reference_curvature < min_curvature - 1e-6) | (reference_curvature > max_curvature + 1e-6)
+  # Staying below 140 degrees does not make a late turn-in executable. The
+  # reference must also respect the same steering slew used by the solver.
+  over_rate = abs(np.diff(reference_curvature)) * state.speed > rate * np.diff(distance) + 1e-6
+  requires_change = over_limit | np.r_[over_rate, False] | np.r_[False, over_rate]
+  return min_curvature, max_curvature, rate, reference_curvature, turn, requires_change
+
+
 class ModelPathPlanner:
   def __init__(self, *, geometry=MODEL_GEOMETRY, solver=None, clock=time.monotonic,
                mount_longitudinal_uncertainty=MOUNT_LONGITUDINAL_UNCERTAINTY,
@@ -122,10 +150,12 @@ class ModelPathPlanner:
                                   solve_time=max(0., self.clock() - started),
                                   boundary_source=geometry.boundary_source if geometry is not None else 'none')
 
+    # Input freshness is checked at entry; the tracker checks its current state
+    # again at adoption. Computation never restamps or extends the model lease.
     def check_budget():
       elapsed = self.clock() - started
       finished = now + elapsed
-      if elapsed < 0 or elapsed > SOLVE_BUDGET or state.rejection(finished) or not 0 <= finished - model_time <= MAX_PLAN_AGE:
+      if elapsed < 0 or elapsed > SOLVE_BUDGET or not 0 <= finished - model_time <= MAX_PLAN_AGE:
         raise TimeoutError("planning_deadline")
 
     if parse_mode(mode) == TrajectoryMode.OFF:
@@ -144,16 +174,43 @@ class ModelPathPlanner:
     config = replace(self.geometry, front=self.geometry.front + self.mount_longitudinal_uncertainty,
                      rear=self.geometry.rear + self.mount_longitudinal_uncertainty,
                      half_width=self.geometry.half_width + self.mount_lateral_uncertainty)
+    initial_pose = relative_pose(state.pose, model_pose)
+
+    capability = None
+
+    def precheck(xy, yaw, distance):
+      nonlocal capability
+      if state.tracking_active:
+        return None
+      xy, yaw, distance, _ = remaining_path(xy, yaw, distance, initial_pose)
+      if len(distance) < 5 or distance[-1] < required_plan_distance(state.speed, state.delay):
+        return 'insufficient_remaining_reference'
+      # Only skip when the later initial-state check necessarily passes even
+      # without additional lane room. Otherwise preserve its exact rejection.
+      heading = min(np.pi/2, config.max_deviation/math.hypot(max(config.front, config.rear), config.half_width))
+      if (np.linalg.norm(xy[0] - initial_pose[:2]) > max(.2, config.max_deviation) or
+          abs(wrap_angle(yaw[0] - initial_pose[2])) > max(math.radians(3), heading)):
+        return None
+      try:
+        capability = reference_capability(xy, yaw, distance, state, vm, roll, angle_offset_deg)
+        _, _, _, _, turn, requires_change = capability
+      except ValueError:
+        return None
+      if not requires_change.any():
+        return 'reference_within_capability'
+      if abs(turn) < math.radians(5):
+        return 'unsupported_turn_intent'
+      return None
+
     try:
       check_budget()
       geometry = build_path_input(model, config, source_time=model_time, now=now, model_valid=model_valid,
                                   boundary_history=self.boundary_history, capture_pose=model_pose, generation=state.generation,
-                                  check_budget=check_budget)
+                                  check_budget=check_budget, precheck=precheck)
     except TimeoutError:
       return reject('planning_deadline')
     if not geometry.available:
       return reject(geometry.reason)
-    initial_pose = relative_pose(state.pose, model_pose)
     xy, yaw, distance, lateral_lower, lateral_upper, heading_allowance, preserve = remaining_reference(geometry, initial_pose)
     if len(distance) < 5 or distance[-1] < required_plan_distance(state.speed, state.delay):
       return reject('insufficient_remaining_reference')
@@ -165,25 +222,11 @@ class ModelPathPlanner:
     if (np.linalg.norm(xy[0] - initial_pose[:2]) > max(.2, initial_room) or
         abs(wrap_angle(yaw[0] - initial_pose[2])) > max(math.radians(3), heading_allowance[0])):
       return reject('model_state_mismatch')
-    min_curvature, max_curvature = sorted(vm.calc_curvature(math.radians(a - angle_offset_deg), state.speed, roll)
-                                        for a in (-STEERING_CAPABILITY_DEG, STEERING_CAPABILITY_DEG))
-    rate = abs(vm.curvature_factor(state.speed) / vm.sR * math.radians(PLANNING_ANGLE_RATE))
-    # The existing EV9 controller also enforces lateral acceleration and jerk.
-    # Account for those limits in geometry rather than planning steering that
-    # downstream controls will clip. The full 140 degrees remains available
-    # whenever these existing speed-dependent limits permit it.
-    controller_bound = EV9_HIGH_LATERAL_LIMIT / max(state.speed, MIN_SPEED)**2
-    min_curvature, max_curvature = max(min_curvature, -controller_bound), min(max_curvature, controller_bound)
-    rate = min(rate, controller_bound)
-    if not np.isfinite([min_curvature, max_curvature, rate]).all() or not min_curvature < 0 < max_curvature or rate <= 0:
+    try:
+      min_curvature, max_curvature, rate, reference_curvature, turn, requires_change = (
+        capability if capability is not None else reference_capability(xy, yaw, distance, state, vm, roll, angle_offset_deg))
+    except ValueError:
       return reject('invalid_vehicle_model')
-    reference_curvature = np.gradient(yaw, distance)
-    turn = yaw[-1] - yaw[0]
-    over_limit = (reference_curvature < min_curvature - 1e-6) | (reference_curvature > max_curvature + 1e-6)
-    # Staying below 140 degrees does not make a late turn-in executable. The
-    # reference must also respect the same steering slew used by the solver.
-    over_rate = abs(np.diff(reference_curvature)) * state.speed > rate * np.diff(distance) + 1e-6
-    requires_change = over_limit | np.r_[over_rate, False] | np.r_[False, over_rate]
     if not requires_change.any():
       if not state.tracking_active:
         return reject('reference_within_capability')
@@ -257,7 +300,7 @@ class ModelPathPlanner:
       return reject('planning_deadline')
     elapsed = self.clock() - started
     finished = now + elapsed
-    if elapsed < 0 or elapsed > SOLVE_BUDGET or state.rejection(finished) or not 0 <= finished - model_time <= MAX_PLAN_AGE:
+    if elapsed < 0 or elapsed > SOLVE_BUDGET or not 0 <= finished - model_time <= MAX_PLAN_AGE:
       return reject('planning_deadline')
     plan_id = max(self.last_plan_id + 1, int(state.time * 1e9))
     # A plan cannot extend the lifetime of rear points retained from an older

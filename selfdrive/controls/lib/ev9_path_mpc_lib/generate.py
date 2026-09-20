@@ -42,16 +42,23 @@ def generate(output, arch=None):
   model.xdot = SX.sym('state_derivative', 4)
   x, y, yaw, curvature = (model.x[i] for i in range(4))
   length, ref_x, ref_y, ref_yaw = (model.p[i] for i in range(4))
-  model.f_expl_expr = length * model.u[1] * vertcat(cos(yaw), sin(yaw), curvature, model.u[0])
-  model.f_impl_expr = model.xdot - model.f_expl_expr
-  model.cost_y_expr = vertcat(model.x, model.u)
-  model.cost_y_expr_e = model.x
-  model.con_h_expr = -sin(ref_yaw) * (x - ref_x) + cos(ref_yaw) * (y - ref_y)
-  model.con_h_expr_e = model.con_h_expr
+  ds = length / N * model.u[1]
+  rate = model.u[0]
+  # Analytic yaw/curvature and Gaussian position quadrature avoid repeated ERK sensitivity integration.
+  nodes, weights = np.polynomial.legendre.leggauss(8)
+  fractions, weights = (nodes + 1.) / 2., weights / 2.
+  delta_x = sum(float(w) * cos(yaw + curvature * ds * float(f) + rate * ds**2 * float(f)**2 / 2.)
+                for f, w in zip(fractions, weights, strict=True)) * ds
+  delta_y = sum(float(w) * sin(yaw + curvature * ds * float(f) + rate * ds**2 * float(f)**2 / 2.)
+                for f, w in zip(fractions, weights, strict=True)) * ds
+  model.disc_dyn_expr = vertcat(x + delta_x, y + delta_y, yaw + curvature * ds + rate * ds**2 / 2., curvature + rate * ds)
   ocp.model = model
   ocp.dims.N = N
   ocp.parameter_values = np.array([40., 0., 0., 0.])
-  ocp.cost.cost_type = ocp.cost.cost_type_e = 'NONLINEAR_LS'
+  ocp.cost.cost_type = ocp.cost.cost_type_e = 'LINEAR_LS'
+  ocp.cost.Vx = np.vstack((np.eye(4), np.zeros((2, 4))))
+  ocp.cost.Vu = np.vstack((np.zeros((4, 2)), np.eye(2)))
+  ocp.cost.Vx_e = np.eye(4)
   ocp.cost.W = np.diag([1., 1., 20., 1., 20., .1])
   ocp.cost.W_e = np.diag([100., 100., 100., 10.])
   ocp.cost.yref = np.zeros(6)
@@ -63,8 +70,10 @@ def generate(output, arch=None):
   ocp.constraints.idxbu = np.array([0, 1])
   ocp.constraints.lbu = np.array([-.02, .7])
   ocp.constraints.ubu = np.array([.02, 1.3])
-  ocp.constraints.lh = ocp.constraints.lh_e = np.array([-1.])
-  ocp.constraints.uh = ocp.constraints.uh_e = np.array([1.])
+  ocp.constraints.C = ocp.constraints.C_e = np.array([[0., 1., 0., 0.]])
+  ocp.constraints.D = np.zeros((1, 2))
+  ocp.constraints.lg = ocp.constraints.lg_e = np.array([-1.])
+  ocp.constraints.ug = ocp.constraints.ug_e = np.array([1.])
   ocp.constraints.idxbx_e = np.arange(4)
   ocp.constraints.lbx_e = np.array([-100., -100., -4., -.05])
   ocp.constraints.ubx_e = -ocp.constraints.lbx_e
@@ -73,11 +82,10 @@ def generate(output, arch=None):
   options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
   options.qp_solver_cond_N = 10
   options.hessian_approx = 'GAUSS_NEWTON'
-  options.integrator_type = 'ERK'
-  options.sim_method_num_steps = 3  # At least the physical integration resolution of the former 40-node/two-step mesh.
+  options.integrator_type = 'DISCRETE'
   options.nlp_solver_type = 'SQP'
-  options.nlp_solver_max_iter = 8  # Independently validate integrated candidates even at the iteration limit.
-  options.qp_solver_iter_max = 50
+  options.nlp_solver_max_iter = 6  # Independently validate integrated candidates even at the iteration limit.
+  options.qp_solver_iter_max = 20  # Abandon nonconverging inner QPs instead of spending the full outer budget.
   ocp.code_export_directory = str(output)
   ocp.acados_lib_path = str(acados / arch / 'lib')
   ocp.acados_include_path = str(acados / 'include')

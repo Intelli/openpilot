@@ -51,7 +51,7 @@ class Ev9PathMpc:
       library_path = Path(__file__).with_name('ev9_path_mpc_lib') / f'libev9_path_mpc{suffix}'
     self._library = CDLL(str(library_path))
     self._library.ev9_path_abi_version.restype = c_int
-    if self._library.ev9_path_abi_version() != 4:
+    if self._library.ev9_path_abi_version() != 6:
       raise RuntimeError('EV9 path MPC ABI mismatch')
     self._library.ev9_path_create.restype = c_void_p
     self._library.ev9_path_destroy.argtypes = [c_void_p]
@@ -173,7 +173,8 @@ class Ev9PathMpc:
     if status == ACADOS_SUCCESS and np.max(np.abs(dense[::subdivisions] - states)) > 1e-4:
       return rejected('dynamics_residual')
     dense_ref = np.column_stack([np.interp(reference_distance, arc, v) for v in (*xy.T, yaw)])
-    dense_bounds = np.array([np.interp(reference_distance, arc, v) for v in raw])
+    # Constant bounds broadcast exactly; avoid dense arrays for scalar limits.
+    dense_bounds = tuple(v[0] if np.all(v == v[0]) else np.interp(reference_distance, arc, v) for v in raw)
     lateral = -np.sin(dense_ref[:, 2]) * (dense[:, 0]-dense_ref[:, 0]) + np.cos(dense_ref[:, 2]) * (dense[:, 1]-dense_ref[:, 1])
     # Curvature and its reference-distance bounds are piecewise linear. Check
     # their combined breakpoints so a narrow bound cannot fall between samples.
@@ -186,9 +187,10 @@ class Ev9PathMpc:
         np.any(lateral < dense_bounds[3] - 1e-5) or np.any(lateral > dense_bounds[4] + 1e-5) or
         np.any(np.abs(dense[:, 2]-dense_ref[:, 2]) > dense_bounds[5] + 1e-5)):
       return rejected('dense_bounds')
-    preserved = np.interp(reference_distance, arc, preserve.astype(float)) > 0
-    if np.any(np.abs(dense[preserved, :3] - dense_ref[preserved]) > 1e-5):
-      return rejected('preserved_pose')
+    if preserve.any():
+      preserved = np.interp(reference_distance, arc, preserve.astype(float)) > 0
+      if np.any(np.abs(dense[preserved, :3] - dense_ref[preserved]) > 1e-5):
+        return rejected('preserved_pose')
     reason = 'candidate_requires_road_validation' if status == ACADOS_SUCCESS else 'iteration_limit_candidate_requires_road_validation'
     return PathMpcResult(True, reason, dense[:, :2], dense[:, 2], dense[:, 3], distance,
                          time.monotonic()-started, reference_distance)
