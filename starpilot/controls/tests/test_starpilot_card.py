@@ -573,8 +573,10 @@ def test_ev9_stock_main_phase_survives_independent_aol_changes(monkeypatch, tmp_
 
 @pytest.fixture
 def ev9_op_long_buttons(monkeypatch, tmp_path):
+  from opendbc.car import structs
   from opendbc.car.hyundai.carstate import CarState
   from opendbc.car.interfaces import CarStateBase
+  from openpilot.selfdrive.car.ev9_cruise_buttons import EV9CruiseButtons
 
   monkeypatch.setattr(spc, "Params", FakeParams)
   monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
@@ -583,38 +585,39 @@ def ev9_op_long_buttons(monkeypatch, tmp_path):
   card = spc.StarPilotCard(cp, SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL))
   hyundai_state = SimpleNamespace(CP=cp, main_cruise_on=False)
   cs, sm = make_car_state(), make_sm()
+  cs.canValid, cs.canTimeout, cs.regenBraking, cs.steeringDisengage = True, False, False, False
+  buttons = EV9CruiseButtons()
   out = SimpleNamespace(distancePressed=False)
   toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, main_cruise_aol_toggle=True)
 
   def step(button_type=None, pressed=True, available=True):
-    cs.buttonEvents = [] if button_type is None else [SimpleNamespace(type=button_type, pressed=pressed)]
+    cs.buttonEvents = [] if button_type is None else [structs.CarState.ButtonEvent(type=button_type, pressed=pressed)]
     # Match card.py ordering: CarState applies the press before StarPilotCard.
     cs.cruiseState.available = available
     if cp.openpilotLongitudinalControl:
       cs.cruiseState.available = CarState.update_main_cruise(hyundai_state, cs)
     cs.buttonEnable = CarStateBase.update_button_enable(hyundai_state, cs.buttonEvents)
+    buttons.update(cp, cs, enabled=sm["selfdriveState"].active, cruise_initialized=True)
     return card.update(cs, out, sm, toggles)
 
   return cp, cs, sm, step
 
 
 @pytest.mark.parametrize("lkas_first", [False, True])
-def test_ev9_op_long_main_arms_aol_without_inverting_prior_lkas(ev9_op_long_buttons, lkas_first):
+def test_ev9_op_long_main_requests_long_and_enables_aol_without_inverting_prior_lkas(ev9_op_long_buttons, lkas_first):
   _, cs, sm, step = ev9_op_long_buttons
   if lkas_first:
     assert step(spc.ButtonType.lkas).alwaysOnLateralAllowed
     assert not cs.cruiseState.available
   result = step(spc.ButtonType.mainCruise)
   assert cs.cruiseState.available
-  assert not cs.buttonEnable  # Main arms cruise; SET/RES still engages longitudinal.
+  assert cs.buttonEnable
   assert result.alwaysOnLateralAllowed
   assert result.alwaysOnLateralEnabled
   assert not result.pauseLateral
-  step(spc.ButtonType.mainCruise, pressed=False)
-  step(spc.ButtonType.decelCruise)
-  step(spc.ButtonType.decelCruise, pressed=False)
-  assert cs.buttonEnable
   sm["selfdriveState"].active = True
+  step(spc.ButtonType.mainCruise, pressed=False)
+  assert not cs.buttonEnable
   assert step().alwaysOnLateralEnabled
 
   result = step(spc.ButtonType.mainCruise)
@@ -627,11 +630,14 @@ def test_ev9_op_long_main_arms_aol_without_inverting_prior_lkas(ev9_op_long_butt
 def test_ev9_op_long_lkas_off_survives_set_resume_and_main_off(ev9_op_long_buttons, enable_button):
   _, cs, sm, step = ev9_op_long_buttons
   step(spc.ButtonType.mainCruise)
-  assert not cs.cruiseState.enabled  # Cruise is armed, but ACC_REQ is still false.
+  assert cs.buttonEnable
+  assert not cs.cruiseState.enabled  # Stock ACC_REQ does not establish software engagement.
+  sm["selfdriveState"].active = True
   result = step(spc.ButtonType.lkas)
   assert not result.alwaysOnLateralAllowed
   assert result.pauseLateral
   assert cs.cruiseState.available  # LKAS does not disarm cruise.
+  sm["selfdriveState"].active = False  # Driver cancels longitudinal, then uses SET/RES.
   step(enable_button)
   step(enable_button, pressed=False)
   assert cs.buttonEnable

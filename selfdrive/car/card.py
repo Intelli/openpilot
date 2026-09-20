@@ -366,7 +366,10 @@ class Car:
 
     if any(be.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for be in CS.buttonEvents):
       self.resume_prev_button = True
-    elif any(be.type in (ButtonType.decelCruise, ButtonType.setCruise) for be in CS.buttonEvents):
+    elif (any(be.type in (ButtonType.decelCruise, ButtonType.setCruise) for be in CS.buttonEvents) or
+          (self.CP.carFingerprint == "KIA_EV9" and self.CP.openpilotLongitudinalControl and CS.buttonEnable and
+           any(be.type == ButtonType.mainCruise and be.pressed for be in CS.buttonEvents))):
+      # EV9 main ON uses SET initialization, even after an earlier RES engagement.
       self.resume_prev_button = False
 
     FPCS = self.starpilot_card.update(CS, FPCS, self.sm, self.starpilot_toggles)

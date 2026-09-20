@@ -137,7 +137,7 @@ def test_direct_switch_between_cancel_and_other_knob_action_cannot_engage_cancel
 @pytest.mark.parametrize("config", [
   {"op_long": False, "pcm_cruise": True}, {"pcm_cruise": True}, {"fingerprint": CAR.HYUNDAI_IONIQ_5_PE},
 ])
-@pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel])
+@pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel, ButtonType.mainCruise])
 def test_stock_fallback_and_other_cars_remain_unchanged(config, button):
   cp, cs, buttons, _ = setup(**config)
   for pressed in (True, False):
@@ -159,10 +159,132 @@ def test_fallback_discards_pending_engagement_remap():
 def test_non_knob_events_remain_available_for_lateral_and_distance_controls():
   cp, cs, buttons, cruise = setup()
   assert cruise.v_cruise_kph == V_CRUISE_UNSET
-  for button in (ButtonType.mainCruise, ButtonType.lkas, ButtonType.gapAdjustCruise):
+  for button in (ButtonType.lkas, ButtonType.gapAdjustCruise):
     for pressed in (True, False):
       assert update(buttons, cp, cs, button, pressed) == [(button, pressed)]
       assert not cs.buttonEnable
+
+
+def test_main_on_requests_engagement_once_and_preserves_aol_event():
+  cp, cs, buttons, _ = setup()
+  assert update(buttons, cp, cs, ButtonType.mainCruise, True) == [(ButtonType.mainCruise, True)]
+  assert cs.buttonEnable
+  for button, pressed in ((None, False), (ButtonType.mainCruise, True), (ButtonType.mainCruise, False)):
+    update(buttons, cp, cs, button, pressed)
+    assert not cs.buttonEnable
+  cs.cruiseState.available = False  # CarState applies main OFF before this helper.
+  update(buttons, cp, cs, ButtonType.mainCruise, True, enabled=True)
+  assert not cs.buttonEnable
+
+
+@pytest.mark.parametrize("enabled", [None, True])
+def test_main_does_not_engage_from_unknown_or_already_enabled_state(enabled):
+  cp, cs, buttons, _ = setup()
+  update(buttons, cp, cs, ButtonType.mainCruise, True, enabled=enabled)
+  assert not cs.buttonEnable
+  update(buttons, cp, cs, ButtonType.mainCruise, True)
+  assert not cs.buttonEnable
+  update(buttons, cp, cs, ButtonType.mainCruise, False)
+  assert not cs.buttonEnable
+
+
+@pytest.mark.parametrize("field,value", [
+  ("brakePressed", True), ("regenBraking", True), ("steeringDisengage", True),
+  ("canValid", False), ("canTimeout", True), ("available", False),
+])
+def test_main_refusal_does_not_engage_on_hold_release_or_recovery(field, value):
+  cp, cs, buttons, _ = setup()
+  target = cs.cruiseState if field == "available" else cs
+  setattr(target, field, value)
+  update(buttons, cp, cs, ButtonType.mainCruise, True)
+  assert not cs.buttonEnable
+  setattr(target, field, not value)
+  for button, pressed in ((None, False), (ButtonType.mainCruise, True), (ButtonType.mainCruise, False)):
+    update(buttons, cp, cs, button, pressed)
+    assert not cs.buttonEnable
+  update(buttons, cp, cs, ButtonType.mainCruise, True)
+  assert cs.buttonEnable
+
+
+@pytest.mark.parametrize("pedal", ["gasPressed", "brakePressed"])
+def test_main_preserves_set_pedal_override_and_standstill_pre_enable(pedal):
+  from openpilot.selfdrive.car.car_specific import CarSpecificEvents
+  from openpilot.selfdrive.selfdrived.events import ET, Events
+  from openpilot.selfdrive.selfdrived.state import State, StateMachine
+
+  cp, cs, buttons, _ = setup()
+  cs.standstill = pedal == "brakePressed"
+  cs.vEgo = 0 if cs.standstill else 20
+  setattr(cs, pedal, True)
+  update(buttons, cp, cs, ButtonType.mainCruise, True)
+  assert cs.buttonEnable
+  car_events, state = CarSpecificEvents(cp), StateMachine()
+  events = car_events.update(cs, cs, structs.CarControl())
+  enabled, _ = state.update(events, Events(starpilot=True), False)
+  assert enabled
+  assert state.state == (State.preEnabled if cs.standstill else State.overriding)
+  assert events.contains(ET.PRE_ENABLE if cs.standstill else ET.OVERRIDE_LONGITUDINAL)
+
+  setattr(cs, pedal, False)
+  update(buttons, cp, cs, ButtonType.mainCruise, False, enabled=True)
+  assert not cs.buttonEnable
+  events = car_events.update(cs, cs, structs.CarControl(enabled=True))
+  enabled, active = state.update(events, Events(starpilot=True), False)
+  assert enabled and active
+  assert state.state == State.enabled
+
+
+@pytest.mark.parametrize("knob", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel])
+@pytest.mark.parametrize("held", [False, True])
+def test_main_does_not_engage_during_knob_action(knob, held):
+  cp, cs, buttons, _ = setup()
+  if held:
+    cs.cruiseState.available = False
+    update(buttons, cp, cs, knob, True)
+    cs.cruiseState.available = True
+  cs.buttonEvents = [event(ButtonType.mainCruise, True)] + ([] if held else [event(knob, True)])
+  buttons.update(cp, cs, enabled=False, cruise_initialized=False)
+  assert not cs.buttonEnable
+  if knob == ButtonType.cancel:
+    update(buttons, cp, cs, knob, False)
+    assert not cs.buttonEnable
+
+
+@pytest.mark.parametrize("blocked_event", [None, "calibrationIncomplete", "doorOpen", "seatbeltNotLatched", "accFaulted", "wrongGear"])
+def test_main_engagement_uses_normal_state_machine_and_main_off_disables(blocked_event):
+  from opendbc.car.hyundai.carstate import CarState
+  from openpilot.selfdrive.car.car_specific import CarSpecificEvents
+  from openpilot.selfdrive.selfdrived.events import EventName, Events
+  from openpilot.selfdrive.selfdrived.state import StateMachine
+
+  cp, cs, buttons, _ = setup()
+  hyundai_state = SimpleNamespace(main_cruise_on=False)
+  car_events, state = CarSpecificEvents(cp), StateMachine()
+  enabled = False
+
+  def step(button=None, pressed=False, block=None):
+    nonlocal enabled
+    cs.buttonEvents = [] if button is None else [event(button, pressed)]
+    cs.cruiseState.available = True  # Incoming fault-free TCS availability.
+    cs.cruiseState.available = CarState.update_main_cruise(hyundai_state, cs)
+    buttons.update(cp, cs, enabled=enabled, cruise_initialized=False)
+    events = car_events.update(cs, cs, structs.CarControl(enabled=enabled))
+    if block:
+      events.add(getattr(EventName, block))
+    enabled, _ = state.update(events, Events(starpilot=True), False)
+
+  step(ButtonType.mainCruise, True, blocked_event)
+  assert enabled == (blocked_event is None)
+  step()  # No delayed engagement after a refusal clears.
+  assert enabled == (blocked_event is None)
+  step(ButtonType.mainCruise, False)
+  assert enabled == (blocked_event is None)
+  step(ButtonType.mainCruise, True)
+  assert not enabled
+  step(ButtonType.mainCruise, False)
+  assert not enabled
+  step(ButtonType.mainCruise, True)
+  assert enabled
 
 
 @pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel])
@@ -191,12 +313,14 @@ def test_real_engagement_state_machine_and_cancel_release(button, main_available
       assert not enabled
 
 
-@pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel])
+@pytest.mark.parametrize("button", [ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.cancel, ButtonType.mainCruise])
 def test_card_normalizes_before_speed_handling_and_publish(monkeypatch, button):
   from cereal import custom
   from openpilot.selfdrive.car import card
 
   cp, cs, buttons, cruise = setup()
+  if button == ButtonType.mainCruise:
+    cruise.v_cruise_kph = cruise.v_cruise_kph_last = 100
   control = structs.CarControl()
 
   class SubMaster(dict):
@@ -223,7 +347,7 @@ def test_card_normalizes_before_speed_handling_and_publish(monkeypatch, button):
   car.is_metric = True
   car.experimental_mode = False
   car.CC_prev = structs.CarControl()
-  car.resume_prev_button = False
+  car.resume_prev_button = True
   car.starpilot_card = SimpleNamespace(update=lambda _cs, fpcs, *_: fpcs)
   monkeypatch.setattr(card.messaging, "drain_sock_raw", lambda *_, **__: [])
   monkeypatch.setattr(card, "can_capnp_to_list", lambda _: [])
@@ -231,8 +355,8 @@ def test_card_normalizes_before_speed_handling_and_publish(monkeypatch, button):
   for pressed in (True, False):
     cs.buttonEvents = [event(button, pressed)]
     output, _, _ = car.state_update()
-    assert output.buttonEvents[0].type == ButtonType.decelCruise
-    assert output.buttonEnable == (not pressed)
+    assert output.buttonEvents[0].type == (ButtonType.mainCruise if button == ButtonType.mainCruise else ButtonType.decelCruise)
+    assert output.buttonEnable == (pressed if button == ButtonType.mainCruise else not pressed)
     assert not car.resume_prev_button
 
   car.CS_prev = output.as_reader()

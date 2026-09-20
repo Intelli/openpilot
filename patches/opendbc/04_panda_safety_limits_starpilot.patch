@@ -31,7 +31,7 @@ index 96cc056f15cae0020c45bd8ca1880d73982a070e..723f994826be53ca68868ba72bb0539b
    const float fudged_speed = SAFETY_MAX((vehicle_speed.min / VEHICLE_SPEED_FACTOR) - 1.0, 1.0);
    const float curvature_factor = get_curvature_factor(fudged_speed, params);
 diff --git a/opendbc/safety/modes/hyundai_canfd.h b/opendbc/safety/modes/hyundai_canfd.h
-index 48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb..a02e2e0521ed99363d5ec5a4b7150fb85b4cb922 100644
+index 48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb..fbf1c50726b2205266b62ffa3ef9e940d4a6ae65 100644
 --- a/opendbc/safety/modes/hyundai_canfd.h
 +++ b/opendbc/safety/modes/hyundai_canfd.h
 @@ -70,6 +70,7 @@ static bool hyundai_ccnc = false;
@@ -76,18 +76,34 @@ index 48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb..a02e2e0521ed99363d5ec5a4b7150fb8
  }
  
  static bool hyundai_canfd_fwd_hook(int bus_num, int addr) {
-@@ -157,7 +179,25 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
+@@ -157,7 +179,41 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
  
          hyundai_lkas_button_check(GET_BIT(msg, 39U));
        }
 +      const int previous_cruise_button = cruise_button_prev;
++      const bool main_button_pressed = main_button && !main_button_prev;
        hyundai_common_cruise_buttons_check(cruise_button, main_button);
 +      if (hyundai_canfd_ev9 && hyundai_longitudinal) {
++        // Main ON is a one-shot engagement request. Holding or releasing it must
++        // not re-enable after an override or fault, and cancel takes precedence.
++        if (main_button_pressed) {
++          hyundai_canfd_ev9_cancel_engage_pending = false;
++          if (!acc_main_on) {
++            controls_allowed = false;
++          } else if ((cruise_button == HYUNDAI_BTN_NONE) && (previous_cruise_button == HYUNDAI_BTN_NONE) &&
++                     !(brake_pressed && vehicle_moving) && !(regen_braking && vehicle_moving) && !steering_disengage &&
++                     !safety_rx_checks_invalid && !relay_malfunction) {
++            // Match SET: gas still blocks acceleration, and an already-held
++            // brake or regen at standstill is handled by generic RX checks.
++            controls_allowed = true;
++          }
++        }
 +        // The EV9 pause knob acts as SET only when its complete press began inactive.
 +        // Do not infer software engagement from stock SCC state in OP-long mode.
 +        if (cruise_button == HYUNDAI_BTN_CANCEL) {
 +          if (previous_cruise_button != HYUNDAI_BTN_CANCEL) {
-+            hyundai_canfd_ev9_cancel_engage_pending = (previous_cruise_button == HYUNDAI_BTN_NONE) && !controls_allowed_prev;
++            hyundai_canfd_ev9_cancel_engage_pending = (previous_cruise_button == HYUNDAI_BTN_NONE) &&
++                                                     !controls_allowed_prev && !main_button_pressed;
 +          }
 +          controls_allowed = false;
 +        } else {
@@ -102,7 +118,7 @@ index 48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb..a02e2e0521ed99363d5ec5a4b7150fb8
        if (!controls_allowed_prev && controls_allowed) {
          hyundai_canfd_inactive_accel_tx_count = 0U;
        }
-@@ -205,6 +245,10 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
+@@ -205,6 +261,10 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
    }
  
    hyundai_common_reset_acc_main_on_mismatches();
@@ -113,7 +129,7 @@ index 48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb..a02e2e0521ed99363d5ec5a4b7150fb8
  }
  
  static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
-@@ -224,9 +268,15 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+@@ -224,9 +284,15 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
      .min_valid_request_rt_interval = 810000,  // 810ms; a ~10% buffer on cutting every 90 frames
      .has_steer_req_tolerance = true,
    };
@@ -129,7 +145,7 @@ index 48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb..a02e2e0521ed99363d5ec5a4b7150fb8
      .frequency = 100U,
    };
    const AngleSteeringParams HYUNDAI_CANFD_ANGLE_STEERING_PARAMS = {
-@@ -270,6 +320,10 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+@@ -270,6 +336,10 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
      if (hyundai_canfd_angle_steering) {
        const int lkas_angle_active = (msg->data[9] >> 4U) & 0x3U;
        const bool steer_angle_req = lkas_angle_active != 1;
@@ -140,7 +156,7 @@ index 48bd34d7c5f251d1a1b80a88601701eb8ba2f7eb..a02e2e0521ed99363d5ec5a4b7150fb8
  
        int desired_angle = (msg->data[11] << 6U) | (msg->data[10] >> 2U);
        desired_angle = to_signed(desired_angle, 14);
-@@ -503,6 +557,7 @@ static safety_config hyundai_canfd_init(uint16_t param) {
+@@ -503,6 +573,7 @@ static safety_config hyundai_canfd_init(uint16_t param) {
                                    hyundai_canfd_lka_steering_alt && hyundai_canfd_angle_steering && hyundai_ccnc;
    hyundai_canfd_lka_alt_drive_gear = false;
    hyundai_canfd_inactive_accel_tx_count = 0U;
