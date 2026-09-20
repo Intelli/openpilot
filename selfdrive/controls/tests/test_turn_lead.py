@@ -176,24 +176,22 @@ def test_other_vehicle_turn_lead_fade_remains_identical(fingerprint, control_typ
     assert turn_lead_engagement_weight(fingerprint, control_type, measured, -.001, .02, 1.) == expected
 
 
-def test_ev9_lead_configured_speed_boundary_is_continuous():
+def test_ev9_lead_fixed_speed_boundary_is_continuous():
   from openpilot.selfdrive.controls.controlsd import ev9_turn_lead_authority
-  ceiling = 40. / 3.6
-  assert ev9_turn_lead_authority(32. / 3.6, 0., 10., ceiling) == 1.
-  assert ev9_turn_lead_authority(ceiling, 0., 10., ceiling) == 0.
-  assert ev9_turn_lead_authority(ceiling - .001, 0., 10., ceiling) < 1e-5
-  assert ev9_turn_lead_authority(ceiling - 1., 0., 10., ceiling) == .5
-  assert ev9_turn_lead_authority(7., 0., 9.1, ceiling) == 1.
-  # A low configured ceiling must not bypass the historical creep exclusion.
-  assert ev9_turn_lead_authority(2.5, 0., 4., 10. / 3.6) == 0.
-  assert ev9_turn_lead_authority(3., 0., 4., ceiling) == 0.
+  assert ev9_turn_lead_authority(5., 0., 10.) == 1.
+  assert ev9_turn_lead_authority(6., 0., 10.) == .5
+  assert ev9_turn_lead_authority(7. - .001, 0., 10.) < 1e-5
+  for speed in (7., 30. / 3.6, 35. / 3.6, 40. / 3.6):
+    assert ev9_turn_lead_authority(speed, 0., 10.) == 0.
+  for speed in (0., 2.5, 3.):
+    assert ev9_turn_lead_authority(speed, 0., 4.) == 0.
 
 
 def test_ev9_lead_stop_projection_fades_without_deceleration_switch():
   from openpilot.selfdrive.controls.controlsd import ev9_turn_lead_authority
-  # At 6 m/s and an 8 m preview: stop before the bend => no initiation.
-  assert ev9_turn_lead_authority(6., -3., 8., 40./3.6) == 0.
-  assert ev9_turn_lead_authority(6., -2.25, 8., 40./3.6) == 0.
-  assert ev9_turn_lead_authority(6., -1.8, 8., 40./3.6) == .5
-  assert ev9_turn_lead_authority(6., -1.5, 8., 40./3.6) == 1.
-  assert ev9_turn_lead_authority(6., -.501, 8., 40./3.6) == ev9_turn_lead_authority(6., -.499, 8., 40./3.6)
+  # At 6 m/s the fixed upper-speed fade has half authority. Braking scales it further.
+  assert ev9_turn_lead_authority(6., -3., 8.) == 0.
+  assert ev9_turn_lead_authority(6., -2.25, 8.) == 0.
+  assert ev9_turn_lead_authority(6., -1.8, 8.) == .25
+  assert ev9_turn_lead_authority(6., -1.5, 8.) == .5
+  assert ev9_turn_lead_authority(6., -.501, 8.) == ev9_turn_lead_authority(6., -.499, 8.)

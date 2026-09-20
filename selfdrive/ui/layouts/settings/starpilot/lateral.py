@@ -374,7 +374,7 @@ class StarPilotLateralLayout(_SettingsPage):
       ("HkgTuningAngleOverrideEffortPercent", "Steering Override Effort",
        "Lower values ease manual steering override. 100% applies no additional effort reduction.", 100, 10, "%"),
       ("HkgTuningAngleCustomLimitMaxSpeedKph", "EV9 Limits Speed",
-       "Sets the maximum speed for higher steering limits, manual-control entry, and early-turn assistance.", 40, 1, " km/h"),
+       "Higher steering limits and manual-control entry apply at or below this speed.", 40, 1, " km/h"),
       ("HkgTuningEv9AlertsSpeedKph", "EV9 Alert Speed",
        "Warn about steering saturation above this speed. Desired steering angles of 90° or more can still warn below it.", 50, 1, " km/h"),
     ):

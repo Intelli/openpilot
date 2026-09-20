@@ -42,12 +42,19 @@ See the migration guide for current EV9 behavior and patch ownership.
 `ev9_turn_lead_hesitation.patch` separately preserves the EV9 angle-control
 turn-lead fix and its focused tests: current preview assistance no longer fades
 with wheel catchup, and opposing model demand vetoes that assistance. It also
-includes the configured speed and stopping-distance envelopes, their shared
-`ev9_limit_speed_mps` helper, and focused tests. It works
+retains smooth speed and stopping-distance envelopes with a fixed preview
+ceiling of 7 m/s (25.2 km/h), independent of EV9 Limits Speed, and focused tests. It works
 without the retired custom planner and excludes its messaging, tracking and
 handoff changes. When refreshing it, retain only these turn-lead
 changes and tests: exporting all later `controlsd.py` changes from its original
 base would also pull in unrelated planner changes.
+
+The extended-speed road-edge guard is retired in
+`ev9_turn_signal_edge_guard.patch.disabled`; normal replay does not restore it.
+Restoring the preview ceiling does not change the current EV9 turn-desire rules:
+predicted stops do not veto signal turn desires while moving, and their speed
+split remains the greater of EV9 Limits Speed and Minimum Lane Change Speed.
+Actual standstill still prevents a turn desire.
 
 `ui_options_starpilot.patch` exposes the four EV9 steering controls on C3/C3X,
 C4 and Galaxy, plus EV9 Path in Galaxy. The device path controls/renderers remain

@@ -137,7 +137,15 @@ supplies main permission without requiring actual cruise engagement.
 
 EV9 Force Turn Desires follows the signal through predicted-stop conditions, as
 in Sunnypilot. It requires active lateral control, movement, one signal, speed
-below the configured lane-change threshold and no same-side blind-spot detection.
+below the greater of EV9 Limits Speed and Minimum Lane Change Speed, and no
+same-side blind-spot detection. Actual standstill still prevents a turn desire.
+
+EV9 preview assistance has a separate fixed ceiling of 7 m/s (25.2 km/h),
+independent of EV9 Limits Speed. It retains the current-preview handoff to model
+demand, opposing-model and manual vetoes, and smooth speed/braking fades.
+Restoring this ceiling does not change the signal turn-desire rules above.
+The road-edge guard for the former extended speed range is retired in
+`patches/ev9_turn_signal_edge_guard.patch.disabled` and excluded from replay.
 
 ### Steering warnings
 

@@ -1,16 +1,8 @@
 diff --git a/selfdrive/controls/controlsd.py b/selfdrive/controls/controlsd.py
-index 8a18662c0344c3953eed03c4e4ebc1835cf0d61f..3cde303636f7357ddc5e58d1215f24389e5ac4e3 100644
+index 8a18662c0344c3953eed03c4e4ebc1835cf0d61f..7d6bccff22cd20c7e9feff7bbefafa631d9b9859 100644
 --- a/selfdrive/controls/controlsd.py
 +++ b/selfdrive/controls/controlsd.py
-@@ -19,6 +19,7 @@ from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR, HyundaiFlags
- from opendbc.car.hyundai.ev9 import EV9AngleConfig
- from opendbc.car.nissan.values import CAR as NISSAN_CAR
- from opendbc.car.vehicle_model import VehicleModel
-+from openpilot.starpilot.common.ev9_tuning import ev9_limit_speed_mps
- from openpilot.selfdrive.controls.lib.drive_helpers import (
-   MAX_LATERAL_JERK,
-   clip_curvature,
-@@ -302,6 +303,35 @@ def turn_lead_allowed(brand: str, lateral_control_mode: car.CarControl.Actuators
+@@ -302,6 +302,35 @@ def turn_lead_allowed(brand: str, lateral_control_mode: car.CarControl.Actuators
    return brand != "rivian" or lateral_control_mode != LateralControlMode.angle
  
  
@@ -24,18 +16,18 @@ index 8a18662c0344c3953eed03c4e4ebc1835cf0d61f..3cde303636f7357ddc5e58d1215f2438
 +  return min(max((1.0 - engaged_ratio) / (1.0 - TURN_LEAD_ENGAGED_FRAC), 0.0), 1.0)
 +
 +
-+def ev9_turn_lead_authority(speed, acceleration, probe_distance, speed_ceiling):
++def ev9_turn_lead_authority(speed, acceleration, probe_distance):
 +  """Continuous speed and stopping-distance envelopes, without delayed filter state."""
 +  def smoothstep(value):
 +    value = min(max(value, 0.0), 1.0)
 +    return value * value * (3.0 - 2.0 * value)
 +
-+  if speed_ceiling <= TURN_LEAD_MIN_SPEED or speed <= TURN_LEAD_MIN_SPEED or speed >= speed_ceiling:
++  if speed <= TURN_LEAD_MIN_SPEED or speed >= TURN_LEAD_MAX_SPEED:
 +    return 0.0
 +  entry = smoothstep((speed - TURN_LEAD_MIN_SPEED) / (TURN_LEAD_FULL_SPEED - TURN_LEAD_MIN_SPEED))
-+  # Fade the preview before its configured operating boundary rather than
++  # Fade the preview before its fixed operating boundary rather than
 +  # suddenly introducing a full preview as the car decelerates across it.
-+  upper = smoothstep((speed_ceiling - speed) / min(2.0, speed_ceiling - TURN_LEAD_MIN_SPEED))
++  upper = smoothstep((TURN_LEAD_MAX_SPEED - speed) / 2.0)
 +  stop = 1.0
 +  if acceleration < 0.0:
 +    stopping_distance = speed * speed / (-2.0 * acceleration)
@@ -46,7 +38,7 @@ index 8a18662c0344c3953eed03c4e4ebc1835cf0d61f..3cde303636f7357ddc5e58d1215f2438
  # Turn-initiation lead. The model's action and the fixed 4/7 m probes are anchored in
  # METERS, so the seconds of warning they give shrinks with speed — at 12 mph a corner
  # enters the 7 m window only ~1.3 s out, too late to wind the wheel, which is why every
-@@ -316,6 +346,8 @@ def turn_lead_allowed(brand: str, lateral_control_mode: car.CarControl.Actuators
+@@ -316,6 +345,8 @@ def turn_lead_allowed(brand: str, lateral_control_mode: car.CarControl.Actuators
  # wheel unwinds below the threshold, the lead re-fires — a 5 Hz demand sawtooth felt
  # as wiggle (2026-07-19 drive seg 7 t=49-50). The fade instead settles at a stable
  # ~2/3-of-lead equilibrium until the action takes over via the max-mag blend.
@@ -55,32 +47,33 @@ index 8a18662c0344c3953eed03c4e4ebc1835cf0d61f..3cde303636f7357ddc5e58d1215f2438
  # Stop-sign approaches stay quiet because the stopping plan compresses to the stop
  # line and reads ~straight until the car is nearly there (probes ~0 for 7 s of
  # blinker-on coasting at 9-12 m/s). Below TURN_LEAD_MIN_SPEED the lead must stay OFF,
-@@ -332,7 +364,7 @@ TURN_LEAD_MIN_M = 4.0
+@@ -332,7 +363,7 @@ TURN_LEAD_MIN_M = 4.0
  TURN_LEAD_MAX_M = 14.0
  TURN_LEAD_MIN_SPEED = 3.0   # m/s: authority 0 here, ramps to full at FULL_SPEED
  TURN_LEAD_FULL_SPEED = 4.0  # m/s
 -TURN_LEAD_MAX_SPEED = 7.0   # m/s (~15.7 mph)
-+TURN_LEAD_MAX_SPEED = 7.0   # m/s (~15.7 mph), non-EV9; EV9 uses the existing Limits Speed setting
++TURN_LEAD_MAX_SPEED = 7.0   # m/s (25.2 km/h); independent of EV9 angle-controller Limits Speed
  TURN_LEAD_SCALE = 0.85
  TURN_LEAD_CAP = 0.12       # 1/m
  TURN_LEAD_ENGAGED_FRAC = 0.5   # engagement fade starts here, zero authority at 1.0
-@@ -598,3 +630,4 @@ class Controls:
+@@ -595,6 +626,7 @@ class Controls:
+     else:
+       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+ 
 +    turn_lead_model_curvature = new_desired_curvature
      # Low-speed turn-intent hold (see CURVATURE_HOLD_* above). Curvature sign convention
      # here is positive for RIGHT turns (pauseturn log: left turn at +148 deg steering
      # angle logs desiredCurvature -0.07), so the blinker maps right=+1, left=-1.
-@@ -720,20 +753,28 @@ class Controls:
+@@ -720,20 +752,27 @@ class Controls:
      # edge: a model actively steering against the blinker is correcting something the
      # lead must not fight (see the constants comment for the 2026-07-19 failures).
      lateral_control_mode = self.sm['carOutput'].actuatorsOutput.lateralControlMode
 +    ev9_angle_lead = self.CP.carFingerprint == HYUNDAI_CAR.KIA_EV9 and self.CP.steerControlType == car.CarParams.SteerControlType.angle
-+    lead_speed_ceiling = ev9_limit_speed_mps(self.starpilot_toggles) if ev9_angle_lead else TURN_LEAD_MAX_SPEED
 +    lead_manual = CS.steeringPressed or self.sm['carOutput'].actuatorsOutput.manualSteeringOverride
      if (turn_lead_allowed(self.CP.brand, lateral_control_mode) and
          CC.latActive and blinker_dir != 0.0 and
          model_v2.meta.laneChangeState == LaneChangeState.off and
--        TURN_LEAD_MIN_SPEED <= CS.vEgo < TURN_LEAD_MAX_SPEED and
-+        TURN_LEAD_MIN_SPEED <= CS.vEgo < lead_speed_ceiling and
+         TURN_LEAD_MIN_SPEED <= CS.vEgo < TURN_LEAD_MAX_SPEED and
 +        (not ev9_angle_lead or not lead_manual) and
          new_desired_curvature * blinker_dir > -TURN_LEAD_MODEL_OPPOSE):
        d_near = max(min(TURN_LEAD_T * CS.vEgo, TURN_LEAD_MAX_M), TURN_LEAD_MIN_M)
@@ -96,17 +89,223 @@ index 8a18662c0344c3953eed03c4e4ebc1835cf0d61f..3cde303636f7357ddc5e58d1215f2438
 -        engaged_ratio = abs(self.curvature) / abs(lead_curvature)
 -        engage_w = min(max((1.0 - engaged_ratio) / (1.0 - TURN_LEAD_ENGAGED_FRAC), 0.0), 1.0)
 +        if ev9_angle_lead:
-+          speed_w = ev9_turn_lead_authority(CS.vEgo, CS.aEgo, d_near, lead_speed_ceiling)
++          speed_w = ev9_turn_lead_authority(CS.vEgo, CS.aEgo, d_near)
 +        engage_w = turn_lead_engagement_weight(self.CP.carFingerprint, self.CP.steerControlType, self.curvature,
 +                                                turn_lead_model_curvature, lead_curvature, blinker_dir)
          lead_curvature *= speed_w * engage_w
          if lead_curvature * blinker_dir > max(new_desired_curvature * blinker_dir, 0.0):
            new_desired_curvature = lead_curvature
+diff --git a/selfdrive/controls/tests/test_ev9_turn_lead_control.py b/selfdrive/controls/tests/test_ev9_turn_lead_control.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc93e96cb170b7beb39cff8578acda55c51c01d7
+--- /dev/null
++++ b/selfdrive/controls/tests/test_ev9_turn_lead_control.py
+@@ -0,0 +1,200 @@
++"""Exercise fixed-speed turn preview in real Controls, before downstream limits."""
++from collections import defaultdict
++from types import SimpleNamespace
++
++import cereal.messaging as messaging
++from cereal import log
++
++import pytest
++
++from openpilot.selfdrive.controls import controlsd
++from opendbc.car.hyundai.interface import CarInterface
++from opendbc.car.hyundai.values import CAR
++from opendbc.car.vehicle_model import VehicleModel
++from openpilot.selfdrive.controls.controlsd import Controls
++from openpilot.selfdrive.controls.lib.lane_centering import LaneCenteringController
++from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
++
++
++class SubMaster(dict):
++  def __init__(self):
++    services = (
++      'carState',
++      'carOutput',
++      'liveParameters',
++      'liveDelay',
++      'modelV2',
++      'selfdriveState',
++      'liveCalibration',
++      'longitudinalPlan',
++      'starpilotCarState',
++      'starpilotPlan',
++      'radarState',
++      'lateralManeuverPlan',
++    )
++    super().__init__((service, getattr(messaging.new_message(service), service)) for service in services)
++    self['onroadEvents'] = []
++    self.valid = defaultdict(lambda: True, lateralManeuverPlan=False)
++    self.logMonoTime = defaultdict(lambda: 10_000_000_000)
++
++  def all_checks(self, services):
++    return all(self.valid[service] for service in services)
++
++
++def make_controls(monkeypatch):
++  monkeypatch.setattr(controlsd, 'REPLAY', True)
++  c = Controls.__new__(Controls)
++  c.CP = CarInterface.get_non_essential_params(CAR.KIA_EV9)
++  c.CP.openpilotLongitudinalControl = False
++  c.CI = CarInterface
++  c.sm = SubMaster()
++  c.sm['carState'].vEgo = c.sm['carState'].vEgoRaw = 5.0
++  c.sm['selfdriveState'].enabled = c.sm['selfdriveState'].active = True
++  c.sm['liveCalibration'].calStatus = log.LiveCalibrationData.Status.calibrated
++  c.sm['starpilotPlan'].lateralCheck = True
++  c.sm['liveParameters'].stiffnessFactor = 1.0
++  c.sm['liveParameters'].steerRatio = c.CP.steerRatio
++  c.sm['liveDelay'].lateralDelay = 0.2
++  c.starpilot_toggles = SimpleNamespace(
++    max_desired_acceleration=2.0,
++    lane_centering=False,
++    lane_center_offset=0.0,
++    lane_centering_e2e_authority=0.0,
++    lane_centering_pause_on_signal=True,
++    lane_change_pace=10,
++    hkg_tuning_angle_custom_limit_max_speed_kph=40,
++  )
++  for field in (
++    'curvature',
++    'desired_curvature',
++    'lc_smooth_release',
++    'lc_entry_sign',
++    'lc_arrest_jerk_factor',
++    'turn_hold_curvature',
++    'turn_hold_standstill_t',
++    'turn_hold_swept',
++    'turn_hold_handoff_t',
++    'turn_blinker_swept',
++    'twitch_guard_remaining',
++  ):
++    setattr(c, field, 0.0)
++  c.turn_hold_done = c.steer_limited_by_safety = c.ecu_disable_failed = False
++  c.ecu_disable_failed_checked = True
++  c.calibrated_pose = None
++  c.VM = VehicleModel(c.CP)
++  c.LaC = LatControlAngle(c.CP, None, 0.01)
++  c.LoC = SimpleNamespace(long_control_state=0, reset=lambda: None, update=lambda *args, **kwargs: 0.0)
++  c.lane_centering = LaneCenteringController()
++  return c
++
++
++
++def setup_case(monkeypatch, *, raw=.01, held=0., speed=5., direction=1):
++  c = make_controls(monkeypatch)
++  c.sm['carState'].vEgo = c.sm['carState'].vEgoRaw = speed
++  c.sm['carState'].rightBlinker = direction > 0
++  c.sm['carState'].leftBlinker = direction < 0
++  c.sm['modelV2'].action.desiredCurvature = raw
++  c.turn_hold_curvature = held
++  probes, shaped = [], []
++
++  def preview(*args):
++    probes.append(args)
++    return .1 * direction
++
++  def centering(curvature, *args):
++    shaped.append(curvature)
++    return curvature
++
++  monkeypatch.setattr(controlsd, '_plan_dual_probe', preview)
++  c.lane_centering = SimpleNamespace(update=centering, reset=lambda: None)
++  return c, probes, shaped
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('speed_kph', [25.2, 25.201, 30., 35., 40.])
++@pytest.mark.parametrize('limits_kph', [20., 25.2, 30., 40., 60.])
++def test_preview_ceiling_preserves_model_turn_independent_of_ev9_limits(monkeypatch, sign, speed_kph, limits_kph):
++  c, probes, shaped = setup_case(monkeypatch, raw=sign*.01, speed=speed_kph/3.6, direction=sign)
++  c.starpilot_toggles.hkg_tuning_angle_custom_limit_max_speed_kph = limits_kph
++  c.state_control()
++  assert not probes
++  # Inspect before downstream angle/safety limits: only supplemental preview is withdrawn.
++  assert shaped[-1] == pytest.approx(sign*.01)
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++@pytest.mark.parametrize('limits_kph', [10., 20., 40., 60.])
++@pytest.mark.parametrize('speed,expected', [(5., .085), (6., .0425), (6.999, .01), (7., .01)])
++def test_preview_fades_at_fixed_boundary_in_both_directions(monkeypatch, sign, limits_kph, speed, expected):
++  c, _, shaped = setup_case(monkeypatch, raw=sign*.01, speed=speed, direction=sign)
++  c.starpilot_toggles.hkg_tuning_angle_custom_limit_max_speed_kph = limits_kph
++  c.state_control()
++  assert shaped[-1] == pytest.approx(sign*expected)
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++def test_retained_low_speed_hold_after_signal_cancels_is_unchanged(monkeypatch, sign):
++  c, probes, shaped = setup_case(monkeypatch, raw=sign*.01, held=sign*.04, speed=1., direction=0)
++  c.turn_hold_swept = .01
++  c.turn_hold_handoff_t = .02
++  c.state_control()
++  assert not probes
++  assert shaped[-1] == pytest.approx(sign*.04)
++  assert c.turn_hold_curvature == pytest.approx(sign*.04)
++  assert c.turn_hold_swept == pytest.approx(.01)
++
++
++@pytest.mark.parametrize('speed', [0., 5.])
++def test_standstill_prewind_and_low_speed_lead_remain(monkeypatch, speed):
++  c, _, shaped = setup_case(monkeypatch, speed=speed)
++  c.CP.steerAtStandstill = True
++  monkeypatch.setattr(controlsd, 'get_plan_spatial_curvature', lambda *args: .1)
++  monkeypatch.setattr(controlsd, 'get_plan_turn_onset_dist', lambda *args: 0.)
++  monkeypatch.setattr(controlsd, 'get_plan_reach', lambda *args: 30.)
++  c.state_control()
++  assert shaped[-1] > .01
++
++
++@pytest.mark.parametrize('manual', ['steeringPressed', 'manualSteeringOverride'])
++def test_manual_control_bypasses_extra_assistance(monkeypatch, manual):
++  c, probes, shaped = setup_case(monkeypatch)
++  if manual == 'steeringPressed':
++    c.sm['carState'].steeringPressed = True
++  else:
++    c.sm['carOutput'].actuatorsOutput.manualSteeringOverride = True
++  c.state_control()
++  assert not probes
++  assert shaped[-1] == pytest.approx(.01)
++
++
++@pytest.mark.parametrize('sign', [-1, 1])
++def test_braking_before_preview_withholds_added_assistance(monkeypatch, sign):
++  c, _, shaped = setup_case(monkeypatch, raw=sign*.01, direction=sign)
++  c.sm['carState'].aEgo = -3.
++  c.state_control()
++  assert shaped[-1] == pytest.approx(sign*.01)
++
++
++@pytest.mark.parametrize('raw', [.10, -.0001])
++def test_model_demand_wins_or_opposes_preview(monkeypatch, raw):
++  c, _, shaped = setup_case(monkeypatch, raw=raw)
++  c.state_control()
++  assert shaped[-1] == pytest.approx(raw)
++
++
++def test_lane_change_is_not_a_turn_preview(monkeypatch):
++  c, probes, shaped = setup_case(monkeypatch)
++  c.sm['modelV2'].meta.laneChangeState = log.LaneChangeState.laneChangeStarting
++  c.sm['modelV2'].meta.laneChangeDirection = log.LaneChangeDirection.right
++  c.state_control()
++  assert not probes
++  assert shaped[-1] == pytest.approx(.01)
++
++
++def test_non_ev9_keeps_existing_lead(monkeypatch):
++  c, probes, shaped = setup_case(monkeypatch)
++  c.CP.carFingerprint = 'non-EV9'
++  c.state_control()
++  assert probes
++  assert shaped[-1] > .01
 diff --git a/selfdrive/controls/tests/test_turn_lead.py b/selfdrive/controls/tests/test_turn_lead.py
-index b4cfd4d533cc81697c7a4272f5654be49fb60465..4ebf797833398070954b8fb1c322451d99c1b8a2 100644
+index b4cfd4d533cc81697c7a4272f5654be49fb60465..4d4befde7d00b4ae92b811a4be31e01a5a19c3c5 100644
 --- a/selfdrive/controls/tests/test_turn_lead.py
 +++ b/selfdrive/controls/tests/test_turn_lead.py
-@@ -140,3 +140,60 @@ def test_twitch_guard_decays_after_pullaway_and_expires():
+@@ -140,3 +140,58 @@ def test_twitch_guard_decays_after_pullaway_and_expires():
  
  def test_twitch_guard_does_not_arm_while_moving():
    assert update_twitch_guard(0.0, 1.0, False) == 0.0
@@ -146,27 +345,25 @@ index b4cfd4d533cc81697c7a4272f5654be49fb60465..4ebf797833398070954b8fb1c322451d
 +    assert turn_lead_engagement_weight(fingerprint, control_type, measured, -.001, .02, 1.) == expected
 +
 +
-+def test_ev9_lead_configured_speed_boundary_is_continuous():
++def test_ev9_lead_fixed_speed_boundary_is_continuous():
 +  from openpilot.selfdrive.controls.controlsd import ev9_turn_lead_authority
-+  ceiling = 40. / 3.6
-+  assert ev9_turn_lead_authority(32. / 3.6, 0., 10., ceiling) == 1.
-+  assert ev9_turn_lead_authority(ceiling, 0., 10., ceiling) == 0.
-+  assert ev9_turn_lead_authority(ceiling - .001, 0., 10., ceiling) < 1e-5
-+  assert ev9_turn_lead_authority(ceiling - 1., 0., 10., ceiling) == .5
-+  assert ev9_turn_lead_authority(7., 0., 9.1, ceiling) == 1.
-+  # A low configured ceiling must not bypass the historical creep exclusion.
-+  assert ev9_turn_lead_authority(2.5, 0., 4., 10. / 3.6) == 0.
-+  assert ev9_turn_lead_authority(3., 0., 4., ceiling) == 0.
++  assert ev9_turn_lead_authority(5., 0., 10.) == 1.
++  assert ev9_turn_lead_authority(6., 0., 10.) == .5
++  assert ev9_turn_lead_authority(7. - .001, 0., 10.) < 1e-5
++  for speed in (7., 30. / 3.6, 35. / 3.6, 40. / 3.6):
++    assert ev9_turn_lead_authority(speed, 0., 10.) == 0.
++  for speed in (0., 2.5, 3.):
++    assert ev9_turn_lead_authority(speed, 0., 4.) == 0.
 +
 +
 +def test_ev9_lead_stop_projection_fades_without_deceleration_switch():
 +  from openpilot.selfdrive.controls.controlsd import ev9_turn_lead_authority
-+  # At 6 m/s and an 8 m preview: stop before the bend => no initiation.
-+  assert ev9_turn_lead_authority(6., -3., 8., 40./3.6) == 0.
-+  assert ev9_turn_lead_authority(6., -2.25, 8., 40./3.6) == 0.
-+  assert ev9_turn_lead_authority(6., -1.8, 8., 40./3.6) == .5
-+  assert ev9_turn_lead_authority(6., -1.5, 8., 40./3.6) == 1.
-+  assert ev9_turn_lead_authority(6., -.501, 8., 40./3.6) == ev9_turn_lead_authority(6., -.499, 8., 40./3.6)
++  # At 6 m/s the fixed upper-speed fade has half authority. Braking scales it further.
++  assert ev9_turn_lead_authority(6., -3., 8.) == 0.
++  assert ev9_turn_lead_authority(6., -2.25, 8.) == 0.
++  assert ev9_turn_lead_authority(6., -1.8, 8.) == .25
++  assert ev9_turn_lead_authority(6., -1.5, 8.) == .5
++  assert ev9_turn_lead_authority(6., -.501, 8.) == ev9_turn_lead_authority(6., -.499, 8.)
 diff --git a/starpilot/common/ev9_tuning.py b/starpilot/common/ev9_tuning.py
 index c364ea885bf0648502476cb4382694e869721134..20ae1173576cce1384ea5e66056377e4439a8484 100644
 --- a/starpilot/common/ev9_tuning.py
