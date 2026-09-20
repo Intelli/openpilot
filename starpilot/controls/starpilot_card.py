@@ -72,6 +72,7 @@ class StarPilotCard:
     self.hyundai_aol_ready = False
     self.g70_main_cruise_aol_pending = False
     self.g70_main_cruise_aol_pending_frames = 0
+    self.ev9_main_cruise_on = False
     self.prev_cruise_available = None
     self.prev_active = False
     self.prev_cruise_enabled = False
@@ -274,15 +275,20 @@ class StarPilotCard:
       ]
 
     button_event_types = [self._button_type_raw(be) for be in carState.buttonEvents]
+    ev9 = getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.KIA_EV9
+    if ev9 and any(be_type == ButtonType.mainCruise and be.pressed
+                   for be, be_type in zip(carState.buttonEvents, button_event_types, strict=False)):
+      # Track the physical main-button request even when AOL is unavailable or
+      # calibration rejects it. LKAS and delayed stock SCC must not change its phase.
+      # Stock EV9 cruise availability is only a fault gate, not the main ON/OFF state.
+      self.ev9_main_cruise_on = not self.ev9_main_cruise_on
     button_aol_supported = self.always_on_lateral_supported and (
       self.CP.brand == "hyundai" or starpilot_toggles.lkas_allowed_for_aol
     )
     if getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.HYUNDAI_SONATA_HYBRID:
       button_aol_supported = self.always_on_lateral_supported and bool(starpilot_toggles.lkas_allowed_for_aol)
     button_managed_aol = starpilot_toggles.always_on_lateral_lkas or (button_aol_supported and starpilot_toggles.main_cruise_aol_toggle)
-    ev9_main_aol_managed = (
-      getattr(self.CP, "carFingerprint", None) == HYUNDAI_CAR.KIA_EV9 and starpilot_toggles.main_cruise_aol_toggle
-    )
+    ev9_main_aol_managed = ev9 and starpilot_toggles.main_cruise_aol_toggle
     ev9_main_aol_op_long = ev9_main_aol_managed and getattr(self.CP, "openpilotLongitudinalControl", False)
     if ev9_main_aol_managed and live_aol and not self.aol_calibration_ready:
       # A rejected request must not return through a delayed stock-SCC enable
@@ -333,6 +339,8 @@ class StarPilotCard:
                 # CarState already applied this press to software cruise readiness.
                 # Match it so independent LKAS presses cannot invert the main action.
                 self.always_on_lateral_allowed = carState.cruiseState.available
+              elif ev9_main_aol_managed:
+                self.always_on_lateral_allowed = self.ev9_main_cruise_on and carState.cruiseState.available
               else:
                 self.always_on_lateral_allowed = not self.always_on_lateral_allowed
               if ev9_main_aol_managed:
