@@ -9,7 +9,7 @@ The six formerly enabled patches have been ported to numbered `01_`–`06_`
 StarPilot `.patch` files. Their unchanged originals end in `.patch.migrated`;
 `tap_detection_debug.patch.disabled` keeps its original name and remains inactive.
 `origin.json` records original paths, source commit/URLs and SHA-256 checksums,
-with updated archive locations. See the [migration guide](../../docs/STARPILOT_MIGRATION.md#ev9-vehicle-migrations)
+with updated archive locations. See the [EV9 behavior reference](../../docs/EV9_BEHAVIOR.md)
 for current vehicle behavior and application integration.
 
 ## Supported helpers

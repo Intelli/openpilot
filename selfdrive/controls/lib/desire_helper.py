@@ -350,11 +350,12 @@ class DesireHelper:
 
     ev9_signal_turn = getattr(starpilot_toggles, "car_model", None) == HYUNDAI_CAR.KIA_EV9
     signal_side_blocked = (carstate.leftBlinker and carstate.leftBlindspot) or (carstate.rightBlinker and carstate.rightBlindspot)
-    # Preserve the EV9 driver's signal intent through predicted stops, as in Sunnypilot.
+    # Match Sunnypilot: EV9 signal intent stays eligible through stops and inactive
+    # lateral control. This informs the model; steering activation is gated separately.
     # A detected object on the requested side still vetoes the turn.
-    signal_turn_allowed = not signal_side_blocked if ev9_signal_turn else not self.turn_stop_hold
-    if lateral_active and one_blinker and below_lane_change_speed and not carstate.standstill \
-        and starpilot_toggles.use_turn_desires and signal_turn_allowed:
+    signal_turn_allowed = (not signal_side_blocked if ev9_signal_turn else
+                           lateral_active and not carstate.standstill and not self.turn_stop_hold)
+    if one_blinker and below_lane_change_speed and starpilot_toggles.use_turn_desires and signal_turn_allowed:
       self.turn_direction = TurnDirection.turnLeft if carstate.leftBlinker else TurnDirection.turnRight
       self.desire = TURN_DESIRES[self.turn_direction]
     else:

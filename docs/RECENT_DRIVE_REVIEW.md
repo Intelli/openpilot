@@ -194,5 +194,5 @@ rank physical steering improvements.
 Report the build/route reviewed, confirmed facts, separately labeled causal
 inferences, remaining gaps and tests performed. For fixes, follow the
 [patch workflow](../patches/README.md) and
-[build/deployment provenance](STARPILOT_MIGRATION.md). A passing host replay does
+[build/deployment provenance](MAINTENANCE.md). A passing host replay does
 not replace the GitHub device build or on-vehicle validation.

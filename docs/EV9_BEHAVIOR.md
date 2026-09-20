@@ -1,61 +1,11 @@
-# StarPilot maintenance and EV9 behavior
+# EV9 behavior reference
 
-The experimental EV9 custom planner is retired; its code and notes are kept in
-[the planner archive](../patches/archive/EV9_CUSTOM_PLANNER.md).
+This describes the maintained branch, not necessarily the build or saved settings
+on a device. Verify those using [the drive-review workflow](RECENT_DRIVE_REVIEW.md).
+For source, patch ownership and deployment, see [maintenance](MAINTENANCE.md).
+The retired custom planner is documented only in [its archive](../patches/archive/EV9_CUSTOM_PLANNER.md).
 
-## Source and workflow
-
-- Develop on `ev9-dev`. Stable upstream is `firestar5683/StarPilot`, branch
-  **`StarPilot`**; `Dom` is not the sync target. [starpilot-upstream.json](../starpilot-upstream.json)
-  records the imported commit/tree.
-- Edit vehicle code under `opendbc_repo/opendbc/` (`opendbc` is a symlink).
-  Dependencies are tracked files. The standalone Intelli/opendbc checkout is
-  historical reference only.
-- Save application edits before `./sync-upstream.sh --check` / `--allow`.
-  `--allow` replaces and stages the upstream source, including previously
-  committed customizations. It never replays patches, commits or pushes.
-- Restore customizations with `./apply_patch.sh`, then review source and patches
-  together. Replay root patches alphabetically, then numbered vehicle patches.
-  See [the patch workflow](../patches/README.md) for export/update commands and
-  [AGENTS.md](../AGENTS.md) for development and build instructions.
-- This guide, the patch archive and maintenance tooling are preserved by sync.
-  Application changes belong in patches, not the sync preservation list.
-
-## Patch ownership
-
-Only `.patch` files directly in `patches/` and `patches/opendbc/` are enabled.
-Nested files under `patches/archive/` are never replayed. Historical `.migrated`,
-`.temp-disabled` and `.disabled` originals remain unchanged and unapplied.
-Lane centering, driver monitoring and power management remain deferred.
-The old prebuilt patch was replaced by maintained build tooling.
-Archived helpers under `patches/legacy-openpilot-tooling/` and
-`tools/opendbc-patches/legacy/` are reference only; do not run them.
-
-| Root patch (`patches/`) | Current scope |
-| --- | --- |
-| `build_config_starpilot.patch` | Explicit editable-install import root; prevents Hatchling from walking uv's temporary cache |
-| `custom_defaults_starpilot.patch` | Supported defaults, EV9 fingerprint, parameter registration and button migration |
-| `ev9_edition_starpilot.patch` | Branding and EV9-only control restriction |
-| `boot_logo_ev9_edition.patch` | Boot artwork and references |
-| `settings_ui_starpilot.patch` | Shared flat settings layout |
-| `drive_helpers_starpilot.patch` | EV9 tuning broadcast, curvature integration, calibration and always-on lateral (AOL) state |
-| `customize_warnings_starpilot.patch` | Steering-warning policy and driver-input suppression |
-| `alerts_starpilot.patch` | Compact alerts and silent braking while AOL steering continues |
-| `custom_model_ui_starpilot.patch` | EV9 blue/rainbow style and independent path-warning highlighting |
-| `ui_options_starpilot.patch` | Flat Steering page and EV9 controls |
-
-## EV9 vehicle migrations
-
-| Vehicle patch (`patches/opendbc/`) | Current scope |
-| --- | --- |
-| `01_customize_warnings_starpilot.patch` | 0.3-second steering-saturation timer |
-| `02_door_signals_starpilot.patch` | All four CAN-FD doors |
-| `03_modify_baseline_starpilot.patch` | EV9 vehicle model, safety identification and flag decoding |
-| `04_panda_safety_limits_starpilot.patch` | EV9 numeric safety limits and stock-LKAS forwarding ownership |
-| `05_steering_and_ev9_limits_starpilot.patch` | Controller limits, override effort, HOD and manual handoff |
-| `06_ev9_tests_starpilot.patch` | Vehicle/controller/native-safety regression tests |
-
-### Limits and steering ownership
+## Limits and steering ownership
 
 - Preserve the historical EV9 steering envelopes; longitudinal acceleration uses
   StarPilot defaults. Low-speed lateral acceleration/jerk limits are 4.2 m/s²
@@ -97,7 +47,7 @@ Archived helpers under `patches/legacy-openpilot-tooling/` and
   HOD samples expire after 300 ms; reserved statuses publish a zero timestamp.
   Global `steeringPressed` and Panda inputs remain unchanged.
 
-### Settings and engagement
+## Settings and engagement
 
 | Parameter | Application default / supported range |
 | --- | --- |
@@ -135,10 +85,17 @@ calibration discards the session and requires a fresh accepted request. Delayed
 stock-cruise engagement cannot undo an explicit button OFF. Stock SCC availability
 supplies main permission without requiring actual cruise engagement.
 
-EV9 Force Turn Desires follows the signal through predicted-stop conditions, as
-in Sunnypilot. It requires active lateral control, movement, one signal, speed
-below the greater of EV9 Limits Speed and Minimum Lane Change Speed, and no
-same-side blind-spot detection. Actual standstill still prevents a turn desire.
+EV9 Force Turn Desires follows the signal through predicted stops, actual
+standstill and inactive lateral control, matching Sunnypilot's signal-intent
+eligibility. It requires one signal, speed below the greater of EV9 Limits Speed
+and Minimum Lane Change Speed, and no same-side blind-spot detection. Signal
+cancellation, hazards, a blocked requested side or disabling the setting clears
+the turn intent. A continuously held signal no longer creates a fresh model
+turn pulse solely because the car stops and restarts; a signal first selected
+while stopped can establish intent immediately. This does not lock the model's
+path or enable steering while stopped. Steering activation, navigation desires
+and other vehicles retain their existing gates. The follow-up is preserved in
+`patches/lane_change_safeguards_starpilot.patch`.
 
 EV9 preview assistance has a separate fixed ceiling of 7 m/s (25.2 km/h),
 independent of EV9 Limits Speed. It retains the current-preview handoff to model
@@ -147,7 +104,7 @@ Restoring this ceiling does not change the signal turn-desire rules above.
 The road-edge guard for the former extended speed range is retired in
 `patches/ev9_turn_signal_edge_guard.patch.disabled` and excluded from replay.
 
-### Steering warnings
+## Steering warnings
 
 Two paths feed the EV9 steering-limit alert:
 
@@ -169,7 +126,7 @@ standstill, unhealthy inputs and actual manual handoff reset the warning.
 StarPilot's sound selection and Switchback cooldown remain in use. These warning
 thresholds do not impose a universal 90° steering-command limit.
 
-### Path appearance
+## Path appearance
 
 EV9 Path provides animated blue and acceleration rainbow in both renderers,
 preserving saved native path-color choices when disabled. Path Warning Highlighting
@@ -180,23 +137,3 @@ which holds for 0.5 seconds then fades for 1 second. It replaces the old EV9 col
 blend, so its appearance needs device validation before upstream publication.
 Geometry and adjacent blind-spot overlays remain native StarPilot behavior.
 Blind-spot red can appear without an alert and is independent of warning highlighting.
-
-## Build, deployment and verification
-
-Use `ev9-dev` → GitHub device build → `ev9-prebuilt` → `ev9`. Install `Intelli/ev9`.
-`ev9-prebuilt` holds one parentless built snapshot with a `Source-Commit` trailer;
-`ev9` preserves deployment history and records `Source-Commit` and `Build-Commit`.
-Promote the exact built tree: tracked AGNOS binaries and `prebuilt` make source-only
-promotion unsafe. Parameter/schema/native changes must ship with rebuilt binaries.
-
-The build workflow retains the name `sunnypilot prebuilt action` because the
-workflow on `master` subscribes to it; coordinate both when renaming. The GitHub
-build remains the deployment gate. Do not run publishing scripts as local checks.
-
-Use focused tests for changed behavior. Host-native extensions and `libsafety.so`
-must be built separately from tracked AGNOS binaries. Verify enabled patches replay
-from the recorded baseline and reproduce their affected source files; current-tree
-`./apply_patch.sh --check` alone does not simulate dependent replay.
-For device issues, follow [the recent-drive review workflow](RECENT_DRIVE_REVIEW.md)
-to verify the recorded build/settings and inspect full-rate logs when needed.
-Host checks do not replace the GitHub device build or on-vehicle validation.
