@@ -56,7 +56,6 @@ def joystick(started: bool, params: Params, CP: car.CarParams, starpilot_toggles
 def not_joystick(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started and not params.get_bool("JoystickDebugMode")
 
-
 def long_maneuver(started: bool, params: Params, CP: car.CarParams, starpilot_toggles: SimpleNamespace) -> bool:
   return started and params.get_bool("LongitudinalManeuverMode") and not params.get_bool("LateralManeuverMode")
 
