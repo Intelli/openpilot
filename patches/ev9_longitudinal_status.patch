@@ -170,10 +170,10 @@ index f4c6f3c89e56633265e4794945de1fc573ef85f4..d9625014667157e875dc31877bdbae6f
  
 diff --git a/selfdrive/ui/onroad/starpilot/longitudinal_status.py b/selfdrive/ui/onroad/starpilot/longitudinal_status.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..234f49a6b2fa5fd20906092598d3295ea7618d59
+index 0000000000000000000000000000000000000000..b09353135b4b18c779a607a893a994afa93bacb4
 --- /dev/null
 +++ b/selfdrive/ui/onroad/starpilot/longitudinal_status.py
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,103 @@
 +"""EV9 startup mode and vehicle READY notice, independent of cruise engagement."""
 +from dataclasses import dataclass
 +
@@ -211,6 +211,11 @@ index 0000000000000000000000000000000000000000..234f49a6b2fa5fd20906092598d3295e
 +  return timestamp > 0 and timestamp >= sample.session_start and 0 <= sample.now - timestamp <= maximum_age
 +
 +
++def _identified_ev9(sample: LongitudinalSample) -> bool:
++  # carParams publishes every 50 seconds and may arrive just before the UI starts.
++  return sample.identity_ev9 and sample.identity_time > 0 and 0 <= sample.now - sample.identity_time <= 55.0
++
++
 +def _ready_state(sample: LongitudinalSample) -> bool | None:
 +  # A fresh publication can contain an old CAN value. Check both timestamps.
 +  if not sample.vehicle_valid or not _fresh(sample.vehicle_time, sample, 0.5) or not _fresh(sample.ready_time, sample, 0.5):
@@ -220,10 +225,9 @@ index 0000000000000000000000000000000000000000..234f49a6b2fa5fd20906092598d3295e
 +
 +def longitudinal_status(sample: LongitudinalSample) -> str | None:
 +  """Identify the configured controller and power state; not an ECU-health certification."""
-+  # carParams publishes every 50 seconds and may arrive just before the UI starts.
-+  # Use it only for identity. Current-session Panda configuration determines mode,
++  # Use carParams only for identity. Current-session Panda configuration determines mode,
 +  # including fallback, which can differ from the initial/cached carParams.
-+  if not sample.started or not sample.identity_ev9 or not (sample.identity_time > 0 and 0 <= sample.now - sample.identity_time <= 55.0):
++  if not sample.started or not _identified_ev9(sample):
 +    return None
 +  if (not sample.panda_valid or sample.panda_fault or not _fresh(sample.panda_time, sample, 1.0) or
 +      sample.safety_models != ("hyundaiCanfd",) or len(sample.safety_params) != 1):
@@ -259,6 +263,9 @@ index 0000000000000000000000000000000000000000..234f49a6b2fa5fd20906092598d3295e
 +      self._ready_seen = False
 +
 +    status = longitudinal_status(sample)
++    if self._show_until is None and status is None:
++      # Show initialization without claiming a mode or consuming its notice window.
++      return "Please wait..." if _identified_ev9(sample) else None
 +    if self._show_until is None and status is not None:
 +      self._show_until = sample.now + NOTICE_SECONDS
 +    # Keep the pre-READY prompt available while the driver completes startup.
@@ -401,10 +408,10 @@ index 0000000000000000000000000000000000000000..c6567a9bd5b2725245d4c8d9c36da928
 +      rl.draw_text_ex(self._font, self._label, rl.Vector2(x, y), font_size, 0, color)
 diff --git a/selfdrive/ui/tests/test_longitudinal_status.py b/selfdrive/ui/tests/test_longitudinal_status.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..158b7216b00da8d7f1fcec375796e5899a62e36d
+index 0000000000000000000000000000000000000000..2518d80f785e80ca37c731a4cf463cdadc40d451
 --- /dev/null
 +++ b/selfdrive/ui/tests/test_longitudinal_status.py
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,119 @@
 +from dataclasses import replace
 +
 +import pytest
@@ -461,16 +468,24 @@ index 0000000000000000000000000000000000000000..158b7216b00da8d7f1fcec375796e589
 +@pytest.mark.parametrize("safety_param,label", [(36245, "OP long"), (36241, "Stock ACC")])
 +def test_thirty_seconds_begin_at_confirmation_not_onroad_transition(safety_param, label):
 +  notice = LongitudinalStatus()
-+  assert notice.update(sample(now=20, initializing=True)) is None
-+  assert notice.update(sample(now=30, safety_models=("elm327",))) is None
-+  assert notice.update(sample(now=40, safety_params=(safety_param,), vehicle_ready=True)) == label
-+  assert notice.update(sample(now=69.99, identity_time=60, safety_params=(safety_param,), vehicle_ready=True)) == label
-+  assert notice.update(sample(now=70, identity_time=60, safety_params=(safety_param,), vehicle_ready=True)) is None
-+  assert notice.update(sample(now=71, identity_time=60, safety_params=(safety_param,), vehicle_ready=True)) is None
++  assert notice.update(sample(now=20, initializing=True)) == "Please wait..."
++  assert notice.update(sample(now=60, identity_time=59, safety_models=("elm327",))) == "Please wait..."
++  assert notice.update(sample(now=70, identity_time=69, safety_params=(safety_param,), vehicle_ready=True)) == label
++  assert notice.update(sample(now=99.99, identity_time=90, safety_params=(safety_param,), vehicle_ready=True)) == label
++  assert notice.update(sample(now=100, identity_time=90, safety_params=(safety_param,), vehicle_ready=True)) is None
++  assert notice.update(sample(now=101, identity_time=90, safety_params=(safety_param,), vehicle_ready=True)) is None
++
++
++@pytest.mark.parametrize("changes", [
++  {"started": False}, {"identity_ev9": False}, {"identity_time": 0}, {"identity_time": 21}, {"identity_time": -40},
++])
++def test_startup_wait_requires_recent_ev9_identity(changes):
++  assert LongitudinalStatus().update(sample(initializing=True, **changes)) is None
 +
 +
 +def test_prompt_waits_for_brake_start_then_confirmation_gets_thirty_seconds():
 +  notice = LongitudinalStatus()
++  assert notice.update(sample(now=11, initializing=True)) == "Please wait..."
 +  assert notice.update(sample()) == "OP long ready"
 +  assert notice.update(sample(now=80, identity_time=79)) == "OP long ready"
 +  assert notice.update(sample(now=90, identity_time=89, vehicle_ready=True)) == "OP long"
@@ -513,14 +528,15 @@ index 0000000000000000000000000000000000000000..158b7216b00da8d7f1fcec375796e589
 +  assert notice.update(sample(now=51, started=False)) is None
 +  assert notice.update(sample(now=60, session_start=59, identity_time=59)) == "OP long ready"
 +  # Reset even if rendering never observed the intervening offroad frame.
-+  assert notice.update(sample(now=120, session_start=119, identity_time=119, vehicle_ready=True)) == "OP long"
-+  assert notice.update(sample(now=150, session_start=119, identity_time=149, vehicle_ready=True)) is None
++  assert notice.update(sample(now=120, session_start=119, identity_time=119, initializing=True)) == "Please wait..."
++  assert notice.update(sample(now=121, session_start=119, identity_time=119, vehicle_ready=True)) == "OP long"
++  assert notice.update(sample(now=151, session_start=119, identity_time=149, vehicle_ready=True)) is None
 diff --git a/selfdrive/ui/tests/test_longitudinal_status_widget.py b/selfdrive/ui/tests/test_longitudinal_status_widget.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..a5bc8468ca72f67228d2901c0bf848052277f3f1
+index 0000000000000000000000000000000000000000..2ae2dd1febcd23d0fa20983f05ae886bb6dc129a
 --- /dev/null
 +++ b/selfdrive/ui/tests/test_longitudinal_status_widget.py
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,160 @@
 +import importlib.util
 +import sys
 +from pathlib import Path
@@ -620,6 +636,13 @@ index 0000000000000000000000000000000000000000..a5bc8468ca72f67228d2901c0bf84805
 +    widget.update_status()
 +    return widget._label
 +
++  sm.seen['pandaStates'] = False
++  assert update(95) == 'Please wait...'
++  assert widget.is_visible
++  sm.seen['pandaStates'] = True
++  sm['onroadEvents'] = [SimpleNamespace(name='selfdriveInitializing')]
++  assert update(96) == 'Please wait...'
++  sm['onroadEvents'] = []
 +  assert update(100) == 'OP long ready'
 +  sm['carControl'].longActive = True
 +  assert update(105) == 'OP long ready'
@@ -641,7 +664,7 @@ index 0000000000000000000000000000000000000000..a5bc8468ca72f67228d2901c0bf84805
 +  assert update(160) == 'Stock ACC'
 +
 +
-+@pytest.mark.parametrize('label', ['OP long', 'Stock ACC', 'OP long ready', 'Long status unavailable'])
++@pytest.mark.parametrize('label', ['Please wait...', 'OP long', 'Stock ACC', 'OP long ready', 'Long status unavailable'])
 +def test_larger_text_and_flashing_only_for_startup_prompt(monkeypatch, label):
 +  module = load_widget(monkeypatch)
 +  drawn = []

@@ -97,6 +97,13 @@ def test_live_widget_notice_expires_without_rendering_and_returns_next_startup(m
     widget.update_status()
     return widget._label
 
+  sm.seen['pandaStates'] = False
+  assert update(95) == 'Please wait...'
+  assert widget.is_visible
+  sm.seen['pandaStates'] = True
+  sm['onroadEvents'] = [SimpleNamespace(name='selfdriveInitializing')]
+  assert update(96) == 'Please wait...'
+  sm['onroadEvents'] = []
   assert update(100) == 'OP long ready'
   sm['carControl'].longActive = True
   assert update(105) == 'OP long ready'
@@ -118,7 +125,7 @@ def test_live_widget_notice_expires_without_rendering_and_returns_next_startup(m
   assert update(160) == 'Stock ACC'
 
 
-@pytest.mark.parametrize('label', ['OP long', 'Stock ACC', 'OP long ready', 'Long status unavailable'])
+@pytest.mark.parametrize('label', ['Please wait...', 'OP long', 'Stock ACC', 'OP long ready', 'Long status unavailable'])
 def test_larger_text_and_flashing_only_for_startup_prompt(monkeypatch, label):
   module = load_widget(monkeypatch)
   drawn = []

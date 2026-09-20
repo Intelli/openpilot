@@ -54,16 +54,24 @@ def test_car_params_identity_can_precede_ui_start_but_must_be_recent():
 @pytest.mark.parametrize("safety_param,label", [(36245, "OP long"), (36241, "Stock ACC")])
 def test_thirty_seconds_begin_at_confirmation_not_onroad_transition(safety_param, label):
   notice = LongitudinalStatus()
-  assert notice.update(sample(now=20, initializing=True)) is None
-  assert notice.update(sample(now=30, safety_models=("elm327",))) is None
-  assert notice.update(sample(now=40, safety_params=(safety_param,), vehicle_ready=True)) == label
-  assert notice.update(sample(now=69.99, identity_time=60, safety_params=(safety_param,), vehicle_ready=True)) == label
-  assert notice.update(sample(now=70, identity_time=60, safety_params=(safety_param,), vehicle_ready=True)) is None
-  assert notice.update(sample(now=71, identity_time=60, safety_params=(safety_param,), vehicle_ready=True)) is None
+  assert notice.update(sample(now=20, initializing=True)) == "Please wait..."
+  assert notice.update(sample(now=60, identity_time=59, safety_models=("elm327",))) == "Please wait..."
+  assert notice.update(sample(now=70, identity_time=69, safety_params=(safety_param,), vehicle_ready=True)) == label
+  assert notice.update(sample(now=99.99, identity_time=90, safety_params=(safety_param,), vehicle_ready=True)) == label
+  assert notice.update(sample(now=100, identity_time=90, safety_params=(safety_param,), vehicle_ready=True)) is None
+  assert notice.update(sample(now=101, identity_time=90, safety_params=(safety_param,), vehicle_ready=True)) is None
+
+
+@pytest.mark.parametrize("changes", [
+  {"started": False}, {"identity_ev9": False}, {"identity_time": 0}, {"identity_time": 21}, {"identity_time": -40},
+])
+def test_startup_wait_requires_recent_ev9_identity(changes):
+  assert LongitudinalStatus().update(sample(initializing=True, **changes)) is None
 
 
 def test_prompt_waits_for_brake_start_then_confirmation_gets_thirty_seconds():
   notice = LongitudinalStatus()
+  assert notice.update(sample(now=11, initializing=True)) == "Please wait..."
   assert notice.update(sample()) == "OP long ready"
   assert notice.update(sample(now=80, identity_time=79)) == "OP long ready"
   assert notice.update(sample(now=90, identity_time=89, vehicle_ready=True)) == "OP long"
@@ -106,5 +114,6 @@ def test_offroad_and_new_ignition_each_reset_the_notice():
   assert notice.update(sample(now=51, started=False)) is None
   assert notice.update(sample(now=60, session_start=59, identity_time=59)) == "OP long ready"
   # Reset even if rendering never observed the intervening offroad frame.
-  assert notice.update(sample(now=120, session_start=119, identity_time=119, vehicle_ready=True)) == "OP long"
-  assert notice.update(sample(now=150, session_start=119, identity_time=149, vehicle_ready=True)) is None
+  assert notice.update(sample(now=120, session_start=119, identity_time=119, initializing=True)) == "Please wait..."
+  assert notice.update(sample(now=121, session_start=119, identity_time=119, vehicle_ready=True)) == "OP long"
+  assert notice.update(sample(now=151, session_start=119, identity_time=149, vehicle_ready=True)) is None
