@@ -35,6 +35,11 @@ def _fresh(timestamp: float, sample: LongitudinalSample, maximum_age: float) -> 
   return timestamp > 0 and timestamp >= sample.session_start and 0 <= sample.now - timestamp <= maximum_age
 
 
+def _identified_ev9(sample: LongitudinalSample) -> bool:
+  # carParams publishes every 50 seconds and may arrive just before the UI starts.
+  return sample.identity_ev9 and sample.identity_time > 0 and 0 <= sample.now - sample.identity_time <= 55.0
+
+
 def _ready_state(sample: LongitudinalSample) -> bool | None:
   # A fresh publication can contain an old CAN value. Check both timestamps.
   if not sample.vehicle_valid or not _fresh(sample.vehicle_time, sample, 0.5) or not _fresh(sample.ready_time, sample, 0.5):
@@ -44,10 +49,9 @@ def _ready_state(sample: LongitudinalSample) -> bool | None:
 
 def longitudinal_status(sample: LongitudinalSample) -> str | None:
   """Identify the configured controller and power state; not an ECU-health certification."""
-  # carParams publishes every 50 seconds and may arrive just before the UI starts.
-  # Use it only for identity. Current-session Panda configuration determines mode,
+  # Use carParams only for identity. Current-session Panda configuration determines mode,
   # including fallback, which can differ from the initial/cached carParams.
-  if not sample.started or not sample.identity_ev9 or not (sample.identity_time > 0 and 0 <= sample.now - sample.identity_time <= 55.0):
+  if not sample.started or not _identified_ev9(sample):
     return None
   if (not sample.panda_valid or sample.panda_fault or not _fresh(sample.panda_time, sample, 1.0) or
       sample.safety_models != ("hyundaiCanfd",) or len(sample.safety_params) != 1):
@@ -83,6 +87,9 @@ class LongitudinalStatus:
       self._ready_seen = False
 
     status = longitudinal_status(sample)
+    if self._show_until is None and status is None:
+      # Show initialization without claiming a mode or consuming its notice window.
+      return "Please wait..." if _identified_ev9(sample) else None
     if self._show_until is None and status is not None:
       self._show_until = sample.now + NOTICE_SECONDS
     # Keep the pre-READY prompt available while the driver completes startup.

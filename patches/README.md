@@ -65,7 +65,8 @@ This preserves model intent without changing steering activation or locking a pa
 C4 and Galaxy, plus EV9 Path in Galaxy. The device path controls/renderers remain
 in `custom_model_ui_starpilot.patch`.
 
-`ev9_longitudinal_status.patch` adds a C3/C3X startup notice: flashing **OP long
+`ev9_longitudinal_status.patch` adds a C3/C3X startup notice: steady **Please wait...**
+once the EV9 is identified while mode confirmation is pending, flashing **OP long
 ready** while waiting for brake + Start, then bright purple-gradient **OP long** for 30 seconds
 after vehicle READY. **Stock ACC** stays solid green. It includes display-only EV9
 READY telemetry and tests; it does not change takeover or emergency braking behavior.
