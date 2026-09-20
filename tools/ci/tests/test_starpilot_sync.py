@@ -112,6 +112,35 @@ class TestStarPilotSync(unittest.TestCase):
     self.sync("--allow", success=False)
     self.assertEqual((self.local / "app.txt").read_text(), "unsaved\n")
 
+  def test_retired_planner_archive_survives_missing_and_colliding_upstream_files(self):
+    archive = {
+      "patches/archive/ev9_custom_planner.patch": "retired planner recovery patch\n",
+      "patches/archive/EV9_CUSTOM_PLANNER.md": "retired planner provenance\n",
+    }
+    for path, contents in archive.items():
+      self.write(self.local, path, contents)
+    self.commit(self.local)
+    self.head = self.git(self.local, "rev-parse", "HEAD").stdout.strip()
+
+    # Neither deletion by an upstream snapshot nor a same-name upstream file
+    # may change the archived bytes in the working tree or index.
+    for collision in (False, True):
+      with self.subTest(upstream_collision=collision):
+        if collision:
+          self.commit(self.local)
+          self.head = self.git(self.local, "rev-parse", "HEAD").stdout.strip()
+          for path in archive:
+            self.write(self.upstream, path, "upstream replacement\n")
+          self.commit(self.upstream)
+          self.git(self.upstream, "push", str(self.bare), "StarPilot")
+          self.remote_head = self.git(self.bare, "rev-parse", "StarPilot").stdout.strip()
+        self.sync("--allow")
+        for path, contents in archive.items():
+          self.assertEqual((self.local / path).read_text(), contents)
+          self.assertEqual(self.git(self.local, "show", f":{path}").stdout, contents)
+        self.assertEqual((self.local / "app.txt").read_text(), "stable\n")
+        self.assert_no_publish()
+
   def test_refuses_dirty_submodule(self):
     self.add_submodule()
     self.write(self.local, "opendbc_repo/opendbc/example.txt", "unsaved submodule\n")

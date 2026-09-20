@@ -1,8 +1,31 @@
 diff --git a/selfdrive/controls/lib/desire_helper.py b/selfdrive/controls/lib/desire_helper.py
-index a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22..807444b828f8c2037d05a2cd4207c8ef4d95e8a1 100644
+index a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22..6df89604af8212a278ef4c5a9b0bd19725881681 100644
 --- a/selfdrive/controls/lib/desire_helper.py
 +++ b/selfdrive/controls/lib/desire_helper.py
-@@ -66,6 +66,7 @@ class DesireHelper:
+@@ -7,6 +7,7 @@ from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
+ from openpilot.common.constants import CV
+ from openpilot.common.params import Params
+ from openpilot.common.realtime import DT_MDL
++from openpilot.starpilot.common.ev9_tuning import ev9_limit_speed_mps
+ 
+ LaneChangeState = log.LaneChangeState
+ LaneChangeDirection = log.LaneChangeDirection
+@@ -50,6 +51,14 @@ TURN_DESIRES = {
+ }
+ 
+ 
++def turn_lane_change_speed(toggles):
++  speed = toggles.minimum_lane_change_speed
++  if getattr(toggles, "car_model", None) == HYUNDAI_CAR.KIA_EV9:
++    # One split keeps turn intent and lane-change eligibility mutually exclusive.
++    speed = max(speed, ev9_limit_speed_mps(toggles))
++  return speed
++
++
+ class DesireHelper:
+   def __init__(self):
+     self.params_memory = Params(memory=True)
+@@ -66,6 +75,7 @@ class DesireHelper:
      self.lane_change_completed = False
  
      self.lane_change_wait_timer = 0.0
@@ -10,7 +33,31 @@ index a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22..807444b828f8c2037d05a2cd4207c8ef
      self.nav_desires_allowed = False
      self.nav_lane_positioning_allowed = False
      self._nav_instruction_state_raw: object = None
-@@ -284,11 +285,18 @@ class DesireHelper:
+@@ -226,12 +236,12 @@ class DesireHelper:
+           return log.Desire.keepRight
+     elif modifier in ("left", "sharpLeft"):
+       turn_allowed = carstate.leftBlinker and not carstate.rightBlinker and not carstate.leftBlindspot
+-      turn_allowed &= carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill
++      turn_allowed &= carstate.vEgo < turn_lane_change_speed(starpilot_toggles) and not carstate.standstill
+       if turn_allowed and self._nav_turn_is_imminent(carstate, maneuver_distance):
+         return log.Desire.turnLeft
+     elif modifier in ("right", "sharpRight"):
+       turn_allowed = carstate.rightBlinker and not carstate.leftBlinker and not carstate.rightBlindspot
+-      turn_allowed &= carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill
++      turn_allowed &= carstate.vEgo < turn_lane_change_speed(starpilot_toggles) and not carstate.standstill
+       if turn_allowed and self._nav_turn_is_imminent(carstate, maneuver_distance):
+         return log.Desire.turnRight
+ 
+@@ -244,7 +254,7 @@ class DesireHelper:
+   def update(self, carstate, lateral_active, lane_change_prob, starpilotPlan, starpilot_toggles, controls_enabled=None):
+     v_ego = carstate.vEgo
+     one_blinker = carstate.leftBlinker != carstate.rightBlinker
+-    below_lane_change_speed = v_ego < starpilot_toggles.minimum_lane_change_speed
++    below_lane_change_speed = v_ego < turn_lane_change_speed(starpilot_toggles)
+ 
+     stop_imminent = (bool(getattr(starpilotPlan, "redLight", False))
+                      or bool(getattr(starpilotPlan, "forcingStop", False))
+@@ -284,11 +294,18 @@ class DesireHelper:
          blindspot_detected = ((carstate.leftBlindspot and self.lane_change_direction == LaneChangeDirection.left) or
                                (carstate.rightBlindspot and self.lane_change_direction == LaneChangeDirection.right))
  
@@ -34,7 +81,7 @@ index a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22..807444b828f8c2037d05a2cd4207c8ef
  
            desired_lane_width = starpilotPlan.laneWidthLeft if self.lane_change_direction == LaneChangeDirection.left else starpilotPlan.laneWidthRight
            torque_applied &= desired_lane_width >= starpilot_toggles.lane_detection_width
-@@ -303,8 +311,6 @@ class DesireHelper:
+@@ -303,8 +320,6 @@ class DesireHelper:
  
            self.lane_change_wait_timer = 0.0
  
@@ -43,7 +90,7 @@ index a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22..807444b828f8c2037d05a2cd4207c8ef
        # LaneChangeState.laneChangeStarting
        elif self.lane_change_state == LaneChangeState.laneChangeStarting:
          # fade out over .5s
-@@ -361,6 +367,12 @@ class DesireHelper:
+@@ -361,6 +376,12 @@ class DesireHelper:
  
        self.lane_change_wait_timer = 0.0
  
@@ -221,7 +268,7 @@ index 0000000000000000000000000000000000000000..454624f066475f00ec1cb49a3e8c8f62
 +  cs.rightBlindspot = False
 +  assert step() == State.laneChangeStarting
 diff --git a/selfdrive/controls/tests/test_navigation_desires.py b/selfdrive/controls/tests/test_navigation_desires.py
-index 1b5ad4ceddaaaf053991cac74bea213999f9291d..8b6919f84bf5cd1b4bdd5156c0c1e905f37ac8d8 100644
+index 1b5ad4ceddaaaf053991cac74bea213999f9291d..7a782edb4bf484ac8e0c19394e3c6f5b6d328c88 100644
 --- a/selfdrive/controls/tests/test_navigation_desires.py
 +++ b/selfdrive/controls/tests/test_navigation_desires.py
 @@ -17,6 +17,7 @@ def make_car_state(**overrides):
@@ -232,3 +279,60 @@ index 1b5ad4ceddaaaf053991cac74bea213999f9291d..8b6919f84bf5cd1b4bdd5156c0c1e905
      "cruiseState": SimpleNamespace(enabled=True),
    }
    defaults.update(overrides)
+@@ -540,7 +541,7 @@ def test_ev9_signal_turn_keeps_readiness_and_blindspot_guards(guard):
+   helper = DesireHelper()
+   helper._update_nav_params = lambda: None
+   toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=guard != "disabled", nav_desires_allowed=False)
+-  cs = make_car_state(vEgo=10.0 if guard == "speed" else 5.0, rightBlinker=True,
++  cs = make_car_state(vEgo=40.0 / 3.6 if guard == "speed" else 5.0, rightBlinker=True,
+                       standstill=guard == "standstill", leftBlinker=guard == "both_signals",
+                       rightBlindspot=guard == "same_blindspot", leftBlindspot=guard == "opposite_blindspot")
+   helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=True), toggles)
+@@ -601,3 +602,47 @@ def test_nav_lane_positioning_requires_driver_confirmation():
+   )
+ 
+   assert helper.desire == log.Desire.none
++
++
++@pytest.mark.parametrize("car_model,cap_kph,min_speed,split", [
++  (CAR.KIA_EV9, 40.0, 8.9408, 40.0 / 3.6),
++  (CAR.KIA_EV9, 10.0, 8.9408, 8.9408),
++  (CAR.KIA_EV9, 40.0, 13.0, 13.0),
++  (None, 40.0, 8.9408, 8.9408),
++])
++@pytest.mark.parametrize("side", ["left", "right"])
++@pytest.mark.parametrize("offset", [-0.001, 0.0, 0.001])
++def test_shared_turn_lane_change_split(car_model, cap_kph, min_speed, split, side, offset):
++  helper = DesireHelper()
++  helper._update_nav_params = lambda: None
++  toggles = make_toggles(car_model=car_model, hkg_tuning_angle_custom_limit_max_speed_kph=cap_kph,
++                         minimum_lane_change_speed=min_speed, use_turn_desires=True)
++  cs = make_car_state(vEgo=split + offset, **{f"{side}Blinker": True})
++  helper.update(cs, True, 0.0, make_plan(), toggles)
++  expected_turn = log.Desire.turnLeft if side == "left" else log.Desire.turnRight
++  assert helper.desire == (expected_turn if offset < 0 else log.Desire.none)
++  assert helper.lane_change_state == (LaneChangeState.off if offset < 0 else LaneChangeState.preLaneChange)
++
++  # Navigation uses the same split even when ordinary signal turn desires are disabled.
++  helper._nav_instruction_state = {"valid": True, "maneuverModifier": side, "maneuverDistance": 5.0}
++  toggles.use_turn_desires = False
++  assert helper._navigation_desire(cs, True, make_plan(), toggles) == (expected_turn if offset < 0 else log.Desire.none)
++
++
++def test_ev9_slowing_below_shared_split_clears_waiting_lane_change():
++  helper = DesireHelper()
++  helper._update_nav_params = lambda: None
++  toggles = make_toggles(car_model=CAR.KIA_EV9, minimum_lane_change_speed=8.9408, use_turn_desires=True)
++  cs = make_car_state(vEgo=12.0, leftBlinker=True, brakePressed=True)
++  helper.update(cs, True, 0.0, make_plan(), toggles)
++  helper.update(cs, True, 0.0, make_plan(), toggles)
++  assert helper.lane_change_state == LaneChangeState.preLaneChange
++  assert helper.lane_change_brake_latched
++  cs.vEgo = 10.0
++  helper.update(cs, True, 0.0, make_plan(), toggles)
++  assert helper.lane_change_state == LaneChangeState.off
++  assert helper.lane_change_direction == LaneChangeDirection.none
++  assert helper.desire == log.Desire.turnLeft
++  cs.leftBlindspot = True
++  helper.update(cs, True, 0.0, make_plan(), toggles)
++  assert helper.desire == log.Desire.none

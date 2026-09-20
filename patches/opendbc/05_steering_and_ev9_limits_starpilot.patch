@@ -1,5 +1,5 @@
 diff --git a/opendbc/car/car.capnp b/opendbc/car/car.capnp
-index a0d3fad8a4684f1afea2cb0246da1211789940ae..d4c6741671f888b4118cd4958556596b92547708 100644
+index a0d3fad8a4684f1afea2cb0246da1211789940ae..f58e245fd3cf82f0c5f60fd1585e3c46e39d8c30 100644
 --- a/opendbc/car/car.capnp
 +++ b/opendbc/car/car.capnp
 @@ -190,6 +190,8 @@ struct CarState {
@@ -11,11 +11,18 @@ index a0d3fad8a4684f1afea2cb0246da1211789940ae..d4c6741671f888b4118cd4958556596b
    steeringDisengage @58 :Bool;     # more force than steeringPressed, disengages for applicable brands
    steerFaultTemporary @35 :Bool;
    steerFaultPermanent @36 :Bool;
-@@ -375,6 +377,7 @@ struct CarControl {
+@@ -375,6 +377,14 @@ struct CarControl {
      torqueOutputCan @8: Float32;   # value sent over can to the car
      speed @6: Float32;  # m/s
      lateralControlMode @9: LateralControlMode;
 +    manualSteeringOverride @10: Bool;  # controller is following the driver's manual steering request
++
++    # Retired custom-planner telemetry. Preserve wire ordinals; never reuse them.
++    reserved11DEPRECATED @11: Float32;
++    reserved12DEPRECATED @12: Float32;
++    reserved13DEPRECATED @13: Bool;
++    reserved14DEPRECATED @14: UInt64;
++    reserved15DEPRECATED @15: Bool;
  
      enum LongControlState @0xe40f3a917d908282{
        off @0;

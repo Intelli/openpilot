@@ -1,16 +1,16 @@
 diff --git a/selfdrive/controls/controlsd.py b/selfdrive/controls/controlsd.py
-index 792a6107a2e0adef94c925fa7da5f261b4f038bb..e6aaab333877727fce66448050b02e6f1c10b689 100644
+index 3cde303636f7357ddc5e58d1215f24389e5ac4e3..a1e979ff6e17a06d10b60e107190158d19ee894f 100644
 --- a/selfdrive/controls/controlsd.py
 +++ b/selfdrive/controls/controlsd.py
-@@ -30,6 +30,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import (
+@@ -29,6 +29,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import (
+   update_lateral_fault_latch,
  )
  from openpilot.selfdrive.controls.lib.lane_centering import LaneCenteringController
- from openpilot.selfdrive.controls.lib.ev9_trajectory_control import EV9TrajectoryControl
 +from openpilot.selfdrive.controls.lib.ev9_turn_assist import ev9_turn_assist_authority
  from openpilot.selfdrive.controls.lib.latcontrol import LatControl
  from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
  from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
-@@ -795,6 +796,23 @@ class Controls:
+@@ -788,6 +789,23 @@ class Controls:
              held_mag = min(lead_curvature * blinker_dir, abs(self.turn_hold_curvature) + CURVATURE_HOLD_RATCHET_RATE * DT_CTRL)
              self.turn_hold_curvature = math.copysign(held_mag, lead_curvature)
  
@@ -36,10 +36,10 @@ index 792a6107a2e0adef94c925fa7da5f261b4f038bb..e6aaab333877727fce66448050b02e6f
        self.starpilot_toggles.lane_centering,
 diff --git a/selfdrive/controls/lib/ev9_turn_assist.py b/selfdrive/controls/lib/ev9_turn_assist.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..6a86a1905aa616a44a2ed9864867fb14668f2619
+index 0000000000000000000000000000000000000000..c5cd456b5648ad26aa58e26bc5866bd116750c83
 --- /dev/null
 +++ b/selfdrive/controls/lib/ev9_turn_assist.py
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,108 @@
 +"""Road-edge veto for extended-speed EV9 turn lead, independent of trajectory mode.
 +
 +This is a short constant-curvature body projection, not a drivable-space planner.
@@ -50,10 +50,16 @@ index 0000000000000000000000000000000000000000..6a86a1905aa616a44a2ed9864867fb14
 +
 +import numpy as np
 +
-+from openpilot.selfdrive.controls.lib.ev9_path_frames import static_model_points_to_rear_axle
-+from openpilot.selfdrive.controls.lib.ev9_path_planner import (
-+  MODEL_GEOMETRY, MOUNT_LATERAL_UNCERTAINTY, MOUNT_LONGITUDINAL_UNCERTAINTY,
-+)
++# Fixed EV9 body/mount profile retained by the independent turn-assist guard.
++# Metres, rear-axle origin; the camera offset is a nominal mounting assumption,
++# not measured calibration. Mount uncertainty remains part of the body envelope.
++CAMERA_FORWARD = 2.0
++BODY_FRONT = 3.975
++BODY_REAR = 1.04
++BODY_HALF_WIDTH = 1.1
++BODY_MARGIN = .08
++MOUNT_LONGITUDINAL_UNCERTAINTY = .30
++MOUNT_LATERAL_UNCERTAINTY = .10
 +
 +MAX_MODEL_AGE = .2
 +EDGE_STD_FULL = .3
@@ -121,10 +127,14 @@ index 0000000000000000000000000000000000000000..6a86a1905aa616a44a2ed9864867fb14
 +    # Bounded model-size input and forward coverage; a truncated edge is not an opening.
 +    if not 2 <= len(points) <= 33 or points[0, 0] > .1 or np.any(np.diff(points[:, 0]) <= 1e-6):
 +      return 0.
-+    points = static_model_points_to_rear_axle(points, MODEL_GEOMETRY.mount)
-+    front = MODEL_GEOMETRY.front + MOUNT_LONGITUDINAL_UNCERTAINTY
-+    rear = MODEL_GEOMETRY.rear + MOUNT_LONGITUDINAL_UNCERTAINTY
-+    half_width = MODEL_GEOMETRY.half_width + MOUNT_LATERAL_UNCERTAINTY
++    if not np.isfinite(points).all():
++      return 0.
++    # Static model edges are camera-origin, x-forward/y-right. The swept body
++    # uses rear-axle origin, x-forward/y-left; do not extrapolate the boundary.
++    points = points * [1., -1.] + [CAMERA_FORWARD, 0.]
++    front = BODY_FRONT + MOUNT_LONGITUDINAL_UNCERTAINTY
++    rear = BODY_REAR + MOUNT_LONGITUDINAL_UNCERTAINTY
++    half_width = BODY_HALF_WIDTH + MOUNT_LATERAL_UNCERTAINTY
 +    radius = math.hypot(max(front, rear), half_width)
 +    distance = np.linspace(0., preview_distance, math.ceil(preview_distance / SWEEP_STEP) + 1)
 +    k = -applied  # Geometry uses positive LEFT.
@@ -132,7 +142,7 @@ index 0000000000000000000000000000000000000000..6a86a1905aa616a44a2ed9864867fb14
 +    xy = np.column_stack((np.sin(yaw) / k, 2. * np.sin(yaw / 2.) ** 2 / k))
 +    # Include between-sample motion of every body point, not only sampled corners.
 +    motion_margin = .5 * (distance[1] - distance[0]) * (1. + radius * abs(k))
-+    padding = MODEL_GEOMETRY.margin + std + motion_margin
++    padding = BODY_MARGIN + std + motion_margin
 +    clear = _forward_edge_clear(points, xy, yaw, -1 if curvature > 0. else 1,
 +                                front + padding, rear + padding, half_width + padding)
 +    return authority if clear else 0.
@@ -140,10 +150,10 @@ index 0000000000000000000000000000000000000000..6a86a1905aa616a44a2ed9864867fb14
 +    return 0.
 diff --git a/selfdrive/controls/tests/test_ev9_turn_assist.py b/selfdrive/controls/tests/test_ev9_turn_assist.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..73a0701345f5f6e164daea64a02acd7811d9f61e
+index 0000000000000000000000000000000000000000..af6626ba5684f5e09d885d0752b233cc3fbc06b4
 --- /dev/null
 +++ b/selfdrive/controls/tests/test_ev9_turn_assist.py
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,138 @@
 +from types import SimpleNamespace
 +
 +import numpy as np
@@ -258,12 +268,36 @@ index 0000000000000000000000000000000000000000..73a0701345f5f6e164daea64a02acd78
 +    edge.x = np.linspace(0., 40., 1000)
 +    edge.y = np.full(1000, 10.)
 +  assert authority(model) == 0.
++
++
++@pytest.mark.parametrize('direction', [-1., 1.])
++def test_guard_transforms_static_camera_edge_and_preserves_body_envelope(monkeypatch, direction):
++  from openpilot.selfdrive.controls.lib import ev9_turn_assist
++
++  model = model_edges()
++  captured = {}
++
++  def capture(points, xy, yaw, side, front, rear, half_width):
++    captured.update(points=points, side=side, front=front, rear=rear, half_width=half_width)
++    return True
++
++  monkeypatch.setattr(ev9_turn_assist, '_forward_edge_clear', capture)
++  assert authority(model, direction * .05) == 1.
++  edge = model.roadEdges[1 if direction > 0 else 0]
++  np.testing.assert_allclose(captured['points'][:, 0], np.asarray(edge.x) + 2.)
++  np.testing.assert_allclose(captured['points'][:, 1], -np.asarray(edge.y))
++  assert captured['side'] == -direction
++  # Existing body extents plus mount uncertainty and half-step swept-motion padding.
++  padding = .08 + .1 + .25 * (1. + np.hypot(3.975 + .3, 1.1 + .1) * .05)
++  assert captured['front'] == pytest.approx(3.975 + .3 + padding)
++  assert captured['rear'] == pytest.approx(1.04 + .3 + padding)
++  assert captured['half_width'] == pytest.approx(1.1 + .1 + padding)
 diff --git a/selfdrive/controls/tests/test_ev9_turn_assist_control.py b/selfdrive/controls/tests/test_ev9_turn_assist_control.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..0601e01ea66c37fe780bb74f503251c69c934a5c
+index 0000000000000000000000000000000000000000..b933a52ba554cd198658cad7a2d3135228b624b4
 --- /dev/null
 +++ b/selfdrive/controls/tests/test_ev9_turn_assist_control.py
-@@ -0,0 +1,238 @@
+@@ -0,0 +1,237 @@
 +"""Exercise the edge-admission seam in real Controls, before downstream limits."""
 +from collections import defaultdict
 +from types import SimpleNamespace
@@ -351,7 +385,6 @@ index 0000000000000000000000000000000000000000..0601e01ea66c37fe780bb74f503251c6
 +  c.LaC = LatControlAngle(c.CP, None, 0.01)
 +  c.LoC = SimpleNamespace(long_control_state=0, reset=lambda: None, update=lambda *args, **kwargs: 0.0)
 +  c.lane_centering = LaneCenteringController()
-+  c.ev9_trajectory = None
 +  return c
 +
 +

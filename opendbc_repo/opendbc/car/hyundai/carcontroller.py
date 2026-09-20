@@ -842,21 +842,6 @@ class CarController(CarControllerBase):
 
     new_actuators = actuators.as_builder()
     new_actuators.manualSteeringOverride = manual_steering_override
-    # Output-only state: never echo telemetry copied from the requested actuators. Capture after
-    # create_canfd_msgs, which can seed the filter during transport initialization.
-    new_actuators.ev9AngleFilterStateDeg = 0.0
-    new_actuators.ev9MeasuredAngleDeg = 0.0
-    new_actuators.ev9AngleStateValid = False
-    new_actuators.ev9AngleStateMonoTime = 0
-    new_actuators.ev9DirectAngleControl = False
-    if ev9_angle_control:
-      new_actuators.ev9DirectAngleControl = bool(direct_angle_control)
-      if np.isfinite(self.angle_filter.x) and np.isfinite(measured_steering_angle):
-        new_actuators.ev9AngleFilterStateDeg = float(self.angle_filter.x)
-        new_actuators.ev9MeasuredAngleDeg = float(measured_steering_angle)
-        new_actuators.ev9AngleStateMonoTime = now_nanos
-        new_actuators.ev9AngleStateValid = bool(CS.out.canValid and
-                                               not (direct_angle_control and CS.angle_steering_fault))
     if self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
       new_actuators.steeringAngleDeg = self.apply_angle_last if self.CP.carFingerprint == CAR.KIA_EV9 else apply_angle
       new_actuators.torque = 0

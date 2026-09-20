@@ -8,10 +8,16 @@ import math
 
 import numpy as np
 
-from openpilot.selfdrive.controls.lib.ev9_path_frames import static_model_points_to_rear_axle
-from openpilot.selfdrive.controls.lib.ev9_path_planner import (
-  MODEL_GEOMETRY, MOUNT_LATERAL_UNCERTAINTY, MOUNT_LONGITUDINAL_UNCERTAINTY,
-)
+# Fixed EV9 body/mount profile retained by the independent turn-assist guard.
+# Metres, rear-axle origin; the camera offset is a nominal mounting assumption,
+# not measured calibration. Mount uncertainty remains part of the body envelope.
+CAMERA_FORWARD = 2.0
+BODY_FRONT = 3.975
+BODY_REAR = 1.04
+BODY_HALF_WIDTH = 1.1
+BODY_MARGIN = .08
+MOUNT_LONGITUDINAL_UNCERTAINTY = .30
+MOUNT_LATERAL_UNCERTAINTY = .10
 
 MAX_MODEL_AGE = .2
 EDGE_STD_FULL = .3
@@ -79,10 +85,14 @@ def ev9_turn_assist_authority(model, curvature, preview_distance, *, base_curvat
     # Bounded model-size input and forward coverage; a truncated edge is not an opening.
     if not 2 <= len(points) <= 33 or points[0, 0] > .1 or np.any(np.diff(points[:, 0]) <= 1e-6):
       return 0.
-    points = static_model_points_to_rear_axle(points, MODEL_GEOMETRY.mount)
-    front = MODEL_GEOMETRY.front + MOUNT_LONGITUDINAL_UNCERTAINTY
-    rear = MODEL_GEOMETRY.rear + MOUNT_LONGITUDINAL_UNCERTAINTY
-    half_width = MODEL_GEOMETRY.half_width + MOUNT_LATERAL_UNCERTAINTY
+    if not np.isfinite(points).all():
+      return 0.
+    # Static model edges are camera-origin, x-forward/y-right. The swept body
+    # uses rear-axle origin, x-forward/y-left; do not extrapolate the boundary.
+    points = points * [1., -1.] + [CAMERA_FORWARD, 0.]
+    front = BODY_FRONT + MOUNT_LONGITUDINAL_UNCERTAINTY
+    rear = BODY_REAR + MOUNT_LONGITUDINAL_UNCERTAINTY
+    half_width = BODY_HALF_WIDTH + MOUNT_LATERAL_UNCERTAINTY
     radius = math.hypot(max(front, rear), half_width)
     distance = np.linspace(0., preview_distance, math.ceil(preview_distance / SWEEP_STEP) + 1)
     k = -applied  # Geometry uses positive LEFT.
@@ -90,7 +100,7 @@ def ev9_turn_assist_authority(model, curvature, preview_distance, *, base_curvat
     xy = np.column_stack((np.sin(yaw) / k, 2. * np.sin(yaw / 2.) ** 2 / k))
     # Include between-sample motion of every body point, not only sampled corners.
     motion_margin = .5 * (distance[1] - distance[0]) * (1. + radius * abs(k))
-    padding = MODEL_GEOMETRY.margin + std + motion_margin
+    padding = BODY_MARGIN + std + motion_margin
     clear = _forward_edge_clear(points, xy, yaw, -1 if curvature > 0. else 1,
                                 front + padding, rear + padding, half_width + padding)
     return authority if clear else 0.

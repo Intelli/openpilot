@@ -112,3 +112,27 @@ def test_malformed_boundary_is_unknown(fault):
     edge.x = np.linspace(0., 40., 1000)
     edge.y = np.full(1000, 10.)
   assert authority(model) == 0.
+
+
+@pytest.mark.parametrize('direction', [-1., 1.])
+def test_guard_transforms_static_camera_edge_and_preserves_body_envelope(monkeypatch, direction):
+  from openpilot.selfdrive.controls.lib import ev9_turn_assist
+
+  model = model_edges()
+  captured = {}
+
+  def capture(points, xy, yaw, side, front, rear, half_width):
+    captured.update(points=points, side=side, front=front, rear=rear, half_width=half_width)
+    return True
+
+  monkeypatch.setattr(ev9_turn_assist, '_forward_edge_clear', capture)
+  assert authority(model, direction * .05) == 1.
+  edge = model.roadEdges[1 if direction > 0 else 0]
+  np.testing.assert_allclose(captured['points'][:, 0], np.asarray(edge.x) + 2.)
+  np.testing.assert_allclose(captured['points'][:, 1], -np.asarray(edge.y))
+  assert captured['side'] == -direction
+  # Existing body extents plus mount uncertainty and half-step swept-motion padding.
+  padding = .08 + .1 + .25 * (1. + np.hypot(3.975 + .3, 1.1 + .1) * .05)
+  assert captured['front'] == pytest.approx(3.975 + .3 + padding)
+  assert captured['rear'] == pytest.approx(1.04 + .3 + padding)
+  assert captured['half_width'] == pytest.approx(1.1 + .1 + padding)

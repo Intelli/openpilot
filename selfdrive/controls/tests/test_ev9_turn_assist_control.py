@@ -85,7 +85,6 @@ def make_controls(monkeypatch):
   c.LaC = LatControlAngle(c.CP, None, 0.01)
   c.LoC = SimpleNamespace(long_control_state=0, reset=lambda: None, update=lambda *args, **kwargs: 0.0)
   c.lane_centering = LaneCenteringController()
-  c.ev9_trajectory = None
   return c
 
 
