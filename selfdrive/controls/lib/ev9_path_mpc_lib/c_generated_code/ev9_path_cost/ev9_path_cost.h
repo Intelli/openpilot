@@ -39,76 +39,12 @@ extern "C" {
 
 // Cost at initial shooting node
 
-int ev9_path_cost_y_0_fun(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
-int ev9_path_cost_y_0_fun_work(int *, int *, int *, int *);
-const int *ev9_path_cost_y_0_fun_sparsity_in(int);
-const int *ev9_path_cost_y_0_fun_sparsity_out(int);
-int ev9_path_cost_y_0_fun_n_in(void);
-int ev9_path_cost_y_0_fun_n_out(void);
-
-int ev9_path_cost_y_0_fun_jac_ut_xt(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
-int ev9_path_cost_y_0_fun_jac_ut_xt_work(int *, int *, int *, int *);
-const int *ev9_path_cost_y_0_fun_jac_ut_xt_sparsity_in(int);
-const int *ev9_path_cost_y_0_fun_jac_ut_xt_sparsity_out(int);
-int ev9_path_cost_y_0_fun_jac_ut_xt_n_in(void);
-int ev9_path_cost_y_0_fun_jac_ut_xt_n_out(void);
-
-int ev9_path_cost_y_0_hess(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
-int ev9_path_cost_y_0_hess_work(int *, int *, int *, int *);
-const int *ev9_path_cost_y_0_hess_sparsity_in(int);
-const int *ev9_path_cost_y_0_hess_sparsity_out(int);
-int ev9_path_cost_y_0_hess_n_in(void);
-int ev9_path_cost_y_0_hess_n_out(void);
-
 
 
 // Cost at path shooting node
 
-int ev9_path_cost_y_fun(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
-int ev9_path_cost_y_fun_work(int *, int *, int *, int *);
-const int *ev9_path_cost_y_fun_sparsity_in(int);
-const int *ev9_path_cost_y_fun_sparsity_out(int);
-int ev9_path_cost_y_fun_n_in(void);
-int ev9_path_cost_y_fun_n_out(void);
-
-int ev9_path_cost_y_fun_jac_ut_xt(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
-int ev9_path_cost_y_fun_jac_ut_xt_work(int *, int *, int *, int *);
-const int *ev9_path_cost_y_fun_jac_ut_xt_sparsity_in(int);
-const int *ev9_path_cost_y_fun_jac_ut_xt_sparsity_out(int);
-int ev9_path_cost_y_fun_jac_ut_xt_n_in(void);
-int ev9_path_cost_y_fun_jac_ut_xt_n_out(void);
-
-int ev9_path_cost_y_hess(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
-int ev9_path_cost_y_hess_work(int *, int *, int *, int *);
-const int *ev9_path_cost_y_hess_sparsity_in(int);
-const int *ev9_path_cost_y_hess_sparsity_out(int);
-int ev9_path_cost_y_hess_n_in(void);
-int ev9_path_cost_y_hess_n_out(void);
-
-
 
 // Cost at terminal shooting node
-
-int ev9_path_cost_y_e_fun(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
-int ev9_path_cost_y_e_fun_work(int *, int *, int *, int *);
-const int *ev9_path_cost_y_e_fun_sparsity_in(int);
-const int *ev9_path_cost_y_e_fun_sparsity_out(int);
-int ev9_path_cost_y_e_fun_n_in(void);
-int ev9_path_cost_y_e_fun_n_out(void);
-
-int ev9_path_cost_y_e_fun_jac_ut_xt(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
-int ev9_path_cost_y_e_fun_jac_ut_xt_work(int *, int *, int *, int *);
-const int *ev9_path_cost_y_e_fun_jac_ut_xt_sparsity_in(int);
-const int *ev9_path_cost_y_e_fun_jac_ut_xt_sparsity_out(int);
-int ev9_path_cost_y_e_fun_jac_ut_xt_n_in(void);
-int ev9_path_cost_y_e_fun_jac_ut_xt_n_out(void);
-
-int ev9_path_cost_y_e_hess(const real_t** arg, real_t** res, int* iw, real_t* w, void *mem);
-int ev9_path_cost_y_e_hess_work(int *, int *, int *, int *);
-const int *ev9_path_cost_y_e_hess_sparsity_in(int);
-const int *ev9_path_cost_y_e_hess_sparsity_out(int);
-int ev9_path_cost_y_e_hess_n_in(void);
-int ev9_path_cost_y_e_hess_n_out(void);
 
 
 

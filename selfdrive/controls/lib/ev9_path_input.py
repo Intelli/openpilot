@@ -72,7 +72,7 @@ def _boundary(line, mount):
 
 
 def build_path_input(model, config, *, source_time, now, model_valid, horizon_distance=None, boundary_history=None, capture_pose=None, generation=0,
-                     check_budget=None):
+                     check_budget=None, precheck=None):
   """Build a geometry proposal from the complete observed path or explicit prefix.
 
   Lane probability selects lane versus road geometry, not an execution gate.
@@ -181,6 +181,12 @@ def build_path_input(model, config, *, source_time, now, model_valid, horizon_di
     else:
       # Do not carry a formerly reliable side through a changed source/pair.
       boundary_history.reset()
+  # Keep raw observation history current even when no path refinement is needed.
+  if precheck is not None:
+    reason = precheck(xy, yaw, distance)
+    if reason is not None:
+      return PathInput(False, reason)
+
   boundaries = []
   body_applicability = np.zeros((2, len(xy)), dtype=bool)
   local = np.array([[-config.rear, -config.half_width], [config.front, -config.half_width],

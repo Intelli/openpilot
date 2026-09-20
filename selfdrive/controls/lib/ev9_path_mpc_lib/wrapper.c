@@ -2,8 +2,16 @@
 #include "acados_solver_ev9_path.h"
 #include "acados/utils/types.h"
 
-// Version 4 bounds SQP work; MAXITER still returns initialized states/controls.
-int ev9_path_abi_version(void) { return EV9_PATH_N == 30 ? 4 : 0; }
+// An unconverged inner QP is not a candidate. Stop this solve instead of
+// repeating its exhausted iteration budget at each remaining SQP iteration.
+static int bounded_qp(void *config, ocp_qp_xcond_solver_dims *dims, ocp_qp_in *in,
+                      ocp_qp_out *out, void *opts, void *mem, void *work) {
+  int status = ocp_qp_xcond_solver(config, dims, in, out, opts, mem, work);
+  return status == ACADOS_MAXITER ? ACADOS_QP_FAILURE : status;
+}
+
+// Version 6 uses discrete dynamics and linear costs/corridor constraints.
+int ev9_path_abi_version(void) { return EV9_PATH_N == 30 ? 6 : 0; }
 
 void *ev9_path_create(void) {
   ev9_path_solver_capsule *capsule = ev9_path_acados_create_capsule();
@@ -12,6 +20,7 @@ void *ev9_path_create(void) {
     ev9_path_acados_free_capsule(capsule);
     return NULL;
   }
+  capsule->nlp_config->qp_solver->evaluate = bounded_qp;
   return capsule;
 }
 
@@ -39,8 +48,12 @@ int ev9_path_solve(void *pointer, double length, const double *reference, const 
     ev9_path_acados_update_params(capsule, i, p, 4);
     ocp_nlp_out_set(config, dims, output, i, "x", seed);
     ocp_nlp_cost_model_set(config, dims, input, i, "yref", target);
-    ocp_nlp_constraints_model_set(config, dims, input, i, "lh", (void *)(b));
-    ocp_nlp_constraints_model_set(config, dims, input, i, "uh", (void *)(b+1));
+    double normal[4] = {-sin(r[2]), cos(r[2]), 0., 0.};
+    double offset = normal[0]*r[0] + normal[1]*r[1];
+    double low_g = b[0]+offset, high_g = b[1]+offset;
+    ocp_nlp_constraints_model_set(config, dims, input, i, "C", normal);
+    ocp_nlp_constraints_model_set(config, dims, input, i, "lg", &low_g);
+    ocp_nlp_constraints_model_set(config, dims, input, i, "ug", &high_g);
     if (i == 0) {
       ocp_nlp_constraints_model_set(config, dims, input, i, "lbx", (void *)initial);
       ocp_nlp_constraints_model_set(config, dims, input, i, "ubx", (void *)initial);

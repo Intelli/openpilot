@@ -342,8 +342,32 @@ def test_planner_geometry_timeout_is_deadline_not_boundary_conflict(monkeypatch)
 
   monkeypatch.setattr(planner_module, 'build_path_input', slow_geometry)
   planner = planner_module.ModelPathPlanner(clock=lambda: clock[0])
-  state = SimpleNamespace(rejection=lambda now: '', generation=0)
+  state = SimpleNamespace(rejection=lambda now: '', generation=0, pose=(0., 0., 0.))
   result = planner.update({}, state, None, model_time=1., model_pose=(0., 0., 0.), now=1., mode=2,
                           model_valid=True, roll=0., angle_offset_deg=0.)
   assert result.reason == 'planning_deadline'
   assert result.solve_time >= .05
+
+
+def test_precheck_skips_body_work_but_keeps_observation_history(monkeypatch):
+  from openpilot.selfdrive.controls.lib import ev9_path_input as inputs
+  from openpilot.selfdrive.controls.lib.ev9_path_history import RearBoundaryHistory
+
+  model, config = fixture()
+  history = RearBoundaryHistory()
+  seen = []
+  def precheck(xy, yaw, distance):
+    seen.append((xy.copy(), yaw.copy(), distance.copy()))
+    return 'reference_within_capability'
+  def forbidden(*args, **kwargs):
+    raise AssertionError('unnecessary body clearance')
+  monkeypatch.setattr(inputs, 'reliable_body_clearance', forbidden)
+  result = build_path_input(model, config, source_time=1., now=1., model_valid=True,
+                            boundary_history=history, capture_pose=(0., 0., 0.), generation=3, precheck=precheck)
+  assert result.reason == 'reference_within_capability'
+  assert len(history.records) == 1 and history.records[0][0] == 1.
+  assert len(seen) == 1 and len(seen[0][0]) >= 4
+  result = build_path_input(model, config, source_time=1., now=2., model_valid=True,
+                            boundary_history=history, capture_pose=(0., 0., 0.), generation=3, precheck=precheck)
+  assert result.reason == 'invalid_or_stale_model'
+  assert not history.records and len(seen) == 1

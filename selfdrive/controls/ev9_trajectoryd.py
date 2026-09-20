@@ -30,6 +30,9 @@ def run(cp, params, sm, pm, *, planner=None, clock=time.monotonic):
         planner.reset()
         last_status = None
         continue
+      # Parameter reads and snapshot decoding can be descheduled. Judge input
+      # freshness at solve entry, not at the earlier subscription wakeup.
+      now = clock()
       if state is None or state.rejection(now):
         planner.reset()
         decision = PathPlanningDecision('invalid_execution_state')

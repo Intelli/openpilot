@@ -36,26 +36,12 @@
 
 # model
 MODEL_SRC=
-MODEL_SRC+= ev9_path_model/ev9_path_expl_ode_fun.c
-MODEL_SRC+= ev9_path_model/ev9_path_expl_vde_forw.c
-MODEL_SRC+= ev9_path_model/ev9_path_expl_vde_adj.c
+MODEL_SRC+= ev9_path_model/ev9_path_dyn_disc_phi_fun.c
+MODEL_SRC+= ev9_path_model/ev9_path_dyn_disc_phi_fun_jac.c
 MODEL_OBJ := $(MODEL_SRC:.c=.o)
 
 # optimal control problem - mostly CasADi exports
 OCP_SRC=
-OCP_SRC+= ev9_path_constraints/ev9_path_constr_h_fun_jac_uxt_zt.c
-OCP_SRC+= ev9_path_constraints/ev9_path_constr_h_fun.c
-OCP_SRC+= ev9_path_constraints/ev9_path_constr_h_e_fun_jac_uxt_zt.c
-OCP_SRC+= ev9_path_constraints/ev9_path_constr_h_e_fun.c
-OCP_SRC+= ev9_path_cost/ev9_path_cost_y_0_fun.c
-OCP_SRC+= ev9_path_cost/ev9_path_cost_y_0_fun_jac_ut_xt.c
-OCP_SRC+= ev9_path_cost/ev9_path_cost_y_0_hess.c
-OCP_SRC+= ev9_path_cost/ev9_path_cost_y_fun.c
-OCP_SRC+= ev9_path_cost/ev9_path_cost_y_fun_jac_ut_xt.c
-OCP_SRC+= ev9_path_cost/ev9_path_cost_y_hess.c
-OCP_SRC+= ev9_path_cost/ev9_path_cost_y_e_fun.c
-OCP_SRC+= ev9_path_cost/ev9_path_cost_y_e_fun_jac_ut_xt.c
-OCP_SRC+= ev9_path_cost/ev9_path_cost_y_e_hess.c
 
 OCP_SRC+= acados_solver_ev9_path.c
 OCP_OBJ := $(OCP_SRC:.c=.o)
@@ -77,7 +63,6 @@ EX_SIM_EXE := $(EX_SIM_SRC:.c=)
 # combine model, sim and ocp object files
 OBJ=
 OBJ+= $(MODEL_OBJ)
-OBJ+= $(SIM_OBJ)
 OBJ+= $(OCP_OBJ)
 
 EXTERNAL_DIR=
@@ -117,9 +102,8 @@ LIBACADOS_SIM_SOLVER=lib$(SIM_SRC:.c=.so)
 .PHONY : all clean
 
 #all: clean example_sim example shared_lib
-
-all: clean example_sim example
-shared_lib: bundled_shared_lib ocp_shared_lib sim_shared_lib
+all: clean example
+shared_lib: ocp_shared_lib
 
 # some linker targets
 example: $(EX_OBJ) $(OBJ)
@@ -128,8 +112,7 @@ example: $(EX_OBJ) $(OBJ)
 example_sim: $(EX_SIM_OBJ) $(MODEL_OBJ) $(SIM_OBJ)
 	$(CC) $^ -o $(EX_SIM_EXE) $(LDFLAGS) $(LDLIBS)
 
-bundled_shared_lib: $(OBJ)
-	$(CC) -shared $^ -o $(LIBACADOS_SOLVER) $(LDFLAGS) $(LDLIBS)
+
 
 ocp_shared_lib: $(OCP_OBJ) $(MODEL_OBJ)
 	$(CC) -shared $^ -o $(LIBACADOS_OCP_SOLVER) $(LDFLAGS) $(LDLIBS) \

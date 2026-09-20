@@ -40,7 +40,6 @@
 // example specific
 #include "ev9_path_model/ev9_path_model.h"
 #include "ev9_path_constraints/ev9_path_constraints.h"
-#include "ev9_path_cost/ev9_path_cost.h"
 
 
 
@@ -142,16 +141,17 @@ void ev9_path_acados_create_1_set_plan(ocp_nlp_plan_t* nlp_solver_plan, const in
 
     nlp_solver_plan->ocp_qp_solver_plan.qp_solver = PARTIAL_CONDENSING_HPIPM;
 
-    nlp_solver_plan->nlp_cost[0] = NONLINEAR_LS;
+    nlp_solver_plan->nlp_cost[0] = LINEAR_LS;
     for (int i = 1; i < N; i++)
-        nlp_solver_plan->nlp_cost[i] = NONLINEAR_LS;
+        nlp_solver_plan->nlp_cost[i] = LINEAR_LS;
 
-    nlp_solver_plan->nlp_cost[N] = NONLINEAR_LS;
+    nlp_solver_plan->nlp_cost[N] = LINEAR_LS;
 
     for (int i = 0; i < N; i++)
     {
-        nlp_solver_plan->nlp_dynamics[i] = CONTINUOUS_MODEL;
-        nlp_solver_plan->sim_solver_plan[i].sim_solver = ERK;
+        nlp_solver_plan->nlp_dynamics[i] = DISCRETE_MODEL;
+        // discrete dynamics does not need sim solver option, this field is ignored
+        nlp_solver_plan->sim_solver_plan[i].sim_solver = INVALID_SIM_SOLVER;
     }
 
     for (int i = 0; i < N; i++)
@@ -269,8 +269,6 @@ ocp_nlp_dims* ev9_path_acados_create_2_create_and_set_dimensions(ev9_path_solver
 
     for (int i = 0; i < N; i++)
     {
-        ocp_nlp_dims_set_constraints(nlp_config, nlp_dims, i, "nh", &nh[i]);
-        ocp_nlp_dims_set_constraints(nlp_config, nlp_dims, i, "nsh", &nsh[i]);
     }
     ocp_nlp_dims_set_constraints(nlp_config, nlp_dims, N, "nh", &nh[N]);
     ocp_nlp_dims_set_constraints(nlp_config, nlp_dims, N, "nsh", &nsh[N]);
@@ -302,59 +300,20 @@ void ev9_path_acados_create_3_create_and_set_functions(ev9_path_solver_capsule* 
     }while(false)
 
 
-    // constraints.constr_type == "BGH" and dims.nh > 0
-    capsule->nl_constr_h_fun_jac = (external_function_param_casadi *) malloc(sizeof(external_function_param_casadi)*N);
-    for (int i = 0; i < N; i++) {
-        MAP_CASADI_FNC(nl_constr_h_fun_jac[i], ev9_path_constr_h_fun_jac_uxt_zt);
-    }
-    capsule->nl_constr_h_fun = (external_function_param_casadi *) malloc(sizeof(external_function_param_casadi)*N);
-    for (int i = 0; i < N; i++) {
-        MAP_CASADI_FNC(nl_constr_h_fun[i], ev9_path_constr_h_fun);
-    }
-    
-
-    MAP_CASADI_FNC(nl_constr_h_e_fun_jac, ev9_path_constr_h_e_fun_jac_uxt_zt);
-    MAP_CASADI_FNC(nl_constr_h_e_fun, ev9_path_constr_h_e_fun);
 
 
-    // explicit ode
-    capsule->forw_vde_casadi = (external_function_param_casadi *) malloc(sizeof(external_function_param_casadi)*N);
-    for (int i = 0; i < N; i++) {
-        MAP_CASADI_FNC(forw_vde_casadi[i], ev9_path_expl_vde_forw);
-    }
-
-    capsule->expl_ode_fun = (external_function_param_casadi *) malloc(sizeof(external_function_param_casadi)*N);
-    for (int i = 0; i < N; i++) {
-        MAP_CASADI_FNC(expl_ode_fun[i], ev9_path_expl_ode_fun);
-    }
-
-
-    // nonlinear least squares function
-    MAP_CASADI_FNC(cost_y_0_fun, ev9_path_cost_y_0_fun);
-    MAP_CASADI_FNC(cost_y_0_fun_jac_ut_xt, ev9_path_cost_y_0_fun_jac_ut_xt);
-    MAP_CASADI_FNC(cost_y_0_hess, ev9_path_cost_y_0_hess);
-    // nonlinear least squares cost
-    capsule->cost_y_fun = (external_function_param_casadi *) malloc(sizeof(external_function_param_casadi)*N);
-    for (int i = 0; i < N-1; i++)
+    // discrete dynamics
+    capsule->discr_dyn_phi_fun = (external_function_param_casadi *) malloc(sizeof(external_function_param_casadi)*N);
+    for (int i = 0; i < N; i++)
     {
-        MAP_CASADI_FNC(cost_y_fun[i], ev9_path_cost_y_fun);
+        MAP_CASADI_FNC(discr_dyn_phi_fun[i], ev9_path_dyn_disc_phi_fun);
     }
 
-    capsule->cost_y_fun_jac_ut_xt = (external_function_param_casadi *) malloc(sizeof(external_function_param_casadi)*N);
-    for (int i = 0; i < N-1; i++)
+    capsule->discr_dyn_phi_fun_jac_ut_xt = (external_function_param_casadi *) malloc(sizeof(external_function_param_casadi)*N);
+    for (int i = 0; i < N; i++)
     {
-        MAP_CASADI_FNC(cost_y_fun_jac_ut_xt[i], ev9_path_cost_y_fun_jac_ut_xt);
+        MAP_CASADI_FNC(discr_dyn_phi_fun_jac_ut_xt[i], ev9_path_dyn_disc_phi_fun_jac);
     }
-
-    capsule->cost_y_hess = (external_function_param_casadi *) malloc(sizeof(external_function_param_casadi)*N);
-    for (int i = 0; i < N-1; i++)
-    {
-        MAP_CASADI_FNC(cost_y_hess[i], ev9_path_cost_y_hess);
-    }
-    // nonlinear least square function
-    MAP_CASADI_FNC(cost_y_e_fun, ev9_path_cost_y_e_fun);
-    MAP_CASADI_FNC(cost_y_e_fun_jac_ut_xt, ev9_path_cost_y_e_fun_jac_ut_xt);
-    MAP_CASADI_FNC(cost_y_e_hess, ev9_path_cost_y_e_hess);
 
 #undef MAP_CASADI_FNC
 }
@@ -409,9 +368,9 @@ void ev9_path_acados_create_5_set_nlp_in(ev9_path_solver_capsule* capsule, const
     /**** Dynamics ****/
     for (int i = 0; i < N; i++)
     {
-        ocp_nlp_dynamics_model_set(nlp_config, nlp_dims, nlp_in, i, "expl_vde_forw", &capsule->forw_vde_casadi[i]);
-        ocp_nlp_dynamics_model_set(nlp_config, nlp_dims, nlp_in, i, "expl_ode_fun", &capsule->expl_ode_fun[i]);
-    
+        ocp_nlp_dynamics_model_set(nlp_config, nlp_dims, nlp_in, i, "disc_dyn_fun", &capsule->discr_dyn_phi_fun[i]);
+        ocp_nlp_dynamics_model_set(nlp_config, nlp_dims, nlp_in, i, "disc_dyn_fun_jac",
+                                   &capsule->discr_dyn_phi_fun_jac_ut_xt[i]);
     }
 
     /**** Cost ****/
@@ -463,18 +422,53 @@ void ev9_path_acados_create_5_set_nlp_in(ev9_path_solver_capsule* capsule, const
     W_e[3+(NYN) * 3] = 10.0;
     ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, N, "W", W_e);
     free(W_e);
-    ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, 0, "nls_y_fun", &capsule->cost_y_0_fun);
-    ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, 0, "nls_y_fun_jac", &capsule->cost_y_0_fun_jac_ut_xt);
-    ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, 0, "nls_y_hess", &capsule->cost_y_0_hess);
+    double* Vx_0 = calloc(NY0*NX, sizeof(double));
+    // change only the non-zero elements:
+    Vx_0[0+(NY0) * 0] = 1.0;
+    Vx_0[1+(NY0) * 1] = 1.0;
+    Vx_0[2+(NY0) * 2] = 1.0;
+    Vx_0[3+(NY0) * 3] = 1.0;
+    ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, 0, "Vx", Vx_0);
+    free(Vx_0);
+    double* Vu_0 = calloc(NY0*NU, sizeof(double));
+    // change only the non-zero elements:
+    Vu_0[4+(NY0) * 0] = 1.0;
+    Vu_0[5+(NY0) * 1] = 1.0;
+    ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, 0, "Vu", Vu_0);
+    free(Vu_0);
+    double* Vx = calloc(NY*NX, sizeof(double));
+    // change only the non-zero elements:
+    Vx[0+(NY) * 0] = 1.0;
+    Vx[1+(NY) * 1] = 1.0;
+    Vx[2+(NY) * 2] = 1.0;
+    Vx[3+(NY) * 3] = 1.0;
     for (int i = 1; i < N; i++)
     {
-        ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, i, "nls_y_fun", &capsule->cost_y_fun[i-1]);
-        ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, i, "nls_y_fun_jac", &capsule->cost_y_fun_jac_ut_xt[i-1]);
-        ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, i, "nls_y_hess", &capsule->cost_y_hess[i-1]);
+        ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, i, "Vx", Vx);
     }
-    ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, N, "nls_y_fun", &capsule->cost_y_e_fun);
-    ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, N, "nls_y_fun_jac", &capsule->cost_y_e_fun_jac_ut_xt);
-    ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, N, "nls_y_hess", &capsule->cost_y_e_hess);
+    free(Vx);
+
+    
+    double* Vu = calloc(NY*NU, sizeof(double));
+    // change only the non-zero elements:
+    
+    Vu[4+(NY) * 0] = 1.0;
+    Vu[5+(NY) * 1] = 1.0;
+
+    for (int i = 1; i < N; i++)
+    {
+        ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, i, "Vu", Vu);
+    }
+    free(Vu);
+    double* Vx_e = calloc(NYN*NX, sizeof(double));
+    // change only the non-zero elements:
+    
+    Vx_e[0+(NYN) * 0] = 1.0;
+    Vx_e[1+(NYN) * 1] = 1.0;
+    Vx_e[2+(NYN) * 2] = 1.0;
+    Vx_e[3+(NYN) * 3] = 1.0;
+    ocp_nlp_cost_model_set(nlp_config, nlp_dims, nlp_in, N, "Vx", Vx_e);
+    free(Vx_e);
 
 
 
@@ -569,31 +563,36 @@ void ev9_path_acados_create_5_set_nlp_in(ev9_path_solver_capsule* capsule, const
     free(lubx);
 
 
-
-
-    // set up nonlinear constraints for stage 0 to N-1
-    double* luh = calloc(2*NH, sizeof(double));
-    double* lh = luh;
-    double* uh = luh + NH;
-
-    
-    lh[0] = -1.0;
+    // set up general constraints for stage 0 to N-1
+    double* D = calloc(NG*NU, sizeof(double));
+    double* C = calloc(NG*NX, sizeof(double));
+    double* lug = calloc(2*NG, sizeof(double));
+    double* lg = lug;
+    double* ug = lug + NG;
 
     
-    uh[0] = 1.0;
+
+    
+    C[0+NG * 1] = 1.0;
+
+    
+    lg[0] = -1.0;
+
+    
+    ug[0] = 1.0;
 
     for (int i = 0; i < N; i++)
     {
-        // nonlinear constraints for stages 0 to N-1
-        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, i, "nl_constr_h_fun_jac",
-                                      &capsule->nl_constr_h_fun_jac[i]);
-        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, i, "nl_constr_h_fun",
-                                      &capsule->nl_constr_h_fun[i]);
-        
-        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, i, "lh", lh);
-        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, i, "uh", uh);
+        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, i, "D", D);
+        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, i, "C", C);
+        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, i, "lg", lg);
+        ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, i, "ug", ug);
     }
-    free(luh);
+    free(D);
+    free(C);
+    free(lug);
+
+
 
 
 
@@ -634,24 +633,26 @@ void ev9_path_acados_create_5_set_nlp_in(ev9_path_solver_capsule* capsule, const
 
 
 
-
-
-    // set up nonlinear constraints for last stage
-    double* luh_e = calloc(2*NHN, sizeof(double));
-    double* lh_e = luh_e;
-    double* uh_e = luh_e + NHN;
-    
-    lh_e[0] = -1.0;
+    // set up general constraints for last stage
+    double* C_e = calloc(NGN*NX, sizeof(double));
+    double* lug_e = calloc(2*NGN, sizeof(double));
+    double* lg_e = lug_e;
+    double* ug_e = lug_e + NGN;
 
     
-    uh_e[0] = 1.0;
+    C_e[0+NGN * 1] = 1.0;
 
-    ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, N, "nl_constr_h_fun_jac", &capsule->nl_constr_h_e_fun_jac);
-    ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, N, "nl_constr_h_fun", &capsule->nl_constr_h_e_fun);
     
-    ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, N, "lh", lh_e);
-    ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, N, "uh", uh_e);
-    free(luh_e);
+    lg_e[0] = -1.0;
+    ug_e[0] = 1.0;
+
+    ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, N, "C", C_e);
+    ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, N, "lg", lg_e);
+    ocp_nlp_constraints_model_set(nlp_config, nlp_dims, nlp_in, N, "ug", ug_e);
+    free(C_e);
+    free(lug_e);
+
+
 
 
 }
@@ -673,33 +674,6 @@ void ev9_path_acados_create_6_set_opts(ev9_path_solver_capsule* capsule)
 
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "globalization", "fixed_step");int full_step_dual = 0;
     ocp_nlp_solver_opts_set(nlp_config, capsule->nlp_opts, "full_step_dual", &full_step_dual);
-
-    // set collocation type (relevant for implicit integrators)
-    sim_collocation_type collocation_type = GAUSS_LEGENDRE;
-    for (int i = 0; i < N; i++)
-        ocp_nlp_solver_opts_set_at_stage(nlp_config, nlp_opts, i, "dynamics_collocation_type", &collocation_type);
-
-    // set up sim_method_num_steps
-    // all sim_method_num_steps are identical
-    int sim_method_num_steps = 3;
-    for (int i = 0; i < N; i++)
-        ocp_nlp_solver_opts_set_at_stage(nlp_config, nlp_opts, i, "dynamics_num_steps", &sim_method_num_steps);
-
-    // set up sim_method_num_stages
-    // all sim_method_num_stages are identical
-    int sim_method_num_stages = 4;
-    for (int i = 0; i < N; i++)
-        ocp_nlp_solver_opts_set_at_stage(nlp_config, nlp_opts, i, "dynamics_num_stages", &sim_method_num_stages);
-
-    int newton_iter_val = 3;
-    for (int i = 0; i < N; i++)
-        ocp_nlp_solver_opts_set_at_stage(nlp_config, nlp_opts, i, "dynamics_newton_iter", &newton_iter_val);
-
-
-    // set up sim_method_jac_reuse
-    bool tmp_bool = (bool) 0;
-    for (int i = 0; i < N; i++)
-        ocp_nlp_solver_opts_set_at_stage(nlp_config, nlp_opts, i, "dynamics_jac_reuse", &tmp_bool);
 
     double nlp_solver_step_length = 1.0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "step_length", &nlp_solver_step_length);
@@ -733,13 +707,13 @@ void ev9_path_acados_create_6_set_opts(ev9_path_solver_capsule* capsule)
     double nlp_solver_tol_comp = 1e-6;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "tol_comp", &nlp_solver_tol_comp);
 
-    int nlp_solver_max_iter = 8;
+    int nlp_solver_max_iter = 6;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "max_iter", &nlp_solver_max_iter);
 
     int initialize_t_slacks = 0;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "initialize_t_slacks", &initialize_t_slacks);
 
-    int qp_solver_iter_max = 50;
+    int qp_solver_iter_max = 20;
     ocp_nlp_solver_opts_set(nlp_config, nlp_opts, "qp_iter_max", &qp_solver_iter_max);
 
 int print_level = 0;
@@ -943,27 +917,18 @@ int ev9_path_acados_update_params(ev9_path_solver_capsule* capsule, int stage, d
     const int N = capsule->nlp_solver_plan->N;
     if (stage < N && stage >= 0)
     {
-        capsule->forw_vde_casadi[stage].set_param(capsule->forw_vde_casadi+stage, p);
-        capsule->expl_ode_fun[stage].set_param(capsule->expl_ode_fun+stage, p);
-    
+        capsule->discr_dyn_phi_fun[stage].set_param(capsule->discr_dyn_phi_fun+stage, p);
+        capsule->discr_dyn_phi_fun_jac_ut_xt[stage].set_param(capsule->discr_dyn_phi_fun_jac_ut_xt+stage, p);
 
         // constraints
     
-        capsule->nl_constr_h_fun_jac[stage].set_param(capsule->nl_constr_h_fun_jac+stage, p);
-        capsule->nl_constr_h_fun[stage].set_param(capsule->nl_constr_h_fun+stage, p);
 
         // cost
         if (stage == 0)
         {
-            capsule->cost_y_0_fun.set_param(&capsule->cost_y_0_fun, p);
-            capsule->cost_y_0_fun_jac_ut_xt.set_param(&capsule->cost_y_0_fun_jac_ut_xt, p);
-            capsule->cost_y_0_hess.set_param(&capsule->cost_y_0_hess, p);
         }
         else // 0 < stage < N
         {
-            capsule->cost_y_fun[stage-1].set_param(capsule->cost_y_fun+stage-1, p);
-            capsule->cost_y_fun_jac_ut_xt[stage-1].set_param(capsule->cost_y_fun_jac_ut_xt+stage-1, p);
-            capsule->cost_y_hess[stage-1].set_param(capsule->cost_y_hess+stage-1, p);
         }
     }
 
@@ -971,13 +936,7 @@ int ev9_path_acados_update_params(ev9_path_solver_capsule* capsule, int stage, d
     {
         // terminal shooting node has no dynamics
         // cost
-        capsule->cost_y_e_fun.set_param(&capsule->cost_y_e_fun, p);
-        capsule->cost_y_e_fun_jac_ut_xt.set_param(&capsule->cost_y_e_fun_jac_ut_xt, p);
-        capsule->cost_y_e_hess.set_param(&capsule->cost_y_e_hess, p);
         // constraints
-    
-        capsule->nl_constr_h_e_fun_jac.set_param(&capsule->nl_constr_h_e_fun_jac, p);
-        capsule->nl_constr_h_e_fun.set_param(&capsule->nl_constr_h_e_fun, p);
     
     }
 
@@ -1007,27 +966,18 @@ int ev9_path_acados_update_params_sparse(ev9_path_solver_capsule * capsule, int 
     const int N = capsule->nlp_solver_plan->N;
     if (stage < N && stage >= 0)
     {
-        capsule->forw_vde_casadi[stage].set_param_sparse(capsule->forw_vde_casadi+stage, n_update, idx, p);
-        capsule->expl_ode_fun[stage].set_param_sparse(capsule->expl_ode_fun+stage, n_update, idx, p);
-    
+        capsule->discr_dyn_phi_fun[stage].set_param_sparse(capsule->discr_dyn_phi_fun+stage, n_update, idx, p);
+        capsule->discr_dyn_phi_fun_jac_ut_xt[stage].set_param_sparse(capsule->discr_dyn_phi_fun_jac_ut_xt+stage, n_update, idx, p);
 
         // constraints
     
-        capsule->nl_constr_h_fun_jac[stage].set_param_sparse(capsule->nl_constr_h_fun_jac+stage, n_update, idx, p);
-        capsule->nl_constr_h_fun[stage].set_param_sparse(capsule->nl_constr_h_fun+stage, n_update, idx, p);
 
         // cost
         if (stage == 0)
         {
-            capsule->cost_y_0_fun.set_param_sparse(&capsule->cost_y_0_fun, n_update, idx, p);
-            capsule->cost_y_0_fun_jac_ut_xt.set_param_sparse(&capsule->cost_y_0_fun_jac_ut_xt, n_update, idx, p);
-            capsule->cost_y_0_hess.set_param_sparse(&capsule->cost_y_0_hess, n_update, idx, p);
         }
         else // 0 < stage < N
         {
-            capsule->cost_y_fun[stage-1].set_param_sparse(capsule->cost_y_fun+stage-1, n_update, idx, p);
-            capsule->cost_y_fun_jac_ut_xt[stage-1].set_param_sparse(capsule->cost_y_fun_jac_ut_xt+stage-1, n_update, idx, p);
-            capsule->cost_y_hess[stage-1].set_param_sparse(capsule->cost_y_hess+stage-1, n_update, idx, p);
         }
     }
 
@@ -1035,13 +985,7 @@ int ev9_path_acados_update_params_sparse(ev9_path_solver_capsule * capsule, int 
     {
         // terminal shooting node has no dynamics
         // cost
-        capsule->cost_y_e_fun.set_param_sparse(&capsule->cost_y_e_fun, n_update, idx, p);
-        capsule->cost_y_e_fun_jac_ut_xt.set_param_sparse(&capsule->cost_y_e_fun_jac_ut_xt, n_update, idx, p);
-        capsule->cost_y_e_hess.set_param_sparse(&capsule->cost_y_e_hess, n_update, idx, p);
         // constraints
-    
-        capsule->nl_constr_h_e_fun_jac.set_param_sparse(&capsule->nl_constr_h_e_fun_jac, n_update, idx, p);
-        capsule->nl_constr_h_e_fun.set_param_sparse(&capsule->nl_constr_h_e_fun, n_update, idx, p);
     
     }
 
@@ -1076,39 +1020,15 @@ int ev9_path_acados_free(ev9_path_solver_capsule* capsule)
     // dynamics
     for (int i = 0; i < N; i++)
     {
-        external_function_param_casadi_free(&capsule->forw_vde_casadi[i]);
-        external_function_param_casadi_free(&capsule->expl_ode_fun[i]);
+        external_function_param_casadi_free(&capsule->discr_dyn_phi_fun[i]);
+        external_function_param_casadi_free(&capsule->discr_dyn_phi_fun_jac_ut_xt[i]);
     }
-    free(capsule->forw_vde_casadi);
-    free(capsule->expl_ode_fun);
+    free(capsule->discr_dyn_phi_fun);
+    free(capsule->discr_dyn_phi_fun_jac_ut_xt);
 
     // cost
-    external_function_param_casadi_free(&capsule->cost_y_0_fun);
-    external_function_param_casadi_free(&capsule->cost_y_0_fun_jac_ut_xt);
-    external_function_param_casadi_free(&capsule->cost_y_0_hess);
-    for (int i = 0; i < N - 1; i++)
-    {
-        external_function_param_casadi_free(&capsule->cost_y_fun[i]);
-        external_function_param_casadi_free(&capsule->cost_y_fun_jac_ut_xt[i]);
-        external_function_param_casadi_free(&capsule->cost_y_hess[i]);
-    }
-    free(capsule->cost_y_fun);
-    free(capsule->cost_y_fun_jac_ut_xt);
-    free(capsule->cost_y_hess);
-    external_function_param_casadi_free(&capsule->cost_y_e_fun);
-    external_function_param_casadi_free(&capsule->cost_y_e_fun_jac_ut_xt);
-    external_function_param_casadi_free(&capsule->cost_y_e_hess);
 
     // constraints
-    for (int i = 0; i < N; i++)
-    {
-        external_function_param_casadi_free(&capsule->nl_constr_h_fun_jac[i]);
-        external_function_param_casadi_free(&capsule->nl_constr_h_fun[i]);
-    }
-    free(capsule->nl_constr_h_fun_jac);
-    free(capsule->nl_constr_h_fun);
-    external_function_param_casadi_free(&capsule->nl_constr_h_e_fun_jac);
-    external_function_param_casadi_free(&capsule->nl_constr_h_e_fun);
 
     return 0;
 }
@@ -1122,7 +1042,7 @@ void ev9_path_acados_print_stats(ev9_path_solver_capsule* capsule)
     ocp_nlp_get(capsule->nlp_config, capsule->nlp_solver, "stat_m", &stat_m);
 
     
-    double stat[96];
+    double stat[72];
     ocp_nlp_get(capsule->nlp_config, capsule->nlp_solver, "statistics", stat);
 
     int nrow = sqp_iter+1 < stat_m ? sqp_iter+1 : stat_m;

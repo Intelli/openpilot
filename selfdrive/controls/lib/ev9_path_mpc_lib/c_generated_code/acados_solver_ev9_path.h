@@ -54,16 +54,16 @@
 #define EV9_PATH_NSBXN  0
 #define EV9_PATH_NS     0
 #define EV9_PATH_NSN    0
-#define EV9_PATH_NG     0
+#define EV9_PATH_NG     1
 #define EV9_PATH_NBXN   4
-#define EV9_PATH_NGN    0
+#define EV9_PATH_NGN    1
 #define EV9_PATH_NY0    6
 #define EV9_PATH_NY     6
 #define EV9_PATH_NYN    4
 #define EV9_PATH_N      30
-#define EV9_PATH_NH     1
+#define EV9_PATH_NH     0
 #define EV9_PATH_NPHI   0
-#define EV9_PATH_NHN    1
+#define EV9_PATH_NHN    0
 #define EV9_PATH_NPHIN  0
 #define EV9_PATH_NR     0
 
@@ -91,39 +91,21 @@ typedef struct ev9_path_solver_capsule
     /* external functions */
     // dynamics
 
-    external_function_param_casadi *forw_vde_casadi;
-    external_function_param_casadi *expl_ode_fun;
-
-
+    external_function_param_casadi *discr_dyn_phi_fun;
+    external_function_param_casadi *discr_dyn_phi_fun_jac_ut_xt;
 
 
     // cost
 
-    external_function_param_casadi *cost_y_fun;
-    external_function_param_casadi *cost_y_fun_jac_ut_xt;
-    external_function_param_casadi *cost_y_hess;
 
 
 
-    external_function_param_casadi cost_y_0_fun;
-    external_function_param_casadi cost_y_0_fun_jac_ut_xt;
-    external_function_param_casadi cost_y_0_hess;
-
-
-
-    external_function_param_casadi cost_y_e_fun;
-    external_function_param_casadi cost_y_e_fun_jac_ut_xt;
-    external_function_param_casadi cost_y_e_hess;
 
 
     // constraints
-    external_function_param_casadi *nl_constr_h_fun_jac;
-    external_function_param_casadi *nl_constr_h_fun;
 
 
 
-    external_function_param_casadi nl_constr_h_e_fun_jac;
-    external_function_param_casadi nl_constr_h_e_fun;
 
 } ev9_path_solver_capsule;
 
