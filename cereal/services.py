@@ -104,8 +104,6 @@ _services: dict[str, tuple] = {
   "livestreamDriverEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "customReserved9": (True, 0., 1),
   "starpilotLateralState": (True, 100., 10),
-  "ev9TrajectoryPlan": (True, 20.),
-  "ev9TrajectoryState": (True, 100., 10),
   "customReservedRawData0": (True, 0.),
   "customReservedRawData1": (True, 0.),
   "customReservedRawData2": (True, 0.),

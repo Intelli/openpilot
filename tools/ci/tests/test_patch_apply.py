@@ -77,6 +77,26 @@ class TestPatchApply(unittest.TestCase):
     self.assertEqual((self.root / "opendbc_repo/opendbc/car.txt").read_text(), "vehicle done\n")
     self.assert_index_unchanged()
 
+  def test_retired_planner_archive_is_skipped_and_cannot_be_selected(self):
+    archive = self.patch("archive/ev9_custom_planner.patch", after="retired planner")
+    self.write("patches/archive/EV9_CUSTOM_PLANNER.md", "Recovery only; not an enabled patch.\n")
+    # Prove the archive could change application code if accidentally replayed.
+    self.git("apply", "--check", str(archive))
+    self.patch("opendbc/active.patch", "opendbc/car.txt", after="active vehicle change")
+    for args in ((), ("--all",), ("--check",)):
+      self.apply(*args)
+      self.assertEqual((self.root / "app.txt").read_text(), "before\n")
+      self.assert_index_unchanged()
+    self.assertEqual((self.root / "opendbc_repo/opendbc/car.txt").read_text(), "active vehicle change\n")
+
+    for script in ("apply_patch.sh", "apply_patch_conflicts.sh", "tools/opendbc-patches/apply.sh"):
+      for name in ("archive/ev9_custom_planner.patch", "patches/archive/ev9_custom_planner.patch", str(archive)):
+        with self.subTest(script=script, name=name):
+          result = self.apply(name, script=script, ok=False)
+          self.assertIn("Patch must be an enabled file directly in", result.stderr)
+          self.assertEqual((self.root / "app.txt").read_text(), "before\n")
+          self.assert_index_unchanged()
+
   def test_named_spaces_check_and_idempotence(self):
     patch = self.patch("with spaces.patch")
     self.apply("--check", str(patch))

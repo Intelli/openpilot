@@ -5,6 +5,10 @@ with the authenticated device's recent routes instead of requiring the user to
 find a route ID. Confirm that the drive matches the report before drawing
 conclusions. This is an investigation workflow, not a recurring monitor.
 
+The experimental EV9 custom planner has been retired. For recordings made before
+its removal, consult the [archived planner notes](../patches/archive/EV9_CUSTOM_PLANNER.md).
+Always verify the recorded build before attributing behavior to a feature.
+
 ## Find the drive and available logs
 
 1. Use the user's comma connect route link when supplied. Links look like

@@ -140,3 +140,60 @@ def test_twitch_guard_decays_after_pullaway_and_expires():
 
 def test_twitch_guard_does_not_arm_while_moving():
   assert update_twitch_guard(0.0, 1.0, False) == 0.0
+
+
+@pytest.mark.parametrize('direction', [-1., 1.])
+def test_ev9_angle_lead_uses_current_preview_until_model_catches_up(direction):
+  from opendbc.car.hyundai.values import CAR
+  from openpilot.selfdrive.controls.controlsd import turn_lead_engagement_weight
+  for measured in (0., .01, .02, .03):
+    weight = turn_lead_engagement_weight(CAR.KIA_EV9, car.CarParams.SteerControlType.angle,
+                                         direction * measured, direction * .003, direction * .02, direction)
+    assert weight == 1.
+  # No retained floor: smaller current preview immediately reduces its contribution;
+  # stronger model demand wins the production max-magnitude handoff.
+  for preview, raw, expected in ((.0127, .003, .0127), (.004, .003, .004), (.004, .02, .02)):
+    weight = turn_lead_engagement_weight(CAR.KIA_EV9, car.CarParams.SteerControlType.angle,
+                                         direction * .02, direction * raw, direction * preview, direction)
+    assert max(raw, preview * weight) == expected
+
+
+@pytest.mark.parametrize('direction', [-1., 1.])
+def test_ev9_angle_lead_never_adds_against_raw_model_correction(direction):
+  from opendbc.car.hyundai.values import CAR
+  from openpilot.selfdrive.controls.controlsd import turn_lead_engagement_weight
+  for raw in (-1e-8, -.001, -.02):
+    assert turn_lead_engagement_weight(CAR.KIA_EV9, car.CarParams.SteerControlType.angle,
+                                       0., direction * raw, direction * .02, direction) == 0.
+
+
+@pytest.mark.parametrize('fingerprint,control_type', [('other', car.CarParams.SteerControlType.angle),
+                                                       ('other', car.CarParams.SteerControlType.torque)])
+def test_other_vehicle_turn_lead_fade_remains_identical(fingerprint, control_type):
+  from openpilot.selfdrive.controls.controlsd import turn_lead_engagement_weight, TURN_LEAD_ENGAGED_FRAC
+  for measured in (-.03, -.015, 0., .015, .03):
+    expected = min(max((1. - abs(measured) / .02) / (1. - TURN_LEAD_ENGAGED_FRAC), 0.), 1.)
+    assert turn_lead_engagement_weight(fingerprint, control_type, measured, -.001, .02, 1.) == expected
+
+
+def test_ev9_lead_configured_speed_boundary_is_continuous():
+  from openpilot.selfdrive.controls.controlsd import ev9_turn_lead_authority
+  ceiling = 40. / 3.6
+  assert ev9_turn_lead_authority(32. / 3.6, 0., 10., ceiling) == 1.
+  assert ev9_turn_lead_authority(ceiling, 0., 10., ceiling) == 0.
+  assert ev9_turn_lead_authority(ceiling - .001, 0., 10., ceiling) < 1e-5
+  assert ev9_turn_lead_authority(ceiling - 1., 0., 10., ceiling) == .5
+  assert ev9_turn_lead_authority(7., 0., 9.1, ceiling) == 1.
+  # A low configured ceiling must not bypass the historical creep exclusion.
+  assert ev9_turn_lead_authority(2.5, 0., 4., 10. / 3.6) == 0.
+  assert ev9_turn_lead_authority(3., 0., 4., ceiling) == 0.
+
+
+def test_ev9_lead_stop_projection_fades_without_deceleration_switch():
+  from openpilot.selfdrive.controls.controlsd import ev9_turn_lead_authority
+  # At 6 m/s and an 8 m preview: stop before the bend => no initiation.
+  assert ev9_turn_lead_authority(6., -3., 8., 40./3.6) == 0.
+  assert ev9_turn_lead_authority(6., -2.25, 8., 40./3.6) == 0.
+  assert ev9_turn_lead_authority(6., -1.8, 8., 40./3.6) == .5
+  assert ev9_turn_lead_authority(6., -1.5, 8., 40./3.6) == 1.
+  assert ev9_turn_lead_authority(6., -.501, 8., 40./3.6) == ev9_turn_lead_authority(6., -.499, 8., 40./3.6)

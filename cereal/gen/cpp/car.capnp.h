@@ -2123,15 +2123,15 @@ public:
 
   inline bool getManualSteeringOverride() const;
 
-  inline float getEv9AngleFilterStateDeg() const;
+  inline float getReserved11DEPRECATED() const;
 
-  inline float getEv9MeasuredAngleDeg() const;
+  inline float getReserved12DEPRECATED() const;
 
-  inline bool getEv9AngleStateValid() const;
+  inline bool getReserved13DEPRECATED() const;
 
-  inline  ::uint64_t getEv9AngleStateMonoTime() const;
+  inline  ::uint64_t getReserved14DEPRECATED() const;
 
-  inline bool getEv9DirectAngleControl() const;
+  inline bool getReserved15DEPRECATED() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -2194,20 +2194,20 @@ public:
   inline bool getManualSteeringOverride();
   inline void setManualSteeringOverride(bool value);
 
-  inline float getEv9AngleFilterStateDeg();
-  inline void setEv9AngleFilterStateDeg(float value);
+  inline float getReserved11DEPRECATED();
+  inline void setReserved11DEPRECATED(float value);
 
-  inline float getEv9MeasuredAngleDeg();
-  inline void setEv9MeasuredAngleDeg(float value);
+  inline float getReserved12DEPRECATED();
+  inline void setReserved12DEPRECATED(float value);
 
-  inline bool getEv9AngleStateValid();
-  inline void setEv9AngleStateValid(bool value);
+  inline bool getReserved13DEPRECATED();
+  inline void setReserved13DEPRECATED(bool value);
 
-  inline  ::uint64_t getEv9AngleStateMonoTime();
-  inline void setEv9AngleStateMonoTime( ::uint64_t value);
+  inline  ::uint64_t getReserved14DEPRECATED();
+  inline void setReserved14DEPRECATED( ::uint64_t value);
 
-  inline bool getEv9DirectAngleControl();
-  inline void setEv9DirectAngleControl(bool value);
+  inline bool getReserved15DEPRECATED();
+  inline void setReserved15DEPRECATED(bool value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -6419,72 +6419,72 @@ inline void CarControl::Actuators::Builder::setManualSteeringOverride(bool value
       ::capnp::bounded<288>() * ::capnp::ELEMENTS, value);
 }
 
-inline float CarControl::Actuators::Reader::getEv9AngleFilterStateDeg() const {
+inline float CarControl::Actuators::Reader::getReserved11DEPRECATED() const {
   return _reader.getDataField<float>(
       ::capnp::bounded<10>() * ::capnp::ELEMENTS);
 }
 
-inline float CarControl::Actuators::Builder::getEv9AngleFilterStateDeg() {
+inline float CarControl::Actuators::Builder::getReserved11DEPRECATED() {
   return _builder.getDataField<float>(
       ::capnp::bounded<10>() * ::capnp::ELEMENTS);
 }
-inline void CarControl::Actuators::Builder::setEv9AngleFilterStateDeg(float value) {
+inline void CarControl::Actuators::Builder::setReserved11DEPRECATED(float value) {
   _builder.setDataField<float>(
       ::capnp::bounded<10>() * ::capnp::ELEMENTS, value);
 }
 
-inline float CarControl::Actuators::Reader::getEv9MeasuredAngleDeg() const {
+inline float CarControl::Actuators::Reader::getReserved12DEPRECATED() const {
   return _reader.getDataField<float>(
       ::capnp::bounded<11>() * ::capnp::ELEMENTS);
 }
 
-inline float CarControl::Actuators::Builder::getEv9MeasuredAngleDeg() {
+inline float CarControl::Actuators::Builder::getReserved12DEPRECATED() {
   return _builder.getDataField<float>(
       ::capnp::bounded<11>() * ::capnp::ELEMENTS);
 }
-inline void CarControl::Actuators::Builder::setEv9MeasuredAngleDeg(float value) {
+inline void CarControl::Actuators::Builder::setReserved12DEPRECATED(float value) {
   _builder.setDataField<float>(
       ::capnp::bounded<11>() * ::capnp::ELEMENTS, value);
 }
 
-inline bool CarControl::Actuators::Reader::getEv9AngleStateValid() const {
+inline bool CarControl::Actuators::Reader::getReserved13DEPRECATED() const {
   return _reader.getDataField<bool>(
       ::capnp::bounded<289>() * ::capnp::ELEMENTS);
 }
 
-inline bool CarControl::Actuators::Builder::getEv9AngleStateValid() {
+inline bool CarControl::Actuators::Builder::getReserved13DEPRECATED() {
   return _builder.getDataField<bool>(
       ::capnp::bounded<289>() * ::capnp::ELEMENTS);
 }
-inline void CarControl::Actuators::Builder::setEv9AngleStateValid(bool value) {
+inline void CarControl::Actuators::Builder::setReserved13DEPRECATED(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<289>() * ::capnp::ELEMENTS, value);
 }
 
-inline  ::uint64_t CarControl::Actuators::Reader::getEv9AngleStateMonoTime() const {
+inline  ::uint64_t CarControl::Actuators::Reader::getReserved14DEPRECATED() const {
   return _reader.getDataField< ::uint64_t>(
       ::capnp::bounded<6>() * ::capnp::ELEMENTS);
 }
 
-inline  ::uint64_t CarControl::Actuators::Builder::getEv9AngleStateMonoTime() {
+inline  ::uint64_t CarControl::Actuators::Builder::getReserved14DEPRECATED() {
   return _builder.getDataField< ::uint64_t>(
       ::capnp::bounded<6>() * ::capnp::ELEMENTS);
 }
-inline void CarControl::Actuators::Builder::setEv9AngleStateMonoTime( ::uint64_t value) {
+inline void CarControl::Actuators::Builder::setReserved14DEPRECATED( ::uint64_t value) {
   _builder.setDataField< ::uint64_t>(
       ::capnp::bounded<6>() * ::capnp::ELEMENTS, value);
 }
 
-inline bool CarControl::Actuators::Reader::getEv9DirectAngleControl() const {
+inline bool CarControl::Actuators::Reader::getReserved15DEPRECATED() const {
   return _reader.getDataField<bool>(
       ::capnp::bounded<290>() * ::capnp::ELEMENTS);
 }
 
-inline bool CarControl::Actuators::Builder::getEv9DirectAngleControl() {
+inline bool CarControl::Actuators::Builder::getReserved15DEPRECATED() {
   return _builder.getDataField<bool>(
       ::capnp::bounded<290>() * ::capnp::ELEMENTS);
 }
-inline void CarControl::Actuators::Builder::setEv9DirectAngleControl(bool value) {
+inline void CarControl::Actuators::Builder::setReserved15DEPRECATED(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<290>() * ::capnp::ELEMENTS, value);
 }

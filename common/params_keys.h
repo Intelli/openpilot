@@ -797,8 +797,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"WheelToDownload", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
 
     // EV9 Edition tuning
-    // Experimental trajectory ownership: 0 off, 1 shadow, 2 active only with validated inputs.
-    {"EV9TrajectoryMode", {PERSISTENT, INT, "0", "0"}},
     {"HkgTuningAngleCustomLimitMaxSpeedKph", {PERSISTENT, INT, "40", "32", 2, SETTINGS_SIMPLE}},
     {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT, INT, "10", "100", 2, SETTINGS_SIMPLE}},
     {"HkgSharedAutonomyMode", {PERSISTENT, INT, "0", "0", 2, SETTINGS_SIMPLE}},

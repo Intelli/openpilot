@@ -49,3 +49,13 @@ def test_realtime_toggles_do_not_read_params(monkeypatch):
   payload = json.dumps(read_ev9_tuning({'HkgTuningAngleCustomLimitMaxSpeedKph': '30'}))
   config = EV9AngleConfig.from_toggles(spv.get_starpilot_toggles({'starpilotPlan': SimpleNamespace(starpilotToggles=payload)}))
   assert config.limit_speed_mps == pytest.approx(30 / 3.6)
+
+
+def test_shared_speed_limit_matches_setting_envelope():
+  from types import SimpleNamespace
+  from openpilot.starpilot.common.ev9_tuning import ev9_limit_speed_mps
+  for value, expected in ((None, 40), ('bad', 40), (float('nan'), 40), (float('inf'), 40), (5, 10), (25, 25), (50, 40)):
+    key = 'hkg_tuning_angle_custom_limit_max_speed_kph'
+    assert ev9_limit_speed_mps({key: value}) == expected / 3.6
+    assert ev9_limit_speed_mps(SimpleNamespace(**{key: value})) == expected / 3.6
+  assert ev9_limit_speed_mps(None) == 40 / 3.6

@@ -1,5 +1,10 @@
 # Intelli patch workflow
 
+The custom EV9 planner is retired. Its implementation and tests are preserved in
+[`archive/ev9_custom_planner.patch`](archive/ev9_custom_planner.patch), and all
+planner notes are consolidated in [`archive/EV9_CUSTOM_PLANNER.md`](archive/EV9_CUSTOM_PLANNER.md).
+Both files survive upstream sync; neither is part of normal patch replay.
+
 For the cumulative behavior changes from stock StarPilot, see the
 [EV9 Edition changelog](CHANGELOG.md).
 
@@ -12,6 +17,7 @@ stable StarPilot baseline**. Upstream sync and GitHub builds do not replay them.
 | --- | --- |
 | `patches/<name>.patch` | Enabled patch using paths relative to the main repository |
 | `patches/opendbc/<name>.patch` | Enabled vehicle patch using paths relative to `opendbc_repo/` |
+| `patches/archive/` | Retired code and notes; preserved by sync and excluded from patch replay |
 | `.patch.temp-disabled` | One of the 17 formerly enabled patches, paused for StarPilot porting |
 | `.patch.migrated` | Unchanged historical original whose supported port is recorded in an enabled patch or replacement build tooling |
 | `.disabled` (including `.patch.OUTDATED.disabled`) | A patch that was already disabled before migration |
@@ -25,13 +31,23 @@ exporting a new patch defaults to enabled, or accepts an explicit disabled suffi
 when you want to keep it inactive.
 
 The six migrated vehicle patches use prefixes `01_` through `06_` to preserve their
-dependency order. The eleven enabled root patches contain build configuration, custom defaults, EV9 Edition branding and boot artwork,
+dependency order. The established root patches contain build configuration, custom defaults, EV9 Edition branding and boot artwork,
 settings UI, EV9 control configuration/curvature, warning policy, compact alerts,
 EV9 settings controls, the EV9 animated path effect, and the startup longitudinal-status notice. Only lane centering,
 driver monitoring and power management remain `.temp-disabled` by request. The old prebuilt
 patch is archived as `.migrated` because the StarPilot build/publish tooling has
 already replaced its Sunnypilot implementation; it is not replayed.
 See the migration guide for current EV9 behavior and patch ownership.
+
+`ev9_turn_lead_hesitation.patch` separately preserves the EV9 angle-control
+turn-lead fix and its focused tests: current preview assistance no longer fades
+with wheel catchup, and opposing model demand vetoes that assistance. It also
+includes the configured speed and stopping-distance envelopes, their shared
+`ev9_limit_speed_mps` helper, and focused tests. It works
+without the retired custom planner and excludes its messaging, tracking and
+handoff changes. When refreshing it, retain only these turn-lead
+changes and tests: exporting all later `controlsd.py` changes from its original
+base would also pull in unrelated planner changes.
 
 `ui_options_starpilot.patch` exposes the four EV9 steering controls on C3/C3X,
 C4 and Galaxy, plus EV9 Path in Galaxy. The device path controls/renderers remain

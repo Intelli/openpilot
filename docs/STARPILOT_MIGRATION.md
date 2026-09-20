@@ -1,5 +1,8 @@
 # StarPilot maintenance and EV9 behavior
 
+The experimental EV9 custom planner is retired; its code and notes are kept in
+[the planner archive](../patches/archive/EV9_CUSTOM_PLANNER.md).
+
 ## Source and workflow
 
 - Develop on `ev9-dev`. Stable upstream is `firestar5683/StarPilot`, branch
@@ -20,7 +23,8 @@
 
 ## Patch ownership
 
-Only files ending in `.patch` are enabled. Historical `.migrated`,
+Only `.patch` files directly in `patches/` and `patches/opendbc/` are enabled.
+Nested files under `patches/archive/` are never replayed. Historical `.migrated`,
 `.temp-disabled` and `.disabled` originals remain unchanged and unapplied.
 Lane centering, driver monitoring and power management remain deferred.
 The old prebuilt patch was replaced by maintained build tooling.

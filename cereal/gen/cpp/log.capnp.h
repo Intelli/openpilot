@@ -3163,8 +3163,8 @@ struct Event {
     TOUCH,
     STARPILOT_LATERAL_MANEUVER_PLAN_D_E_P_R_E_C_A_T_E_D,
     STARPILOT_LATERAL_STATE,
-    EV9_TRAJECTORY_PLAN,
-    EV9_TRAJECTORY_STATE,
+    CUSTOM_RESERVED12,
+    CUSTOM_RESERVED13,
     CUSTOM_RESERVED14,
     CUSTOM_RESERVED15,
     CUSTOM_RESERVED16,
@@ -23358,13 +23358,13 @@ public:
   inline bool hasStarpilotLateralState() const;
   inline  ::cereal::StarPilotLateralState::Reader getStarpilotLateralState() const;
 
-  inline bool isEv9TrajectoryPlan() const;
-  inline bool hasEv9TrajectoryPlan() const;
-  inline  ::cereal::EV9TrajectoryPlan::Reader getEv9TrajectoryPlan() const;
+  inline bool isCustomReserved12() const;
+  inline bool hasCustomReserved12() const;
+  inline  ::cereal::CustomReserved12::Reader getCustomReserved12() const;
 
-  inline bool isEv9TrajectoryState() const;
-  inline bool hasEv9TrajectoryState() const;
-  inline  ::cereal::EV9TrajectoryState::Reader getEv9TrajectoryState() const;
+  inline bool isCustomReserved13() const;
+  inline bool hasCustomReserved13() const;
+  inline  ::cereal::CustomReserved13::Reader getCustomReserved13() const;
 
   inline bool isCustomReserved14() const;
   inline bool hasCustomReserved14() const;
@@ -24545,21 +24545,21 @@ public:
   inline void adoptStarpilotLateralState(::capnp::Orphan< ::cereal::StarPilotLateralState>&& value);
   inline ::capnp::Orphan< ::cereal::StarPilotLateralState> disownStarpilotLateralState();
 
-  inline bool isEv9TrajectoryPlan();
-  inline bool hasEv9TrajectoryPlan();
-  inline  ::cereal::EV9TrajectoryPlan::Builder getEv9TrajectoryPlan();
-  inline void setEv9TrajectoryPlan( ::cereal::EV9TrajectoryPlan::Reader value);
-  inline  ::cereal::EV9TrajectoryPlan::Builder initEv9TrajectoryPlan();
-  inline void adoptEv9TrajectoryPlan(::capnp::Orphan< ::cereal::EV9TrajectoryPlan>&& value);
-  inline ::capnp::Orphan< ::cereal::EV9TrajectoryPlan> disownEv9TrajectoryPlan();
+  inline bool isCustomReserved12();
+  inline bool hasCustomReserved12();
+  inline  ::cereal::CustomReserved12::Builder getCustomReserved12();
+  inline void setCustomReserved12( ::cereal::CustomReserved12::Reader value);
+  inline  ::cereal::CustomReserved12::Builder initCustomReserved12();
+  inline void adoptCustomReserved12(::capnp::Orphan< ::cereal::CustomReserved12>&& value);
+  inline ::capnp::Orphan< ::cereal::CustomReserved12> disownCustomReserved12();
 
-  inline bool isEv9TrajectoryState();
-  inline bool hasEv9TrajectoryState();
-  inline  ::cereal::EV9TrajectoryState::Builder getEv9TrajectoryState();
-  inline void setEv9TrajectoryState( ::cereal::EV9TrajectoryState::Reader value);
-  inline  ::cereal::EV9TrajectoryState::Builder initEv9TrajectoryState();
-  inline void adoptEv9TrajectoryState(::capnp::Orphan< ::cereal::EV9TrajectoryState>&& value);
-  inline ::capnp::Orphan< ::cereal::EV9TrajectoryState> disownEv9TrajectoryState();
+  inline bool isCustomReserved13();
+  inline bool hasCustomReserved13();
+  inline  ::cereal::CustomReserved13::Builder getCustomReserved13();
+  inline void setCustomReserved13( ::cereal::CustomReserved13::Reader value);
+  inline  ::cereal::CustomReserved13::Builder initCustomReserved13();
+  inline void adoptCustomReserved13(::capnp::Orphan< ::cereal::CustomReserved13>&& value);
+  inline ::capnp::Orphan< ::cereal::CustomReserved13> disownCustomReserved13();
 
   inline bool isCustomReserved14();
   inline bool hasCustomReserved14();
@@ -62028,111 +62028,111 @@ inline ::capnp::Orphan< ::cereal::StarPilotLateralState> Event::Builder::disownS
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool Event::Reader::isEv9TrajectoryPlan() const {
-  return which() == Event::EV9_TRAJECTORY_PLAN;
+inline bool Event::Reader::isCustomReserved12() const {
+  return which() == Event::CUSTOM_RESERVED12;
 }
-inline bool Event::Builder::isEv9TrajectoryPlan() {
-  return which() == Event::EV9_TRAJECTORY_PLAN;
+inline bool Event::Builder::isCustomReserved12() {
+  return which() == Event::CUSTOM_RESERVED12;
 }
-inline bool Event::Reader::hasEv9TrajectoryPlan() const {
-  if (which() != Event::EV9_TRAJECTORY_PLAN) return false;
+inline bool Event::Reader::hasCustomReserved12() const {
+  if (which() != Event::CUSTOM_RESERVED12) return false;
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline bool Event::Builder::hasEv9TrajectoryPlan() {
-  if (which() != Event::EV9_TRAJECTORY_PLAN) return false;
+inline bool Event::Builder::hasCustomReserved12() {
+  if (which() != Event::CUSTOM_RESERVED12) return false;
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::cereal::EV9TrajectoryPlan::Reader Event::Reader::getEv9TrajectoryPlan() const {
-  KJ_IREQUIRE((which() == Event::EV9_TRAJECTORY_PLAN),
+inline  ::cereal::CustomReserved12::Reader Event::Reader::getCustomReserved12() const {
+  KJ_IREQUIRE((which() == Event::CUSTOM_RESERVED12),
               "Must check which() before get()ing a union member.");
-  return ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryPlan>::get(_reader.getPointerField(
+  return ::capnp::_::PointerHelpers< ::cereal::CustomReserved12>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::cereal::EV9TrajectoryPlan::Builder Event::Builder::getEv9TrajectoryPlan() {
-  KJ_IREQUIRE((which() == Event::EV9_TRAJECTORY_PLAN),
+inline  ::cereal::CustomReserved12::Builder Event::Builder::getCustomReserved12() {
+  KJ_IREQUIRE((which() == Event::CUSTOM_RESERVED12),
               "Must check which() before get()ing a union member.");
-  return ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryPlan>::get(_builder.getPointerField(
+  return ::capnp::_::PointerHelpers< ::cereal::CustomReserved12>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void Event::Builder::setEv9TrajectoryPlan( ::cereal::EV9TrajectoryPlan::Reader value) {
+inline void Event::Builder::setCustomReserved12( ::cereal::CustomReserved12::Reader value) {
   _builder.setDataField<Event::Which>(
-      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::EV9_TRAJECTORY_PLAN);
-  ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryPlan>::set(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::CUSTOM_RESERVED12);
+  ::capnp::_::PointerHelpers< ::cereal::CustomReserved12>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::cereal::EV9TrajectoryPlan::Builder Event::Builder::initEv9TrajectoryPlan() {
+inline  ::cereal::CustomReserved12::Builder Event::Builder::initCustomReserved12() {
   _builder.setDataField<Event::Which>(
-      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::EV9_TRAJECTORY_PLAN);
-  return ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryPlan>::init(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::CUSTOM_RESERVED12);
+  return ::capnp::_::PointerHelpers< ::cereal::CustomReserved12>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void Event::Builder::adoptEv9TrajectoryPlan(
-    ::capnp::Orphan< ::cereal::EV9TrajectoryPlan>&& value) {
+inline void Event::Builder::adoptCustomReserved12(
+    ::capnp::Orphan< ::cereal::CustomReserved12>&& value) {
   _builder.setDataField<Event::Which>(
-      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::EV9_TRAJECTORY_PLAN);
-  ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryPlan>::adopt(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::CUSTOM_RESERVED12);
+  ::capnp::_::PointerHelpers< ::cereal::CustomReserved12>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::cereal::EV9TrajectoryPlan> Event::Builder::disownEv9TrajectoryPlan() {
-  KJ_IREQUIRE((which() == Event::EV9_TRAJECTORY_PLAN),
+inline ::capnp::Orphan< ::cereal::CustomReserved12> Event::Builder::disownCustomReserved12() {
+  KJ_IREQUIRE((which() == Event::CUSTOM_RESERVED12),
               "Must check which() before get()ing a union member.");
-  return ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryPlan>::disown(_builder.getPointerField(
+  return ::capnp::_::PointerHelpers< ::cereal::CustomReserved12>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool Event::Reader::isEv9TrajectoryState() const {
-  return which() == Event::EV9_TRAJECTORY_STATE;
+inline bool Event::Reader::isCustomReserved13() const {
+  return which() == Event::CUSTOM_RESERVED13;
 }
-inline bool Event::Builder::isEv9TrajectoryState() {
-  return which() == Event::EV9_TRAJECTORY_STATE;
+inline bool Event::Builder::isCustomReserved13() {
+  return which() == Event::CUSTOM_RESERVED13;
 }
-inline bool Event::Reader::hasEv9TrajectoryState() const {
-  if (which() != Event::EV9_TRAJECTORY_STATE) return false;
+inline bool Event::Reader::hasCustomReserved13() const {
+  if (which() != Event::CUSTOM_RESERVED13) return false;
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline bool Event::Builder::hasEv9TrajectoryState() {
-  if (which() != Event::EV9_TRAJECTORY_STATE) return false;
+inline bool Event::Builder::hasCustomReserved13() {
+  if (which() != Event::CUSTOM_RESERVED13) return false;
   return !_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
 }
-inline  ::cereal::EV9TrajectoryState::Reader Event::Reader::getEv9TrajectoryState() const {
-  KJ_IREQUIRE((which() == Event::EV9_TRAJECTORY_STATE),
+inline  ::cereal::CustomReserved13::Reader Event::Reader::getCustomReserved13() const {
+  KJ_IREQUIRE((which() == Event::CUSTOM_RESERVED13),
               "Must check which() before get()ing a union member.");
-  return ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryState>::get(_reader.getPointerField(
+  return ::capnp::_::PointerHelpers< ::cereal::CustomReserved13>::get(_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline  ::cereal::EV9TrajectoryState::Builder Event::Builder::getEv9TrajectoryState() {
-  KJ_IREQUIRE((which() == Event::EV9_TRAJECTORY_STATE),
+inline  ::cereal::CustomReserved13::Builder Event::Builder::getCustomReserved13() {
+  KJ_IREQUIRE((which() == Event::CUSTOM_RESERVED13),
               "Must check which() before get()ing a union member.");
-  return ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryState>::get(_builder.getPointerField(
+  return ::capnp::_::PointerHelpers< ::cereal::CustomReserved13>::get(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void Event::Builder::setEv9TrajectoryState( ::cereal::EV9TrajectoryState::Reader value) {
+inline void Event::Builder::setCustomReserved13( ::cereal::CustomReserved13::Reader value) {
   _builder.setDataField<Event::Which>(
-      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::EV9_TRAJECTORY_STATE);
-  ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryState>::set(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::CUSTOM_RESERVED13);
+  ::capnp::_::PointerHelpers< ::cereal::CustomReserved13>::set(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), value);
 }
-inline  ::cereal::EV9TrajectoryState::Builder Event::Builder::initEv9TrajectoryState() {
+inline  ::cereal::CustomReserved13::Builder Event::Builder::initCustomReserved13() {
   _builder.setDataField<Event::Which>(
-      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::EV9_TRAJECTORY_STATE);
-  return ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryState>::init(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::CUSTOM_RESERVED13);
+  return ::capnp::_::PointerHelpers< ::cereal::CustomReserved13>::init(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
-inline void Event::Builder::adoptEv9TrajectoryState(
-    ::capnp::Orphan< ::cereal::EV9TrajectoryState>&& value) {
+inline void Event::Builder::adoptCustomReserved13(
+    ::capnp::Orphan< ::cereal::CustomReserved13>&& value) {
   _builder.setDataField<Event::Which>(
-      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::EV9_TRAJECTORY_STATE);
-  ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryState>::adopt(_builder.getPointerField(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, Event::CUSTOM_RESERVED13);
+  ::capnp::_::PointerHelpers< ::cereal::CustomReserved13>::adopt(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
 }
-inline ::capnp::Orphan< ::cereal::EV9TrajectoryState> Event::Builder::disownEv9TrajectoryState() {
-  KJ_IREQUIRE((which() == Event::EV9_TRAJECTORY_STATE),
+inline ::capnp::Orphan< ::cereal::CustomReserved13> Event::Builder::disownCustomReserved13() {
+  KJ_IREQUIRE((which() == Event::CUSTOM_RESERVED13),
               "Must check which() before get()ing a union member.");
-  return ::capnp::_::PointerHelpers< ::cereal::EV9TrajectoryState>::disown(_builder.getPointerField(
+  return ::capnp::_::PointerHelpers< ::cereal::CustomReserved13>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 

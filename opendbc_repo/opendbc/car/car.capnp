@@ -379,12 +379,12 @@ struct CarControl {
     lateralControlMode @9: LateralControlMode;
     manualSteeringOverride @10: Bool;  # controller is following the driver's manual steering request
 
-    # EV9 controller snapshot after filter resets and transport initialization; not a CAN receipt timestamp.
-    ev9AngleFilterStateDeg @11: Float32;
-    ev9MeasuredAngleDeg @12: Float32;  # selected MDPS angle, not public SAS
-    ev9AngleStateValid @13: Bool;  # finite snapshot with valid CAN; does not certify individual MDPS freshness
-    ev9AngleStateMonoTime @14: UInt64;
-    ev9DirectAngleControl @15: Bool;  # actual ECU ownership: direct MDPS angle 2, otherwise stock MDPS angle 1
+    # Retired custom-planner telemetry. Preserve wire ordinals; never reuse them.
+    reserved11DEPRECATED @11: Float32;
+    reserved12DEPRECATED @12: Float32;
+    reserved13DEPRECATED @13: Bool;
+    reserved14DEPRECATED @14: UInt64;
+    reserved15DEPRECATED @15: Bool;
 
     enum LongControlState @0xe40f3a917d908282{
       off @0;
