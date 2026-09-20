@@ -15,7 +15,7 @@ MAINTENANCE = (
   'AGENTS.md', 'sync-upstream.sh', 'update.sh', 'apply_patch.sh', 'apply_patch_conflicts.sh', 'fix_patch.sh',
   'create_patch.sh', 'create_patch_manual.sh', 'update_patch.sh', 'patches', 'tools/patches', 'tools/opendbc-patches',
   'tools/ci/sync_ev9_branch.sh', 'tools/ci/tests', '.github/workflows', 'release/ci/publish.sh',
-  'docs/STARPILOT_MIGRATION.md', 'docs/RECENT_DRIVE_REVIEW.md', 'starpilot-upstream.json',
+  'docs/MAINTENANCE.md', 'docs/EV9_BEHAVIOR.md', 'docs/RECENT_DRIVE_REVIEW.md', 'starpilot-upstream.json',
 )
 SUFFIXES = ('.patch', '.patch.temp-disabled', '.patch.disabled', '.patch.OUTDATED.disabled')
 

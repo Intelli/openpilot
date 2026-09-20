@@ -28,7 +28,7 @@
 - `./create_patch.sh <name>` exports staged source edits as a forward patch. Use `opendbc/<name>` for vehicle-only exports. It does not sync, replay, stage, commit or push.
 - `./update_patch.sh <name>` reconstructs original file versions from the existing patch’s Git blob IDs and compares them with the index (HEAD versions when nothing is staged), retaining committed original hunks. Default scope is existing patch paths plus newly staged source files; stage new files before committing to include them automatically. `-- PATH...` overrides scope; maintenance files are excluded. `--base <ref>` explicitly replaces the baseline and uses ordinary base-to-index diff scope, for rebasing or unavailable preimage objects. Updating preserves disabled suffixes; empty, malformed or missing-preimage exports fail without overwriting. It does not sync, apply, stage, commit or push.
 - Original helpers are archived in `patches/legacy-openpilot-tooling/` and `tools/opendbc-patches/legacy/`. Do not run those legacy inverse-generation helpers. See `patches/README.md` for the supported workflow.
-- See `docs/STARPILOT_MIGRATION.md` for provenance, archive layout and migration details.
+- See `docs/MAINTENANCE.md` for source, patch ownership and deployment; `docs/EV9_BEHAVIOR.md` records current vehicle behavior.
 - `patches/PR_TRACKER.md` tracks the complete patch-to-upstream-PR inventory and status. Prepare upstream contributions in the separate `StarPilot-upstream` checkout using its local `PR_WORKFLOW.md`; keep the tracker current as PRs are prepared, opened or integrated.
 
 ## GitHub Build & Publication

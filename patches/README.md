@@ -5,8 +5,9 @@ The custom EV9 planner is retired. Its implementation and tests are preserved in
 planner notes are consolidated in [`archive/EV9_CUSTOM_PLANNER.md`](archive/EV9_CUSTOM_PLANNER.md).
 Both files survive upstream sync; neither is part of normal patch replay.
 
-For the cumulative behavior changes from stock StarPilot, see the
-[EV9 Edition changelog](CHANGELOG.md).
+For current behavior and patch ownership, see [EV9 behavior](../docs/EV9_BEHAVIOR.md)
+and [maintenance](../docs/MAINTENANCE.md). The [EV9 Edition changelog](CHANGELOG.md)
+records an earlier audit against stock StarPilot.
 
 Historical patch contents are preserved; **none are applied to the initial
 stable StarPilot baseline**. Upstream sync and GitHub builds do not replay them.
@@ -20,7 +21,7 @@ stable StarPilot baseline**. Upstream sync and GitHub builds do not replay them.
 | `patches/archive/` | Retired code and notes; preserved by sync and excluded from patch replay |
 | `.patch.temp-disabled` | One of the 17 formerly enabled patches, paused for StarPilot porting |
 | `.patch.migrated` | Unchanged historical original whose supported port is recorded in an enabled patch or replacement build tooling |
-| `.disabled` (including `.patch.OUTDATED.disabled`) | A patch that was already disabled before migration |
+| `.disabled` (including `.patch.OUTDATED.disabled`) | Inactive implementation, including previously disabled or subsequently retired work |
 
 The 17 formerly enabled patches started as temporarily disabled archives. Migrated
 originals now use `.migrated`; the six previously disabled patches keep their
@@ -34,10 +35,10 @@ The six migrated vehicle patches use prefixes `01_` through `06_` to preserve th
 dependency order. The established root patches contain build configuration, custom defaults, EV9 Edition branding and boot artwork,
 settings UI, EV9 control configuration/curvature, warning policy, compact alerts,
 EV9 settings controls, the EV9 animated path effect, and the startup longitudinal-status notice. Only lane centering,
-driver monitoring and power management remain `.temp-disabled` by request. The old prebuilt
+driver monitoring and power management customizations remain `.temp-disabled` by request; native StarPilot features are separate. The old prebuilt
 patch is archived as `.migrated` because the StarPilot build/publish tooling has
 already replaced its Sunnypilot implementation; it is not replayed.
-See the migration guide for current EV9 behavior and patch ownership.
+See the [maintenance guide](../docs/MAINTENANCE.md#patch-ownership) for patch ownership.
 
 `ev9_turn_lead_hesitation.patch` separately preserves the EV9 angle-control
 turn-lead fix and its focused tests: current preview assistance no longer fades
@@ -87,8 +88,9 @@ actuator telemetry field; capacitive hands-on state includes its sample timestam
 Vehicle patch `05` also caps the EV9 direct OP-long autonomous angle target at
 ±140° before filtering. Cap binding keeps assistance active, with existing
 manual-following and smooth-reentry exceptions; Panda limits and inactive
-measured-angle handling remain unchanged. See the migration guide for scope
-and verification. Recent-device investigation
+measured-angle handling remain unchanged. See [EV9 behavior](../docs/EV9_BEHAVIOR.md)
+for scope and [maintenance](../docs/MAINTENANCE.md#verification-and-deployment)
+for verification. Recent-device investigation
 is documented in [the drive-review workflow](../docs/RECENT_DRIVE_REVIEW.md).
 
 `assets/openpilot/` preserves custom artwork and audio. Original helpers and
@@ -199,6 +201,6 @@ vehicle patch. Select all files belonging to an updated patch; omitted files wil
 not be part of its replacement. `create_patch.sh` also accepts `--base <ref>` when
 an explicit older base is needed.
 
-See [the migration guide](../docs/STARPILOT_MIGRATION.md) for upstream and deployment
+See [the maintenance guide](../docs/MAINTENANCE.md) for upstream and deployment
 workflow details. Local tooling checks use disposable Git repositories; no vehicle
 patch is applied as part of those checks.

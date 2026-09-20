@@ -1,6 +1,6 @@
 # EV9 Edition changes from stock StarPilot
 
-This is a cumulative changelog of the **enabled patches**, audited against stable
+This records an earlier audit of the **enabled patches** against stable
 StarPilot commit `c3e4ec630f41c4baa43254a90f718abd1bf764a1`, recorded in
 [starpilot-upstream.json](../starpilot-upstream.json). The reviewed EV9 source is
 `f1b6e566dc`, plus the two-hour shutdown default and C4/Galaxy settings support
@@ -8,12 +8,12 @@ StarPilot commit `c3e4ec630f41c4baa43254a90f718abd1bf764a1`, recorded in
 longitudinal-status notice, EV9 OP-long cruise-knob engagement, and the EV9
 OP-long autonomous steering target cap.
 
-There are **17 enabled patches: 11 application patches and 6 vehicle patches**,
-covering 96 source files, including tests and artwork. Replaying them in order on
-the recorded baseline reproduces those files exactly. All application differences
-from that baseline are covered; repository maintenance changes are listed
-separately below. This compares with our imported baseline, not a newer upstream
-release, and describes current behavior rather than superseded intermediate fixes.
+That audit covered **17 enabled patches: 11 application patches and 6 vehicle patches**,
+and 96 source files, including tests and artwork. It verified their replay against
+the recorded baseline. Repository maintenance changes are listed separately below.
+Later changes, including preview assistance and signal intent through stops, can
+supersede this snapshot. Use [maintenance](../docs/MAINTENANCE.md) for the current
+patch inventory and [EV9 behavior](../docs/EV9_BEHAVIOR.md) for current policies.
 
 ## 1. Defaults and configuration
 
@@ -391,11 +391,11 @@ application/vehicle patch:
 - Publish only the latest built tree as the parentless `ev9-prebuilt` snapshot with
   source provenance, then promote that exact tree to `ev9` while retaining deployment
   history. The existing master-branch trigger coordinates that promotion.
-- Repository guidance, migration notes, and a documented private-log investigation
+- Repository guidance, maintenance references, and a documented private-log investigation
   and recorded-input replay workflow.
 
 See [README.md](README.md) for patch operations and
-[STARPILOT_MIGRATION.md](../docs/STARPILOT_MIGRATION.md) for maintenance details.
+[MAINTENANCE.md](../docs/MAINTENANCE.md) for maintenance details.
 This file lives under `patches/` so upstream sync preserves it automatically.
 
 ## Enabled patch index

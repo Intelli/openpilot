@@ -138,10 +138,14 @@ def test_manual_alias_filters_paths_and_excludes_maintenance(repo):
   (path / "patches").mkdir()
   (path / "patches/metadata.patch.disabled").write_text("metadata")
   git("add", "patches")
-  export("create_patch_manual.sh", "example", "--", "app.txt", "patches")
+  (path / "docs").mkdir()
+  for name in ("MAINTENANCE.md", "EV9_BEHAVIOR.md"):
+    stage(f"docs/{name}", "maintenance reference\n")
+  export("create_patch_manual.sh", "example", "--", "app.txt", "patches", "docs")
   patch = (path / "patches/example.patch").read_text()
   assert "+staged" in patch
   assert "metadata" not in patch and "vehicle edit" not in patch
+  assert "docs/" not in patch
 
 
 @pytest.mark.parametrize("name", ["../escape", "/tmp/escape", "opendbc/../../escape"])
@@ -210,6 +214,9 @@ def test_update_includes_newly_staged_files_and_excludes_maintenance(repo):
   git("commit", "-m", "first patch")
   stage("extra source.txt", "newly included customization\n")
   stage("AGENTS.md", "maintenance\n")
+  (path / "docs").mkdir()
+  for name in ("MAINTENANCE.md", "EV9_BEHAVIOR.md"):
+    stage(f"docs/{name}", "maintenance reference\n")
   export("update_patch.sh", "example")
   expected = git("diff", "--cached", "--binary", "--full-index", "--no-renames", base, "--", "app.txt", "extra source.txt")
   assert (path / "patches/example.patch.temp-disabled").read_bytes() == expected

@@ -112,8 +112,10 @@ class TestStarPilotSync(unittest.TestCase):
     self.sync("--allow", success=False)
     self.assertEqual((self.local / "app.txt").read_text(), "unsaved\n")
 
-  def test_retired_planner_archive_survives_missing_and_colliding_upstream_files(self):
+  def test_maintenance_docs_and_planner_archive_survive_missing_and_colliding_upstream_files(self):
     archive = {
+      "docs/MAINTENANCE.md": "ongoing maintenance workflow\n",
+      "docs/EV9_BEHAVIOR.md": "current EV9 behavior\n",
       "patches/archive/ev9_custom_planner.patch": "retired planner recovery patch\n",
       "patches/archive/EV9_CUSTOM_PLANNER.md": "retired planner provenance\n",
     }
@@ -123,7 +125,7 @@ class TestStarPilotSync(unittest.TestCase):
     self.head = self.git(self.local, "rev-parse", "HEAD").stdout.strip()
 
     # Neither deletion by an upstream snapshot nor a same-name upstream file
-    # may change the archived bytes in the working tree or index.
+    # may change preserved document/archive bytes in the working tree or index.
     for collision in (False, True):
       with self.subTest(upstream_collision=collision):
         if collision:
