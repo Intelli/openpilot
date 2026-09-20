@@ -328,6 +328,14 @@ def test_aol_rejects_uncalibrated_requests_without_delayed_activation(monkeypatc
     card.update(cs, out, sm, toggles)
     cs.cruiseState.available = True
   else:
+    if source == "main":
+      # The rejected ON still counts: cycle main OFF before requesting ON again.
+      request()
+      result = card.update(cs, out, sm, toggles)
+      assert not result.alwaysOnLateralAllowed
+      assert result.pauseLateral
+      cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=False)]
+      card.update(cs, out, sm, toggles)
     request()
   card.update(cs, out, sm, toggles)
   cs.buttonEvents = []
@@ -399,6 +407,12 @@ def test_ev9_rejected_main_request_stays_paused_through_delayed_pcm_enable(monke
   assert not result.alwaysOnLateralAllowed
   assert not result.alwaysOnLateralEnabled
 
+  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
+  result = card.update(cs, out, sm, toggles)
+  assert not result.alwaysOnLateralAllowed  # Second physical press turns main OFF.
+  assert result.pauseLateral
+  cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=False)]
+  assert not card.update(cs, out, sm, toggles).alwaysOnLateralAllowed
   cs.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
   result = card.update(cs, out, sm, toggles)
   assert result.alwaysOnLateralAllowed
@@ -497,6 +511,64 @@ def test_ev9_main_aol_off_wins_over_delayed_stock_cruise_engagement(monkeypatch,
   result = card.update(cs, out, sm, toggles)
   assert result.alwaysOnLateralAllowed
   assert not result.pauseLateral
+
+
+@pytest.mark.parametrize("disruption", ["calibration_loss", "fault", "live_disabled", "assignment_disabled", "lkas"])
+@pytest.mark.parametrize("stock_enabled", [False, True])
+def test_ev9_stock_main_phase_survives_independent_aol_changes(monkeypatch, tmp_path, disruption, stock_enabled):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+  card = spc.StarPilotCard(
+    SimpleNamespace(brand="hyundai", flags=spc.HyundaiFlags.CANFD, carFingerprint=spc.HYUNDAI_CAR.KIA_EV9,
+                    openpilotLongitudinalControl=False),
+    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
+  )
+  cs, sm = make_car_state(available=disruption != "fault"), make_sm()
+  out = SimpleNamespace(distancePressed=False)
+  toggles = make_toggles(always_on_lateral=disruption != "live_disabled", always_on_lateral_lkas=True,
+                         main_cruise_aol_toggle=disruption != "assignment_disabled")
+
+  def step(button=None, pressed=True):
+    cs.buttonEvents = [] if button is None else [make_wrapped_button_event(button, pressed)]
+    return card.update(cs, out, sm, toggles)
+
+  result = step(spc.ButtonType.mainCruise)
+  assert result.alwaysOnLateralAllowed is (disruption in ("calibration_loss", "lkas"))
+  step(spc.ButtonType.mainCruise, pressed=False)
+  if disruption == "calibration_loss":
+    sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.invalid
+    assert not step().alwaysOnLateralAllowed
+    sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
+  elif disruption == "lkas":
+    assert not step(spc.ButtonType.lkas).alwaysOnLateralAllowed
+    step(spc.ButtonType.lkas, pressed=False)
+  cs.cruiseState.available = True
+  toggles.always_on_lateral = True
+  toggles.main_cruise_aol_toggle = True
+  assert not step().alwaysOnLateralAllowed
+
+  # OFF follows the physical main phase even though AOL is already off.
+  result = step(spc.ButtonType.mainCruise)
+  assert not result.alwaysOnLateralAllowed
+  assert result.pauseLateral
+  step(spc.ButtonType.mainCruise, pressed=False)
+  # Stock SCC may appear late or remain invisible throughout fallback operation.
+  cs.cruiseState.enabled = stock_enabled
+  sm["selfdriveState"].active = stock_enabled
+  result = step()
+  assert not result.alwaysOnLateralAllowed
+  assert not result.alwaysOnLateralEnabled
+  assert result.pauseLateral
+
+  result = step(spc.ButtonType.mainCruise)
+  assert result.alwaysOnLateralAllowed
+  assert result.alwaysOnLateralEnabled
+  assert not result.pauseLateral
+  assert step(spc.ButtonType.mainCruise, pressed=False).alwaysOnLateralEnabled
+  cs.cruiseState.enabled = False
+  cs.brakePressed = True
+  assert step(spc.ButtonType.cancel).alwaysOnLateralEnabled
+  assert step(spc.ButtonType.cancel, pressed=False).alwaysOnLateralEnabled
 
 
 @pytest.fixture
@@ -618,9 +690,14 @@ def test_ev9_op_long_main_fault_refusal_does_not_enable_after_fault_clears(ev9_o
   assert result.pauseLateral
 
 
-def test_ev9_main_uses_stock_toggle_after_runtime_long_fallback(ev9_op_long_buttons):
-  cp, cs, _, step = ev9_op_long_buttons
-  step(spc.ButtonType.mainCruise)
+@pytest.mark.parametrize("refusal", [None, "calibration", "fault"])
+def test_ev9_main_uses_stock_phase_after_runtime_long_fallback(ev9_op_long_buttons, refusal):
+  cp, cs, sm, step = ev9_op_long_buttons
+  if refusal == "calibration":
+    sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.uncalibrated
+  result = step(spc.ButtonType.mainCruise, available=refusal != "fault")
+  assert result.alwaysOnLateralAllowed is (refusal is None)
+  sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.calibrated
   step(spc.ButtonType.mainCruise, pressed=False)
   # ECU-disable fallback mutates the existing CP after StarPilotCard construction.
   cp.openpilotLongitudinalControl = False

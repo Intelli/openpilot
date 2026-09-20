@@ -69,13 +69,23 @@ The top-left Driving Assist/main-cruise button controls AOL through StarPilot's
 button assignments and keeps its factory cruise behavior with stock ACC. The one-time EV9
 migration assigns it only when AOL is enabled, LKAS already toggles AOL and
 main/cruise has no assignment; explicit assignments are preserved.
+With stock ACC, every main press advances an independent ON/OFF request, even if
+calibration refuses lateral engagement or AOL is disabled. An accepted main ON
+requests AOL ON while cruise is fault-free; main OFF requests AOL OFF instead of
+inverting the current lateral state. A refused ON therefore cannot turn the next
+OFF press into a steering engagement. Independent LKAS presses, braking and delayed
+stock SCC messages do not change the main-button request. Stock EV9 cruise
+availability reports a fault gate, not the button state, and SCC status may stay
+inactive in fallback, so these signals cannot establish the stock main state.
+The request starts OFF at process startup and follows observed press edges.
 With OP longitudinal actually enabled, each main press sets AOL to the resulting
 cruise readiness: main ON requests AOL ON and main OFF requests AOL OFF. This
 avoids inverting AOL after independent LKAS presses or a refused calibration
 request. SET/RES engages longitudinal without overriding an explicit steering OFF,
 including LKAS OFF while cruise is only armed. Calibration and cruise faults can
 refuse activation; later recovery alone does not enable AOL. Runtime fallback to
-stock ACC restores the stock-mode button behavior.
+stock ACC uses the independently tracked main-button request, including presses
+whose lateral activation was refused before fallback.
 `PauseAOLOnBrake=0` keeps lateral steering active when braking. A normal cruise
 transition while healthy AOL steering continues has no disengagement sound,
 banner or HUD cue; faults and full disengagement retain their alerts.
