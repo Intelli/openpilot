@@ -71,7 +71,10 @@ ready** while waiting for brake + Start, then bright purple-gradient **OP long**
 after vehicle READY. **Stock ACC** stays solid green. It includes display-only EV9
 READY telemetry and tests; it does not change takeover or emergency braking behavior.
 
-`drive_helpers_starpilot.patch` also normalizes the EV9 OP-long cruise knob:
+`drive_helpers_starpilot.patch` also gives EV9 OP-long main ON a one-shot
+longitudinal engagement request alongside AOL, using normal SET initialization.
+Main OFF disengages; held buttons, pedal/CAN refusals and overlapping knob actions
+cannot create a delayed main engagement. It also normalizes the cruise knob:
 up/down/in engage when inactive; up resumes a saved speed when available, while
 down/in follow normal SET initialization. While engaged, up/down adjust speed
 and in cancels. Vehicle patch `04` includes the matching native permission checks,

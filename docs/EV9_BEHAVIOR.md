@@ -78,13 +78,20 @@ stock SCC messages do not change the main-button request. Stock EV9 cruise
 availability reports a fault gate, not the button state, and SCC status may stay
 inactive in fallback, so these signals cannot establish the stock main state.
 The request starts OFF at process startup and follows observed press edges.
-With OP longitudinal actually enabled, each main press sets AOL to the resulting
-cruise readiness: main ON requests AOL ON and main OFF requests AOL OFF. This
-avoids inverting AOL after independent LKAS presses or a refused calibration
-request. SET/RES engages longitudinal without overriding an explicit steering OFF,
-including LKAS OFF while cruise is only armed. Calibration and cruise faults can
-refuse activation; later recovery alone does not enable AOL. Runtime fallback to
-stock ACC uses the independently tracked main-button request, including presses
+With OP longitudinal actually enabled, main ON requests both AOL ON and longitudinal
+engagement, matching the factory button's one-touch engagement. Longitudinal uses
+normal SET speed initialization, including an explicitly configured speed-limit
+setting; an earlier RES request does not restore a saved speed on main ON.
+Main OFF requests AOL OFF and disengages longitudinal. This avoids inverting AOL
+after independent LKAS presses or a refused calibration request. The main request
+is accepted only on a fresh press with known inactive software control, healthy
+CAN, no braking while moving or steering-disengage input, and no overlapping
+cruise-knob action. Normal accelerator override and standstill brake pre-enable
+behavior still apply. Holding or releasing the button does not repeat a refused
+engagement. Calibration and cruise faults can refuse activation; later recovery alone does not engage
+longitudinal or enable AOL. SET/RES and an inactive knob press remain available
+to engage longitudinal without overriding an explicit steering OFF.
+Runtime fallback to stock ACC uses the independently tracked main-button request, including presses
 whose lateral activation was refused before fallback.
 `PauseAOLOnBrake=0` keeps lateral steering active when braking. A normal cruise
 transition while healthy AOL steering continues has no disengagement sound,

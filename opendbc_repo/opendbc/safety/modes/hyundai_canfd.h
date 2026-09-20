@@ -180,13 +180,29 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *msg) {
         hyundai_lkas_button_check(GET_BIT(msg, 39U));
       }
       const int previous_cruise_button = cruise_button_prev;
+      const bool main_button_pressed = main_button && !main_button_prev;
       hyundai_common_cruise_buttons_check(cruise_button, main_button);
       if (hyundai_canfd_ev9 && hyundai_longitudinal) {
+        // Main ON is a one-shot engagement request. Holding or releasing it must
+        // not re-enable after an override or fault, and cancel takes precedence.
+        if (main_button_pressed) {
+          hyundai_canfd_ev9_cancel_engage_pending = false;
+          if (!acc_main_on) {
+            controls_allowed = false;
+          } else if ((cruise_button == HYUNDAI_BTN_NONE) && (previous_cruise_button == HYUNDAI_BTN_NONE) &&
+                     !(brake_pressed && vehicle_moving) && !(regen_braking && vehicle_moving) && !steering_disengage &&
+                     !safety_rx_checks_invalid && !relay_malfunction) {
+            // Match SET: gas still blocks acceleration, and an already-held
+            // brake or regen at standstill is handled by generic RX checks.
+            controls_allowed = true;
+          }
+        }
         // The EV9 pause knob acts as SET only when its complete press began inactive.
         // Do not infer software engagement from stock SCC state in OP-long mode.
         if (cruise_button == HYUNDAI_BTN_CANCEL) {
           if (previous_cruise_button != HYUNDAI_BTN_CANCEL) {
-            hyundai_canfd_ev9_cancel_engage_pending = (previous_cruise_button == HYUNDAI_BTN_NONE) && !controls_allowed_prev;
+            hyundai_canfd_ev9_cancel_engage_pending = (previous_cruise_button == HYUNDAI_BTN_NONE) &&
+                                                     !controls_allowed_prev && !main_button_pressed;
           }
           controls_allowed = false;
         } else {
