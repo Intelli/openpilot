@@ -135,10 +135,17 @@ calibration discards the session and requires a fresh accepted request. Delayed
 stock-cruise engagement cannot undo an explicit button OFF. Stock SCC availability
 supplies main permission without requiring actual cruise engagement.
 
-EV9 Force Turn Desires follows the signal through predicted-stop conditions, as
-in Sunnypilot. It requires active lateral control, movement, one signal, speed
-below the greater of EV9 Limits Speed and Minimum Lane Change Speed, and no
-same-side blind-spot detection. Actual standstill still prevents a turn desire.
+EV9 Force Turn Desires follows the signal through predicted stops, actual
+standstill and inactive lateral control, matching Sunnypilot's signal-intent
+eligibility. It requires one signal, speed below the greater of EV9 Limits Speed
+and Minimum Lane Change Speed, and no same-side blind-spot detection. Signal
+cancellation, hazards, a blocked requested side or disabling the setting clears
+the turn intent. A continuously held signal no longer creates a fresh model
+turn pulse solely because the car stops and restarts; a signal first selected
+while stopped can establish intent immediately. This does not lock the model's
+path or enable steering while stopped. Steering activation, navigation desires
+and other vehicles retain their existing gates. The follow-up is preserved in
+`patches/lane_change_safeguards_starpilot.patch`.
 
 EV9 preview assistance has a separate fixed ceiling of 7 m/s (25.2 km/h),
 independent of EV9 Limits Speed. It retains the current-preview handoff to model

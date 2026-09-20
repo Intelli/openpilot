@@ -51,10 +51,14 @@ base would also pull in unrelated planner changes.
 
 The extended-speed road-edge guard is retired in
 `ev9_turn_signal_edge_guard.patch.disabled`; normal replay does not restore it.
-Restoring the preview ceiling does not change the current EV9 turn-desire rules:
-predicted stops do not veto signal turn desires while moving, and their speed
-split remains the greater of EV9 Limits Speed and Minimum Lane Change Speed.
-Actual standstill still prevents a turn desire.
+EV9 signal turn desires are independent of the preview ceiling. They remain
+eligible through predicted stops, actual standstill and inactive lateral control,
+matching Sunnypilot. Their speed split remains the greater of EV9 Limits Speed
+and Minimum Lane Change Speed; one signal, the enabled turn-desire setting and
+a clear requested-side blind spot are still required. The stop/inactive follow-up
+and its tests are preserved in `lane_change_safeguards_starpilot.patch`, after the
+original EV9 predicted-stop behavior in `drive_helpers_starpilot.patch`.
+This preserves model intent without changing steering activation or locking a path.
 
 `ui_options_starpilot.patch` exposes the four EV9 steering controls on C3/C3X,
 C4 and Galaxy, plus EV9 Path in Galaxy. The device path controls/renderers remain
@@ -76,7 +80,7 @@ alerts, warning and drive-helper patches and vehicle patches `03`–`06`. They c
 valid calibration and rejected-request handling, AOL feedback and button state,
 brake-pause units and silent brake transitions while steering continues, sustained
 EV9 steering-limit warnings with a contact-qualified torque-input holdoff, hands-off assistance stability,
-and signal-driven EV9 turn desires through predicted stops,
+and signal-driven EV9 turn desires through stops and inactive lateral control,
 and continuous inactive LKAS traffic with
 matching Panda forwarding. Actual manual handoff is reported through an appended
 actuator telemetry field; capacitive hands-on state includes its sample timestamp.

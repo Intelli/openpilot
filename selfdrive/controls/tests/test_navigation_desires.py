@@ -536,16 +536,71 @@ def test_ev9_signal_turn_survives_predicted_stop_with_aol_only(side):
     assert helper.desire == expected
 
 
-@pytest.mark.parametrize("guard", ["inactive", "standstill", "speed", "disabled", "both_signals", "same_blindspot", "opposite_blindspot"])
-def test_ev9_signal_turn_keeps_readiness_and_blindspot_guards(guard):
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_ev9_signal_turn_persists_through_stop_and_lateral_inactivity(side):
   helper = DesireHelper()
   helper._update_nav_params = lambda: None
-  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=guard != "disabled", nav_desires_allowed=False)
-  cs = make_car_state(vEgo=40.0 / 3.6 if guard == "speed" else 5.0, rightBlinker=True,
-                      standstill=guard == "standstill", leftBlinker=guard == "both_signals",
-                      rightBlindspot=guard == "same_blindspot", leftBlindspot=guard == "opposite_blindspot")
-  helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=True), toggles)
-  assert helper.desire == (log.Desire.turnRight if guard == "opposite_blindspot" else log.Desire.none)
+  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=True, nav_desires_allowed=False)
+  expected = log.Desire.turnLeft if side == "left" else log.Desire.turnRight
+  for speed, standstill, lateral_active in ((5.0, False, True), (0.0, True, False), (0.1, False, False), (2.0, False, True)):
+    cs = make_car_state(vEgo=speed, standstill=standstill, cruiseState=SimpleNamespace(enabled=False), **{side + "Blinker": True})
+    helper.update(cs, lateral_active, 0.0, make_plan(stopSignConfirmed=True), toggles, controls_enabled=False)
+    assert helper.desire == expected
+    assert helper.lane_change_state == LaneChangeState.off
+    assert helper.lane_change_direction == LaneChangeDirection.none
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("standstill,lateral_active", [(True, False), (True, True), (False, False)])
+def test_ev9_signal_turn_can_begin_while_stopped_or_lateral_inactive(side, standstill, lateral_active):
+  helper = DesireHelper()
+  helper._update_nav_params = lambda: None
+  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=True, nav_desires_allowed=False)
+  cs = make_car_state(vEgo=0.0 if standstill else 2.0, standstill=standstill, **{side + "Blinker": True})
+  helper.update(cs, lateral_active, 0.0, make_plan(redLight=True), toggles)
+  assert helper.desire == (log.Desire.turnLeft if side == "left" else log.Desire.turnRight)
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("change", ["cancel", "hazards", "flip", "same_blindspot", "opposite_blindspot", "speed", "disabled"])
+def test_ev9_persistent_signal_turn_obeys_current_signal_and_guards(side, change):
+  helper = DesireHelper()
+  helper._update_nav_params = lambda: None
+  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=True, nav_desires_allowed=False)
+  opposite = "right" if side == "left" else "left"
+  expected = log.Desire.turnLeft if side == "left" else log.Desire.turnRight
+  cs = make_car_state(vEgo=0.0, standstill=True, **{side + "Blinker": True})
+  helper.update(cs, False, 0.0, make_plan(), toggles)
+  assert helper.desire == expected
+
+  if change in ("cancel", "flip"):
+    setattr(cs, side + "Blinker", False)
+  if change in ("hazards", "flip"):
+    setattr(cs, opposite + "Blinker", True)
+  if change in ("same_blindspot", "opposite_blindspot"):
+    setattr(cs, (side if change == "same_blindspot" else opposite) + "Blindspot", True)
+  if change == "speed":
+    cs.vEgo, cs.standstill = 40.0 / 3.6, False
+  if change == "disabled":
+    toggles.use_turn_desires = False
+  helper.update(cs, False, 0.0, make_plan(redLight=True), toggles)
+  if change == "flip":
+    expected = log.Desire.turnRight if side == "left" else log.Desire.turnLeft
+  elif change != "opposite_blindspot":
+    expected = log.Desire.none
+  assert helper.desire == expected
+  assert helper.lane_change_state == LaneChangeState.off
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("guard", ["inactive", "standstill", "predicted_stop"])
+def test_non_ev9_signal_turn_retains_active_moving_and_stop_guards(side, guard):
+  helper = DesireHelper()
+  helper._update_nav_params = lambda: None
+  toggles = make_toggles(use_turn_desires=True, nav_desires_allowed=False)
+  cs = make_car_state(vEgo=0.0 if guard == "standstill" else 5.0, standstill=guard == "standstill", **{side + "Blinker": True})
+  helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=guard == "predicted_stop"), toggles)
+  assert helper.desire == log.Desire.none
 
 
 def test_nav_desires_disabled_leave_desire_unchanged():

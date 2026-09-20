@@ -1,5 +1,5 @@
 diff --git a/selfdrive/controls/lib/desire_helper.py b/selfdrive/controls/lib/desire_helper.py
-index a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22..6df89604af8212a278ef4c5a9b0bd19725881681 100644
+index a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22..7ff07ec0ab17dc59edd658bf1dadb0c955b86ef4 100644
 --- a/selfdrive/controls/lib/desire_helper.py
 +++ b/selfdrive/controls/lib/desire_helper.py
 @@ -7,6 +7,7 @@ from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
@@ -90,7 +90,24 @@ index a31edac07c7bb5cdf9a93c6fef3c75d624d5ab22..6df89604af8212a278ef4c5a9b0bd197
        # LaneChangeState.laneChangeStarting
        elif self.lane_change_state == LaneChangeState.laneChangeStarting:
          # fade out over .5s
-@@ -361,6 +376,12 @@ class DesireHelper:
+@@ -335,11 +350,12 @@ class DesireHelper:
+ 
+     ev9_signal_turn = getattr(starpilot_toggles, "car_model", None) == HYUNDAI_CAR.KIA_EV9
+     signal_side_blocked = (carstate.leftBlinker and carstate.leftBlindspot) or (carstate.rightBlinker and carstate.rightBlindspot)
+-    # Preserve the EV9 driver's signal intent through predicted stops, as in Sunnypilot.
++    # Match Sunnypilot: EV9 signal intent stays eligible through stops and inactive
++    # lateral control. This informs the model; steering activation is gated separately.
+     # A detected object on the requested side still vetoes the turn.
+-    signal_turn_allowed = not signal_side_blocked if ev9_signal_turn else not self.turn_stop_hold
+-    if lateral_active and one_blinker and below_lane_change_speed and not carstate.standstill \
+-        and starpilot_toggles.use_turn_desires and signal_turn_allowed:
++    signal_turn_allowed = (not signal_side_blocked if ev9_signal_turn else
++                           lateral_active and not carstate.standstill and not self.turn_stop_hold)
++    if one_blinker and below_lane_change_speed and starpilot_toggles.use_turn_desires and signal_turn_allowed:
+       self.turn_direction = TurnDirection.turnLeft if carstate.leftBlinker else TurnDirection.turnRight
+       self.desire = TURN_DESIRES[self.turn_direction]
+     else:
+@@ -361,6 +377,12 @@ class DesireHelper:
  
        self.lane_change_wait_timer = 0.0
  
@@ -268,7 +285,7 @@ index 0000000000000000000000000000000000000000..454624f066475f00ec1cb49a3e8c8f62
 +  cs.rightBlindspot = False
 +  assert step() == State.laneChangeStarting
 diff --git a/selfdrive/controls/tests/test_navigation_desires.py b/selfdrive/controls/tests/test_navigation_desires.py
-index 1b5ad4ceddaaaf053991cac74bea213999f9291d..7a782edb4bf484ac8e0c19394e3c6f5b6d328c88 100644
+index 1b5ad4ceddaaaf053991cac74bea213999f9291d..adaf3dca4f01b79f02cec06158adbf30d3ceb8a8 100644
 --- a/selfdrive/controls/tests/test_navigation_desires.py
 +++ b/selfdrive/controls/tests/test_navigation_desires.py
 @@ -17,6 +17,7 @@ def make_car_state(**overrides):
@@ -279,16 +296,87 @@ index 1b5ad4ceddaaaf053991cac74bea213999f9291d..7a782edb4bf484ac8e0c19394e3c6f5b
      "cruiseState": SimpleNamespace(enabled=True),
    }
    defaults.update(overrides)
-@@ -540,7 +541,7 @@ def test_ev9_signal_turn_keeps_readiness_and_blindspot_guards(guard):
+@@ -535,16 +536,71 @@ def test_ev9_signal_turn_survives_predicted_stop_with_aol_only(side):
+     assert helper.desire == expected
+ 
+ 
+-@pytest.mark.parametrize("guard", ["inactive", "standstill", "speed", "disabled", "both_signals", "same_blindspot", "opposite_blindspot"])
+-def test_ev9_signal_turn_keeps_readiness_and_blindspot_guards(guard):
++@pytest.mark.parametrize("side", ["left", "right"])
++def test_ev9_signal_turn_persists_through_stop_and_lateral_inactivity(side):
++  helper = DesireHelper()
++  helper._update_nav_params = lambda: None
++  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=True, nav_desires_allowed=False)
++  expected = log.Desire.turnLeft if side == "left" else log.Desire.turnRight
++  for speed, standstill, lateral_active in ((5.0, False, True), (0.0, True, False), (0.1, False, False), (2.0, False, True)):
++    cs = make_car_state(vEgo=speed, standstill=standstill, cruiseState=SimpleNamespace(enabled=False), **{side + "Blinker": True})
++    helper.update(cs, lateral_active, 0.0, make_plan(stopSignConfirmed=True), toggles, controls_enabled=False)
++    assert helper.desire == expected
++    assert helper.lane_change_state == LaneChangeState.off
++    assert helper.lane_change_direction == LaneChangeDirection.none
++
++
++@pytest.mark.parametrize("side", ["left", "right"])
++@pytest.mark.parametrize("standstill,lateral_active", [(True, False), (True, True), (False, False)])
++def test_ev9_signal_turn_can_begin_while_stopped_or_lateral_inactive(side, standstill, lateral_active):
++  helper = DesireHelper()
++  helper._update_nav_params = lambda: None
++  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=True, nav_desires_allowed=False)
++  cs = make_car_state(vEgo=0.0 if standstill else 2.0, standstill=standstill, **{side + "Blinker": True})
++  helper.update(cs, lateral_active, 0.0, make_plan(redLight=True), toggles)
++  assert helper.desire == (log.Desire.turnLeft if side == "left" else log.Desire.turnRight)
++
++
++@pytest.mark.parametrize("side", ["left", "right"])
++@pytest.mark.parametrize("change", ["cancel", "hazards", "flip", "same_blindspot", "opposite_blindspot", "speed", "disabled"])
++def test_ev9_persistent_signal_turn_obeys_current_signal_and_guards(side, change):
++  helper = DesireHelper()
++  helper._update_nav_params = lambda: None
++  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=True, nav_desires_allowed=False)
++  opposite = "right" if side == "left" else "left"
++  expected = log.Desire.turnLeft if side == "left" else log.Desire.turnRight
++  cs = make_car_state(vEgo=0.0, standstill=True, **{side + "Blinker": True})
++  helper.update(cs, False, 0.0, make_plan(), toggles)
++  assert helper.desire == expected
++
++  if change in ("cancel", "flip"):
++    setattr(cs, side + "Blinker", False)
++  if change in ("hazards", "flip"):
++    setattr(cs, opposite + "Blinker", True)
++  if change in ("same_blindspot", "opposite_blindspot"):
++    setattr(cs, (side if change == "same_blindspot" else opposite) + "Blindspot", True)
++  if change == "speed":
++    cs.vEgo, cs.standstill = 40.0 / 3.6, False
++  if change == "disabled":
++    toggles.use_turn_desires = False
++  helper.update(cs, False, 0.0, make_plan(redLight=True), toggles)
++  if change == "flip":
++    expected = log.Desire.turnRight if side == "left" else log.Desire.turnLeft
++  elif change != "opposite_blindspot":
++    expected = log.Desire.none
++  assert helper.desire == expected
++  assert helper.lane_change_state == LaneChangeState.off
++
++
++@pytest.mark.parametrize("side", ["left", "right"])
++@pytest.mark.parametrize("guard", ["inactive", "standstill", "predicted_stop"])
++def test_non_ev9_signal_turn_retains_active_moving_and_stop_guards(side, guard):
    helper = DesireHelper()
    helper._update_nav_params = lambda: None
-   toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=guard != "disabled", nav_desires_allowed=False)
+-  toggles = make_toggles(car_model=CAR.KIA_EV9, use_turn_desires=guard != "disabled", nav_desires_allowed=False)
 -  cs = make_car_state(vEgo=10.0 if guard == "speed" else 5.0, rightBlinker=True,
-+  cs = make_car_state(vEgo=40.0 / 3.6 if guard == "speed" else 5.0, rightBlinker=True,
-                       standstill=guard == "standstill", leftBlinker=guard == "both_signals",
-                       rightBlindspot=guard == "same_blindspot", leftBlindspot=guard == "opposite_blindspot")
-   helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=True), toggles)
-@@ -601,3 +602,47 @@ def test_nav_lane_positioning_requires_driver_confirmation():
+-                      standstill=guard == "standstill", leftBlinker=guard == "both_signals",
+-                      rightBlindspot=guard == "same_blindspot", leftBlindspot=guard == "opposite_blindspot")
+-  helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=True), toggles)
+-  assert helper.desire == (log.Desire.turnRight if guard == "opposite_blindspot" else log.Desire.none)
++  toggles = make_toggles(use_turn_desires=True, nav_desires_allowed=False)
++  cs = make_car_state(vEgo=0.0 if guard == "standstill" else 5.0, standstill=guard == "standstill", **{side + "Blinker": True})
++  helper.update(cs, guard != "inactive", 0.0, make_plan(redLight=guard == "predicted_stop"), toggles)
++  assert helper.desire == log.Desire.none
+ 
+ 
+ def test_nav_desires_disabled_leave_desire_unchanged():
+@@ -601,3 +657,47 @@ def test_nav_lane_positioning_requires_driver_confirmation():
    )
  
    assert helper.desire == log.Desire.none
