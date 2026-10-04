@@ -12,16 +12,44 @@ for source provenance and current behavior.
 | `patches/<name>.patch` | Enabled patch with main-repository paths |
 | `patches/opendbc/<name>.patch` | Enabled vehicle patch with paths relative to `opendbc_repo/` |
 | `patches/archive/` | Historical implementations and notes; excluded from replay |
+| `patches/baselines/<blob-id>` | Exact original file bytes retained for automatic updates after fresh clones |
 | `.patch.migrated`, `.patch.temp-disabled`, `.disabled` | Preserved historical originals; never replayed |
 
-Current enabled patches are:
+Current enabled application patches replay in this order:
 
-- `sunnypilot_ev9_customizations.patch`: restored application changes relative to
-  the official Sunnypilot baseline in `sunnypilot-upstream.json`.
-- `boot_logo_ev9_edition.patch`: custom boot image and its Sunnypilot installation hook.
-- `sunnypilot_device_build.patch`: device-build portability changes.
-- `opendbc/01_sunnypilot_ev9_customizations.patch`: restored vehicle changes relative
-  to official opendbc `7c35b7546940`, recorded in `opendbc-upstream.json`.
+| Patch | Feature ownership |
+| --- | --- |
+| `01_custom_defaults.patch` | Compiled parameter defaults and custom parameter keys |
+| `02_drive_helpers.patch` | Steering-limit configuration, schema and interface helpers |
+| `03_lane_centering.patch` | Lane/road-edge correction and telemetry |
+| `04_custom_model_ui.patch` | Path/model rendering, centering overlays and rainbow path |
+| `05_ui_options.patch` | Model, vehicle and visual settings |
+| `06_alerts.patch` | Compact alert text and translucent alert presentation |
+| `07_customize_warnings.patch` | Steering saturation warning policy |
+| `08_hands_free_stats.patch` | Statistics recording, UI, trips and tests |
+| `09_ev9_edition.patch` | EV9 branding and vehicle-only startup restriction |
+| `10_driver_monitoring.patch` | Restored driver-monitoring customization |
+| `11_power_management.patch` | Offroad power, screen and model-manager behavior |
+| `12_custom_assets.patch` | Custom engagement audio and preserved auto-lock icons |
+| `boot_logo_ev9_edition.patch` | Boot artwork and its Sunnypilot installation hook |
+| `sunnypilot_device_build.patch` | Native build portability and model-capture compatibility |
+
+Then the vehicle patches replay, with paths relative to `opendbc_repo/`:
+
+| Patch | Feature ownership |
+| --- | --- |
+| `opendbc/01_modify_baseline.patch` | Hyundai CAN-FD safety baseline constants |
+| `opendbc/02_panda_safety_limits.patch` | EV9 lateral safety thresholds |
+| `opendbc/03_steering_and_ev9_limits.patch` | EV9 controller, tuning/interface and steering/HOD signals |
+| `opendbc/04_door_signals.patch` | All-door detection |
+| `opendbc/05_customize_warnings.patch` | Steering-saturation timer |
+| `opendbc/06_ev9_tests.patch` | EV9 vehicle and native-safety regressions |
+
+The former consolidated patches are archived unchanged under
+`archive/sunnypilot-consolidated-20261004/`. Original `.migrated` and
+`.temp-disabled` files remain historical references; these newly generated forward
+patches replace their replay role. Asset retention does not enable the disabled
+auto-lock implementation.
 
 The application was restored from Intelli `5928a37ad187`, with customized vehicle
 snapshot `5a3f3761f586` and the original dependency pins. Those customized snapshots
@@ -100,8 +128,10 @@ may contain application files from anywhere in the main repo, including bundled
 vehicle files; `opendbc/<name>` restricts export to `opendbc_repo/` and strips that
 prefix. Maintenance tools, archives and patch files are excluded.
 
-The helpers write only the patch file. They do not sync, apply patches, change
-source files, stage, commit or push. Review and stage the output patch separately.
+The helpers export patches without syncing, replaying into application source,
+staging, committing or pushing. Shared-file updates also retain any newly required
+preimage payloads in `patches/baselines/`. Review and stage the patch and baseline
+files together.
 `create_patch_manual.sh` is an alias for the same staged export. Creation refuses
 to overwrite any enabled or disabled patch with the same name.
 
@@ -111,7 +141,7 @@ Update retains the original patch baseline without needing a commit reference:
 
 ```sh
 ./update_patch.sh example
-./update_patch.sh opendbc/door_signals
+./update_patch.sh opendbc/04_door_signals
 
 # Explicitly rebase, or recover when original Git objects are unavailable:
 ./update_patch.sh example --base <unpatched-commit>
@@ -123,6 +153,31 @@ index. With nothing staged, the index contains HEAD versions. This preserves
 committed original hunks and captures committed changes to existing patch paths;
 unstaged edits are excluded.
 
+Some features share a source file: warnings and EV9 startup branding share
+`selfdrive/selfdrived/selfdrived.py`; steering signals and doors share
+`opendbc_repo/opendbc/car/hyundai/carstate.py`. For an enabled patch with peers
+in its selected files, the helper reconstructs and replays the series in temporary
+indexes, finds changes beyond the recorded series, and transfers only the requested
+feature's amendments. Other features remain separate. It checks line ownership,
+rejects edits to another feature or ambiguous insertions, and verifies that the
+updated series reproduces the intended index before replacing the patch.
+
+Update the owning feature first when an edit changes another patch's lines. Stage
+only the intended amendment, or use `-- PATH...` to narrow the export. A disabled
+peer cannot be reconstructed as part of the enabled series; rebase the remaining
+dependent patch deliberately when changing series membership. Existing defaults,
+controller and other whole-file features use the original automatic update path
+when no enabled peer shares their selected source.
+
+Mode-only patches sharing a file with content patches can lack an unambiguous
+original content baseline. Automatic series reconstruction rejects those cases;
+use an explicit baseline and an isolated intended index when rebasing them.
+
+`baselines/<blob-id>` files are exact preimages, with filenames equal to their Git
+blob IDs. Committing these payloads keeps the required Git objects available in
+fresh or shallow clones. Shared-file updates can add a new baseline payload;
+commit it with the updated patch.
+
 The index must contain the complete intended result. Updating does not apply
 missing historical hunks for you; port or apply a patch before regenerating it.
 
@@ -130,7 +185,8 @@ Default scope is the existing patch's files plus newly staged source files,
 excluding maintenance files. Stage new files before committing if they should be
 included automatically. A path selection after `--` replaces this scope.
 Explicit `--base <ref>` instead uses an ordinary base-to-index diff and its scope;
-select paths to avoid including unrelated changes since an older base. Update
+it bypasses feature isolation. Select paths and isolate the intended feature in
+the index to avoid including other features since an older base. Update
 does not require staged changes, but the resulting patch must be nonempty.
 Malformed patches or unavailable preimage objects fail without overwriting the
 existing patch; use an explicit base when those original objects are unavailable.
@@ -146,7 +202,7 @@ Both helpers accept an optional path selection after `--`:
 
 ```sh
 ./create_patch.sh example -- selfdrive/path/to/file.py
-./update_patch.sh opendbc/door_signals -- opendbc/car/hyundai/carstate.py
+./update_patch.sh opendbc/04_door_signals -- opendbc/car/hyundai/carstate.py
 ```
 
 Paths are relative to the main repo for a main patch, or to `opendbc_repo/` for a

@@ -1,5 +1,21 @@
 # Sunnypilot restoration
 
+## Separate feature patches
+
+The application restoration is now recorded in twelve numbered feature patches,
+with boot artwork and device-build compatibility retained as separate patches.
+Vehicle restoration is recorded in six numbered feature patches. The former
+consolidated patches are preserved byte-for-byte under
+`archive/sunnypilot-consolidated-20261004/`. This changes no application or
+vehicle source and enables individual feature maintenance.
+
+Shared-file updates reconstruct the recorded series in disposable indexes,
+preserve peer ownership and verify final replay before replacing a patch. Exact
+preimage payloads are retained in `baselines/` so automatic updates work after
+fresh clones. Historically disabled experiments remain disabled.
+
+## Source restoration
+
 The September 2026 StarPilot source is preserved at local branch
 `codex/ev9-starpilot-archive-20260920`, commit
 `09c6cf07911a0b75954222f0b903347e8baa122d`.

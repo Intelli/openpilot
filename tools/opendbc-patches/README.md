@@ -5,7 +5,7 @@ Patch files in `patches/opendbc/` use standalone paths such as
 `opendbc/car/hyundai/carcontroller.py`. The unified root helper adds
 `opendbc_repo/` when applying them.
 
-`01_sunnypilot_ev9_customizations.patch` records the restored vehicle differences
+The six numbered feature patches (`01_`–`06_`) record the restored vehicle differences
 against the original Sunnypilot dependency pin. The six StarPilot ports are
 archived in `patches/archive/starpilot-20260920/opendbc/`; their historical
 Sunnypilot originals retain archive suffixes. `origin.json` records the historical
@@ -30,11 +30,15 @@ Use the main helpers:
 Create requires staged source. Update reads original file versions from the
 existing patch’s Git blob IDs and compares them with the index, or HEAD versions
 when nothing is staged. It keeps committed original hunks and any disabled suffix.
+Shared-file updates reconstruct the enabled series and retain only the requested
+feature's amendments; edits to another feature or ambiguous transfers are rejected.
+Exact preimage files in `patches/baselines/` keep automatic updates available after
+fresh clones. Stage any new baseline files with an updated patch.
 Default update scope includes existing patch paths and newly staged source files;
 stage new files before committing to include them automatically. Both accept
 `-- PATH...`, relative to `opendbc_repo/`, to override scope; maintenance files are
 excluded. Optional `--base <ref>` uses an explicit baseline and ordinary
-base-to-index diff scope. Empty, malformed or missing-preimage exports leave the
+base-to-index diff scope, bypassing feature isolation. Empty, malformed or missing-preimage exports leave the
 patch unchanged. See [the patch guide](../../patches/README.md) for details.
 
 `tools/opendbc-patches/apply.sh` is a compatibility wrapper for the unified

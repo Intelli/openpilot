@@ -75,17 +75,24 @@ baseline's successful replay.
 Only `.patch` files directly in `patches/` and `patches/opendbc/` are enabled.
 Application patches replay alphabetically first, then vehicle patches.
 
-| Patch | Scope |
+| Patch series | Scope |
 | --- | --- |
-| `sunnypilot_ev9_customizations.patch` | Restored application customizations relative to official Sunnypilot |
+| Application `01_`–`12_` | Separate defaults, driving helpers, lane centering, UI, alerts, warnings, statistics, branding, monitoring, power and asset features |
 | `boot_logo_ev9_edition.patch` | Retained EV9 Edition boot artwork and Sunnypilot installation hook |
 | `sunnypilot_device_build.patch` | Restored application's device-build portability changes |
-| `opendbc/01_sunnypilot_ev9_customizations.patch` | Restored EV9 vehicle customizations relative to official opendbc |
+| Vehicle `opendbc/01_`–`06_` | Separate baseline, safety, steering, door, warning and regression-test features |
 
 Create exports staged source as a forward diff. Update reconstructs the existing
-patch's original blob versions and compares them to the index, preserving
-committed hunks. Both exclude maintenance files and archives. See the
+patch's original blob versions, preserving committed hunks. For shared files,
+it reconstructs the enabled series and isolates the requested feature's amendments
+from the final index. Changes to other features or ambiguous transfers fail safely.
+Exact preimages are retained in `patches/baselines/`; stage newly generated
+baseline files with an updated patch. Both helpers exclude maintenance files and archives. See the
 [patch guide](../patches/README.md) for scope and baseline controls.
+
+The former two consolidated restoration patches remain unchanged under
+`patches/archive/sunnypilot-consolidated-20261004/`. Splitting them changed patch
+organization only; application and vehicle source remain unchanged.
 
 StarPilot ports and their earlier documentation remain under
 `patches/archive/starpilot-20260920/`. Original historical patch files and helper

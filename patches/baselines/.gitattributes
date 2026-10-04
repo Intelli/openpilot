@@ -1,0 +1,2 @@
+# Preserve the exact Git blob bytes across checkout and staging.
+[0-9a-f]* binary -filter
