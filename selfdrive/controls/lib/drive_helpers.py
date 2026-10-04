@@ -1,7 +1,6 @@
 import numpy as np
-from cereal import log
-from opendbc.car.hyundai.ev9 import EV9_HIGH_LATERAL_LIMIT
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
+from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL, DT_MDL
 
 MIN_SPEED = 1.0
@@ -24,37 +23,29 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
   alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
   return alpha * val + (1 - alpha) * prev_val
 
-def clip_curvature(v_ego, prev_curvature, new_curvature, roll, jerk_factor=1.0, lat_accel_factor=1.0,
-                   *, ev9_angle_limit_speed_mps: float | None = None) -> tuple[float, bool]:
+def clip_curvature(v_ego, prev_curvature, new_curvature, roll, params: Params | None = None) -> tuple[float, bool]:
   # This function respects ISO lateral jerk and acceleration limits + a max curvature
   v_ego = max(v_ego, MIN_SPEED)
-  max_curvature_rate = (MAX_LATERAL_JERK * jerk_factor) / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
+  max_curvature_rate = MAX_LATERAL_JERK / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
   new_curvature = np.clip(new_curvature,
                           prev_curvature - max_curvature_rate * DT_CTRL,
                           prev_curvature + max_curvature_rate * DT_CTRL)
 
-  ev9_low_speed = ev9_angle_limit_speed_mps is not None and v_ego <= ev9_angle_limit_speed_mps
-  base_lat_accel = EV9_HIGH_LATERAL_LIMIT if ev9_low_speed else MAX_LATERAL_ACCEL_NO_ROLL
-  effective_lat_accel = base_lat_accel * lat_accel_factor
-  roll_compensation = 0.0 if ev9_low_speed else roll * ACCELERATION_DUE_TO_GRAVITY
-  min_curvature = (-effective_lat_accel + roll_compensation) / v_ego ** 2
-  max_curvature = (effective_lat_accel + roll_compensation) / v_ego ** 2
-  if lat_accel_factor < 1.0:
-    # A tightened maneuver clamp must not clip curvature already being commanded
-    # (e.g. lane change on a curve); it only limits further growth.
-    min_curvature = min(min_curvature, prev_curvature)
-    max_curvature = max(max_curvature, prev_curvature)
-  # Saturation is reported against the unshaped vehicle envelope only: riding an intentionally
-  # tightened lane-change ceiling is comfort shaping, not steering saturation, and
-  # must not trip the "Turn Exceeds Steering Limit" alert.
-  stock_min_curvature = (-base_lat_accel + roll_compensation) / v_ego ** 2
-  stock_max_curvature = (base_lat_accel + roll_compensation) / v_ego ** 2
-  limited_accel = bool(new_curvature < stock_min_curvature or new_curvature > stock_max_curvature)
-  new_curvature, _ = clamp(new_curvature, min_curvature, max_curvature)
+  if params is None:
+    params = Params()
+  speed_threshold_mps = float(params.get("HkgTuningAngleCustomLimitMaxSpeedKph", return_default=True)) / 3.6
+  roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
+  if v_ego <= speed_threshold_mps:
+    max_lat_accel = 4.2
+    min_lat_accel = -4.2
+  else:
+    max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
+    min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
+  new_curvature, limited_accel = clamp(new_curvature, min_lat_accel / v_ego ** 2, max_lat_accel / v_ego ** 2)
 
-  # EV9 tight turns retain downstream vehicle-model and Panda limits.
-  limited_max_curv = False
-  if not ev9_low_speed:
+  if v_ego <= speed_threshold_mps:
+    limited_max_curv = False
+  else:
     new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
   return float(new_curvature), limited_accel or limited_max_curv
 
@@ -71,51 +62,6 @@ def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.
     a_target = 0.0
   should_stop = (v_now < vEgoStopping and a_target < 0.1)
   return a_target, should_stop
-
-
-# Backward-compatible alias used by tinygrad_modeld.
-get_accel_from_plan_tomb_raider = get_accel_from_plan
-
-
-def lateral_calibration_ready(sm) -> bool:
-  return sm.all_checks(['liveCalibration']) and sm['liveCalibration'].calStatus == log.LiveCalibrationData.Status.calibrated
-
-
-def get_calibrated_lateral_active(requested: bool, sm) -> bool:
-  return requested and lateral_calibration_ready(sm)
-
-
-def get_lateral_active(enabled: bool, active: bool, always_on_lateral_enabled: bool,
-                       steer_fault_temporary: bool, steer_fault_permanent: bool,
-                       standstill: bool, steer_at_standstill: bool, lateral_check: bool,
-                       steer_fault_latched: bool = False) -> bool:
-  lateral_allowed = (enabled and active) or always_on_lateral_enabled
-  return lateral_allowed and not steer_fault_temporary and not steer_fault_permanent and \
-         not steer_fault_latched and (not standstill or steer_at_standstill) and lateral_check
-
-
-def update_lateral_fault_latch(previous_latched: bool, lateral_requested: bool,
-                               steer_fault_temporary: bool, reset: bool = False) -> bool:
-  """Keep a temporary-fault latch until lateral is no longer requested or reset explicitly."""
-  if not lateral_requested or reset:
-    return False
-  return previous_latched or steer_fault_temporary
-
-
-def get_kona_non_scc_lateral_active(enabled: bool, active: bool, always_on_lateral_enabled: bool,
-                                    steer_fault_temporary: bool, steer_fault_permanent: bool,
-                                    standstill: bool, steer_at_standstill: bool, lateral_check: bool,
-                                    steering_pressed: bool, previous_lateral_active: bool) -> bool:
-  """Avoid the Kona EPS torque fault when AOL is enabled over driver steering input."""
-  lateral_active = get_lateral_active(enabled, active, always_on_lateral_enabled,
-                                      steer_fault_temporary, steer_fault_permanent,
-                                      standstill, steer_at_standstill, lateral_check)
-  if not lateral_active:
-    return False
-
-  aol_rising_edge = always_on_lateral_enabled and not enabled and not previous_lateral_active
-  return not (aol_rising_edge and steering_pressed)
-
 
 def curv_from_psis(psi_target, psi_rate, vego, action_t):
   vego = np.clip(vego, MIN_SPEED, np.inf)

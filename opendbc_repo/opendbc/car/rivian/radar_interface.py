@@ -15,8 +15,8 @@ def get_radar_can_parser(CP):
 
 
 class RadarInterface(RadarInterfaceBase):
-  def __init__(self, CP):
-    super().__init__(CP)
+  def __init__(self, CP, CP_SP):
+    super().__init__(CP, CP_SP)
     self.updated_messages = set()
     self.trigger_msg = RADAR_START_ADDR + RADAR_MSG_COUNT - 1
     self.track_id = 0
@@ -52,23 +52,24 @@ class RadarInterface(RadarInterfaceBase):
 
       # STATE: 1=New, 2=New_updated, 3=Updated, 4=Coasting, 7=New_coasting
       valid = msg['STATE'] in (1, 2, 3, 4, 7)
-      # Ignore short-range-only objects, which include close stationary roadside
-      # objects that can otherwise lead to phantom braking.
+
+      # Rivian's Short Range Radar (SSR) detects close stationary objects like guardrails, which cause phantom braking.
+      # MODE: 1=SRR, 2=LRR, 3=SRR_and_LRR
       valid = valid and msg['MODE'] in (2, 3)
+
       if valid:
         if addr not in self.pts or msg['STATE'] in (1, 2, 7):
           self.pts[addr] = structs.RadarData.RadarPoint()
           self.pts[addr].trackId = self.track_id
           self.track_id += 1
 
-        azimuth = math.radians(msg['AZIMUTH'])
         self.pts[addr].measured = msg['STATE'] in (2, 3)
+        azimuth = math.radians(msg['AZIMUTH'])
         self.pts[addr].dRel = math.cos(azimuth) * msg['LONG_DIST']
-        self.pts[addr].yRel = -math.sin(azimuth) * msg['LONG_DIST']
+        self.pts[addr].yRel = 0.5 * -math.sin(azimuth) * msg['LONG_DIST']
         self.pts[addr].vRel = msg['REL_SPEED']
         self.pts[addr].aRel = float('nan')
         self.pts[addr].yvRel = float('nan')
-
       elif addr in self.pts:
         del self.pts[addr]
 

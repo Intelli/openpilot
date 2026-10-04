@@ -1,16 +1,14 @@
 #include <getopt.h>
 
+#include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <string>
 #include <vector>
-#include <fstream>
-#include <sstream>
-#include <cstdio>
 
-#include "common/util.h"
 #include "common/prefix.h"
-#include "third_party/json11/json11.hpp"
+#include "common/timing.h"
 #include "tools/replay/consoleui.h"
 #include "tools/replay/replay.h"
 #include "tools/replay/util.h"
@@ -36,7 +34,7 @@ Options:
       --no-hw-decoder Disable HW video decoding
       --no-vipc      Do not output video
       --all          Output all messages including bookmarkButton, uiDebug, userBookmark
-      --headless     Run replay without the ncurses console UI
+      --benchmark    Run in benchmark mode (process all events then exit with stats)
   -h, --help         Show this help message
 )";
 
@@ -48,7 +46,6 @@ struct ReplayConfig {
   std::string prefix;
   uint32_t flags = REPLAY_FLAG_NONE;
   bool auto_source = false;
-  bool headless = false;
   int start_seconds = 0;
   int cache_segments = -1;
   float playback_speed = -1;
@@ -73,7 +70,7 @@ bool parseArgs(int argc, char *argv[], ReplayConfig &config) {
       {"no-hw-decoder", no_argument, nullptr, 0},
       {"no-vipc", no_argument, nullptr, 0},
       {"all", no_argument, nullptr, 0},
-      {"headless", no_argument, nullptr, 0},
+      {"benchmark", no_argument, nullptr, 0},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0},  // Terminating entry
   };
@@ -87,6 +84,7 @@ bool parseArgs(int argc, char *argv[], ReplayConfig &config) {
       {"no-hw-decoder", REPLAY_FLAG_NO_HW_DECODER},
       {"no-vipc", REPLAY_FLAG_NO_VIPC},
       {"all", REPLAY_FLAG_ALL_SERVICES},
+      {"benchmark", REPLAY_FLAG_BENCHMARK},
   };
 
   if (argc == 1) {
@@ -108,7 +106,6 @@ bool parseArgs(int argc, char *argv[], ReplayConfig &config) {
         std::string name = cli_options[option_index].name;
         if (name == "demo") config.route = DEMO_ROUTE;
         else if (name == "auto") config.auto_source = true;
-        else if (name == "headless") config.headless = true;
         else config.flags |= flag_map.at(name);
         break;
       }
@@ -136,6 +133,10 @@ int main(int argc, char *argv[]) {
   util::set_file_descriptor_limit(1024);
 #endif
 
+  // The vendored ncurses static library has a wrong compiled-in terminfo path.
+  // Point it at the system terminfo database if not already set.
+  setenv("TERMINFO_DIRS", "/usr/share/terminfo:/lib/terminfo:/usr/lib/terminfo", 0);
+
   ReplayConfig config;
 
   if (!parseArgs(argc, argv, config)) {
@@ -158,65 +159,25 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (config.headless) {
+  if (config.flags & REPLAY_FLAG_BENCHMARK) {
     replay.start(config.start_seconds);
+    replay.waitForFinished();
 
-    std::string prefix = "default";
-    if (const char* env_prefix = getenv("OPENPILOT_PREFIX")) {
-      prefix = env_prefix;
-    }
-    std::string state_path = "/tmp/replay_state_" + prefix + ".json";
-    std::string cmd_path = "/tmp/replay_cmd_" + prefix + ".json";
+    const auto &stats = replay.getBenchmarkStats();
+    uint64_t process_start = stats.process_start_ts;
 
-    // Clean up any leftover command/state files from previous runs
-    std::remove(state_path.c_str());
-    std::remove(cmd_path.c_str());
+    std::cout << "\n===== REPLAY BENCHMARK RESULTS =====\n";
+    std::cout << "Route: " << replay.route().name() << "\n\n";
 
-    ExitHandler do_exit;
-    while (!do_exit) {
-      // 1. Check for commands from cmd_path
-      std::ifstream cmd_file(cmd_path);
-      if (cmd_file.good()) {
-        std::stringstream buffer;
-        buffer << cmd_file.rdbuf();
-        cmd_file.close();
-
-        std::string err;
-        auto json = json11::Json::parse(buffer.str(), err);
-        if (err.empty()) {
-          if (json["play"].is_bool()) {
-            replay.pause(!json["play"].bool_value());
-          }
-          if (json["seek"].is_number()) {
-            replay.seekTo(json["seek"].number_value(), false);
-          }
-          if (json["speed"].is_number()) {
-            replay.setSpeed(json["speed"].number_value());
-          }
-        }
-        std::remove(cmd_path.c_str());
-      }
-
-      // 2. Write current status to state_path
-      json11::Json state = json11::Json::object {
-        {"min_sec", replay.minSeconds()},
-        {"max_sec", replay.maxSeconds()},
-        {"cur_sec", replay.currentSeconds()},
-        {"paused", replay.isPaused()},
-        {"speed", replay.getSpeed()}
-      };
-      std::ofstream state_file(state_path);
-      if (state_file.is_open()) {
-        state_file << state.dump();
-        state_file.close();
-      }
-
-      util::sleep_for(100);
+    std::cout << "TIMELINE:\n";
+    std::cout << "  t=0 ms        process start\n";
+    for (const auto &[ts, event] : stats.timeline) {
+      double ms = (ts - process_start) / 1e6;
+      std::cout << "  t=" << std::fixed << std::setprecision(0) << ms << " ms"
+                << std::string(std::max(1, 8 - static_cast<int>(std::to_string(static_cast<int>(ms)).length())), ' ')
+                << event << "\n";
     }
 
-    // Clean up on exit
-    std::remove(state_path.c_str());
-    std::remove(cmd_path.c_str());
     return 0;
   }
 

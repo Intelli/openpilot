@@ -1,4 +1,4 @@
-diff --git a/starpilot/assets/other_images/starpilot_ev9_edition.jpg b/starpilot/assets/other_images/starpilot_ev9_edition.jpg
+diff --git a/sunnypilot/selfdrive/assets/images/ev9_boot.jpg b/sunnypilot/selfdrive/assets/images/ev9_boot.jpg
 new file mode 100644
 index 0000000000000000000000000000000000000000..f1b7c1f5298d61c1fa5180157810f3c27cd315df
 GIT binary patch
@@ -8673,38 +8673,78 @@ hu=kIac39!ib(&UaG4Mf&wDu3ZvFUQ%(;feN@_#g%mZ|^%
 literal 0
 HcmV?d00001
 
-diff --git a/starpilot/assets/theme_manager.py b/starpilot/assets/theme_manager.py
-index f19cf262ebc6b156d8776956e999fcf79ce02766..46a9b150b44e374e6908ba672d473d0abb06daa3 100644
---- a/starpilot/assets/theme_manager.py
-+++ b/starpilot/assets/theme_manager.py
-@@ -201,7 +201,7 @@ class ThemeManager:
-     steering_wheel_save_path.parent.mkdir(parents=True, exist_ok=True)
-     shutil.copy2(steering_wheel_image_path, steering_wheel_save_path)
+diff --git a/sunnypilot/system/boot_logo.py b/sunnypilot/system/boot_logo.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f665a7165c3815659c87ae6afa95eaac45f39834
+--- /dev/null
++++ b/sunnypilot/system/boot_logo.py
+@@ -0,0 +1,49 @@
++"""Install the EV9 artwork for AGNOS boot without changing driving settings."""
++from io import BytesIO
++from pathlib import Path
++import subprocess
++import tempfile
++
++from PIL import Image
++
++
++ARTWORK = Path(__file__).resolve().parents[1] / "selfdrive/assets/images/ev9_boot.jpg"
++
++
++def logo_images(source: Path, landscape_jpeg: bool) -> dict[str, bytes]:
++  with Image.open(source) as image:
++    image = image.convert("RGB")
++    landscape = image if image.width >= image.height else image.transpose(Image.Transpose.ROTATE_90)
++    portrait = landscape.transpose(Image.Transpose.ROTATE_270)
++    jpeg, png = BytesIO(), BytesIO()
++    (landscape if landscape_jpeg else portrait).save(jpeg, format="JPEG", quality=95)
++    landscape.save(png, format="PNG")
++  return {"bg.jpg": jpeg.getvalue(), "bg.png": png.getvalue()}
++
++
++def install_boot_logo(destination: Path = Path("/usr/comma")) -> bool:
++  try:
++    magic = destination / "magic.py"
++    landscape_jpeg = magic.is_file() and "/usr/comma/bg.jpg" in magic.read_text()
++    images = logo_images(ARTWORK, landscape_jpeg)
++    updates = {name: data for name, data in images.items()
++               if (name == "bg.jpg" or (destination / name).is_file()) and
++               (not (destination / name).is_file() or (destination / name).read_bytes() != data)}
++    if not updates:
++      return True
++    mount_options = subprocess.check_output(["findmnt", "-n", "-o", "OPTIONS", "/"], text=True).strip()
++    if not mount_options:
++      raise RuntimeError("Unable to determine root mount options")
++    with tempfile.TemporaryDirectory(prefix="ev9-boot-logo-") as temporary:
++      for name, data in updates.items():
++        (Path(temporary) / name).write_bytes(data)
++      subprocess.run(["sudo", "mount", "-o", "remount,rw", "/"], check=True)
++      try:
++        for name in updates:
++          subprocess.run(["sudo", "cp", str(Path(temporary) / name), str(destination / name)], check=True)
++      finally:
++        subprocess.run(["sudo", "mount", "-o", f"remount,{mount_options}", "/"], check=True)
++    return True
++  except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
++    print(f"EV9 boot artwork could not be installed: {error}")
++    return False
+diff --git a/system/manager/manager.py b/system/manager/manager.py
+index 15a09d0a378f8f1806fb3a300abedd7bfeaa854d..6e4d42b2063018f0c06977ab3532b565fbaa4fd9 100755
+--- a/system/manager/manager.py
++++ b/system/manager/manager.py
+@@ -23,6 +23,7 @@ from openpilot.system.hardware.hw import Paths
+ from openpilot.system.hardware import PC
  
--    default_boot_logo_path = Path(__file__).parent / "other_images/starpilot_boot_logo.jpg"
-+    default_boot_logo_path = Path(__file__).parent / "other_images/starpilot_ev9_edition.jpg"
-     boot_logo_save_path = THEME_SAVE_PATH / "bootlogos/starpilot.jpg"
-     boot_logo_save_path.parent.mkdir(parents=True, exist_ok=True)
-     if default_boot_logo_path.exists():
-@@ -806,7 +806,7 @@ class ThemeManager:
+ from openpilot.sunnypilot.system.params_migration import run_migration
++from openpilot.sunnypilot.system.boot_logo import install_boot_logo
  
-   @staticmethod
-   def update_boot_logo(image):
--    default_boot_logo = Path(__file__).parent / "other_images/starpilot_boot_logo.jpg"
-+    default_boot_logo = Path(__file__).parent / "other_images/starpilot_ev9_edition.jpg"
  
-     if not default_boot_logo.exists():
-       return
-diff --git a/starpilot/common/starpilot_functions.py b/starpilot/common/starpilot_functions.py
-index 57136243575d69ccecbb6d6accd659e43537be69..d783c31d0d0130b9c7cac3f4b31d37bc3ae50c1e 100644
---- a/starpilot/common/starpilot_functions.py
-+++ b/starpilot/common/starpilot_functions.py
-@@ -162,7 +162,7 @@ def update_boot_logo(starpilot=False, stock=False, selected_logo=None):
-     return
+ def manager_init() -> None:
+@@ -53,6 +54,7 @@ def manager_init() -> None:
  
-   if starpilot:
--    target_logo = Path(BASEDIR) / "starpilot/assets/other_images/starpilot_boot_logo.jpg"
-+    target_logo = Path(BASEDIR) / "starpilot/assets/other_images/starpilot_ev9_edition.jpg"
-     if selected_logo:
-       selected = selected_logo.decode("utf-8", "ignore") if isinstance(selected_logo, (bytes, bytearray)) else str(selected_logo)
-       selected = selected.strip()
+   if not PC:
+     run_migration(params)
++    install_boot_logo()
+ 
+   # set unset params to their default value
+   for k in params.all_keys():

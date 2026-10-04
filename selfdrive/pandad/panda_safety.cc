@@ -8,7 +8,8 @@ void PandaSafety::configureSafetyMode(bool is_onroad) {
 
     auto car_params = fetchCarParams();
     if (!car_params.empty()) {
-      LOGW("got %lu bytes CarParams", car_params.size());
+      LOGW("got %lu bytes CarParams", car_params[0].size());
+      LOGW("got %lu bytes CarParamsSP", car_params[1].size());
       setSafetyMode(car_params);
       safety_configured_ = true;
     }
@@ -23,25 +24,22 @@ void PandaSafety::updateMultiplexingMode() {
   // Initialize to ELM327 without OBD multiplexing for initial fingerprinting
   if (!initialized_) {
     prev_obd_multiplexing_ = false;
-    for (int i = 0; i < pandas_.size(); ++i) {
-      pandas_[i]->set_safety_model(cereal::CarParams::SafetyModel::ELM327, 1U);
-    }
+    panda_->set_safety_model(cereal::CarParams::SafetyModel::ELM327, 1U);
     initialized_ = true;
   }
 
   // Switch between multiplexing modes based on the OBD multiplexing request
   bool obd_multiplexing_requested = params_.getBool("ObdMultiplexingEnabled");
   if (obd_multiplexing_requested != prev_obd_multiplexing_) {
-    for (int i = 0; i < pandas_.size(); ++i) {
-      const uint16_t safety_param = (i > 0 || !obd_multiplexing_requested) ? 1U : 0U;
-      pandas_[i]->set_safety_model(cereal::CarParams::SafetyModel::ELM327, safety_param);
-    }
+    const uint16_t safety_param = obd_multiplexing_requested ? 0U : 1U;
+    panda_->set_safety_model(cereal::CarParams::SafetyModel::ELM327, safety_param);
     prev_obd_multiplexing_ = obd_multiplexing_requested;
     params_.putBool("ObdMultiplexingChanged", true);
   }
 }
 
-std::string PandaSafety::fetchCarParams() {
+// TODO-SP: Use structs instead of vector
+std::vector<std::string> PandaSafety::fetchCarParams() {
   if (!params_.getBool("FirmwareQueryDone")) {
     return {};
   }
@@ -54,40 +52,33 @@ std::string PandaSafety::fetchCarParams() {
   if (!params_.getBool("ControlsReady")) {
     return {};
   }
-  return params_.get("CarParams");
+  return {params_.get("CarParams"), params_.get("CarParamsSP")};
 }
 
-void PandaSafety::setSafetyMode(const std::string &params_string) {
+// TODO-SP: Use structs instead of vector
+void PandaSafety::setSafetyMode(const std::vector<std::string> &params_string) {
   AlignedBuffer aligned_buf;
-  capnp::FlatArrayMessageReader cmsg(aligned_buf.align(params_string.data(), params_string.size()));
+  AlignedBuffer aligned_buf_sp;
+
+  capnp::FlatArrayMessageReader cmsg(aligned_buf.align(params_string[0].data(), params_string[0].size()));
   cereal::CarParams::Reader car_params = cmsg.getRoot<cereal::CarParams>();
+
+  capnp::FlatArrayMessageReader cmsg_sp(aligned_buf_sp.align(params_string[1].data(), params_string[1].size()));
+  cereal::CarParamsSP::Reader car_params_sp = cmsg_sp.getRoot<cereal::CarParamsSP>();
 
   auto safety_configs = car_params.getSafetyConfigs();
   uint16_t alternative_experience = car_params.getAlternativeExperience();
+  uint16_t safety_param_sp = car_params_sp.getSafetyParam();
 
-  std::string starpilot_params_string = params_.get("StarPilotCarParams");
+  cereal::CarParams::SafetyModel safety_model = safety_configs[0].getSafetyModel();
+  uint16_t safety_param = safety_configs[0].getSafetyParam();
 
-  AlignedBuffer starpilot_aligned_buf;
-  capnp::FlatArrayMessageReader starpilot_cmsg(starpilot_aligned_buf.align(starpilot_params_string.data(), starpilot_params_string.size()));
-  cereal::StarPilotCarParams::Reader starpilot_car_params = starpilot_cmsg.getRoot<cereal::StarPilotCarParams>();
+  LOGW("setting safety model: %d, param: %d, alternative experience: %d, param_sp: %d", (int)safety_model, safety_param, alternative_experience, safety_param_sp);
+  panda_->set_alternative_experience(alternative_experience, safety_param_sp);
+  panda_->set_safety_model(safety_model, safety_param);
+}
 
-  auto starpilot_safety_configs = starpilot_car_params.getSafetyConfigs();
-  alternative_experience |= starpilot_car_params.getAlternativeExperience();
-  for (int i = 0; i < pandas_.size(); ++i) {
-    // Default to SILENT safety model if not specified
-    cereal::CarParams::SafetyModel safety_model = cereal::CarParams::SafetyModel::SILENT;
-    uint16_t safety_param = 0U;
-    if (i < safety_configs.size()) {
-      safety_model = safety_configs[i].getSafetyModel();
-      safety_param = safety_configs[i].getSafetyParam();
-    }
-
-    if (i < starpilot_safety_configs.size()) {
-      safety_param |= starpilot_safety_configs[i].getSafetyParam();
-    }
-
-    LOGW("Panda %d: setting safety model: %d, param: %d, alternative experience: %d", i, (int)safety_model, safety_param, alternative_experience);
-    pandas_[i]->set_alternative_experience(alternative_experience);
-    pandas_[i]->set_safety_model(safety_model, safety_param);
-  }
+bool PandaSafety::getOffroadMode() {
+  auto offroad_mode = params_.getBool("OffroadMode");
+  return offroad_mode;
 }

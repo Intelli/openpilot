@@ -1,4 +1,4 @@
-#include "uart_declarations.h"
+#include "board/drivers/drivers.h"
 
 // ***************************** Definitions *****************************
 
@@ -26,12 +26,7 @@
 UART_BUFFER(debug, FIFO_SIZE_INT, FIFO_SIZE_INT, USART2, debug_ring_callback, true)
 
 // SOM debug = UART7
-#ifdef STM32H7
-  UART_BUFFER(som_debug, FIFO_SIZE_INT, FIFO_SIZE_INT, UART7, NULL, true)
-#else
-  // UART7 is not available on F4
-  UART_BUFFER(som_debug, 1U, 1U, NULL, NULL, true)
-#endif
+UART_BUFFER(som_debug, FIFO_SIZE_INT, FIFO_SIZE_INT, UART7, NULL, true)
 
 uart_ring *get_ring_by_number(int a) {
   uart_ring *ring = NULL;
@@ -135,13 +130,13 @@ void puth(unsigned int i) {
 }
 
 #if defined(DEBUG_SPI) || defined(BOOTSTUB) || defined(DEBUG)
-static void __attribute__((unused)) puth4(unsigned int i) {
+static void puth4(unsigned int i) {
   puthx(i, 4U);
 }
 #endif
 
 #if defined(DEBUG_SPI) || defined(BOOTSTUB) || defined(DEBUG_USB) || defined(DEBUG_COMMS)
-static void __attribute__((unused)) hexdump(const void *a, int l) {
+static void hexdump(const void *a, int l) {
   if (a != NULL) {
     for (int i=0; i < l; i++) {
       if ((i != 0) && ((i & 0xf) == 0)) print("\n");

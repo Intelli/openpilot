@@ -12,7 +12,6 @@ class MockResponse:
 class EchoSocket:
   def __init__(self, port):
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     self.socket.bind(('127.0.0.1', port))
     self.socket.listen(1)
 
@@ -22,25 +21,16 @@ class EchoSocket:
 
     try:
       while True:
-        try:
-          data = conn.recv(4096)
-        except TimeoutError:
-          break
+        data = conn.recv(4096)
         if data:
           print(f'EchoSocket got {data}')
           conn.sendall(data)
         else:
           break
     finally:
-      try:
-        conn.shutdown(0)
-      except OSError:
-        pass
+      conn.shutdown(0)
       conn.close()
-      try:
-        self.socket.shutdown(0)
-      except OSError:
-        pass
+      self.socket.shutdown(0)
       self.socket.close()
 
 
@@ -53,17 +43,13 @@ class MockApi:
 
 
 class MockWebsocket:
+  sock = socket.socket()
+
   def __init__(self, recv_queue, send_queue):
     self.recv_queue = recv_queue
     self.send_queue = send_queue
-    self.sock, self._signal_sock = socket.socketpair()
-
-  def queue_recv(self, data):
-    self.recv_queue.put_nowait(data)
-    self._signal_sock.send(b"1")
 
   def recv(self):
-    self.sock.recv(1)
     data = self.recv_queue.get()
     if isinstance(data, Exception):
       raise data
@@ -73,8 +59,7 @@ class MockWebsocket:
     self.send_queue.put_nowait((data, opcode))
 
   def close(self):
-    self.sock.close()
-    self._signal_sock.close()
+    pass
 
 
 class HTTPRequestHandler(http.server.SimpleHTTPRequestHandler):

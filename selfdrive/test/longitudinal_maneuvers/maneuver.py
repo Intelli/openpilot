@@ -18,7 +18,6 @@ class Maneuver:
 
     self.only_lead2 = kwargs.get("only_lead2", False)
     self.only_radar = kwargs.get("only_radar", False)
-    self.track_lead_with_gate = kwargs.get("track_lead_with_gate", False)
     self.ensure_start = kwargs.get("ensure_start", False)
     self.ensure_slowdown = kwargs.get("ensure_slowdown", False)
     self.enabled = kwargs.get("enabled", True)
@@ -37,7 +36,6 @@ class Maneuver:
       enabled=self.enabled,
       only_lead2=self.only_lead2,
       only_radar=self.only_radar,
-      track_lead_with_gate=self.track_lead_with_gate,
       e2e=self.e2e,
       personality=self.personality,
       force_decel=self.force_decel,
@@ -62,7 +60,8 @@ class Maneuver:
                             log['distance_lead'],
                             log['speed'],
                             speed_lead,
-                            log['acceleration']]))
+                            log['acceleration'],
+                            log['d_rel']]))
 
       if d_rel < .4 and (self.only_radar or prob_lead > 0.5):
         print("Crashed!!!!")

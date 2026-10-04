@@ -1,62 +1,32 @@
 import copy
-from cereal import custom
 from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, structs
+from opendbc.car.carlog import carlog
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
-from opendbc.car.tesla.values import DBC, CANBUS, GEAR_MAP, STEER_DISENGAGE_THRESHOLD, STEER_THRESHOLD, TeslaSafetyFlags, CAR
-from opendbc.car.tesla.preap.carstate import get_preap_can_parsers, update_preap
-from opendbc.car.tesla.preap.engagement import PreAPEngagement
-from opendbc.car.tesla.preap.nap_conf import nap_conf
-from opendbc.car.tesla.preap.pedal_feedback import PedalFeedback
+from opendbc.car.tesla.teslacan import get_steer_ctrl_type
+from opendbc.car.tesla.values import DBC, CANBUS, GEAR_MAP, STEER_THRESHOLD, TeslaFlags
+
+from opendbc.sunnypilot.car.tesla.carstate_ext import CarStateExt
 
 ButtonType = structs.CarState.ButtonEvent.Type
 
-TESLA_GAS_PRESS_ON = 0.8
-TESLA_GAS_PRESS_OFF = 0.4
 
-
-def update_tesla_gas_pressed(previous: bool, pedal_position: float) -> bool:
-  threshold = TESLA_GAS_PRESS_OFF if previous else TESLA_GAS_PRESS_ON
-  return float(pedal_position) > threshold
-
-
-class CarState(CarStateBase):
-  def __init__(self, CP, FPCP):
-    super().__init__(CP, FPCP)
+class CarState(CarStateBase, CarStateExt):
+  def __init__(self, CP, CP_SP):
+    CarStateBase.__init__(self, CP, CP_SP)
+    CarStateExt.__init__(self, CP, CP_SP)
     self.can_define = CANDefine(DBC[CP.carFingerprint][Bus.party])
-    self.shifter_values = self.can_define.dv["DI_systemStatus"]["DI_gear"] if CP.carFingerprint != CAR.TESLA_MODEL_S_PREAP else \
-                          self.can_define.dv["DI_torque2"]["DI_gear"]
+    self.shifter_values = self.can_define.dv["DI_systemStatus"]["DI_gear"]
 
     self.autopark = False
     self.autopark_prev = False
     self.cruise_enabled_prev = False
+    self.fsd14_error_logged = False
+    self.suspected_fsd14 = False
 
     self.hands_on_level = 0
     self.das_control = None
-    self.cruise_buttons = 0
-    self.prev_cruise_buttons = 0
-    self.gas_pressed = False
-    self.msg_stw_actn_req = None
-    self.speed_units = "MPH"
-    self.cooperative_steering = any(
-      config.safetyParam & TeslaSafetyFlags.COOP_STEERING.value for config in CP.safetyConfigs
-    )
-
-    if CP.carFingerprint == CAR.TESLA_MODEL_S_PREAP:
-      self.engagement = PreAPEngagement(nap_conf.double_pull_enabled, nap_conf.double_pull_window_ms)
-      self.cruiseEnabled = False
-      self.enableLongControl = False
-      self.enableJustCC = False
-      self.pedal_speed_kph = 0.0
-      self.prev_stalk_follow = 0
-      self.pccEvent = None
-      self.preap_cc_cancel_needed = False
-      self.preap_cc_engage_needed = False
-      self.di_cruise_state = "OFF"
-      self.pedal = PedalFeedback()
-      self.pedal_interceptor_value = 0.0
-      self.pedal_timeout = True
 
   def update_autopark_state(self, autopark_state: str, cruise_enabled: bool):
     autopark_now = autopark_state in ("ACTIVE", "COMPLETE", "SELFPARK_STARTED")
@@ -67,33 +37,22 @@ class CarState(CarStateBase):
     self.autopark_prev = autopark_now
     self.cruise_enabled_prev = cruise_enabled
 
-  def update_button_enable(self, buttonEvents: list[structs.CarState.ButtonEvent]):
-    if self.CP.carFingerprint == CAR.TESLA_MODEL_S_PREAP:
-      return False
-    return super().update_button_enable(buttonEvents)
-
-  def update(self, can_parsers, starpilot_toggles) -> structs.CarState:
-    if self.CP.carFingerprint == CAR.TESLA_MODEL_S_PREAP:
-      return update_preap(self, can_parsers)
-
+  def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp_party = can_parsers[Bus.party]
     cp_ap_party = can_parsers[Bus.ap_party]
     ret = structs.CarState()
+    ret_sp = structs.CarStateSP()
 
     # Vehicle speed
     ret.vEgoRaw = cp_party.vl["DI_speed"]["DI_vehicleSpeed"] * CV.KPH_TO_MS
     ret.vEgo, ret.aEgo = self.update_speed_kf(ret.vEgoRaw)
 
     # Gas pedal
-    self.gas_pressed = update_tesla_gas_pressed(
-      self.gas_pressed,
-      cp_party.vl["DI_systemStatus"]["DI_accelPedalPos"],
-    )
-    ret.gasPressed = self.gas_pressed
+    ret.gasPressed = cp_party.vl["DI_systemStatus"]["DI_accelPedalPos"] > 0
 
     # Brake pedal
     ret.brake = 0
-    ret.brakePressed = cp_party.vl["IBST_status"]["IBST_driverBrakeApply"] == 2
+    ret.brakePressed = cp_party.vl["ESP_status"]["ESP_driverBrakeApply"] == 2
 
     # Steering wheel
     epas_status = cp_party.vl["EPAS3S_sysStatus"]
@@ -111,11 +70,8 @@ class CarState(CarStateBase):
 
     # FSD disengages using union of handsOnLevel (slow overrides) and high angle rate faults (fast overrides, high speed)
     eac_error_code = self.can_define.dv["EPAS3S_sysStatus"]["EPAS3S_eacErrorCode"].get(int(epas_status["EPAS3S_eacErrorCode"]), None)
-    ret.steeringDisengage = (
-      self.hands_on_level >= 3 or
-      (eac_status == "EAC_INHIBITED" and eac_error_code == "EAC_ERROR_HIGH_ANGLE_RATE_SAFETY") or
-      (self.cooperative_steering and abs(ret.steeringTorque) > STEER_DISENGAGE_THRESHOLD)
-    )
+    ret.steeringDisengage = self.hands_on_level >= 3 or (eac_status == "EAC_INHIBITED" and
+                                                         eac_error_code == "EAC_ERROR_HIGH_ANGLE_RATE_SAFETY")
 
     # Cruise state
     cruise_state = self.can_define.dv["DI_state"]["DI_cruiseState"].get(int(cp_party.vl["DI_state"]["DI_cruiseState"]), None)
@@ -157,27 +113,43 @@ class CarState(CarStateBase):
     ret.stockAeb = cp_ap_party.vl["DAS_control"]["DAS_aebEvent"] == 1
 
     # LKAS
-    ret.stockLkas = cp_ap_party.vl["DAS_steeringControl"]["DAS_steeringControlType"] == 2  # LANE_KEEP_ASSIST
+    # On FSD 14+, ANGLE_CONTROL behavior changed to allow user winddown while actuating.
+    # FSD switched from using ANGLE_CONTROL to LANE_KEEP_ASSIST to likely keep the old steering override disengage logic.
+    # LKAS switched from LANE_KEEP_ASSIST to ANGLE_CONTROL to likely allow overriding LKAS events smoothly
+    lkas_ctrl_type = get_steer_ctrl_type(self.CP.flags, 2)
+    ret.stockLkas = cp_ap_party.vl["DAS_steeringControl"]["DAS_steeringControlType"] == lkas_ctrl_type  # LANE_KEEP_ASSIST
 
     # Stock Autosteer should be off (includes FSD)
-    if self.CP.carFingerprint in (CAR.TESLA_MODEL_3, CAR.TESLA_MODEL_Y):
+    # TODO: find for TESLA_MODEL_X and HW2.5 vehicles
+    if not (self.CP.flags & TeslaFlags.MISSING_DAS_SETTINGS):
       ret.invalidLkasSetting = cp_ap_party.vl["DAS_settings"]["DAS_autosteerEnabled"] != 0
-    else:
-      pass
+
+      # Because we don't have FSD 14 detection outside of a set of FW, we should check if this FW is accidentally missing from FSD_14_FW
+      # 1. If in Autosteer or FSD, already caught by invalidLkasSetting
+      # 2. If in TACC and DAS ever sends ANGLE_CONTROL (1), we can infer it's trying to do LKAS on FSD 14+
+      angle_control = cp_ap_party.vl["DAS_steeringControl"]["DAS_steeringControlType"] == 1  # ANGLE_CONTROL
+      if not ret.invalidLkasSetting and angle_control and not self.CP.flags & TeslaFlags.FSD_14:
+        self.suspected_fsd14 = True
+
+      if self.suspected_fsd14:
+        ret.invalidLkasSetting = True
+        if not self.fsd14_error_logged:
+          carlog.error("FSD 14 detected, but FW not in FSD_14_FW set")
+          self.fsd14_error_logged = True
+
     # Buttons # ToDo: add Gap adjust button
 
     # Messages needed by carcontroller
     self.das_control = copy.copy(cp_ap_party.vl["DAS_control"])
 
-    fp_ret = custom.StarPilotCarState.new_message()
+    CarStateExt.update(self, ret, ret_sp, can_parsers)
 
-    return ret, fp_ret
+    return ret, ret_sp
 
   @staticmethod
-  def get_can_parsers(CP):
-    if CP.carFingerprint == CAR.TESLA_MODEL_S_PREAP:
-      return get_preap_can_parsers(CP)
+  def get_can_parsers(CP, CP_SP):
     return {
       Bus.party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.party),
-      Bus.ap_party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.autopilot_party)
+      Bus.ap_party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.autopilot_party),
+      **CarStateExt.get_parser(CP, CP_SP),
     }

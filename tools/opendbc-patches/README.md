@@ -5,12 +5,16 @@ Patch files in `patches/opendbc/` use standalone paths such as
 `opendbc/car/hyundai/carcontroller.py`. The unified root helper adds
 `opendbc_repo/` when applying them.
 
-The six formerly enabled patches have been ported to numbered `01_`–`06_`
-StarPilot `.patch` files. Their unchanged originals end in `.patch.migrated`;
-`tap_detection_debug.patch.disabled` keeps its original name and remains inactive.
-`origin.json` records original paths, source commit/URLs and SHA-256 checksums,
-with updated archive locations. See the [EV9 behavior reference](../../docs/EV9_BEHAVIOR.md)
-for current vehicle behavior and application integration.
+`01_sunnypilot_ev9_customizations.patch` records the restored vehicle differences
+against the original Sunnypilot dependency pin. The six StarPilot ports are
+archived in `patches/archive/starpilot-20260920/opendbc/`; their historical
+Sunnypilot originals retain archive suffixes. `origin.json` records the historical
+source paths and checksums. See the [EV9 behavior reference](../../docs/EV9_BEHAVIOR.md).
+
+`./sync-upstream.sh --opendbc --check` previews the upstream
+`sunnypilot/opendbc:hkg-angle-steering-2025` tree. `--opendbc --allow` imports it
+only into `opendbc_repo/`, retaining the main application and root patch tools.
+`opendbc-upstream.json` records the exact imported revision.
 
 ## Supported helpers
 
@@ -35,7 +39,7 @@ patch unchanged. See [the patch guide](../../patches/README.md) for details.
 
 `tools/opendbc-patches/apply.sh` is a compatibility wrapper for the unified
 application helper. A basename selects one enabled vehicle patch; no arguments or
-`--all` selects all six numbered vehicle patches. `--check` performs ordinary applicability
+`--all` selects all enabled vehicle patches. `--check` performs ordinary applicability
 checks without changing files, independently for each patch. Disabled filenames
 are rejected even when explicitly selected. No helper fetches, syncs, commits or
 pushes; ordinary apply also leaves staging unchanged.

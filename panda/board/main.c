@@ -16,30 +16,14 @@
 
 #include "board/drivers/can_common.h"
 
-#ifdef STM32H7
-  #include "board/drivers/fdcan.h"
-#else
-  #include "board/drivers/bxcan.h"
-#endif
+#include "board/drivers/fdcan.h"
 
-#include "board/power_saving.h"
+#include "board/sys/power_saving.h"
 
 #include "board/obj/gitversion.h"
 
 #include "board/can_comms.h"
-
-static bool panda_ignition_line(void);
-
 #include "board/main_comms.h"
-
-
-static bool panda_ignition_line(void) {
-  #ifdef PANDA_IGNORE_IGNITION_LINE
-  return false;
-  #else
-  return harness_check_ignition();
-  #endif
-}
 
 
 // ********************* Serial debugging *********************
@@ -164,7 +148,7 @@ static void tick_handler(void) {
       // re-init everything that uses harness status
       can_init_all();
       set_safety_mode(current_safety_mode, current_safety_param);
-      set_power_save_state(power_save_status);
+      set_power_save_state(power_save_enabled);
     }
 
     // decimated to 1Hz
@@ -183,16 +167,13 @@ static void tick_handler(void) {
 
       // turn off the blue LED, turned on by CAN
       // unless we are in power saving mode
-      led_set(LED_BLUE, (uptime_cnt & 1U) && (power_save_status == POWER_SAVE_STATUS_ENABLED));
+      led_set(LED_BLUE, (uptime_cnt & 1U) && power_save_enabled);
 
       const bool recent_heartbeat = heartbeat_counter == 0U;
 
       // tick drivers at 1Hz
-      bool started = panda_ignition_line() || ignition_can;
-      #ifdef PANDA_HKG_REMOTE_START
-      started = started || hkg_remote_climate_wake;
-      #endif
-      bootkick_tick(started, recent_heartbeat, wake_on_can);
+      bool started = harness_check_ignition() || ignition_can;
+      bootkick_tick(started, recent_heartbeat);
 
       // increase heartbeat counter and cap it at the uint32 limit
       if (heartbeat_counter < UINT32_MAX) {
@@ -226,6 +207,8 @@ static void tick_handler(void) {
         heartbeat_engaged_mismatches = 0U;
       }
 
+      mads_heartbeat_engaged_check();
+
       if (!heartbeat_disabled) {
         // if the heartbeat has been gone for a while, go to SILENT safety mode and enter power save
         if (heartbeat_counter >= (started ? HEARTBEAT_IGNITION_CNT_ON : HEARTBEAT_IGNITION_CNT_OFF)) {
@@ -250,8 +233,8 @@ static void tick_handler(void) {
             set_safety_mode(SAFETY_SILENT, 0U);
           }
 
-          if (power_save_status != POWER_SAVE_STATUS_ENABLED) {
-            set_power_save_state(POWER_SAVE_STATUS_ENABLED);
+          if (!power_save_enabled) {
+            set_power_save_state(true);
           }
 
           // Also disable IR when the heartbeat goes missing
@@ -270,23 +253,11 @@ static void tick_handler(void) {
       if (ignition_can_cnt > 2U) {
         ignition_can = false;
       }
-      if (wake_on_can_cnt > 2U) {
-        wake_on_can = false;
-      }
-      #ifdef PANDA_HKG_REMOTE_START
-      if (hkg_remote_climate_wake_cnt > 2U) {
-        hkg_remote_climate_wake = false;
-      }
-      #endif
 
       // on to the next one
       uptime_cnt += 1U;
       safety_mode_cnt += 1U;
       ignition_can_cnt += 1U;
-      wake_on_can_cnt += 1U;
-      #ifdef PANDA_HKG_REMOTE_START
-      hkg_remote_climate_wake_cnt += 1U;
-      #endif
 
       // synchronous safety check
       safety_tick(&current_safety_config);
@@ -372,7 +343,12 @@ int main(void) {
 
   // LED should keep on blinking all the time
   while (true) {
-    if (power_save_status == POWER_SAVE_STATUS_DISABLED) {
+    #ifdef ALLOW_DEBUG
+    if (stop_mode_requested) {
+      enter_stop_mode();
+    }
+    #endif
+    if (!power_save_enabled) {
       #ifdef DEBUG_FAULTS
       if (fault_status == FAULT_STATUS_NONE) {
       #endif
@@ -400,6 +376,11 @@ int main(void) {
         }
       #endif
     } else {
+      if ((hw_type == HW_TYPE_CUATRO) && !current_board->read_som_gpio()) {
+        assert_fatal(current_safety_mode == SAFETY_SILENT, "Error: Entering low power mode while not in SAFETY_SILENT. Hanging\n");
+        enter_stop_mode(); // deep sleep, wakes on CAN or SBU activity
+        assert_fatal(false, "Error: enter_stop_mode returned after system reset. Hanging\n");
+      }
       __WFI();
       SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
     }

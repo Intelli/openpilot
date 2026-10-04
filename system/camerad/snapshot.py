@@ -43,9 +43,15 @@ def yuv_to_rgb(y, u, v):
 
 
 def extract_image(buf):
+  # NV12 format: Y plane followed by interleaved UV plane
+  # UV plane size is stride * uv_height, where uv_height = align(height/2, 16)
+  uv_height = ((buf.height // 2) + 15) // 16 * 16
+  uv_plane_size = buf.stride * uv_height
+
   y = np.array(buf.data[:buf.uv_offset], dtype=np.uint8).reshape((-1, buf.stride))[:buf.height, :buf.width]
-  u = np.array(buf.data[buf.uv_offset::2], dtype=np.uint8).reshape((-1, buf.stride//2))[:buf.height//2, :buf.width//2]
-  v = np.array(buf.data[buf.uv_offset+1::2], dtype=np.uint8).reshape((-1, buf.stride//2))[:buf.height//2, :buf.width//2]
+  uv_data = buf.data[buf.uv_offset:buf.uv_offset + uv_plane_size]
+  u = np.array(uv_data[::2], dtype=np.uint8).reshape((-1, buf.stride//2))[:buf.height//2, :buf.width//2]
+  v = np.array(uv_data[1::2], dtype=np.uint8).reshape((-1, buf.stride//2))[:buf.height//2, :buf.width//2]
 
   return yuv_to_rgb(y, u, v)
 
@@ -73,49 +79,38 @@ def get_snapshots(frame="roadCameraState", front_frame="driverCameraState"):
   return rear, front
 
 
-def snapshot(allow_existing=False, include_front=None):
+def snapshot():
   params = Params()
 
   if (not params.get_bool("IsOffroad")) or params.get_bool("IsTakingSnapshot"):
     print("Already taking snapshot")
     return None, None
 
-  front_camera_allowed = params.get_bool("RecordFront") if include_front is None else bool(include_front)
+  front_camera_allowed = params.get_bool("RecordFront")
   params.put_bool("IsTakingSnapshot", True)
   set_offroad_alert("Offroad_IsTakingSnapshot", True)
   time.sleep(2.0)  # Give hardwared time to read the param, or if just started give camerad time to start
 
-  if not params.get_bool("IsOffroad"):
-    params.put_bool("IsTakingSnapshot", False)
-    set_offroad_alert("Offroad_IsTakingSnapshot", False)
-    return None, None
-
   # Check if camerad is already started
-  camerad_already_running = False
   try:
     subprocess.check_call(["pgrep", "camerad"])
-    camerad_already_running = True
-    if not allow_existing:
-      print("Camerad already running")
-      params.put_bool("IsTakingSnapshot", False)
-      params.remove("Offroad_IsTakingSnapshot")
-      return None, None
+    print("Camerad already running")
+    params.put_bool("IsTakingSnapshot", False)
+    params.remove("Offroad_IsTakingSnapshot")
+    return None, None
   except subprocess.CalledProcessError:
     pass
 
   try:
     # Allow testing on replay on PC
-    if not PC and not camerad_already_running:
+    if not PC:
       managed_processes['camerad'].start()
 
     frame = "wideRoadCameraState"
     front_frame = "driverCameraState" if front_camera_allowed else None
     rear, front = get_snapshots(frame, front_frame)
-    if not params.get_bool("IsOffroad"):
-      rear, front = None, None
   finally:
-    if not camerad_already_running:
-      managed_processes['camerad'].stop()
+    managed_processes['camerad'].stop()
     params.put_bool("IsTakingSnapshot", False)
     set_offroad_alert("Offroad_IsTakingSnapshot", False)
 

@@ -1,0 +1,18 @@
+# Materialized upstream assets are ordinary Git blobs, with binary diffs.
+*.onnx binary
+*.pkl binary
+*.pkl.chunk* binary
+*.jpg binary
+*.png binary
+*.gif binary
+*.ttf binary
+*.otf binary
+*.wav binary
+*.a binary
+*.so binary
+*.so.* binary
+*.dylib binary
+*.bin binary
+*.bin.signed binary
+system/hardware/tici/updater_weston binary
+system/hardware/tici/updater_magic binary

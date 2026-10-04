@@ -12,16 +12,6 @@ uint32_t microsecond_timer_get(void) {
 #include "opendbc/safety/can.h"
 #include "opendbc/safety/safety.h"
 
-void can_send(CANPacket_t *to_send, uint8_t bus_number, bool skip_tx_hook) {
-  (void)to_send;
-  (void)bus_number;
-  (void)skip_tx_hook;
-}
-
-void can_set_checksum(CANPacket_t *packet) {
-  (void)packet;
-}
-
 void safety_tick_current_safety_config() {
   safety_tick(&current_safety_config);
 }
@@ -49,6 +39,14 @@ void set_controls_allowed(bool c){
 
 void set_alternative_experience(int mode){
   alternative_experience = mode;
+}
+
+void mads_apply_alternative_experience(int mode){
+  mads_set_alternative_experience(&mode);
+}
+
+void tick_mads_state(bool vm, bool acc_main, bool op_allowed, bool braking, bool steering_disengage){
+  mads_state_update(vm, acc_main, op_allowed, braking, steering_disengage);
 }
 
 void set_relay_malfunction(bool c){
@@ -101,14 +99,6 @@ bool get_vehicle_moving(void){
 
 bool get_acc_main_on(void){
   return acc_main_on;
-}
-
-bool get_aol_allowed(void){
-  return aol_allowed;
-}
-
-bool get_lkas_on(void){
-  return lkas_on;
 }
 
 float get_vehicle_speed_min(void){
@@ -186,27 +176,6 @@ int get_angle_meas_max(void){
   return angle_meas.max;
 }
 
-void set_desired_curvature_last(int t){
-  curvature_state.desired_last = t;
-}
-
-int get_desired_curvature_last(void){
-  return curvature_state.desired_last;
-}
-
-void set_curvature_meas(int min, int max){
-  curvature_state.meas.min = min;
-  curvature_state.meas.max = max;
-}
-
-int get_curvature_meas_min(void){
-  return curvature_state.meas.min;
-}
-
-int get_curvature_meas_max(void){
-  return curvature_state.meas.max;
-}
-
 
 // ***** car specific helpers *****
 
@@ -230,9 +199,102 @@ bool get_honda_fwd_brake(void){
   return honda_fwd_brake;
 }
 
+static MADSState *get_mads_state(void) {
+  return &m_mads_state;
+}
+
+bool get_controls_allowed_lateral(void){
+  return controls_allowed_lateral;
+}
+
+bool get_controls_requested_lateral(void){
+  return get_mads_state()->controls_requested_lateral;
+}
+
+bool get_enable_mads(void){
+  return get_mads_state()->system_enabled;
+}
+
+bool get_disengage_lateral_on_brake(void){
+  return get_mads_state()->disengage_lateral_on_brake;
+}
+
+bool get_pause_lateral_on_brake(void){
+  return get_mads_state()->pause_lateral_on_brake;
+}
+
+void set_acc_main_on(bool c){
+  acc_main_on = c;
+}
+
+void set_current_safety_param_sp(uint16_t param){
+  current_safety_param_sp = param;
+}
+
+uint16_t get_current_safety_param_sp(void){
+  return current_safety_param_sp;
+}
+
+void set_mads_button_press(int c){
+  mads_button_press = c;
+}
+
+int get_mads_button_press(void){
+  return mads_button_press;
+}
+
+void set_controls_allowed_lateral(bool c){
+  controls_allowed_lateral = c;
+}
+
+bool get_mads_acc_main(void){
+  return m_mads_state.acc_main.current;
+}
+
+int mads_get_current_disengage_reason(void) {
+  return get_mads_state()->current_disengage.active_reason;
+}
+
+void mads_set_current_disengage_reason(int reason) {
+  m_mads_state.current_disengage.active_reason = reason;
+}
+
+void set_controls_requested_lateral(bool c){
+  m_mads_state.controls_requested_lateral = c;
+}
+
+void set_mads_params(bool enable_mads, bool disengage_lateral_on_brake, bool pause_lateral_on_brake){
+  alternative_experience = 0;
+  if (enable_mads) {
+    alternative_experience |= ALT_EXP_ENABLE_MADS;
+
+    if (disengage_lateral_on_brake) {
+      alternative_experience |= ALT_EXP_MADS_DISENGAGE_LATERAL_ON_BRAKE;
+    } else if (pause_lateral_on_brake) {
+      alternative_experience |= ALT_EXP_MADS_PAUSE_LATERAL_ON_BRAKE;
+    } else {
+    }
+  }
+
+  mads_set_alternative_experience(&alternative_experience);
+}
+
+void set_heartbeat_engaged_mads(bool c){
+  heartbeat_engaged_mads = c;
+}
+
+void set_steering_disengage(bool c){
+  steering_disengage = c;
+}
+
+int get_gas_interceptor_prev(void){
+  return gas_interceptor_prev;
+}
+
 void init_tests(void){
   safety_mode_cnt = 2U;  // avoid ignoring relay_malfunction logic
   alternative_experience = 0;
+  current_safety_param_sp = 0;
   set_timer(0);
   ts_steer_req_mismatch_last = 0;
   valid_steer_req_count = 0;
@@ -240,4 +302,10 @@ void init_tests(void){
 
   // assumes autopark on safety mode init to avoid a fault. get rid of that for testing
   tesla_autopark = false;
+
+  // reset MADS state to prevent leaking between tests
+  mads_set_system_state(false, false, false);
+  mads_button_press = MADS_BUTTON_UNAVAILABLE;
+  heartbeat_engaged_mads = false;
+  heartbeat_engaged_mads_mismatches = 0U;
 }

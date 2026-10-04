@@ -1,5 +1,4 @@
 import json
-import re
 from Crypto.PublicKey import RSA
 from pathlib import Path
 
@@ -66,12 +65,12 @@ class TestRegistration:
     assert m.call_count == 1
     assert self.params.get("DongleId") == dongle
 
-  def test_rejected_registration_uses_local_id(self, mocker):
+  def test_unregistered(self, mocker):
     # keys exist, but unregistered
     self._generate_keys()
     m = mocker.patch("openpilot.system.athena.registration.api_get", autospec=True)
     m.return_value = MockResponse(None, 402)
     dongle = register()
     assert m.call_count == 1
-    assert re.fullmatch(r"[a-z0-9]{16}", dongle)
+    assert dongle == UNREGISTERED_DONGLE_ID
     assert self.params.get("DongleId") == dongle

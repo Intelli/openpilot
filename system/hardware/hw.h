@@ -1,12 +1,11 @@
 #pragma once
 
-#include <filesystem>
 #include <string>
 
 #include "system/hardware/base.h"
 #include "common/util.h"
 
-#if QCOM2
+#if __TICI__
 #include "system/hardware/tici/hardware.h"
 #define Hardware HardwareTici
 #else
@@ -27,33 +26,11 @@ namespace Path {
     if (const char *env = getenv("LOG_ROOT")) {
       return env;
     }
-
-    if (Hardware::PC()) {
-      return Path::comma_home() + "/media/0/realdata";
-    }
-
-    // StarPilot variables
-    if (std::filesystem::exists("/cache/use_HD")) {
-      return "/data/media/0/realdata_HD/";
-    }
-
-    if (std::filesystem::exists("/cache/use_konik")) {
-      return "/data/media/0/realdata_konik/";
-    }
-
-    return "/data/media/0/realdata";
+    return Hardware::PC() ? Path::comma_home() + "/media/0/realdata" : "/data/media/0/realdata";
   }
 
   inline std::string params() {
     return util::getenv("PARAMS_ROOT", Hardware::PC() ? (Path::comma_home() + "/params") : "/data/params");
-  }
-
-  inline std::string params_cache() {
-    return Hardware::PC() ? Path::comma_home() + "/cache/starpilot/params" : "/cache/starpilot/params";
-  }
-
-  inline std::string legacy_params_cache() {
-    return Hardware::PC() ? Path::comma_home() + "/cache/params" : "/cache/params";
   }
 
   inline std::string rsa_file() {
@@ -78,4 +55,8 @@ namespace Path {
      return "/dev/shm";
     #endif
  }
+
+  inline std::string model_root() {
+    return Hardware::PC() ? Path::comma_home() + "/media/0/models" : "/data/media/0/models";
+  }
 }  // namespace Path

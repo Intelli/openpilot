@@ -1,20 +1,19 @@
 import time
+import copy
 import os
 import pytest
 import random
 import unittest # noqa: TID251
 from collections import defaultdict, Counter
-from types import SimpleNamespace
 import hypothesis.strategies as st
 from hypothesis import Phase, given, settings
-from parameterized import parameterized_class
+from openpilot.common.parameterized import parameterized_class
 
 from opendbc.car import DT_CTRL, gen_empty_fingerprint, structs
 from opendbc.car.can_definitions import CanData
 from opendbc.car.car_helpers import FRAME_FINGERPRINT, interfaces
 from opendbc.car.fingerprints import MIGRATION
 from opendbc.car.honda.values import CAR as HONDA, HondaFlags
-from opendbc.car.hyundai.values import HyundaiFlags
 from opendbc.car.structs import car
 from opendbc.car.tests.routes import non_tested_cars, routes, CarTestRoute
 from opendbc.car.values import Platform, PLATFORMS
@@ -35,22 +34,6 @@ INTERNAL_SEG_LIST = os.environ.get("INTERNAL_SEG_LIST", "")
 INTERNAL_SEG_CNT = int(os.environ.get("INTERNAL_SEG_CNT", "0"))
 MAX_EXAMPLES = int(os.environ.get("MAX_EXAMPLES", "300"))
 CI = os.environ.get("CI", None) is not None
-
-
-def get_test_starpilot_toggles() -> SimpleNamespace:
-  return SimpleNamespace(
-    car_model="",
-    cluster_offset=1.0,
-    disable_openpilot_long=False,
-    force_fingerprint=False,
-    lock_doors=False,
-    sng_hack=False,
-    subaru_sng=False,
-    subaru_sng_manual_parking_brake=False,
-    unlock_doors=False,
-    vEgoStopping=0.5,
-    volt_sng=False,
-  )
 
 
 def get_test_cases() -> list[tuple[str, CarTestRoute | None]]:
@@ -167,11 +150,10 @@ class TestCarModelBase(unittest.TestCase):
     cls.openpilot_enabled = cls.car_safety_mode_frame is not None
 
     cls.CarInterface = interfaces[cls.platform]
-    cls.starpilot_toggles = get_test_starpilot_toggles()
-    cls.CP = cls.CarInterface.get_params(cls.platform, cls.fingerprint, car_fw, alpha_long, False, docs=False,
-                                         starpilot_toggles=cls.starpilot_toggles)
-    cls.FPCP = cls.CarInterface.get_starpilot_params(cls.platform, cls.fingerprint, car_fw, cls.CP, cls.starpilot_toggles)
+    cls.CP = cls.CarInterface.get_params(cls.platform, cls.fingerprint, car_fw, alpha_long, False, docs=False)
+    cls.CP_SP = cls.CarInterface.get_params_sp(cls.CP, cls.platform,  cls.fingerprint, car_fw, alpha_long, False, docs=False)
     assert cls.CP
+    assert cls.CP_SP
     assert cls.CP.carFingerprint == cls.platform
 
     os.environ["COMMA_CACHE"] = DEFAULT_DOWNLOAD_CACHE_ROOT
@@ -181,11 +163,14 @@ class TestCarModelBase(unittest.TestCase):
     del cls.can_msgs
 
   def setUp(self):
-    self.CI = self.CarInterface(self.CP.copy(), self.FPCP)
+    self.CI = self.CarInterface(self.CP.copy(), copy.deepcopy(self.CP_SP))
     assert self.CI
 
     # TODO: check safetyModel is in release panda build
     self.safety = libsafety_py.libsafety
+
+    safety_param_sp = self.CP_SP.safetyParam
+    self.safety.set_current_safety_param_sp(safety_param_sp)
 
     cfg = self.CP.safetyConfigs[-1]
     set_status = self.safety.set_safety_hooks(cfg.safetyModel.raw, cfg.safetyParam)
@@ -212,10 +197,11 @@ class TestCarModelBase(unittest.TestCase):
     # TODO: also check for checksum violations from can parser
     can_invalid_cnt = 0
     CC = structs.CarControl().as_reader()
+    CC_SP = structs.CarControlSP()
 
     for i, msg in enumerate(self.can_msgs):
-      CS, _ = self.CI.update(msg, self.starpilot_toggles)
-      self.CI.apply(CC, msg[0], self.starpilot_toggles)
+      CS, _ = self.CI.update(msg)
+      self.CI.apply(CC, CC_SP, msg[0])
 
       # wait max of 2s for low frequency msgs to be seen
       if i > 250:
@@ -224,7 +210,7 @@ class TestCarModelBase(unittest.TestCase):
     self.assertEqual(can_invalid_cnt, 0)
 
   def test_radar_interface(self):
-    RI = self.CarInterface.RadarInterface(self.CP)
+    RI = self.CarInterface.RadarInterface(self.CP, self.CP_SP)
     assert RI
 
     # Since OBD port is multiplexed to bus 1 (commonly radar bus) while fingerprinting,
@@ -284,13 +270,13 @@ class TestCarModelBase(unittest.TestCase):
     if self.CP.notCar:
       self.skipTest("Skipping test for notCar")
 
-    def test_car_controller(car_control, expect_messages=True):
+    def test_car_controller(car_control, car_control_sp):
       now_nanos = 0
       msgs_sent = 0
-      CI = self.CarInterface(self.CP, self.FPCP)
+      CI = self.CarInterface(self.CP, self.CP_SP)
       for _ in range(round(10.0 / DT_CTRL)):  # make sure we hit the slowest messages
-        CI.update([], self.starpilot_toggles)
-        _, sendcan = CI.apply(car_control, now_nanos, self.starpilot_toggles)
+        CI.update([])
+        _, sendcan = CI.apply(car_control, car_control_sp, now_nanos)
 
         now_nanos += DT_CTRL * 1e9
         msgs_sent += len(sendcan)
@@ -299,24 +285,22 @@ class TestCarModelBase(unittest.TestCase):
           self.assertTrue(self.safety.safety_tx_hook(to_send), (addr, dat, bus))
 
       # Make sure we attempted to send messages
-      if expect_messages:
-        self.assertGreater(msgs_sent, 50)
+      self.assertGreater(msgs_sent, 50)
 
     # Make sure we can send all messages while inactive
     CC = structs.CarControl()
-    stock_forwarded_angle_lkas = self.CP.brand == "hyundai" and \
-      bool(self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING and self.CP.flags & HyundaiFlags.CANFD_LKA_STEERING_ALT)
-    test_car_controller(CC.as_reader(), expect_messages=not stock_forwarded_angle_lkas)
+    CC_SP = structs.CarControlSP()
+    test_car_controller(CC.as_reader(), CC_SP)
 
     # Test cancel + general messages (controls_allowed=False & cruise_engaged=True)
     self.safety.set_cruise_engaged_prev(True)
     CC = structs.CarControl(cruiseControl=structs.CarControl.CruiseControl(cancel=True))
-    test_car_controller(CC.as_reader())
+    test_car_controller(CC.as_reader(), CC_SP)
 
     # Test resume + general messages (controls_allowed=True & cruise_engaged=True)
     self.safety.set_controls_allowed(True)
     CC = structs.CarControl(cruiseControl=structs.CarControl.CruiseControl(resume=True))
-    test_car_controller(CC.as_reader())
+    test_car_controller(CC.as_reader(), CC_SP)
 
   # Skip stdout/stderr capture with pytest, causes elevated memory usage
   @pytest.mark.nocapture
@@ -331,11 +315,6 @@ class TestCarModelBase(unittest.TestCase):
 
     if self.CP.dashcamOnly:
       self.skipTest("no need to check panda safety for dashcamOnly")
-
-    self.CI = self.CarInterface(self.CP.copy(), self.FPCP)
-    cfg = self.CP.safetyConfigs[-1]
-    self.assertEqual(0, self.safety.set_safety_hooks(cfg.safetyModel.raw, cfg.safetyParam))
-    self.safety.init_tests()
 
     valid_addrs = [(addr, bus, size) for bus, addrs in self.fingerprint.items() for addr, size in addrs.items()]
     address, bus, size = data.draw(st.sampled_from(valid_addrs))
@@ -360,22 +339,11 @@ class TestCarModelBase(unittest.TestCase):
       prev_panda_acc_main_on = self.safety.get_acc_main_on()
 
       to_send = libsafety_py.make_CANPacket(address, bus, dat)
-      safety_accepted = self.safety.safety_rx_hook(to_send)
+      self.safety.safety_rx_hook(to_send)
 
-      parser_timestamps = {
-        id(cp): len(cp.message_states[address].timestamps)
-        for cp in self.CI.can_parsers.values()
-        if cp.bus == bus and address in cp.message_states
-      }
       can = [(int(time.monotonic() * 1e9), [CanData(address=address, dat=dat, src=bus)])]
-      CS, _ = self.CI.update(can, self.starpilot_toggles)
+      CS, _ = self.CI.update(can)
       if n < 5:  # CANParser warmup time
-        continue
-
-      parser_accepted = any(id(cp) in parser_timestamps and
-                            len(cp.message_states[address].timestamps) > parser_timestamps[id(cp)]
-                            for cp in self.CI.can_parsers.values())
-      if not parser_accepted or not safety_accepted:
         continue
 
       if self.safety.get_gas_pressed_prev() != prev_panda_gas:
@@ -396,8 +364,7 @@ class TestCarModelBase(unittest.TestCase):
       if self.safety.get_steering_disengage_prev() != prev_panda_steering_disengage:
         self.assertEqual(CS.steeringDisengage, self.safety.get_steering_disengage_prev())
 
-      if self.safety.get_vehicle_moving() != prev_panda_vehicle_moving and not self.CP.notCar and \
-         not (self.CP.brand == "honda" and address == 0x309 and self.CP.carFingerprint != HONDA.ACURA_INTEGRA):
+      if self.safety.get_vehicle_moving() != prev_panda_vehicle_moving and not self.CP.notCar:
         self.assertEqual(not CS.standstill, self.safety.get_vehicle_moving())
 
       # check vehicle speed if angle control car or available
@@ -410,8 +377,7 @@ class TestCarModelBase(unittest.TestCase):
         self.assertFalse(v_ego_raw > (self.safety.get_vehicle_speed_max() + 1e-3) or
                          v_ego_raw < (self.safety.get_vehicle_speed_min() - 1e-3))
 
-      if not (self.CP.brand == "honda" and not (self.CP.flags & HondaFlags.BOSCH)) and \
-         not (self.CP.brand == "gm" and address == 0x370):
+      if not (self.CP.brand == "honda" and not (self.CP.flags & HondaFlags.BOSCH)):
         if self.safety.get_cruise_engaged_prev() != prev_panda_cruise_engaged:
           self.assertEqual(CS.cruiseState.enabled, self.safety.get_cruise_engaged_prev())
 
@@ -428,7 +394,7 @@ class TestCarModelBase(unittest.TestCase):
 
     # warm up pass, as initial states may be different
     for can in self.can_msgs[:300]:
-      self.CI.update(can, self.starpilot_toggles)
+      self.CI.update(can)
       for msg in filter(lambda m: m.src < 64, can[1]):
         to_send = libsafety_py.make_CANPacket(msg.address, msg.src % 4, msg.dat)
         self.safety.safety_rx_hook(to_send)
@@ -438,7 +404,7 @@ class TestCarModelBase(unittest.TestCase):
     checks = defaultdict(int)
     vehicle_speed_seen = self.CP.steerControlType == SteerControlType.angle and not self.CP.notCar
     for idx, can in enumerate(self.can_msgs):
-      CS, _ = self.CI.update(can, self.starpilot_toggles)
+      CS, _ = self.CI.update(can)
       CS = CS.as_reader()
       for msg in filter(lambda m: m.src < 64, can[1]):
         to_send = libsafety_py.make_CANPacket(msg.address, msg.src % 4, msg.dat)
@@ -485,21 +451,11 @@ class TestCarModelBase(unittest.TestCase):
           if CS.cruiseState.enabled and not CS_prev.cruiseState.enabled:
             checks['controlsAllowed'] += not self.safety.get_controls_allowed()
         else:
-          controls_mismatch = not CS.cruiseState.enabled and self.safety.get_controls_allowed()
-          if controls_mismatch and self.CP.brand == "gm" and "ASCMActiveCruiseControlStatus" in self.CI.can_parsers["cam"].vl:
-            pt_cruise = self.CI.can_parsers["pt"].vl["AcceleratorPedal2"]["CruiseState"] != 0
-            cam_cruise = self.CI.can_parsers["cam"].vl["ASCMActiveCruiseControlStatus"]["ACCCmdActive"] != 0
-            controls_mismatch = pt_cruise == cam_cruise
-          checks['controlsAllowed'] += controls_mismatch
+          checks['controlsAllowed'] += not CS.cruiseState.enabled and self.safety.get_controls_allowed()
 
         # TODO: fix notCar mismatch
         if not self.CP.notCar:
-          cruise_mismatch = CS.cruiseState.enabled != self.safety.get_cruise_engaged_prev()
-          if cruise_mismatch and self.CP.brand == "gm" and "ASCMActiveCruiseControlStatus" in self.CI.can_parsers["cam"].vl:
-            pt_cruise = self.CI.can_parsers["pt"].vl["AcceleratorPedal2"]["CruiseState"] != 0
-            cam_cruise = self.CI.can_parsers["cam"].vl["ASCMActiveCruiseControlStatus"]["ACCCmdActive"] != 0
-            cruise_mismatch = pt_cruise == cam_cruise
-          checks['cruiseState'] += cruise_mismatch
+          checks['cruiseState'] += CS.cruiseState.enabled != self.safety.get_cruise_engaged_prev()
       else:
         # Check for user button enable on rising edge of controls allowed
         button_enable = CS.buttonEnable and (not CS.brakePressed or CS.standstill)

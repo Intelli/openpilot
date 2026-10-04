@@ -2,11 +2,9 @@
 
 #include <future>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <tuple>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -20,6 +18,7 @@ enum ParamKeyFlag {
   DONT_LOG = 0x20,
   DEVELOPMENT_ONLY = 0x40,
   CLEAR_ON_IGNITION_ON = 0x80,
+  BACKUP = 0x100,
   ALL = 0xFFFFFFFF
 };
 
@@ -33,34 +32,21 @@ enum ParamKeyType {
   BYTES = 6
 };
 
-enum ParamSettingsTier {
-  SETTINGS_SIMPLE = 0,
-  SETTINGS_ADVANCED = 1,
-};
-
 struct ParamKeyAttributes {
   uint32_t flags;
   ParamKeyType type;
   std::optional<std::string> default_value = std::nullopt;
-
-  // StarPilot variables
-  std::optional<std::string> stock_value = std::nullopt;
-
-  int tuning_level = 0;
-
-  // Controls settings-page visibility only. It does not gate the param's runtime behavior.
-  ParamSettingsTier settings_tier = SETTINGS_ADVANCED;
 };
 
 class Params {
 public:
-  explicit Params(const std::string &path = {}, bool memory = false);
+  explicit Params(const std::string &path = {});
   ~Params();
   // Not copyable.
   Params(const Params&) = delete;
   Params& operator=(const Params&) = delete;
 
-  std::vector<std::string> allKeys() const;
+  std::vector<std::string> allKeys(ParamKeyFlag flag = ALL) const;
   bool checkKey(const std::string &key);
   ParamKeyFlag getKeyFlag(const std::string &key);
   ParamKeyType getKeyType(const std::string &key);
@@ -93,37 +79,6 @@ public:
     putNonBlocking(key, val ? "1" : "0");
   }
 
-  // StarPilot variables
-  int getInt(const std::string &key, bool block = false) {
-    std::string value = get(key, block);
-    return value.empty() ? 0 : std::stoi(value);
-  }
-  float getFloat(const std::string &key, bool block = false) {
-    std::string value = get(key, block);
-    return value.empty() ? 0.0f : std::stof(value);
-  }
-
-  int putInt(const std::string &key, int val) {
-    std::string str = std::to_string(val);
-    return put(key.c_str(), str.c_str(), str.size());
-  }
-  int putFloat(const std::string &key, float val) {
-    std::string str = std::to_string(val);
-    return put(key.c_str(), str.c_str(), str.size());
-  }
-  void putIntNonBlocking(const std::string &key, int val) {
-    putNonBlocking(key, std::to_string(val));
-  }
-  void putFloatNonBlocking(const std::string &key, float val) {
-    putNonBlocking(key, std::to_string(val));
-  }
-
-  int getTuningLevel(const std::string &key);
-
-  ParamSettingsTier getSettingsTier(const std::string &key);
-
-  std::optional<std::string> getStockValue(const std::string &key);
-
 private:
   void asyncWriteThread();
 
@@ -132,11 +87,5 @@ private:
 
   // for nonblocking write
   std::future<void> future;
-  SafeQueue<std::string> queue;
-  std::mutex pending_writes_lock;
-  std::unordered_map<std::string, std::string> pending_writes;
-  bool writer_running = false;
-
-  // StarPilot variables
-  std::string cache_path;
+  SafeQueue<std::pair<std::string, std::string>> queue;
 };

@@ -15,7 +15,7 @@ if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
   export PATH="/Applications/Docker.app/Contents/Resources/bin:${PATH}"
 fi
 
-IMAGE_NAME="${COMMA_BUILD_IMAGE:-starpilot-larch64-builder:latest}"
+IMAGE_NAME="${COMMA_BUILD_IMAGE:-ev9-sunnypilot-agnos17-builder:latest}"
 SYSROOT_DIR_DEFAULT="${ROOT_DIR}/.comma_sysroot"
 SYSROOT_DIR="${COMMA_SYSROOT_DIR:-${SYSROOT_DIR_DEFAULT}}"
 HOST_SYSROOT_DIR="${COMMA_HOST_SYSROOT_DIR:-${SYSROOT_DIR}}"
@@ -47,7 +47,7 @@ Modes:
   shell         Open an interactive shell in the build container with all mounts.
 
 Environment overrides:
-  COMMA_BUILD_IMAGE   Container image tag (default: starpilot-larch64-builder:latest)
+  COMMA_BUILD_IMAGE   Container image tag (default: ev9-sunnypilot-agnos17-builder:latest)
   COMMA_SYSROOT_DIR   Sysroot location (default: ./.comma_sysroot)
   COMMA_AUTOSTART_DOCKER  Auto-launch Docker Desktop on macOS when needed (default: 1)
 EOF
@@ -293,38 +293,13 @@ resolve_ldso_source() {
 }
 
 scrub_mixed_arch_artifacts() {
-  # Desktop launchers can leave macOS objects with the same paths as larch64 outputs.
-  # Remove known cross-target extension intermediates so device builds always relink.
-  rm -f \
-    "${ROOT_DIR}/.sconsign.dblite" \
-    "${ROOT_DIR}/common/libcommon.a" \
-    "${ROOT_DIR}/common/params.o" \
-    "${ROOT_DIR}/common/params_pyx.cpp" \
-    "${ROOT_DIR}/cereal/libcereal.a" \
-    "${ROOT_DIR}/cereal/libsocketmaster.a" \
-    "${ROOT_DIR}/cereal/gen/cpp/"*.capnp.c++ \
-    "${ROOT_DIR}/cereal/gen/cpp/"*.capnp.h \
-    "${ROOT_DIR}/cereal/gen/cpp/"*.capnp.o \
-    "${ROOT_DIR}/cereal/messaging/"*.o \
-    "${ROOT_DIR}/cereal/messaging/bridge" \
-    "${ROOT_DIR}/msgq_repo/msgq/"*.os \
-    "${ROOT_DIR}/msgq_repo/msgq/"*.o \
-    "${ROOT_DIR}/msgq_repo/libmsgq.a" \
-    "${ROOT_DIR}/msgq_repo/libvisionipc.a" \
-    "${ROOT_DIR}/msgq_repo/msgq/ipc_pyx.so" \
-    "${ROOT_DIR}/msgq_repo/msgq/visionipc/"*.os \
-    "${ROOT_DIR}/msgq_repo/msgq/visionipc/"*.o \
-    "${ROOT_DIR}/msgq_repo/msgq/visionipc/visionipc_pyx.so" \
-    "${ROOT_DIR}/msgq/ipc_pyx.so" \
-    "${ROOT_DIR}/msgq/visionipc/visionipc_pyx.so" \
-    "${ROOT_DIR}/common/params_pyx.o" \
-    "${ROOT_DIR}/common/params_pyx.so" \
-    "${ROOT_DIR}/common/transformations/transformations.o" \
-    "${ROOT_DIR}/common/transformations/transformations.so" \
-    "${ROOT_DIR}/selfdrive/pandad/can_list_to_can_capnp.o" \
-    "${ROOT_DIR}/selfdrive/pandad/libcan_list_to_can_capnp.a" \
-    "${ROOT_DIR}/selfdrive/modeld/models/commonmodel_pyx.o" \
-    "${ROOT_DIR}/selfdrive/modeld/models/commonmodel_pyx.so"
+  # Every native application target must be rebuilt for the selected AGNOS.
+  # third_party contains pinned SDK libraries and is deliberately preserved.
+  rm -f "${ROOT_DIR}/.sconsign.dblite" "${ROOT_DIR}/prebuilt"
+  local source_dir
+  for source_dir in common cereal msgq_repo rednose_repo selfdrive system sunnypilot panda opendbc_repo; do
+    find "${ROOT_DIR}/${source_dir}" -type f \( -name '*.o' -o -name '*.os' -o -name '*.a' -o -name '*.so' -o -name '*.bin.signed' \) -delete
+  done
 }
 
 sync_sysroot_from_device() {
@@ -435,15 +410,13 @@ export SCONS_CACHE=/work/.cache/scons
 export SP_FORCE_TICI=1
 export SP_FORCE_ARCH=larch64
 export SP_TICI_SYSROOT=/opt/tici-sysroot
-export SP_BUILD_WARP_ARTIFACTS="\${SP_BUILD_WARP_ARTIFACTS:-0}"
-export SP_SKIP_DM_TINYGRAD_PKL="\${SP_SKIP_DM_TINYGRAD_PKL:-1}"
+export SP_USE_PINNED_MODELS=1
 export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/opt/tici-sysroot/usr/local/lib:/opt/tici-sysroot/usr/lib/aarch64-linux-gnu:/opt/tici-sysroot/lib/aarch64-linux-gnu:/system/vendor/lib64:\${LD_LIBRARY_PATH:-}
 export TMPDIR=/tmp
-export HOME=/tmp
 export PARAMS_ROOT=/tmp/params
 mkdir -p "\${UV_CACHE_DIR}"
 mkdir -p "\${PARAMS_ROOT}"
-UV_PROJECT_ENVIRONMENT=/work/.venv-linux-arm64 uv sync --frozen --all-extras
+UV_PROJECT_ENVIRONMENT=/work/.venv-linux-arm64 uv sync --frozen --all-extras --python /usr/bin/python3
 source /work/.venv-linux-arm64/bin/activate
 CACHE_FLAG="--cache-disable"
 if [[ "\${SP_ENABLE_SCONS_CACHE:-0}" =~ ^(1|true|yes|on)$ ]]; then
@@ -469,11 +442,8 @@ EOF
 
 setup_host_venv() {
   if [[ ! -f "${ROOT_DIR}/.venv/bin/activate" ]]; then
-    if [[ -x "${ROOT_DIR}/tools/install_python_dependencies.sh" ]]; then
-      (cd "${ROOT_DIR}" && tools/install_python_dependencies.sh)
-    else
-      err "Missing host .venv and installer script."
-    fi
+    require_cmd uv
+    uv sync --frozen --all-extras --python 3.12
   fi
 }
 
@@ -495,27 +465,11 @@ setup_all() {
 run_larch64_build() {
   local jobs="${1:-$(default_jobs)}"
   shift || true
-  echo "==> Build pass 1/2: full project build"
-  run_larch64_scons "${jobs}" "$@"
-  # Ensure prebuilt runtime compatibility probes can import these modules.
-  # scrub_mixed_arch_artifacts clears them at the start of each run, so
-  # targeted builds must always regenerate this core set.
-  # Do NOT regenerate dmonitoring_model_tinygrad.pkl on laptop builds:
-  # it is backend-captured and should come from device/QCOM-compatible artifacts.
-  echo "==> Build pass 2/2: required runtime artifacts"
-  run_larch64_scons "${jobs}" \
-    rednose/helpers/ekf_sym_pyx.so \
-    common/params_pyx.so \
-    common/transformations/transformations.so \
-    selfdrive/pandad/pandad_api_impl.so \
-    selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so \
-    selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/libacados_ocp_solver_lat.so \
-    selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so \
-    selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/libacados_ocp_solver_long.so \
-    selfdrive/modeld/models/commonmodel_pyx.so \
-    cereal/messaging/bridge \
-    msgq_repo/msgq/ipc_pyx.so \
-    msgq_repo/msgq/visionipc/visionipc_pyx.so
+  # CI must fail before compilation/publication if only host CPU captures or
+  # mismatched model/compiler inputs are available.
+  python3 tools/laptop_device_build/verify_model_assets.py --require-qcom --install
+  run_larch64_scons "${jobs}" --minimal "$@"
+  python3 tools/laptop_device_build/verify_build.py "${ROOT_DIR}"
   touch "${ROOT_DIR}/prebuilt"
 }
 
@@ -523,11 +477,9 @@ manager_artifacts_ready() {
   [[ -f "${ROOT_DIR}/msgq/ipc_pyx.so" ]] &&
   [[ -f "${ROOT_DIR}/msgq/visionipc/visionipc_pyx.so" ]] &&
   [[ -f "${ROOT_DIR}/common/params_pyx.so" ]] &&
-  [[ -f "${ROOT_DIR}/selfdrive/pandad/pandad_api_impl.so" ]] &&
+  [[ -f "${ROOT_DIR}/selfdrive/pandad/pandad" ]] &&
   [[ -f "${ROOT_DIR}/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so" ]] &&
-  [[ -f "${ROOT_DIR}/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/libacados_ocp_solver_lat.so" ]] &&
-  [[ -f "${ROOT_DIR}/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so" ]] &&
-  [[ -f "${ROOT_DIR}/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/libacados_ocp_solver_long.so" ]]
+  [[ -f "${ROOT_DIR}/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so" ]]
 }
 
 run_manager() {
@@ -584,14 +536,13 @@ export UV_CACHE_DIR=/work/.cache/uv
 export SP_FORCE_TICI=1
 export SP_FORCE_ARCH=larch64
 export SP_TICI_SYSROOT=/opt/tici-sysroot
-export SP_BUILD_WARP_ARTIFACTS="\${SP_BUILD_WARP_ARTIFACTS:-0}"
+export SP_USE_PINNED_MODELS=1
 export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/opt/tici-sysroot/usr/local/lib:/opt/tici-sysroot/usr/lib/aarch64-linux-gnu:/opt/tici-sysroot/lib/aarch64-linux-gnu:/system/vendor/lib64:\${LD_LIBRARY_PATH:-}
 export TMPDIR=/tmp
-export HOME=/tmp
 export PARAMS_ROOT=/tmp/params
 mkdir -p "\${UV_CACHE_DIR}"
 mkdir -p "\${PARAMS_ROOT}"
-UV_PROJECT_ENVIRONMENT=/work/.venv-linux-arm64 uv sync --frozen --all-extras
+UV_PROJECT_ENVIRONMENT=/work/.venv-linux-arm64 uv sync --frozen --all-extras --python /usr/bin/python3
 source /work/.venv-linux-arm64/bin/activate
 cd /work
 python3 system/manager/manager.py${manager_args_q}

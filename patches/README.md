@@ -1,106 +1,55 @@
 # Intelli patch workflow
 
-The custom EV9 planner is retired. Its implementation and tests are preserved in
-[`archive/ev9_custom_planner.patch`](archive/ev9_custom_planner.patch), and all
-planner notes are consolidated in [`archive/EV9_CUSTOM_PLANNER.md`](archive/EV9_CUSTOM_PLANNER.md).
-Both files survive upstream sync; neither is part of normal patch replay.
-
-For current behavior and patch ownership, see [EV9 behavior](../docs/EV9_BEHAVIOR.md)
-and [maintenance](../docs/MAINTENANCE.md). The [EV9 Edition changelog](CHANGELOG.md)
-records an earlier audit against stock StarPilot.
-
-Historical patch contents are preserved; **none are applied to the initial
-stable StarPilot baseline**. Upstream sync and GitHub builds do not replay them.
+Supported root commands retain the familiar apply/create/update workflow while
+exporting forward diffs and keeping sync, staging and publication explicit.
+See [maintenance](../docs/MAINTENANCE.md) and [EV9 behavior](../docs/EV9_BEHAVIOR.md)
+for source provenance and current behavior.
 
 ## Patch locations and state
 
 | Location / suffix | Meaning |
 | --- | --- |
-| `patches/<name>.patch` | Enabled patch using paths relative to the main repository |
-| `patches/opendbc/<name>.patch` | Enabled vehicle patch using paths relative to `opendbc_repo/` |
-| `patches/archive/` | Retired code and notes; preserved by sync and excluded from patch replay |
-| `.patch.temp-disabled` | One of the 17 formerly enabled patches, paused for StarPilot porting |
-| `.patch.migrated` | Unchanged historical original whose supported port is recorded in an enabled patch or replacement build tooling |
-| `.disabled` (including `.patch.OUTDATED.disabled`) | Inactive implementation, including previously disabled or subsequently retired work |
+| `patches/<name>.patch` | Enabled patch with main-repository paths |
+| `patches/opendbc/<name>.patch` | Enabled vehicle patch with paths relative to `opendbc_repo/` |
+| `patches/archive/` | Historical implementations and notes; excluded from replay |
+| `.patch.migrated`, `.patch.temp-disabled`, `.disabled` | Preserved historical originals; never replayed |
 
-The 17 formerly enabled patches started as temporarily disabled archives. Migrated
-originals now use `.migrated`; the six previously disabled patches keep their
-original suffixes. All archive suffixes are skipped by application. Port source,
-export a new enabled patch, then rename the historical original to `.migrated`.
-Keep the original contents intact. Updating a disabled patch keeps its suffix;
-exporting a new patch defaults to enabled, or accepts an explicit disabled suffix
-when you want to keep it inactive.
+Current enabled patches are:
 
-The six migrated vehicle patches use prefixes `01_` through `06_` to preserve their
-dependency order. The established root patches contain build configuration, custom defaults, EV9 Edition branding and boot artwork,
-settings UI, EV9 control configuration/curvature, warning policy, compact alerts,
-EV9 settings controls, the EV9 animated path effect, and the startup longitudinal-status notice. Only lane centering,
-driver monitoring and power management customizations remain `.temp-disabled` by request; native StarPilot features are separate. The old prebuilt
-patch is archived as `.migrated` because the StarPilot build/publish tooling has
-already replaced its Sunnypilot implementation; it is not replayed.
-See the [maintenance guide](../docs/MAINTENANCE.md#patch-ownership) for patch ownership.
+- `sunnypilot_ev9_customizations.patch`: restored application changes relative to
+  the official Sunnypilot baseline in `sunnypilot-upstream.json`.
+- `boot_logo_ev9_edition.patch`: custom boot image and its Sunnypilot installation hook.
+- `sunnypilot_device_build.patch`: device-build portability changes.
+- `opendbc/01_sunnypilot_ev9_customizations.patch`: restored vehicle changes relative
+  to official opendbc `7c35b7546940`, recorded in `opendbc-upstream.json`.
 
-`ev9_turn_lead_hesitation.patch` separately preserves the EV9 angle-control
-turn-lead fix and its focused tests: current preview assistance no longer fades
-with wheel catchup, and opposing model demand vetoes that assistance. It also
-retains smooth speed and stopping-distance envelopes with a fixed preview
-ceiling of 7 m/s (25.2 km/h), independent of EV9 Limits Speed, and focused tests. It works
-without the retired custom planner and excludes its messaging, tracking and
-handoff changes. When refreshing it, retain only these turn-lead
-changes and tests: exporting all later `controlsd.py` changes from its original
-base would also pull in unrelated planner changes.
+The application was restored from Intelli `5928a37ad187`, with customized vehicle
+snapshot `5a3f3761f586` and the original dependency pins. Those customized snapshots
+are restoration provenance; the enabled forward patches use official baselines.
+The current vehicle baseline is the exact pin of the official application baseline,
+not a guessed merge-base of deployment history.
 
-The extended-speed road-edge guard is retired in
-`ev9_turn_signal_edge_guard.patch.disabled`; normal replay does not restore it.
-EV9 signal turn desires are independent of the preview ceiling. They remain
-eligible through predicted stops, actual standstill and inactive lateral control,
-matching Sunnypilot. Their speed split remains the greater of EV9 Limits Speed
-and Minimum Lane Change Speed; one signal, the enabled turn-desire setting and
-a clear requested-side blind spot are still required. The stop/inactive follow-up
-and its tests are preserved in `lane_change_safeguards_starpilot.patch`, after the
-original EV9 predicted-stop behavior in `drive_helpers_starpilot.patch`.
-This preserves model intent without changing steering activation or locking a path.
+StarPilot implementations are retained under `archive/starpilot-20260920/`,
+including their documentation. They are not applied to restored Sunnypilot.
+Other archived experiments and original patch suffixes remain historical references.
+The [changelog](CHANGELOG.md) describes restoration and earlier work.
 
-`ui_options_starpilot.patch` exposes the four EV9 steering controls on C3/C3X,
-C4 and Galaxy, plus EV9 Path in Galaxy. The device path controls/renderers remain
-in `custom_model_ui_starpilot.patch`.
+`assets/openpilot/` retains custom artwork/audio. `legacy-openpilot-tooling/` and
+`tools/opendbc-patches/legacy/` preserve original helpers with provenance/checksums.
+Do not run those copies: their creators automatically sync/stage and generate
+inverse diffs. Supported root helpers produce forward exports without those side effects.
 
-`ev9_longitudinal_status.patch` adds a C3/C3X startup notice: steady **Please wait...**
-once the EV9 is identified while mode confirmation is pending, flashing **OP long
-ready** while waiting for brake + Start, then bright purple-gradient **OP long** for 30 seconds
-after vehicle READY. **Stock ACC** stays solid green. It includes display-only EV9
-READY telemetry and tests; it does not change takeover or emergency braking behavior.
+## Sync and replay
 
-`drive_helpers_starpilot.patch` also gives EV9 OP-long main ON a one-shot
-longitudinal engagement request alongside AOL, using normal SET initialization.
-Main OFF disengages; held buttons, pedal/CAN refusals and overlapping knob actions
-cannot create a delayed main engagement. It also normalizes the cruise knob:
-up/down/in engage when inactive; up resumes a saved speed when available, while
-down/in follow normal SET initialization. While engaged, up/down adjust speed
-and in cancels. Vehicle patch `04` includes the matching native permission checks,
-with regressions in `06`. Stock ACC and other vehicles keep their existing controls.
+`./sync-upstream.sh --check [ref]` previews the application and its exact dependency
+pins. `--allow` stages the imported snapshot. Add `--opendbc` for vehicle-only sync.
+Both default to Sunnypilot's `hkg-angle-steering-2025`; no historical standalone
+checkout participates. Sync removes custom source in its scope while preserving
+maintenance files and patch archives. It does not replay patches, merge, commit or push.
 
-Steering/AOL follow-ups are incorporated into the existing custom-defaults,
-alerts, warning and drive-helper patches and vehicle patches `03`–`06`. They cover
-valid calibration and rejected-request handling, AOL feedback and button state,
-brake-pause units and silent brake transitions while steering continues, sustained
-EV9 steering-limit warnings with a contact-qualified torque-input holdoff, hands-off assistance stability,
-and signal-driven EV9 turn desires through stops and inactive lateral control,
-and continuous inactive LKAS traffic with
-matching Panda forwarding. Actual manual handoff is reported through an appended
-actuator telemetry field; capacitive hands-on state includes its sample timestamp.
-Vehicle patch `05` also caps the EV9 direct OP-long autonomous angle target at
-±140° before filtering. Cap binding keeps assistance active, with existing
-manual-following and smooth-reentry exceptions; Panda limits and inactive
-measured-angle handling remain unchanged. See [EV9 behavior](../docs/EV9_BEHAVIOR.md)
-for scope and [maintenance](../docs/MAINTENANCE.md#verification-and-deployment)
-for verification. Recent-device investigation
-is documented in [the drive-review workflow](../docs/RECENT_DRIVE_REVIEW.md).
-
-`assets/openpilot/` preserves custom artwork and audio. Original helpers and
-analysis assets are in `legacy-openpilot-tooling/`, with source checksums in its
-`origin.json`. Original opendbc helpers are in `tools/opendbc-patches/legacy/`.
-These archived scripts are historical references, not supported commands.
+Save edits and update patch records before sync. Import, then run the application
+helper below, review and stage the result. New upstream snapshots can require ports;
+current-tree `--check` is not a simulated replay of a dependent patch series.
 
 ## Apply and check
 

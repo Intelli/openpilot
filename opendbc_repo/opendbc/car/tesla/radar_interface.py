@@ -1,36 +1,35 @@
 from opendbc.can import CANParser
 from opendbc.car import Bus, structs
 from opendbc.car.interfaces import RadarInterfaceBase
-from opendbc.car.tesla.preap.nap_conf import nap_conf
-from opendbc.car.tesla.values import CANBUS, DBC, CAR
+from opendbc.car.tesla.values import DBC
 
-_BOSCH_RADAR_STATUS_MSG = 769
-_BOSCH_RADAR_POINT_A_BASE = 784
-_BOSCH_RADAR_POINT_B_BASE = 785
-_BOSCH_RADAR_POINT_STRIDE = 3
-_BOSCH_RADAR_POINTS = 32
-_BOSCH_TRIGGER_MSG = _BOSCH_RADAR_POINT_B_BASE + ((_BOSCH_RADAR_POINTS - 1) * _BOSCH_RADAR_POINT_STRIDE)
+RADAR_START_ADDR = 0x410
+RADAR_MSG_COUNT = 80  # 40 points * 2 messages each
+
+
+def get_radar_can_parser(CP):
+  if Bus.radar not in DBC[CP.carFingerprint]:
+    return None
+
+  messages = [('RadarStatus', 16)]
+  for i in range(RADAR_MSG_COUNT // 2):
+    messages.extend([
+      (f'RadarPoint{i}_A', 16),
+      (f'RadarPoint{i}_B', 16),
+    ])
+
+  return CANParser(DBC[CP.carFingerprint][Bus.radar], messages, 1)
 
 
 class RadarInterface(RadarInterfaceBase):
-  def __init__(self, CP):
-    super().__init__(CP)
-
-    self.radar_off_can = CP.radarUnavailable or CP.carFingerprint != CAR.TESLA_MODEL_S_PREAP
-    self.updated_messages: set[int] = set()
+  def __init__(self, CP, CP_SP):
+    super().__init__(CP, CP_SP)
+    self.updated_messages = set()
+    self.trigger_msg = RADAR_START_ADDR + RADAR_MSG_COUNT - 1
     self.track_id = 0
-    self.radar_offset = float(nap_conf.radar_offset) if CP.carFingerprint == CAR.TESLA_MODEL_S_PREAP else 0.0
 
-    if self.radar_off_can:
-      self.rcp = None
-    else:
-      messages = [(_BOSCH_RADAR_STATUS_MSG, 8)]
-      for i in range(_BOSCH_RADAR_POINTS):
-        messages.append((_BOSCH_RADAR_POINT_A_BASE + (i * _BOSCH_RADAR_POINT_STRIDE), 8))
-        messages.append((_BOSCH_RADAR_POINT_B_BASE + (i * _BOSCH_RADAR_POINT_STRIDE), 8))
-      self.rcp = CANParser(DBC[CP.carFingerprint][Bus.radar], messages, CANBUS.radar)
-
-    self.trigger_msg = _BOSCH_TRIGGER_MSG
+    self.radar_off_can = CP.radarUnavailable
+    self.rcp = get_radar_can_parser(CP)
 
   def update(self, can_strings):
     if self.radar_off_can or self.rcp is None:
@@ -42,46 +41,49 @@ class RadarInterface(RadarInterfaceBase):
     if self.trigger_msg not in self.updated_messages:
       return None
 
+    rr = self._update(self.updated_messages)
+    self.updated_messages.clear()
+
+    return rr
+
+  def _update(self, updated_messages):
     ret = structs.RadarData()
+    if self.rcp is None:
+      return ret
+
     if not self.rcp.can_valid:
       ret.errors.canError = True
 
-    radar_status = self.rcp.vl[_BOSCH_RADAR_STATUS_MSG]
-    ret.errors.radarFault = bool(radar_status["RADC_HWFail"])
-    ret.errors.radarUnavailableTemporary = False
+    radar_status = self.rcp.vl['RadarStatus']
+    if radar_status['shortTermUnavailable']:
+      ret.errors.radarUnavailableTemporary = True
+    if radar_status['sensorBlocked'] or radar_status['vehDynamicsError']:
+      ret.errors.radarFault = True
 
-    current_points: set[int] = set()
-    for i in range(_BOSCH_RADAR_POINTS):
-      msg_a_id = _BOSCH_RADAR_POINT_A_BASE + (i * _BOSCH_RADAR_POINT_STRIDE)
-      msg_b_id = _BOSCH_RADAR_POINT_B_BASE + (i * _BOSCH_RADAR_POINT_STRIDE)
+    for i in range(RADAR_MSG_COUNT // 2):
+      msg_a = self.rcp.vl[f'RadarPoint{i}_A']
+      msg_b = self.rcp.vl[f'RadarPoint{i}_B']
 
-      msg_a = self.rcp.vl[msg_a_id]
-      msg_b = self.rcp.vl[msg_b_id]
-      if msg_a["Index"] != msg_b["Index2"]:
+      # Make sure msg A and B are together
+      if msg_a['Index'] != msg_b['Index2']:
         continue
 
-      if not msg_a["Tracked"] or msg_a["LongDist"] <= 0.0 or msg_a["LongDist"] > 250.0 or msg_a["ProbExist"] < 50.0:
-        self.pts.pop(i, None)
+      if not msg_a['Tracked']:
+        if i in self.pts:
+          del self.pts[i]
         continue
 
-      current_points.add(i)
       if i not in self.pts:
         self.pts[i] = structs.RadarData.RadarPoint()
         self.pts[i].trackId = self.track_id
         self.track_id += 1
 
-      point = self.pts[i]
-      point.dRel = msg_a["LongDist"]
-      point.yRel = msg_a["LatDist"] + self.radar_offset
-      point.vRel = msg_a["LongSpeed"]
-      point.aRel = msg_a["LongAccel"]
-      point.yvRel = msg_b["LatSpeed"]
-      point.measured = bool(msg_a["Meas"])
-
-    for point_id in list(self.pts.keys()):
-      if point_id not in current_points:
-        del self.pts[point_id]
+      self.pts[i].dRel = msg_a['LongDist']
+      self.pts[i].yRel = msg_a['LatDist']
+      self.pts[i].vRel = msg_a['LongSpeed']
+      self.pts[i].aRel = msg_a['LongAccel']
+      self.pts[i].yvRel = msg_b['LatSpeed']
+      self.pts[i].measured = bool(msg_a['Meas'])
 
     ret.points = list(self.pts.values())
-    self.updated_messages.clear()
     return ret

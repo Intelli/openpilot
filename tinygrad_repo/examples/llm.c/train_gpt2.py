@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os, math, time
 import numpy as np
-from tinygrad import Tensor, nn, fetch, Device, TinyJit, GlobalCounters, Context
+from tinygrad import Tensor, nn, fetch, Device, TinyJit, GlobalCounters
 from dataclasses import dataclass
 
 @dataclass
@@ -25,7 +25,7 @@ class CausalSelfAttention:
     self.n_embd = config.n_embd
     # not really a 'bias', more of a mask, but following the OpenAI/HF naming though
     self.bias = Tensor.ones(1, 1, config.block_size, config.block_size).tril()
-    self.bias.is_param_(False)
+    self.bias.requires_grad = False
 
   def __call__(self, x:Tensor):
     B, T, C = x.shape
@@ -99,7 +99,7 @@ class GPT:
 
   def __call__(self, idx:Tensor, targets=None):
     b, t = idx.shape
-    pos = Tensor.arange(0, t)
+    pos = Tensor.arange(0, t, device=idx.device)
 
     tok_emb = self.wte(idx) # token embeddings of shape (b, t, n_embd)
     pos_emb = self.wpe(pos) # position embeddings of shape (t, n_embd)
@@ -177,7 +177,7 @@ if __name__ == "__main__":
   if args.gpus > 1: x, y = x.shard(GPUS, axis=0), y.shard(GPUS, axis=0)
 
   @TinyJit
-  @Context(TRAINING=1)
+  @Tensor.train()
   def step(x:Tensor, y:Tensor) -> Tensor:
     _, loss = model(x, y)
     optimizer.zero_grad()
@@ -204,3 +204,4 @@ if __name__ == "__main__":
     top_k = 40
     y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
     print(decode(y[0].tolist()))
+

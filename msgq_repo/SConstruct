@@ -8,25 +8,13 @@ arch = subprocess.check_output(["uname", "-m"], encoding='utf8').rstrip()
 if platform.system() == "Darwin":
   arch = "Darwin"
 
-cc = 'clang'
-cxx = 'clang++'
-if arch == "Darwin":
-  # Keep mac builds on Apple toolchain; Homebrew llvm can break SDK header resolution.
-  cc = '/usr/bin/clang'
-  cxx = '/usr/bin/clang++'
-
 common = ''
 
 cpppath = [
   f"#/",
   '#msgq/',
   '/usr/lib/include',
-  '/opt/homebrew/include',
   sysconfig.get_paths()['include'],
-]
-
-libpath = [
-  '/opt/homebrew/lib',
 ]
 
 AddOption('--minimal',
@@ -58,15 +46,13 @@ elif GetOption('asan'):
 
 env = Environment(
   ENV=os.environ,
-  CC=cc,
-  CXX=cxx,
   CCFLAGS=[
     "-g",
     "-fPIC",
     "-O2",
     "-Wunused",
     "-Werror",
-    "-Wshadow",
+    "-Wshadow" if arch == "Darwin" else "-Wshadow=local",
     "-Wno-vla-cxx-extension",
     "-Wno-unknown-warning-option",
   ] + ccflags,
@@ -76,7 +62,6 @@ env = Environment(
   CFLAGS="-std=gnu11",
   CXXFLAGS="-std=c++1z",
   CPPPATH=cpppath,
-  LIBPATH=libpath,
   CYTHONCFILESUFFIX=".cpp",
   tools=["default", "cython"]
 )
@@ -85,7 +70,7 @@ Export('env', 'arch', 'common')
 
 envCython = env.Clone(LIBS=[])
 envCython["CPPPATH"] += [np.get_include()]
-envCython["CCFLAGS"] += ["-Wno-#warnings", "-Wno-shadow", "-Wno-deprecated-declarations"]
+envCython["CCFLAGS"] += ["-Wno-#warnings", "-Wno-cpp", "-Wno-shadow", "-Wno-deprecated-declarations"]
 envCython["CCFLAGS"].remove('-Werror')
 if arch == "Darwin":
   envCython["LINKFLAGS"] = ["-bundle", "-undefined", "dynamic_lookup"]

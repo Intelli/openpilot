@@ -1,6 +1,6 @@
 import unittest
 
-from opendbc.safety import ALTERNATIVE_EXPERIENCE
+from opendbc.sunnypilot.car.hyundai.values import HyundaiSafetyFlagsSP
 import opendbc.safety.tests.common as common
 from opendbc.safety.tests.libsafety import libsafety_py
 from opendbc.safety.tests.common import make_msg
@@ -23,8 +23,8 @@ class HyundaiButtonBase:
 
   def test_button_sends(self):
     """
-      Only RES/SET and CANCEL buttons are allowed
-      - RES/SET allowed while controls allowed
+      RES, SET and CANCEL buttons are allowed
+      - RES and SET allowed while controls allowed
       - CANCEL allowed while cruise is enabled
     """
     self.safety.set_controls_allowed(0)
@@ -72,30 +72,8 @@ class HyundaiButtonBase:
       self.assertEqual(controls_allowed, self.safety.get_controls_allowed())
       self._rx(self._button_msg(Buttons.NONE))
 
-  def _toggle_aol(self, toggle_on):
-    """
-      Simulates toggling the main cruise button. The safety model requires a
-      press and release to change the main cruise state. This function
-      resets the safety model to a known state before each call.
-    """
-    if not hasattr(self, "_aol_state"):
-      self._aol_state = False
-
-    # Already in the requested state
-    if toggle_on == self._aol_state:
-      return None
-
-    # Toggle: press + release sequence
-    self._rx(self._button_msg(Buttons.NONE, main_button=1))
-    self._rx(self._button_msg(Buttons.NONE, main_button=0))
-
-    self._aol_state = toggle_on
-    return None  # avoid duplicate message in harness
-
 
 class HyundaiLongitudinalBase(common.LongitudinalAccelSafetyTest):
-  MAX_ACCEL = 3.5
-  CANCEL_BUTTON_ENABLE = False
 
   DISABLED_ECU_UDS_MSG: tuple[int, int]
   DISABLED_ECU_ACTUATION_MSG: tuple[int, int]
@@ -128,8 +106,14 @@ class HyundaiLongitudinalBase(common.LongitudinalAccelSafetyTest):
   def _accel_msg(self, accel, aeb_req=False, aeb_decel=0):
     raise NotImplementedError
 
-  def _tx_acc_state_msg(self, main_on):
+  def _acc_state_msg(self, enable):
     raise NotImplementedError
+
+  def _tx_acc_state_msg(self, enable):
+    raise NotImplementedError
+
+  def test_pcm_main_cruise_state_availability(self):
+    pass
 
   def test_set_resume_buttons(self):
     """
@@ -145,9 +129,8 @@ class HyundaiLongitudinalBase(common.LongitudinalAccelSafetyTest):
 
         # should enter controls allowed on falling edge and not transitioning to cancel
         should_enable = btn_cur != btn_prev and \
-                        (btn_prev in (Buttons.RESUME, Buttons.SET) or (self.CANCEL_BUTTON_ENABLE and btn_prev == Buttons.CANCEL))
-        if (btn_cur == Buttons.CANCEL) and not self.CANCEL_BUTTON_ENABLE:
-          should_enable = False
+                        btn_cur != Buttons.CANCEL and \
+                        btn_prev in (Buttons.RESUME, Buttons.SET)
 
         self._rx(self._button_msg(btn_cur))
         self.assertEqual(should_enable, self.safety.get_controls_allowed())
@@ -155,34 +138,140 @@ class HyundaiLongitudinalBase(common.LongitudinalAccelSafetyTest):
   def test_cancel_button(self):
     self.safety.set_controls_allowed(1)
     self._rx(self._button_msg(Buttons.CANCEL))
-    self.assertEqual(self.CANCEL_BUTTON_ENABLE, self.safety.get_controls_allowed())
+    self.assertFalse(self.safety.get_controls_allowed())
+
+  def test_main_cruise_button(self):
+    """Test that main cruise button correctly toggles acc_main_on state"""
+    default_safety_mode = self.safety.get_current_safety_mode()
+    default_safety_param = self.safety.get_current_safety_param()
+    default_safety_param_sp = self.safety.get_current_safety_param_sp()
+
+    for enable_mads in (True, False):
+      with self.subTest("enable_mads", mads_enabled=enable_mads):
+        for main_cruise_toggleable in (True, False):
+          with self.subTest("main_cruise_toggleable", main_cruise_toggleable=main_cruise_toggleable):
+            main_cruise_toggleable_flag = HyundaiSafetyFlagsSP.LONG_MAIN_CRUISE_TOGGLEABLE if main_cruise_toggleable else 0
+            self.safety.set_current_safety_param_sp(default_safety_param_sp | main_cruise_toggleable_flag)
+            self.safety.set_safety_hooks(default_safety_mode, default_safety_param)
+
+            # Test initial state
+            self.safety.set_mads_params(enable_mads, False, False)
+
+            self.assertFalse(self.safety.get_acc_main_on())
+
+            self._rx(self._main_cruise_button_msg(0))
+            self._rx(self._main_cruise_button_msg(1))
+            self.assertEqual(enable_mads and main_cruise_toggleable, self.safety.get_controls_allowed_lateral())
+
+            self._rx(self._main_cruise_button_msg(0))
+            self.assertEqual(enable_mads and main_cruise_toggleable, self.safety.get_controls_allowed_lateral())
+
+            self._rx(self._main_cruise_button_msg(1))
+            self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+            for _ in range(10):
+              self._rx(self._main_cruise_button_msg(1))
+              self.assertFalse(self.safety.get_controls_allowed_lateral())
+    self.safety.set_current_safety_param_sp(default_safety_param_sp)
+
+  def test_acc_main_sync_mismatches_reset(self):
+    """Test that acc_main_on_mismatches resets properly on rising edge of main button"""
+    default_safety_mode = self.safety.get_current_safety_mode()
+    default_safety_param = self.safety.get_current_safety_param()
+    default_safety_param_sp = self.safety.get_current_safety_param_sp()
+
+    for enable_mads in (True, False):
+      with self.subTest("enable_mads", mads_enabled=enable_mads):
+        main_cruise_toggleable_flag = HyundaiSafetyFlagsSP.LONG_MAIN_CRUISE_TOGGLEABLE
+        self.safety.set_current_safety_param_sp(default_safety_param_sp | main_cruise_toggleable_flag)
+        self.safety.set_safety_hooks(default_safety_mode, default_safety_param)
+
+        self.safety.set_mads_params(enable_mads, False, False)
+
+        # Initial state
+        self._rx(self._main_cruise_button_msg(0))
+        self.assertFalse(self.safety.get_acc_main_on())
+
+        # Set up mismatch condition
+        self._rx(self._main_cruise_button_msg(1))  # Press button - acc_main_on = True
+        self._rx(self._main_cruise_button_msg(0))  # Release button
+        self._tx(self._tx_acc_state_msg(False))  # acc_main_on_tx = False
+        self.assertTrue(self.safety.get_acc_main_on())
+        self.assertEqual(1, self.safety.get_acc_main_on_mismatches())
+
+        # Rising edge of acc_main_on should reset
+        self._rx(self._main_cruise_button_msg(1))  # Press button again
+        self._rx(self._main_cruise_button_msg(0))  # Release button
+        self._tx(self._tx_acc_state_msg(False))  # acc_main_on_tx = False
+        self.assertFalse(self.safety.get_acc_main_on())
+        self.assertEqual(0, self.safety.get_acc_main_on_mismatches())
+    self.safety.set_current_safety_param_sp(default_safety_param_sp)
 
   def test_acc_main_sync_mismatch_counter(self):
-    try:
-      tx_acc_state_msg = self._tx_acc_state_msg(False)
-    except NotImplementedError as err:
-      raise unittest.SkipTest("ACC main TX state message not implemented") from err
+    """Test mismatch counter behavior and disengagement"""
+    default_safety_mode = self.safety.get_current_safety_mode()
+    default_safety_param = self.safety.get_current_safety_param()
+    default_safety_param_sp = self.safety.get_current_safety_param_sp()
 
-    self._rx(self._button_msg(Buttons.NONE, main_button=0))
-    self._rx(self._button_msg(Buttons.NONE, main_button=1))
-    self._rx(self._button_msg(Buttons.NONE, main_button=0))
-    self.assertTrue(self.safety.get_acc_main_on())
-    self.assertEqual(0, self.safety.get_acc_main_on_mismatches())
+    for enable_mads in (True, False):
+      with self.subTest("enable_mads", mads_enabled=enable_mads):
+        main_cruise_toggleable_flag = HyundaiSafetyFlagsSP.LONG_MAIN_CRUISE_TOGGLEABLE
+        self.safety.set_current_safety_param_sp(default_safety_param_sp | main_cruise_toggleable_flag)
+        self.safety.set_safety_hooks(default_safety_mode, default_safety_param)
 
-    self._tx(tx_acc_state_msg)
-    self.assertTrue(self.safety.get_acc_main_on())
-    self.assertEqual(1, self.safety.get_acc_main_on_mismatches())
+        self.safety.set_mads_params(enable_mads, False, False)
+        self.safety.set_controls_allowed_lateral(True)
 
-    self._tx(tx_acc_state_msg)
-    self.assertTrue(self.safety.get_acc_main_on())
-    self.assertEqual(2, self.safety.get_acc_main_on_mismatches())
+        # Start with matched states
+        self._rx(self._main_cruise_button_msg(0))
+        self._tx(self._tx_acc_state_msg(False))
+        self.assertEqual(0, self.safety.get_acc_main_on_mismatches())
 
-    self._tx(tx_acc_state_msg)
-    self.assertFalse(self.safety.get_acc_main_on())
-    self.assertEqual(3, self.safety.get_acc_main_on_mismatches())
+        # Create mismatch by enabling acc_main_on
+        self._rx(self._main_cruise_button_msg(1))  # Press button
+        self._rx(self._main_cruise_button_msg(0))  # Release button
+        self._tx(self._tx_acc_state_msg(False))  # acc_main_on_tx stays false
+        self.assertTrue(self.safety.get_acc_main_on())
+        self.assertEqual(1, self.safety.get_acc_main_on_mismatches())
 
-    self._tx(tx_acc_state_msg)
-    self.assertEqual(0, self.safety.get_acc_main_on_mismatches())
+        # Second mismatch
+        self._tx(self._tx_acc_state_msg(False))
+        self.assertTrue(self.safety.get_acc_main_on())
+        self.assertEqual(2, self.safety.get_acc_main_on_mismatches())
+
+        # Third mismatch should trigger disengagement
+        self._tx(self._tx_acc_state_msg(False))
+        self.assertFalse(self.safety.get_acc_main_on())
+        self.assertFalse(self.safety.get_controls_allowed_lateral())
+        # Counter should reset after disengagement
+        self._tx(self._tx_acc_state_msg(False))
+        self.assertEqual(0, self.safety.get_acc_main_on_mismatches())
+    self.safety.set_current_safety_param_sp(default_safety_param_sp)
+
+  def test_acc_main_sync_mismatch_recovery(self):
+    default_safety_mode = self.safety.get_current_safety_mode()
+    default_safety_param = self.safety.get_current_safety_param()
+    default_safety_param_sp = self.safety.get_current_safety_param_sp()
+
+    """Test that mismatch counter resets when states resync"""
+    for enable_mads in (True, False):
+      with self.subTest("enable_mads", mads_enabled=enable_mads):
+        main_cruise_toggleable_flag = HyundaiSafetyFlagsSP.LONG_MAIN_CRUISE_TOGGLEABLE
+        self.safety.set_current_safety_param_sp(default_safety_param_sp | main_cruise_toggleable_flag)
+        self.safety.set_safety_hooks(default_safety_mode, default_safety_param)
+
+        self.safety.set_mads_params(enable_mads, False, False)
+
+        # Create initial mismatch
+        self._rx(self._main_cruise_button_msg(1))  # Press button
+        self._rx(self._main_cruise_button_msg(0))  # Release button
+        self._tx(self._tx_acc_state_msg(False))  # acc_main_on_tx = False
+        self.assertEqual(1, self.safety.get_acc_main_on_mismatches())
+
+        # Sync states
+        self._tx(self._tx_acc_state_msg(True))  # Match acc_main_on_tx to acc_main_on
+        self.assertEqual(0, self.safety.get_acc_main_on_mismatches())
+    self.safety.set_current_safety_param_sp(default_safety_param_sp)
 
   def test_tester_present_allowed(self, ecu_disable: bool = True):
     """
@@ -205,66 +294,3 @@ class HyundaiLongitudinalBase(common.LongitudinalAccelSafetyTest):
     self.assertFalse(self.safety.get_relay_malfunction())
     self._rx(make_msg(bus, addr, 8))
     self.assertTrue(self.safety.get_relay_malfunction())
-
-
-class HyundaiAolLkasOnEngageBase:
-  def test_acc_main_sync_does_not_clear_aol_lkas_latch(self):
-    try:
-      tx_acc_state_msg = self._tx_acc_state_msg(False)
-    except NotImplementedError as err:
-      raise unittest.SkipTest("ACC main TX state message not implemented") from err
-
-    self.safety.set_alternative_experience(ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL)
-
-    self._rx(self._button_msg(Buttons.NONE, main_button=0))
-    self._rx(self._button_msg(Buttons.NONE, main_button=1))
-    self._rx(self._button_msg(Buttons.NONE, main_button=0))
-    self._rx(self._button_msg(Buttons.SET))
-    self._rx(self._button_msg(Buttons.NONE))
-
-    self.safety.set_controls_allowed(False)
-    for _ in range(3):
-      self._tx(tx_acc_state_msg)
-    self.assertFalse(self.safety.get_acc_main_on())
-
-    self._set_prev_torque(0)
-    self.assertTrue(self._tx(self._torque_cmd_msg(self.MAX_RATE_UP)))
-
-  def test_aol_lkas_auto_enables_on_set_engagement(self):
-    torque_cmd = self.MAX_RATE_UP
-
-    self.safety.set_alternative_experience(ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL)
-    self.safety.set_controls_allowed(False)
-
-    self._set_prev_torque(0)
-    self.assertFalse(self._tx(self._torque_cmd_msg(torque_cmd)))
-
-    self._rx(self._button_msg(Buttons.SET))
-    self._rx(self._button_msg(Buttons.NONE))
-    self.assertTrue(self.safety.get_controls_allowed())
-
-    self._rx(self._user_brake_msg(True))
-    self.assertFalse(self.safety.get_controls_allowed())
-    self._set_prev_torque(0)
-    self.assertTrue(self._tx(self._torque_cmd_msg(torque_cmd)))
-
-
-class HyundaiAolLkasOnEngageStockBase:
-  def test_aol_lkas_auto_enables_on_stock_engagement(self):
-    torque_cmd = self.MAX_RATE_UP
-
-    self.safety.set_alternative_experience(ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL)
-    self.safety.set_controls_allowed(False)
-
-    self._set_prev_torque(0)
-    self.assertFalse(self._tx(self._torque_cmd_msg(torque_cmd)))
-
-    self._rx(self._pcm_status_msg(False))
-    self._rx(self._button_msg(Buttons.SET))
-    self._rx(self._pcm_status_msg(True))
-    self.assertTrue(self.safety.get_controls_allowed())
-
-    self._rx(self._user_brake_msg(True))
-    self.assertFalse(self.safety.get_controls_allowed())
-    self._set_prev_torque(0)
-    self.assertTrue(self._tx(self._torque_cmd_msg(torque_cmd)))

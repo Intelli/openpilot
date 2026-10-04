@@ -79,9 +79,7 @@ class ToggleAction(ItemAction):
 
 
 class ButtonAction(ItemAction):
-  def __init__(self, text: str | Callable[[], str], width: int = BUTTON_WIDTH, enabled: bool | Callable[[], bool] = True,
-               long_press_callback: Callable[[], None] | None = None,
-               long_press_threshold: float = 0.8):
+  def __init__(self, text: str | Callable[[], str], width: int = BUTTON_WIDTH, enabled: bool | Callable[[], bool] = True):
     super().__init__(width, enabled)
     self._text_source = text
     self._value_source: str | Callable[[], str] | None = None
@@ -99,8 +97,6 @@ class ButtonAction(ItemAction):
       border_radius=BUTTON_BORDER_RADIUS,
       click_callback=pressed,
       text_padding=0,
-      long_press_callback=long_press_callback,
-      long_press_threshold=long_press_threshold,
     )
     self.set_enabled(enabled)
 
@@ -448,12 +444,8 @@ def toggle_item(title: str | Callable[[], str], description: str | Callable[[], 
 
 
 def button_item(title: str | Callable[[], str], button_text: str | Callable[[], str], description: str | Callable[[], str] | None = None,
-                callback: Callable | None = None, enabled: bool | Callable[[], bool] = True,
-                long_press_callback: Callable[[], None] | None = None,
-                long_press_threshold: float = 0.8) -> ListItem:
-  action = ButtonAction(text=button_text, enabled=enabled,
-                        long_press_callback=long_press_callback,
-                        long_press_threshold=long_press_threshold)
+                callback: Callable | None = None, enabled: bool | Callable[[], bool] = True) -> ListItem:
+  action = ButtonAction(text=button_text, enabled=enabled)
   return ListItem(title=title, description=description, action_item=action, callback=callback)
 
 

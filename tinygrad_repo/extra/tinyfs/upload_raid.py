@@ -3,13 +3,12 @@ import multiprocessing, json
 
 from tinygrad.tensor import Tensor
 from tinygrad.helpers import tqdm
-from tinygrad.nn.state import fs_store
 
 raid_root = Path("/raid")
 
 def upload_file(path: Path):
   pt = Tensor(path).realize()
-  h = fs_store(pt).realize()
+  h = pt.fs_store().realize()
   pt.uop.realized.deallocate()
   return h.data().hex(), path, pt.nbytes()
 
@@ -27,6 +26,6 @@ if __name__ == "__main__":
 
   mapping = json.dumps(mapping).encode()
   mapping_tensor = Tensor(mapping, device="CPU")
-  h = fs_store(mapping_tensor).realize()
+  h = mapping_tensor.fs_store().realize()
 
   print(f"final hash: {h.data().hex()}, size: {len(mapping)}")

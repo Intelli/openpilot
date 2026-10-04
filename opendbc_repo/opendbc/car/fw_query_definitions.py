@@ -1,4 +1,3 @@
-import copy
 from dataclasses import dataclass, field
 import struct
 from collections.abc import Callable
@@ -90,8 +89,6 @@ class Request:
   whitelist_ecus: list[Ecu] = field(default_factory=list)
   rx_offset: int = 0x8
   bus: int = 1
-  # Whether this query should be run on the first auxiliary panda (CAN FD cars for example)
-  auxiliary: bool = False
   # FW responses from these queries will not be used for fingerprinting
   logging: bool = False
   # pandad toggles OBD multiplexing on/off as needed
@@ -101,7 +98,6 @@ class Request:
 @dataclass
 class FwQueryConfig:
   requests: list[Request]
-  non_tester_present_ecus: list[Ecu] = field(default_factory=list)
   # TODO: make this automatic and remove hardcoded lists, or do fingerprinting with ecus
   # Overrides and removes from essential ecus for specific models and ecus (exact matching)
   non_essential_ecus: dict[Ecu, list[str]] = field(default_factory=dict)
@@ -110,13 +106,8 @@ class FwQueryConfig:
   # Function a brand can implement to provide better fuzzy matching. Takes in FW versions and VIN,
   # returns set of candidates. Only will match if one candidate is returned
   match_fw_to_car_fuzzy: Callable[[LiveFwVersions, str, OfflineFwVersions], set[str]] | None = None
-  # Platforms whose shared firmware must be disambiguated by the brand fuzzy matcher.
-  fuzzy_only_platforms: set[str] = field(default_factory=set)
 
   def __post_init__(self):
-    assert not self.fuzzy_only_platforms or self.match_fw_to_car_fuzzy is not None, \
-      "Fuzzy-only platforms require a brand fuzzy matcher"
-
     # Asserts that a request exists if extra ecus are used
     if len(self.extra_ecus):
       assert len(self.requests), "Must define a request with extra ecus"
@@ -135,17 +126,6 @@ class FwQueryConfig:
     for request_obj in self.requests:
       assert len(request_obj.request) == len(request_obj.response), ("Request and response lengths do not match: " +
                                                                      f"{request_obj.request} vs. {request_obj.response}")
-
-      # No request on the OBD port (bus 1, multiplexed) should be run on an aux panda
-      assert not (request_obj.auxiliary and request_obj.bus == 1 and request_obj.obd_multiplexing), ("OBD multiplexed request should not " +
-                                                                                                     f"be marked auxiliary: {request_obj}")
-
-    # Add aux requests (second panda) for all requests that are marked as auxiliary
-    for i in range(len(self.requests)):
-      if self.requests[i].auxiliary:
-        new_request = copy.deepcopy(self.requests[i])
-        new_request.bus += 4
-        self.requests.append(new_request)
 
   def get_all_ecus(self, offline_fw_versions: OfflineFwVersions,
                    include_extra_ecus: bool = True) -> set[EcuAddrSubAddr]:

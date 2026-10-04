@@ -7,15 +7,10 @@ from openpilot.common.basedir import BASEDIR
 
 class TextWindow:
   def __init__(self, text):
-    self.text_proc = None
-
-    text_cwd = os.path.join(BASEDIR, "system", "ui")
-    venv_python = os.path.join(BASEDIR, ".venv", "bin", "python")
-    python_exec = venv_python if os.path.isfile(venv_python) else "python3"
     try:
-      self.text_proc = subprocess.Popen([python_exec, "./text.py", text],
+      self.text_proc = subprocess.Popen(["./text.py", text],
                                         stdin=subprocess.PIPE,
-                                        cwd=text_cwd,
+                                        cwd=os.path.join(BASEDIR, "system", "ui"),
                                         close_fds=True)
     except OSError:
       self.text_proc = None

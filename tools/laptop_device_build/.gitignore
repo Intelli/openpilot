@@ -1,0 +1,4 @@
+# Pinned runtime data belongs to maintenance tooling, despite global ignores
+# for generated application pickle/chunk outputs.
+!model_assets/
+!model_assets/**

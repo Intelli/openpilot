@@ -1,5 +1,3 @@
-# Ford-specific additions first imported in StarPilot 3f6ccd104e substantially adapt BluePilot
-# bp-7.0 interface work. See the repository root CREDITS.md and THIRD_PARTY_NOTICES.md.
 import numpy as np
 from opendbc.car import Bus, get_safety_config, structs
 from opendbc.car.carlog import carlog
@@ -19,8 +17,10 @@ class CarInterface(CarInterfaceBase):
   CarController = CarController
   RadarInterface = RadarInterface
 
+  DRIVABLE_GEARS = (structs.CarState.GearShifter.low, structs.CarState.GearShifter.manumatic)
+
   @staticmethod
-  def get_pid_accel_limits(CP, current_speed, cruise_speed):
+  def get_pid_accel_limits(CP, CP_SP, current_speed, cruise_speed):
     # PCM doesn't allow acceleration near cruise_speed,
     # so limit limits of pid to prevent windup
     ACCEL_MAX_VALS = [CarControllerParams.ACCEL_MAX, 0.2]
@@ -33,13 +33,12 @@ class CarInterface(CarInterfaceBase):
 
     ret.radarUnavailable = Bus.radar not in DBC[candidate]
     ret.steerControlType = structs.CarParams.SteerControlType.angle
-    ret.steerActuatorDelay = 0.05 if ret.flags & FordFlags.LKA_STEERING else 0.22
+    ret.steerActuatorDelay = 0.2
     ret.steerLimitTimer = 1.0
     ret.steerAtStandstill = True
 
     ret.longitudinalTuning.kiBP = [0.]
     ret.longitudinalTuning.kiV = [0.5]
-    ret.longitudinalTuning.kpV = [0.]
 
     if not ret.radarUnavailable and DBC[candidate][Bus.radar] == RADAR.DELPHI_MRR:
       # average of 33.3 Hz radar timestep / 4 scan modes = 60 ms
@@ -47,19 +46,15 @@ class CarInterface(CarInterfaceBase):
       ret.radarDelay = 0.06
 
     CAN = CanBus(fingerprint=fingerprint)
-    if 0x365 in fingerprint[CAN.main]:
-      ret.flags |= int(FordFlags.HEV_CLUSTER_DATA)
-    if all(address in fingerprint[CAN.main] for address in (0x07A, 0x24B, 0x24C)):
-      ret.flags |= int(FordFlags.HEV_BATTERY_DATA)
     cfgs = [get_safety_config(structs.CarParams.SafetyModel.ford)]
     if CAN.main >= 4:
       cfgs.insert(0, get_safety_config(structs.CarParams.SafetyModel.noOutput))
     ret.safetyConfigs = cfgs
 
-    ret.alphaLongitudinalAvailable = True
-    ret.openpilotLongitudinalControl = bool(alpha_long)
-    if ret.openpilotLongitudinalControl:
+    ret.alphaLongitudinalAvailable = ret.radarUnavailable
+    if alpha_long or not ret.radarUnavailable:
       ret.safetyConfigs[-1].safetyParam |= FordSafetyFlags.LONG_CONTROL.value
+      ret.openpilotLongitudinalControl = True
 
     if ret.flags & FordFlags.CANFD:
       ret.safetyConfigs[-1].safetyParam |= FordSafetyFlags.CANFD.value
@@ -70,8 +65,6 @@ class CarInterface(CarInterfaceBase):
         if fingerprint[CAN.camera].get(0x3d6) != 8 or fingerprint[CAN.camera].get(0x186) != 8:
           carlog.error('dashcamOnly: SecOC is unsupported')
           ret.dashcamOnly = True
-    elif ret.flags & FordFlags.LKA_STEERING:
-      ret.safetyConfigs[-1].safetyParam |= FordSafetyFlags.LKA_STEERING.value
     else:
       # Lock out if the car does not have needed lateral and longitudinal control APIs.
       # Note that we also check CAN for adaptive cruise, but no known signal for LCA exists

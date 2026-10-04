@@ -5,18 +5,18 @@ import pyray as rl
 import random
 import string
 from dataclasses import dataclass
-from cereal import messaging, log, car, custom
+from cereal import messaging, log, car
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.selfdrive.ui.lib.ev9_alert_style import alert_background_alpha
 from openpilot.common.filter_simple import BounceFilter, FirstOrderFilter
 from openpilot.system.hardware import TICI
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 
+from openpilot.selfdrive.ui.sunnypilot.onroad.speed_limit import SpeedLimitAlertRenderer
+
 AlertSize = log.SelfdriveState.AlertSize
 AlertStatus = log.SelfdriveState.AlertStatus
-StarPilotAlertStatus = custom.StarPilotSelfdriveState.AlertStatus
 
 ALERT_MARGIN = 18
 
@@ -31,7 +31,6 @@ ALERT_COLORS = {
   AlertStatus.normal: rl.Color(0, 0, 0, 255),
   AlertStatus.userPrompt: rl.Color(255, 115, 0, 255),
   AlertStatus.critical: rl.Color(255, 0, 21, 255),
-  StarPilotAlertStatus.starpilot: rl.Color(23, 134, 68, 255),
 }
 
 TURN_SIGNAL_BLINK_PERIOD = 1 / (80 / 60)  # Mazda heartbeat turn signal BPM
@@ -49,6 +48,7 @@ class IconLayout(NamedTuple):
   side: IconSide
   margin_x: int
   margin_y: int
+  alpha: float = 255.0
 
 
 class AlertLayout(NamedTuple):
@@ -68,7 +68,7 @@ class Alert:
 
 # Pre-defined alert instances
 ALERT_STARTUP_PENDING = Alert(
-  text1="openpilot Unavailable",
+  text1="sunnypilot Unavailable",
   text2="Waiting to start",
   size=AlertSize.mid,
   status=AlertStatus.normal,
@@ -89,9 +89,10 @@ ALERT_CRITICAL_REBOOT = Alert(
 )
 
 
-class AlertRenderer(Widget):
+class AlertRenderer(Widget, SpeedLimitAlertRenderer):
   def __init__(self):
-    super().__init__()
+    Widget.__init__(self)
+    SpeedLimitAlertRenderer.__init__(self)
 
     self._alert_text1_label = UnifiedLabel(text="", font_size=ALERT_FONT_BIG, font_weight=FontWeight.DISPLAY, line_height=0.86,
                                            letter_spacing=-0.02)
@@ -141,17 +142,13 @@ class AlertRenderer(Widget):
             return ALERT_CRITICAL_TIMEOUT
           return ALERT_CRITICAL_REBOOT
 
-    if ss.alertSize != AlertSize.none:
-      ret = Alert(text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw,
-                  visual_alert=ss.alertHudVisual, alert_type=ss.alertType)
-    else:
-      starpilot_ss = sm["starpilotSelfdriveState"]
-      if starpilot_ss.alertSize == custom.StarPilotSelfdriveState.AlertSize.none:
-        return None
-      ret = Alert(text1=starpilot_ss.alertText1, text2=starpilot_ss.alertText2,
-                  size=starpilot_ss.alertSize.raw, status=starpilot_ss.alertStatus.raw,
-                  alert_type=starpilot_ss.alertType)
+    # No alert if size is none
+    if ss.alertSize == 0:
+      return None
 
+    # Return current alert
+    ret = Alert(text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw,
+                visual_alert=ss.alertHudVisual, alert_type=ss.alertType)
     self._prev_alert = ret
     return ret
 
@@ -162,6 +159,7 @@ class AlertRenderer(Widget):
   def _icon_helper(self, alert: Alert) -> AlertLayout:
     icon_side = None
     txt_icon = None
+    icon_alpha = 255.0
     icon_margin_x = 20
     icon_margin_y = 18
 
@@ -198,6 +196,9 @@ class AlertRenderer(Widget):
       icon_margin_x = 8
       icon_margin_y = 0
 
+    elif event_name == 'speedLimitPreActive':
+      icon_side, txt_icon, icon_alpha, icon_margin_x, icon_margin_y = SpeedLimitAlertRenderer.speed_limit_pre_active_icon_helper(self)
+
     else:
       self._turn_signal_timer = 0.0
 
@@ -219,7 +220,7 @@ class AlertRenderer(Widget):
       text_width,
       self._rect.height,
     )
-    icon_layout = IconLayout(txt_icon, icon_side, icon_margin_x, icon_margin_y) if txt_icon is not None and icon_side is not None else None
+    icon_layout = IconLayout(txt_icon, icon_side, icon_margin_x, icon_margin_y, icon_alpha) if txt_icon is not None and icon_side is not None else None
     return AlertLayout(text_rect, icon_layout)
 
   def _render(self, rect: rl.Rectangle) -> bool:
@@ -228,6 +229,9 @@ class AlertRenderer(Widget):
     # Animate fade and slide in/out
     self._alert_y_filter.update(self._rect.y - 50 if alert is None else self._rect.y)
     self._alpha_filter.update(0 if alert is None else 1)
+
+    if gui_app.sunnypilot_ui():
+      ui_state.onroad_brightness_handle_alerts(ui_state, alert)
 
     if alert is None:
       # If still animating out, keep the previous alert
@@ -238,6 +242,9 @@ class AlertRenderer(Widget):
         return False
 
     self._draw_background(alert)
+
+    # update speed limit UI states
+    SpeedLimitAlertRenderer.update(self)
 
     alert_layout = self._icon_helper(alert)
     self._draw_text(alert, alert_layout)
@@ -261,7 +268,7 @@ class AlertRenderer(Widget):
       pos_x = int(self._rect.x + self._rect.width - alert_layout.icon.margin_x - alert_layout.icon.texture.width)
 
     if alert_layout.icon.texture not in (self._txt_turn_signal_left, self._txt_turn_signal_right):
-      icon_alpha = 255
+      icon_alpha = alert_layout.icon.alpha
     else:
       icon_alpha = int(min(self._turn_signal_alpha_filter.x, 255))
 
@@ -271,7 +278,7 @@ class AlertRenderer(Widget):
   def _draw_background(self, alert: Alert) -> None:
     # draw top gradient for alert text at top
     color = ALERT_COLORS.get(alert.status, ALERT_COLORS[AlertStatus.normal])
-    color = rl.Color(color.r, color.g, color.b, int(alert_background_alpha(alert.status, ui_state.CP) * self._alpha_filter.x))
+    color = rl.Color(color.r, color.g, color.b, int(255 * 0.90 * self._alpha_filter.x))
     translucent_color = rl.Color(color.r, color.g, color.b, int(0 * self._alpha_filter.x))
 
     small_alert_height = round(self._rect.height * 0.583) # 140px at mici height

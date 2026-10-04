@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ev9-starpilot-deploy
+  group: ev9-sunnypilot-deploy
   cancel-in-progress: false
 
 jobs:
@@ -22,13 +22,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+      - name: Verify pinned device model inputs
+        run: python3 tools/laptop_device_build/verify_model_assets.py --require-qcom
       - name: Build upstream device container
         run: scripts/laptop_device_build.sh build-image
       - name: Extract device sysroot from upstream AGNOS image
         run: scripts/laptop_device_build.sh setup-sysroot-agnos
-      - name: Build StarPilot for AGNOS
-        # Upstream clears the SCons signature database and disables its cache,
-        # rebuilding native targets while preserving device-specific model assets.
+      - name: Compile Sunnypilot for AGNOS 17.2
+        # Rebuild all native application/firmware targets from this source.
+        # Only allowlisted, hash-verified QCOM model captures are preserved.
         run: |
           rm -f prebuilt
           ./build "$(nproc)"
@@ -40,8 +42,17 @@ jobs:
             --exclude='__pycache__' --exclude='.sconsign*' \
             --exclude='*.o' --exclude='*.os' --exclude='*.a' \
             --exclude='moc_*' --exclude='.build' \
+            --exclude='/tools/laptop_device_build/model_assets' \
             --exclude='.lfsconfig' --exclude='.gitattributes' --exclude='.gitmodules' \
             ./ "$RUNNER_TEMP/prebuilt-output/"
+          python3 tools/laptop_device_build/verify_build.py "$RUNNER_TEMP/prebuilt-output"
+          python3 - "$RUNNER_TEMP/prebuilt-output" <<'PY'
+          import sys
+          from pathlib import Path
+          too_large = [str(p) for p in Path(sys.argv[1]).rglob('*') if p.is_file() and p.stat().st_size > 95 * 1024 * 1024]
+          if too_large:
+            raise SystemExit('Files exceed deployment size limit: ' + ', '.join(too_large))
+          PY
           tar czf "$RUNNER_TEMP/prebuilt.tar.gz" -C "$RUNNER_TEMP/prebuilt-output" .
       - uses: actions/upload-artifact@v4
         with:

@@ -15,7 +15,9 @@ MAINTENANCE = (
   'AGENTS.md', 'sync-upstream.sh', 'update.sh', 'apply_patch.sh', 'apply_patch_conflicts.sh', 'fix_patch.sh',
   'create_patch.sh', 'create_patch_manual.sh', 'update_patch.sh', 'patches', 'tools/patches', 'tools/opendbc-patches',
   'tools/ci/sync_ev9_branch.sh', 'tools/ci/tests', '.github/workflows', 'release/ci/publish.sh',
-  'docs/MAINTENANCE.md', 'docs/EV9_BEHAVIOR.md', 'docs/RECENT_DRIVE_REVIEW.md', 'docs/C3X_UPDATE_WORKFLOW.md', 'starpilot-upstream.json',
+  'docs/MAINTENANCE.md', 'docs/EV9_BEHAVIOR.md', 'docs/RECENT_DRIVE_REVIEW.md', 'docs/C3X_UPDATE_WORKFLOW.md',
+  'sunnypilot-upstream.json', 'opendbc-upstream.json', 'tools/upstream', '.githooks', '.gitattributes',
+  'build', 'scripts/laptop_device_build.sh', 'tools/laptop_device_build', 'docs/how-to/laptop-device-build.md',
 )
 SUFFIXES = ('.patch', '.patch.temp-disabled', '.patch.disabled', '.patch.OUTDATED.disabled')
 

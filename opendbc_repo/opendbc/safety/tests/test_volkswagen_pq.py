@@ -62,7 +62,7 @@ class TestVolkswagenPqSafetyBase(common.CarSafetyTest, common.DriverTorqueSteeri
     return self.packer.make_can_msg_safety("Lenkhilfe_3", 0, values)
 
   # openpilot steering output torque
-  def _torque_cmd_msg(self, torque, steer_req=1, hca_status=5):
+  def _torque_cmd_msg(self, torque, steer_req=1, hca_status=7):
     values = {"LM_Offset": abs(torque), "LM_OffSign": torque < 0, "HCA_Status": hca_status if steer_req else 3}
     return self.packer.make_can_msg_safety("HCA_1", 0, values)
 
@@ -107,10 +107,6 @@ class TestVolkswagenPqSafetyBase(common.CarSafetyTest, common.DriverTorqueSteeri
     self._rx(self._torque_driver_msg(0))
     self.assertEqual(0, self.safety.get_torque_driver_max())
     self.assertEqual(0, self.safety.get_torque_driver_min())
-
-  def _toggle_aol(self, toggle_on):
-    # Motor_5, GRA_Hauptschalter is the main cruise switch
-    return self._motor_5_msg(main_switch=toggle_on)
 
 
 class TestVolkswagenPqStockSafety(TestVolkswagenPqSafetyBase):

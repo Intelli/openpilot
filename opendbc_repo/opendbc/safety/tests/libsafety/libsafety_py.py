@@ -1,10 +1,40 @@
 import os
+import subprocess
+import tempfile
+from pathlib import Path
+
 from cffi import FFI
 
 from opendbc.safety import LEN_TO_DLC
 
 libsafety_dir = os.path.dirname(os.path.abspath(__file__))
-libsafety_fn = os.path.join(libsafety_dir, "libsafety_mutation.so" if "MUTATION" in os.environ else "libsafety.so")
+
+
+def _build_libsafety() -> str:
+  """Compile libsafety.so to a temp file and return its path."""
+  root = str(Path(libsafety_dir).parents[3])
+  safety_c = os.path.join(libsafety_dir, "safety.c")
+
+  cflags = [
+    '-Wall', '-Wextra', '-Werror', '-nostdlib', '-fno-builtin',
+    '-std=gnu11', '-Wfatal-errors', '-Wno-pointer-to-int-cast',
+    '-g', '-O0', '-fno-omit-frame-pointer', '-DALLOW_DEBUG',
+    '-fprofile-arcs', '-ftest-coverage',
+  ]
+  ldflags = [
+    '-fsanitize=undefined', '-fno-sanitize-recover=undefined',
+    '-fprofile-arcs', '-ftest-coverage',
+  ]
+
+  fd, safety_os = tempfile.mkstemp(suffix='.os', dir=libsafety_dir)
+  os.close(fd)
+  fd, libsafety_so = tempfile.mkstemp(suffix='.so')
+  os.close(fd)
+
+  subprocess.check_call(['cc', '-fPIC', *cflags, '-I', root, '-c', safety_c, '-o', safety_os])
+  subprocess.check_call(['cc', '-shared', safety_os, '-o', libsafety_so, *ldflags])
+  return libsafety_so
+
 
 ffi = FFI()
 
@@ -43,9 +73,6 @@ bool get_brake_pressed_prev(void);
 bool get_regen_braking_prev(void);
 bool get_steering_disengage_prev(void);
 bool get_acc_main_on(void);
-bool get_aol_allowed(void);
-bool get_lkas_on(void);
-uint32_t get_acc_main_on_mismatches(void);
 float get_vehicle_speed_min(void);
 float get_vehicle_speed_max(void);
 int get_current_safety_mode(void);
@@ -64,11 +91,6 @@ int get_desired_angle_last();
 void set_angle_meas(int min, int max);
 int get_angle_meas_min(void);
 int get_angle_meas_max(void);
-void set_desired_curvature_last(int t);
-int get_desired_curvature_last(void);
-void set_curvature_meas(int min, int max);
-int get_curvature_meas_min(void);
-int get_curvature_meas_max(void);
 
 bool get_cruise_engaged_prev(void);
 void set_cruise_engaged_prev(bool engaged);
@@ -85,11 +107,49 @@ bool get_honda_fwd_brake(void);
 void set_honda_alt_brake_msg(bool c);
 void set_honda_bosch_long(bool c);
 int get_honda_hw(void);
+
+void mutation_set_active_mutant(int id);
+int mutation_get_active_mutant(void);
+
+bool get_controls_allowed_lateral(void);
+bool get_controls_requested_lateral(void);
+void set_current_safety_param_sp(uint16_t param);
+uint16_t get_current_safety_param_sp(void);
+bool get_enable_mads(void);
+bool get_disengage_lateral_on_brake(void);
+bool get_pause_lateral_on_brake(void);
+void set_mads_button_press(int mads_button_press);
+void set_controls_allowed_lateral(bool c);
+void set_controls_requested_lateral(bool c);
+bool get_mads_acc_main(void);
+void set_acc_main_on(bool c);
+int get_mads_button_press(void);
+void mads_set_current_disengage_reason(int reason);
+int mads_get_current_disengage_reason(void);
+int get_temp_debug(void);
+uint32_t get_acc_main_on_mismatches(void);
+void set_mads_params(bool enable_mads, bool disengage_lateral_on_brake, bool pause_lateral_on_brake);
+void mads_apply_alternative_experience(int mode);
+void tick_mads_state(bool vm, bool acc_main, bool op_allowed, bool braking, bool steering_disengage);
+void set_heartbeat_engaged_mads(bool c);
+void mads_heartbeat_engaged_check(void);
+void set_steering_disengage(bool c);
+int get_gas_interceptor_prev(void);
 """)
 
 class LibSafety:
   pass
-libsafety: LibSafety = ffi.dlopen(libsafety_fn)
+libsafety: LibSafety
+
+def load(path):
+  global libsafety
+  libsafety = ffi.dlopen(str(path))
+
+def __getattr__(name):
+  if name == "libsafety":
+    load(_build_libsafety())
+    return libsafety
+  raise AttributeError(name)
 
 def make_CANPacket(addr: int, bus: int, dat):
   ret = ffi.new('CANPacket_t *')
