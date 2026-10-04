@@ -1,5 +1,18 @@
 # Sunnypilot restoration
 
+## Verified StarPilot preservation
+
+All 13 application and six vehicle StarPilot patches were compared byte-for-byte
+with source commit `09c6cf07911a`. Their ordered replay from recorded baseline
+`c3e4ec630f41` reproduced all 99 patched source paths exactly, including the latest
+EV9 main-cruise OP-long changes. No application or vehicle source changes were
+missing from the archive.
+
+`archive/starpilot-20260920/manifest.json` catalogs payload hashes, paths,
+historical originals and provenance. Exact former repository guidelines,
+maintenance and patch-workflow documents are retained in its `context/` folder.
+Preservation does not enable StarPilot behavior in the active Sunnypilot source.
+
 ## Separate feature patches
 
 The application restoration is now recorded in twelve numbered feature patches,

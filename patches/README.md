@@ -59,6 +59,9 @@ not a guessed merge-base of deployment history.
 
 StarPilot implementations are retained under `archive/starpilot-20260920/`,
 including their documentation. They are not applied to restored Sunnypilot.
+Its [catalog](archive/starpilot-20260920/manifest.json) records all 13 application
+and six vehicle patches, hashes and original context. Their complete replay was
+verified against the recorded StarPilot baseline and matches the preserved source.
 Other archived experiments and original patch suffixes remain historical references.
 The [changelog](CHANGELOG.md) describes restoration and earlier work.
 
