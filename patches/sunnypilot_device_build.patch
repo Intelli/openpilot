@@ -464,3 +464,26 @@ index 3e71f367828c7ba73017c27aa72158cecc2f6662..a9206911d0d3c094f0e62f1d0a9d7e99
  locationd = lenv.Program("locationd", locationd_sources, LIBS=["live", "ekf_sym"] + loc_libs + transformations)
  lenv.Depends(locationd, rednose)
  lenv.Depends(locationd, live_ekf)
+diff --git a/system/loggerd/SConscript b/system/loggerd/SConscript
+index 45e8b25d208e045bca52f306c4a8c1cdb6c18104..83938a22e556164ca954ad311c7e48d1e3e2ecbd 100644
+--- a/system/loggerd/SConscript
++++ b/system/loggerd/SConscript
+@@ -14,6 +14,18 @@ if arch != "larch64":
+   else:
+     libs += ['va', 'va-drm', 'drm']
+ 
++if arch == "larch64":
++  import ffmpeg
++  # The pinned ARM FFmpeg archives include VAAPI references even though the
++  # device uses V4L encoding. Link their bundled static dependencies explicitly
++  # so the sysroot's shared libva cannot supply a mismatched vaMapBuffer2 ABI.
++  for name in ('va', 'va-drm', 'drm'):
++    archive = File(f'{ffmpeg.LIB_DIR}/lib{name}.a')
++    if not archive.exists():
++      raise RuntimeError(f'Missing pinned FFmpeg static dependency: {archive}')
++    libs.append(archive)
++  libs += ['dl']
++
+ if arch == "Darwin":
+   # exclude v4l
+   del src[src.index('encoder/v4l_encoder.cc')]
