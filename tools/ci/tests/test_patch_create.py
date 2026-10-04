@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 def repo(tmp_path):
   for name in ("create_patch.sh", "create_patch_manual.sh", "update_patch.sh"):
     shutil.copy2(ROOT / name, tmp_path / name)
-  shutil.copytree(ROOT / "tools/patches", tmp_path / "tools/patches")
+  shutil.copytree(ROOT / "tools/patches", tmp_path / "tools/patches", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
   env = dict(os.environ, GIT_CONFIG_GLOBAL=str(tmp_path / "gitconfig"), GIT_CONFIG_NOSYSTEM="1", GIT_ALLOW_PROTOCOL="file")
 
   def command(*args, check=True):

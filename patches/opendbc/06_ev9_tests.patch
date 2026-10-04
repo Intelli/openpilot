@@ -1,16 +1,29 @@
 diff --git a/opendbc/car/hyundai/tests/test_hyundai.py b/opendbc/car/hyundai/tests/test_hyundai.py
-index 2431f1c8440b078621c60c0da927bb85991c70a1..dc6ba9ea7d13ba2fe35eb4151aa53593afce7362 100644
+index 6c08809aa8bf888251d3b4e43e9d856aea4d8006..d7ef8bee881a05e91c234e2e68b07ffb2f03bc9d 100644
 --- a/opendbc/car/hyundai/tests/test_hyundai.py
 +++ b/opendbc/car/hyundai/tests/test_hyundai.py
-@@ -4,6 +4,7 @@ import unittest
+@@ -1,12 +1,18 @@
+ import unittest
++from contextlib import ExitStack
++from dataclasses import replace
++from types import SimpleNamespace
++from unittest.mock import patch
  
  from opendbc.car import gen_empty_fingerprint
- from opendbc.car.structs import CarParams
+-from opendbc.car.structs import CarParams
++from opendbc.car.structs import CarParams, CarParamsSP, CarState, CarControl, CarControlSP
++from opendbc.car.hyundai import carcontroller
 +from opendbc.car.hyundai.carstate import HOD_HANDS_ON_STATUSES, HOD_VALID_STATUSES
  from opendbc.car.fw_versions import build_fw_dict
  from opendbc.car.hyundai.interface import CarInterface
  from opendbc.car.hyundai.hyundaicanfd import CanBus
-@@ -46,6 +47,11 @@ CANFD_EXPECTED_ECUS = {Ecu.fwdCamera, Ecu.fwdRadar}
+ from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR
+-from opendbc.car.hyundai.values import CAR, DATE_FW_ECUS, \
++from opendbc.car.hyundai.values import CAR, DBC, DATE_FW_ECUS, \
+                                          FW_QUERY_CONFIG, CANFD_FUZZY_WHITELIST, \
+                                          PLATFORM_CODE_ECUS, HYUNDAI_VERSION_REQUEST_LONG, \
+                                          HyundaiFlags, get_platform_codes, HyundaiSafetyFlags, \
+@@ -54,6 +60,11 @@ def cars_with(flags):
  
  
  class TestHyundaiFingerprint(unittest.TestCase):
@@ -22,188 +35,168 @@ index 2431f1c8440b078621c60c0da927bb85991c70a1..dc6ba9ea7d13ba2fe35eb4151aa53593
    def test_feature_detection(self):
      # LKA steering
      for lka_steering in (True, False):
+@@ -267,3 +278,47 @@ class TestHyundaiFingerprint(unittest.TestCase):
+         platforms_with_shared_codes.add(platform)
+ 
+     assert platforms_with_shared_codes == excluded_platforms
++
++
++class TestEV9ControllerLimits(unittest.TestCase):
++  def _controller(self, car_name, speed_kph=40):
++    cp = CarInterface.get_non_essential_params(car_name)
++    cp_sp = CarParamsSP(hkgTuningAngleCustomLimitMaxSpeedKph=speed_kph)
++    return carcontroller.CarController(DBC[car_name], cp, cp_sp)
++
++  def test_ev9_baseline_does_not_change_other_models(self):
++    ev9 = self._controller(CAR.KIA_EV9)
++    other = self._controller(CAR.HYUNDAI_IONIQ_9)
++    self.assertEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.0)
++    self.assertEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.0)
++    self.assertGreater(other.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5)
++    self.assertGreater(other.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5)
++    self.assertIsNot(ev9.params.ANGLE_LIMITS, other.params.ANGLE_LIMITS)
++
++  def test_controller_acceleration_and_jerk_speed_boundary(self):
++    controller = self._controller(CAR.KIA_EV9)
++    cc = CarControl.new_message(latActive=True)
++    cc.actuators.steeringAngleDeg = 200
++    cs = SimpleNamespace(out=CarState.new_message(), is_metric=True)
++    captured = []
++    original = carcontroller.apply_steer_angle_limits_vm
++
++    def capture(*args):
++      captured.append(replace(args[-2].ANGLE_LIMITS))
++      return original(*args)
++
++    with ExitStack() as stack:
++      # Bypass unrelated longitudinal/CAN builders while running the actual steering update.
++      for cls in (carcontroller.EsccCarController, carcontroller.LeadDataCarController,
++                  carcontroller.MadsCarController, carcontroller.LongitudinalController):
++        stack.enter_context(patch.object(cls, "update"))
++      stack.enter_context(patch.object(carcontroller.IntelligentCruiseButtonManagementInterface, "update", return_value=[]))
++      stack.enter_context(patch.object(controller, "create_canfd_msgs", return_value=[]))
++      stack.enter_context(patch.object(carcontroller, "apply_steer_angle_limits_vm", side_effect=capture))
++      for speed, expected in ((40 / 3.6, 4.2), (40 / 3.6 + 0.01, 3.0), (30, 3.0)):
++        cs.out.vEgo = cs.out.vEgoRaw = speed
++        controller.update(cc.as_reader(), CarControlSP(), cs, 0)
++        self.assertEqual(captured[-1].MAX_LATERAL_ACCEL, expected)
++        self.assertEqual(captured[-1].MAX_LATERAL_JERK, expected)
++        self.assertEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.0)
++        self.assertEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.0)
 diff --git a/opendbc/safety/tests/test_hyundai_canfd.py b/opendbc/safety/tests/test_hyundai_canfd.py
-index eec0b7a5db63d5b952d159d9d443059947876807..ef321b89e3154fcbb411310040d5795a28c844e7 100755
+index 3050a6e7ed46d678065164835e4010aa0098a952..e119c4cc0f316b27fe5ba168234662c1c9650878 100755
 --- a/opendbc/safety/tests/test_hyundai_canfd.py
 +++ b/opendbc/safety/tests/test_hyundai_canfd.py
-@@ -5,7 +5,7 @@ import numpy as np
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env python3
+ from opendbc.testing import parameterized_class, parameterized
+ import unittest
++from dataclasses import replace
+ import numpy as np
  
- from opendbc.car import ACCELERATION_DUE_TO_GRAVITY
  from opendbc.car.hyundai.carcontroller import ANGLE_SAFETY_BASELINE_MODEL
--from opendbc.car.hyundai.values import HyundaiSafetyFlags, CAR, HyundaiFlags, CarControllerParams
-+from opendbc.car.hyundai.values import HyundaiSafetyFlags, CAR, CarControllerParams
- from opendbc.car.structs import CarParams
- from opendbc.car.vehicle_model import VehicleModel, calc_slip_factor
- from opendbc.safety.tests.libsafety import libsafety_py
-@@ -138,8 +138,7 @@ class TestHyundaiCanfdTorqueSteering(TestHyundaiCanfdBase, common.DriverTorqueSt
+@@ -162,9 +163,12 @@ class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSa
  
+   cnt_angle_cmd = 0
  
- class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSafetyTest):
--  PLATFORMS = {str(platform): platform for platform in CAR if
--               platform.config.flags & HyundaiFlags.CANFD_ANGLE_STEERING and not CarInterface.get_non_essential_params(str(platform)).dashcamOnly}
-+  PLATFORMS = {"KIA_EV9": CAR.KIA_EV9}
- 
-   # Angle control limits
-   BASELINE_PANDA_ANGLE_LIMITS: AngleSteeringLimits = AngleSteeringLimits(
-@@ -215,6 +214,7 @@ class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSa
- 
-   def test_lateral_accel_limit(self):
-     car_name = ANGLE_SAFETY_BASELINE_MODEL
-+    max_angle_ticks = int(self.STEER_ANGLE_MAX * self.DEG_TO_CAN)
-     for speed in np.linspace(0, 40, 100):
-       speed = round_speed(away_round(speed / 0.03125 * 3.6) * 0.03125 / 3.6)
-       speed = max(speed, 1)
-@@ -222,25 +222,30 @@ class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSa
-         self.safety.set_controls_allowed(True)
-         self._reset_speed_measurement(speed + 1)  # safety fudges the speed
- 
--        # at limit (safety tolerance adds 1)
--        angl = get_max_angle_vm(speed, self.get_vm(car_name), self.get_baseline_limits())
--        max_angle = round_angle(get_max_angle_vm(speed, self.get_vm(car_name), self.get_baseline_limits()), 1) * sign
--        max_angle = np.clip(max_angle, -self.STEER_ANGLE_MAX, self.STEER_ANGLE_MAX)
--        self.safety.set_desired_angle_last(round(max_angle * self.DEG_TO_CAN))
--
--        self.assertTrue(self._tx(self._angle_cmd_msg(max_angle, True)), f"{angl} -- {max_angle}")
--
--        # above limit (offset 6 to reliably exceed C float tolerance)
--        max_angle_raw = round_angle(get_max_angle_vm(speed, self.get_vm(car_name), self.get_baseline_limits()), 6) * sign
--        max_angle = np.clip(max_angle_raw, -self.STEER_ANGLE_MAX, self.STEER_ANGLE_MAX)
--        self._tx(self._angle_cmd_msg(max_angle, True))
--
--        # at low speeds max angle is above 360, so adding 1 has no effect
--        should_tx = abs(max_angle_raw) >= self.STEER_ANGLE_MAX
--        self.assertEqual(should_tx, self._tx(self._angle_cmd_msg(max_angle, True)), f"should_tx: {should_tx}, max_angle: {max_angle}, speed: {speed}")
-+        limits = self.get_baseline_limits()
-+        vm = self.get_vm(car_name)
-+        max_angle_deg = get_max_angle_vm(speed, vm, limits)
-+        limit_ticks = min(int(max_angle_deg * self.DEG_TO_CAN + 1), max_angle_ticks)
-+        allowed_ticks = max(0, min(limit_ticks - 1, max_angle_ticks))
-+        allowed_angle = (allowed_ticks / self.DEG_TO_CAN) * sign
-+        self.safety.set_desired_angle_last(allowed_ticks * sign)
-+        self.assertTrue(self._tx(self._angle_cmd_msg(allowed_angle, True)), f"{max_angle_deg} -- {allowed_angle}")
-+
-+        violation_found = False
-+        if limit_ticks < max_angle_ticks:
-+          for exceed_ticks in range(limit_ticks + 1, max_angle_ticks + 1):
-+            self.safety.set_desired_angle_last(allowed_ticks * sign)
-+            excessive_angle = (exceed_ticks / self.DEG_TO_CAN) * sign
-+            if not self._tx(self._angle_cmd_msg(excessive_angle, True)):
-+              violation_found = True
-+              break
-+          if not violation_found:
-+            self.assertGreaterEqual(max_angle_deg, self.STEER_ANGLE_MAX - 2.0,
-+                                    f"max_angle: {max_angle_deg}, speed: {speed}")
- 
-   def test_lateral_jerk_limit(self):
-     car_name = ANGLE_SAFETY_BASELINE_MODEL
-+    max_angle_ticks = int(self.STEER_ANGLE_MAX * self.DEG_TO_CAN)
-     for speed in np.linspace(0, 40, 100):
-       speed = round_speed(away_round(speed / 0.03125 * 3.6) * 0.03125 / 3.6)
-       speed = max(speed, 1)
-@@ -248,34 +253,36 @@ class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSa
-         self.safety.set_controls_allowed(True)
-         self._reset_speed_measurement(speed + 1)  # safety fudges the speed
-         self._tx(self._angle_cmd_msg(0, True))
-+        self.safety.set_desired_angle_last(0)
- 
--        # Stay within limits
--        # Up
--        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_baseline_limits())) * sign
--        self.assertTrue(self._tx(self._angle_cmd_msg(max_angle_delta, True)))
-+        limits = self.get_baseline_limits()
-+        vm = self.get_vm(car_name)
-+        max_angle_delta_deg = get_max_angle_delta_vm(speed, vm, limits)
-+        limit_delta_ticks = max(0, int(max_angle_delta_deg * self.DEG_TO_CAN + 1))
-+        allowed_delta_ticks = max(0, limit_delta_ticks - 1)
-+        allowed_delta_angle = (allowed_delta_ticks / self.DEG_TO_CAN) * sign
-+        self.assertTrue(self._tx(self._angle_cmd_msg(allowed_delta_angle, True)))
- 
--        # Don't change
--        self.safety.set_desired_angle_last(round(max_angle_delta * self.DEG_TO_CAN))
--        self.assertTrue(self._tx(self._angle_cmd_msg(max_angle_delta, True)))
-+        self.safety.set_desired_angle_last(allowed_delta_ticks * sign)
-+        self.assertTrue(self._tx(self._angle_cmd_msg(allowed_delta_angle, True)))
- 
--        # Down
-         self.assertTrue(self._tx(self._angle_cmd_msg(0, True)))
- 
--        # Inject too high rates
--        # Up
--        # TODO-SP: Why do I need to set a can_offset so high to pass the tests and why tesla only does +1? and why does it seem to differ based on the baseline?
--        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_baseline_limits()), 6) * sign
--        self.assertFalse(self._tx(self._angle_cmd_msg(max_angle_delta, True)), vars(self.get_baseline_limits()))
--
--        # Don't change
--        self.safety.set_desired_angle_last(round(max_angle_delta * self.DEG_TO_CAN))
--        self.assertTrue(self._tx(self._angle_cmd_msg(max_angle_delta, True)))
--
--        # Down
--        self.assertFalse(self._tx(self._angle_cmd_msg(0, True)))
--
--        # Recover
--        self.assertTrue(self._tx(self._angle_cmd_msg(0, True)))
-+        violation_found = False
-+        for exceed_delta_ticks in range(limit_delta_ticks + 1, max_angle_ticks + 1):
-+          self.safety.set_desired_angle_last(allowed_delta_ticks * sign)
-+          excessive_delta_angle = (exceed_delta_ticks / self.DEG_TO_CAN) * sign
-+          if not self._tx(self._angle_cmd_msg(excessive_delta_angle, True)):
-+            violation_found = True
-+            self.safety.set_desired_angle_last(exceed_delta_ticks * sign)
-+            self.assertTrue(self._tx(self._angle_cmd_msg(excessive_delta_angle, True)))
-+            self.assertFalse(self._tx(self._angle_cmd_msg(0, True)))
-+            self.assertTrue(self._tx(self._angle_cmd_msg(0, True)))
-+            break
-+        if not violation_found:
-+          max_angle_deg_current = get_max_angle_vm(speed, vm, limits)
-+          self.assertTrue(limit_delta_ticks >= max_angle_ticks or allowed_delta_ticks == 0 or
-+                          max_angle_deg_current >= self.STEER_ANGLE_MAX - 2.0, vars(limits))
- 
-   def test_rt_limits(self):
-     # TODO: remove and check all safety modes
-@@ -562,6 +569,46 @@ class TestHyundaiCanfdLKASteeringAltAngle(TestHyundaiCanfdAngleSteering):
-     pass
- 
- 
-+class TestHyundaiCanfdLKASteeringAltEVAngleEV9(TestHyundaiCanfdLKASteeringAltEVBase, TestHyundaiCanfdAngleSteering):
-+
-+  SPEED_GATE_MPS = (50 / 3.6) + 0.1
-+
-+  def _limits_for_speed(self, speed: float) -> CarControllerParams:
-+    limits = TestHyundaiCanfdAngleSteering.get_baseline_limits(self)
-+    limits.ANGLE_LIMITS.MAX_LATERAL_ACCEL = self.MAX_LATERAL_ACCEL
-+    limits.ANGLE_LIMITS.MAX_LATERAL_JERK = self.MAX_LATERAL_JERK
-+    if speed <= self.SPEED_GATE_MPS:
+-  def get_angle_limits(self, car_name):
++  def get_angle_limits(self, car_name, speed=None):
+     limits = CarControllerParams(CarInterface.get_non_essential_params(car_name))
+-    limits.ANGLE_LIMITS = self.BASELINE_PANDA_ANGLE_LIMITS
++    limits.ANGLE_LIMITS = replace(self.BASELINE_PANDA_ANGLE_LIMITS)
++    if car_name == CAR.KIA_EV9 and speed is not None and speed <= (42 / 3.6) + 0.1:
 +      limits.ANGLE_LIMITS.MAX_LATERAL_ACCEL = 4.2
 +      limits.ANGLE_LIMITS.MAX_LATERAL_JERK = 4.2
-+    return limits
+     return limits
+ 
+   def get_baseline_limits(self):
+@@ -250,7 +254,7 @@ class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSa
+ 
+         # Stay within limits
+         # Up
+-        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_angle_limits(car_name))) * sign
++        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_angle_limits(car_name, speed))) * sign
+         sent = self._tx(self._angle_cmd_msg(max_angle_delta, True))
+         self.assertTrue(sent)
+ 
+@@ -264,8 +268,8 @@ class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSa
+         # Inject too high rates
+         # Up
+         # TODO-SP: Why do I need to set a can_offset so high to pass the tests and why tesla only does +1? and why does it seem to differ based on the baseline?
+-        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_angle_limits(car_name)), 6) * sign
+-        self.assertFalse(self._tx(self._angle_cmd_msg(max_angle_delta, True)), vars(self.get_angle_limits(car_name)))
++        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_angle_limits(car_name, speed)), 6) * sign
++        self.assertFalse(self._tx(self._angle_cmd_msg(max_angle_delta, True)), vars(self.get_angle_limits(car_name, speed)))
+ 
+         # Don't change
+         self.safety.set_desired_angle_last(round(max_angle_delta * self.DEG_TO_CAN))
+@@ -700,3 +704,69 @@ class TestHyundaiCanfdLFASteeringLongAltButtons(TestHyundaiCanfdLFASteeringLongB
+ 
+ if __name__ == "__main__":
+   unittest.main()
++
++
++class TestHyundaiCanfdEV9AngleLimits(unittest.TestCase):
++  """Exercise the actual Panda envelope without inherited torque-only tests."""
++  SPEED_GATE_MPS = (42 / 3.6) + 0.1
 +
 +  def setUp(self):
 +    self.packer = CANPackerSafety("hyundai_canfd_generated")
 +    self.safety = libsafety_py.libsafety
++    self.timer = 0
++
++  def _select_model(self, car_name):
++    model_id = ANGLE_STEERING_MODEL_BY_CAR.get(car_name, 0)
++    self.safety.set_current_safety_param_sp(encode_angle_model_id(model_id))
 +    self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd,
-+                                 HyundaiSafetyFlags.CANFD_LKA_STEER_MSG | HyundaiSafetyFlags.EV_GAS |
-+                                 HyundaiSafetyFlags.CANFD_LKA_STEER_MSG_ALT | HyundaiSafetyFlags.CANFD_ANGLE_STEERING)
++                               HyundaiSafetyFlags.CANFD_LKA_STEER_MSG | HyundaiSafetyFlags.EV_GAS |
++                               HyundaiSafetyFlags.CANFD_LKA_STEER_MSG_ALT | HyundaiSafetyFlags.CANFD_ANGLE_STEERING)
 +    self.safety.init_tests()
++    self.assertEqual(self.safety.get_hyundai_angle_model_id(), model_id)
++    self.safety.set_controls_allowed(True)
 +
-+  def test_lateral_accel_limit(self):
-+    speeds = [0, self.SPEED_GATE_MPS - 0.5, self.SPEED_GATE_MPS + 0.5]
-+    for speed in speeds:
-+      limits = self._limits_for_speed(speed)
-+      if speed <= self.SPEED_GATE_MPS:
-+        self.assertAlmostEqual(limits.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 4.2, places=3)
-+      else:
-+        self.assertAlmostEqual(limits.ANGLE_LIMITS.MAX_LATERAL_ACCEL, self.MAX_LATERAL_ACCEL, places=3)
++  def _speed(self, speed):
++    values = {f"WHL_Spd{pos}Val": (speed + 1) * 3.6 for pos in ("FL", "FR", "RL", "RR")}
++    for _ in range(common.MAX_SAMPLE_VALS):
++      self.safety.safety_rx_hook(self.packer.make_can_msg_safety("WHEEL_SPEEDS", 1, values))
++    return max(self.safety.get_vehicle_speed_min() - 1, 1)
 +
-+  def test_lateral_jerk_limit(self):
-+    speeds = [0, self.SPEED_GATE_MPS - 0.5, self.SPEED_GATE_MPS + 0.5]
-+    for speed in speeds:
-+      limits = self._limits_for_speed(speed)
-+      if speed <= self.SPEED_GATE_MPS:
-+        self.assertAlmostEqual(limits.ANGLE_LIMITS.MAX_LATERAL_JERK, 4.2, places=3)
-+      else:
-+        self.assertAlmostEqual(limits.ANGLE_LIMITS.MAX_LATERAL_JERK, self.MAX_LATERAL_JERK, places=3)
++  def _cmd(self, ticks, previous):
++    self.safety.set_desired_angle_last(previous)
++    self.timer += 10_000
++    self.safety.set_timer(self.timer)
++    msg = self.packer.make_can_msg_safety("LKAS_ALT", 0, {"ADAS_StrAnglReqVal": ticks / 10,
++                                                         "LKAS_ANGLE_ACTIVE": 2, "ADAS_ACIAnglTqRedcGainVal": 0})
++    return self.safety.safety_tx_hook(msg)
 +
++  def _check_envelope(self, car_name, nominal_speed, jerk=False):
++    self._select_model(car_name)
++    speed = self._speed(nominal_speed)
++    cp = CarInterface.get_non_essential_params(car_name)
++    vm = VehicleModel(cp)
++    params = CarControllerParams(cp)
++    params.ANGLE_LIMITS = replace(params.ANGLE_LIMITS)
++    if car_name == CAR.KIA_EV9 and speed <= self.SPEED_GATE_MPS:
++      params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = 4.2
++      params.ANGLE_LIMITS.MAX_LATERAL_JERK = 4.2
++    angle = get_max_angle_delta_vm(speed, vm, params) if jerk else get_max_angle_vm(speed, vm, params)
++    ticks = int(angle * 10)
++    for sign in (-1, 1):
++      self.safety.set_controls_allowed(True)
++      self.assertTrue(self._cmd(sign * ticks, 0 if jerk else sign * ticks), (car_name, speed, jerk, ticks))
++      self.assertFalse(self._cmd(sign * (ticks + 3), 0 if jerk else sign * ticks), (car_name, speed, jerk, ticks))
 +
- class TestHyundaiCanfdLKASteeringLongEV(HyundaiLongitudinalBase, TestHyundaiCanfdLKASteeringEV):
- 
-   TX_MSGS = [[0x50, 0], [0x1CF, 1], [0x2A4, 0], [0x51, 0], [0x730, 1], [0x12a, 1], [0x160, 1],
++  def test_ev9_acceleration_boundary(self):
++    for speed in (self.SPEED_GATE_MPS - 0.2, self.SPEED_GATE_MPS + 0.2, 30):
++      with self.subTest(speed=speed):
++        self._check_envelope(CAR.KIA_EV9, speed)
++
++  def test_ev9_jerk_boundary(self):
++    for speed in (self.SPEED_GATE_MPS - 0.2, self.SPEED_GATE_MPS + 0.2, 30):
++      with self.subTest(speed=speed):
++        self._check_envelope(CAR.KIA_EV9, speed, jerk=True)
++
++  def test_ioniq9_retains_standard_limits(self):
++    # Similar dimensions must not select the EV9-only limits.
++    for jerk in (False, True):
++      self._check_envelope(CAR.HYUNDAI_IONIQ_9, self.SPEED_GATE_MPS - 0.2, jerk=jerk)

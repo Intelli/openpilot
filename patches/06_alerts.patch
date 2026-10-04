@@ -1,8 +1,8 @@
-diff --git a/selfdrive/selfdrived/events.py b/selfdrive/selfdrived/events.py
-index c9b281436cc57e851836c0f4b21cbbc048dade7e..21481f9a5c915a06ec81bc54c3312b62a546830c 100755
---- a/selfdrive/selfdrived/events.py
-+++ b/selfdrive/selfdrived/events.py
-@@ -73,6 +73,9 @@ def startup_master_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
+diff --git a/openpilot/selfdrive/selfdrived/events.py b/openpilot/selfdrive/selfdrived/events.py
+index 8a8271b123d449e775d33a8799c3cbe6d4736ffe..ae4276df80a382d01485238f459b8c898e1a17e8 100755
+--- a/openpilot/selfdrive/selfdrived/events.py
++++ b/openpilot/selfdrive/selfdrived/events.py
+@@ -72,6 +72,9 @@ def startup_master_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
    if "REPLAY" in os.environ:
      branch = "replay"
  
@@ -12,7 +12,7 @@ index c9b281436cc57e851836c0f4b21cbbc048dade7e..21481f9a5c915a06ec81bc54c3312b62
    return StartupAlert("WARNING: This branch is not tested", branch, alert_status=AlertStatus.userPrompt)
  
  def below_engage_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
-@@ -348,9 +351,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+@@ -351,9 +354,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
  
    EventName.driverDistracted2: {
      ET.PERMANENT: Alert(
@@ -24,7 +24,7 @@ index c9b281436cc57e851836c0f4b21cbbc048dade7e..21481f9a5c915a06ec81bc54c3312b62
        Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, .1),
    },
  
-@@ -440,9 +443,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+@@ -443,9 +446,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
  
    EventName.steerSaturated: {
      ET.WARNING: Alert(
@@ -36,10 +36,10 @@ index c9b281436cc57e851836c0f4b21cbbc048dade7e..21481f9a5c915a06ec81bc54c3312b62
        Priority.LOW, VisualAlert.steerRequired, AudibleAlert.promptRepeat, 2.),
    },
  
-diff --git a/selfdrive/ui/onroad/alert_renderer.py b/selfdrive/ui/onroad/alert_renderer.py
-index 6e79d23253b602d3867229e06e40c045dd8e0b50..b78acc018fdb953e07a9f7bb38868ef3520eb419 100644
---- a/selfdrive/ui/onroad/alert_renderer.py
-+++ b/selfdrive/ui/onroad/alert_renderer.py
+diff --git a/openpilot/selfdrive/ui/onroad/alert_renderer.py b/openpilot/selfdrive/ui/onroad/alert_renderer.py
+index 65925f82b4abe2645b099562f415cc691edb4f2c..6f84094f9f36ff25c0e435060410d81ee2f2ba8c 100644
+--- a/openpilot/selfdrive/ui/onroad/alert_renderer.py
++++ b/openpilot/selfdrive/ui/onroad/alert_renderer.py
 @@ -32,7 +32,7 @@ SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
  
  # Constants

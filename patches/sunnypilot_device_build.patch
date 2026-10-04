@@ -1,489 +1,452 @@
 diff --git a/SConstruct b/SConstruct
-index 16c0752acf42f829cc536d56532f895d0c79874c..24bc82b9bd7eca20c72542bbc472f756721bd426 100644
+index 4e9dedd947db5e55b7798c5bd95c566a3449f92f..894336db0119fe7f5acf8e30e2a3aa0a4a143090 100644
 --- a/SConstruct
 +++ b/SConstruct
-@@ -25,10 +25,13 @@ AddOption('--minimal',
-           help='the minimum build to run openpilot. no tests, tools, etc.')
+@@ -10,7 +10,7 @@ import numpy as np
+ import SCons.Errors
+ from SCons.Defaults import _stripixes
+ 
+-COMMA_HARDWARE = os.path.isfile('/AGNOS')
++COMMA_HARDWARE = os.path.isfile('/AGNOS') or os.environ.get('SP_FORCE_COMMA') == '1'
+ 
+ SCons.Warnings.warningAsException(True)
+ 
+@@ -43,7 +43,8 @@ if external_pythonpath := os.environ.get("PYTHONPATH"):
+   submodule_python_paths += [p for p in external_pythonpath.split(os.pathsep) if p and p not in submodule_python_paths]
  
  # Detect platform
 -arch = subprocess.check_output(["uname", "-m"], encoding='utf8').rstrip()
--if platform.system() == "Darwin":
 +real_arch = subprocess.check_output(["uname", "-m"], encoding='utf8').rstrip()
 +arch = real_arch
-+if os.environ.get('SP_FORCE_ARCH'):
-+  arch = os.environ['SP_FORCE_ARCH']
-+elif platform.system() == "Darwin":
+ if platform.system() == "Darwin":
    arch = "Darwin"
--elif arch == "aarch64" and os.path.isfile('/TICI'):
-+elif arch == "aarch64" and (os.path.isfile('/TICI') or os.environ.get('SP_FORCE_TICI') == '1'):
-   arch = "larch64"
- assert arch in [
-   "larch64",  # linux tici arm64
-@@ -40,6 +43,20 @@ assert arch in [
- pkg_names = ['bzip2', 'capnproto', 'eigen', 'ffmpeg', 'libjpeg', 'libyuv', 'ncurses', 'zeromq', 'zstd']
- pkgs = [importlib.import_module(name) for name in pkg_names]
+ elif arch == "aarch64" and COMMA_HARDWARE:
+@@ -57,6 +58,19 @@ assert arch in [
  
-+# Use the tools distributed with the pinned dependency packages, including
-+# capnpc and the panda ARM firmware compiler, rather than host versions.
+ pkg_names = ['acados', 'capnproto', 'eigen', 'ffmpeg', 'json11', 'ncurses', 'zeromq', 'zstd']
+ pkgs = [importlib.import_module(name) for name in pkg_names]
++# Use the compiler tools supplied with the frozen dependency packages.
 +firmware_compiler = importlib.import_module('gcc_arm_none_eabi')
 +dependency_bins = [x.BIN_DIR for x in pkgs if hasattr(x, 'BIN_DIR')]
 +dependency_bins.append(os.path.join(firmware_compiler.TOOLCHAIN_DIR, 'bin'))
 +os.environ['PATH'] = os.pathsep.join([*dependency_bins, os.environ['PATH']])
 +
 +sysroot = os.environ.get('SP_TICI_SYSROOT', '').rstrip('/')
-+if arch == 'larch64' and sysroot and real_arch not in ('aarch64', 'arm64'):
++if arch == 'comma_arm64' and sysroot and real_arch not in ('aarch64', 'arm64'):
 +  raise SCons.Errors.UserError('Device builds require an ARM64 container and Python runtime')
 +
 +def tici_path(path):
 +  return os.path.join(sysroot, path.lstrip('/')) if sysroot else path
 +
- 
- # ***** enforce a whitelist of system libraries *****
- # this prevents silently relying on a 3rd party package,
-@@ -82,7 +99,7 @@ def _libflags(target, source, env, for_signature):
- env = Environment(
-   ENV={
-     "PATH": os.environ['PATH'],
--    "PYTHONPATH": Dir("#").abspath + ':' + Dir(f"#third_party/acados").abspath,
-+    "PYTHONPATH": ':'.join([Dir("#").abspath, Dir("#third_party/acados").abspath, Dir("#opendbc_repo").abspath]),
-     "ACADOS_SOURCE_DIR": Dir("#third_party/acados").abspath,
-     "ACADOS_PYTHON_INTERFACE_PATH": Dir("#third_party/acados/acados_template").abspath,
-     "TERA_PATH": Dir("#").abspath + f"/third_party/acados/{arch}/t_renderer"
-@@ -130,6 +147,9 @@ env = Environment(
+ acados = pkgs[pkg_names.index('acados')]
+ ffmpeg = pkgs[pkg_names.index('ffmpeg')]
+ # Shared package ships .so/.dylib; older device venvs still have static .a only.
+@@ -160,13 +174,16 @@ env = Environment(
+     "#rednose_repo/rednose/helpers",
+     [x.LIB_DIR for x in pkgs],
+   ],
+-  RPATH=[ffmpeg.LIB_DIR] if ffmpeg_shared else [],
++  RPATH=[ffmpeg.LIB_DIR] if ffmpeg_shared and not (arch == "comma_arm64" and sysroot) else [],
+   CYTHONCFILESUFFIX=".cpp",
+   COMPILATIONDB_USE_ABSPATH=True,
+   REDNOSE_ROOT="#rednose_repo",
    tools=["default", "cython", "compilation_db", "rednose_filter"],
-   toolpath=["#site_scons/site_tools", "#rednose_repo/site_scons/site_tools"],
+   toolpath=["#msgq_repo/site_scons/site_tools", "#rednose_repo/site_scons/site_tools"],
  )
-+for key in ('TMPDIR', 'PARAMS_ROOT', 'SP_USE_PINNED_MODELS'):
++for key in ('TMPDIR', 'PARAMS_ROOT', 'SP_USE_PINNED_MODELS', 'SP_FORCE_COMMA'):
 +  if key in os.environ:
 +    env['ENV'][key] = os.environ[key]
- if arch != "larch64":
-   env['_LIBFLAGS'] = _libflags
- 
-@@ -137,9 +157,19 @@ if arch != "larch64":
- if arch == "larch64":
+ # SCons' Darwin linker tool doesn't define the variables used to expand RPATH.
+ if arch == "Darwin":
+   env["RPATHPREFIX"] = "-Wl,-rpath,"
+@@ -179,9 +196,15 @@ if arch != "comma_arm64":
+ if arch == "comma_arm64":
    env["CC"] = "clang"
    env["CXX"] = "clang++"
+-  env.Append(LIBPATH=[
+-    "/usr/lib/aarch64-linux-gnu",
+-  ])
 +  if sysroot:
 +    env.Append(CCFLAGS=[f'--sysroot={sysroot}'])
 +    env.Append(LINKFLAGS=[f'--sysroot={sysroot}'])
 +  env.Append(CPPPATH=[tici_path('/usr/include/aarch64-linux-gnu'), tici_path('/usr/include')])
-   env.Append(LIBPATH=[
--    "/usr/lib/aarch64-linux-gnu",
-+    tici_path('/usr/local/lib'),
-+    tici_path('/usr/lib/aarch64-linux-gnu'),
-+    tici_path('/lib/aarch64-linux-gnu'),
-+    tici_path('/system/vendor/lib64'),
-   ])
++  env.Append(LIBPATH=[tici_path(p) for p in
++                      ('/usr/local/lib', '/usr/lib/aarch64-linux-gnu', '/lib/aarch64-linux-gnu', '/system/vendor/lib64')])
 +  env.Append(LINKFLAGS=[f'-Wl,-rpath-link,{tici_path(p)}' for p in
 +                       ('/usr/local/lib', '/usr/lib/aarch64-linux-gnu', '/lib/aarch64-linux-gnu', '/system/vendor/lib64')])
 +  env.Append(RPATH=['/usr/local/lib'])
-   arch_flags = ["-D__TICI__", "-mcpu=cortex-a57", "-DQCOM2"]
+   arch_flags = ["-D__COMMA_HARDWARE__", "-mcpu=cortex-a57"]
    env.Append(CCFLAGS=arch_flags)
    env.Append(CXXFLAGS=arch_flags)
-@@ -194,7 +224,8 @@ envCython["LIBS"] = []
+@@ -226,7 +249,8 @@ envCython["LIBS"] = []
  if arch == "Darwin":
    envCython["LINKFLAGS"] = env["LINKFLAGS"] + ["-bundle", "-undefined", "dynamic_lookup"]
  else:
 -  envCython["LINKFLAGS"] = ["-pthread", "-shared"]
-+  # Python extension symbols are resolved by the interpreter at load time.
-+  envCython["LINKFLAGS"] = [f for f in env['LINKFLAGS'] if f != '-Wl,--no-undefined'] + ["-pthread", "-shared"]
++  # The interpreter resolves Python extension symbols at load time.
++  envCython["LINKFLAGS"] = [f for f in env["LINKFLAGS"] if f != "-Wl,--no-undefined"] + ["-pthread", "-shared"]
  
  np_version = SCons.Script.Value(np.__version__)
  Export('envCython', 'np_version')
-diff --git a/selfdrive/modeld/SConscript b/selfdrive/modeld/SConscript
-index 544fcafc770e1377b6449cd0fbfcfbe56c850085..3c47b28d02c5672bce3b68ebf51a28ad7c30bce3 100644
---- a/selfdrive/modeld/SConscript
-+++ b/selfdrive/modeld/SConscript
-@@ -1,88 +1,95 @@
+diff --git a/msgq_repo/SConscript b/msgq_repo/SConscript
+index cde36529e1de79b4f248bf278b67426aeda74da2..8953fe3db168726b03e8570477d6f4da469d74bc 100644
+--- a/msgq_repo/SConscript
++++ b/msgq_repo/SConscript
+@@ -16,7 +16,7 @@ msgq_python = envCython.Program('msgq/ipc_pyx.so', 'msgq/ipc_pyx.pyx', LIBS=envC
+ 
+ # Build Vision IPC
+ vipc_files = ['visionipc.cc', 'visionipc_server.cc', 'visionipc_client.cc']
+-if File('/dev/ion').exists():
++if File('/dev/ion').exists() or env['ENV'].get('SP_FORCE_COMMA') == '1':
+   vipc_files += ['visionbuf_ion.cc']
+ else:
+   vipc_files += ['visionbuf.cc']
+diff --git a/openpilot/selfdrive/modeld/SConscript b/openpilot/selfdrive/modeld/SConscript
+index d19afd21dd0e6193b8ea67ab8a5f3c0caddfaea6..35bd319cc658ef41647102f2ef57fb669da09982 100644
+--- a/openpilot/selfdrive/modeld/SConscript
++++ b/openpilot/selfdrive/modeld/SConscript
+@@ -1,142 +1,150 @@
 -import glob
 -import json
  import os
--from SCons.Script import Value
--from openpilot.common.file_chunker import chunk_file, get_chunk_paths
--from tinygrad import Device
- 
+-import time
+-from SCons.Script import Action, Value
+-from openpilot.common.file_chunker import chunk_file, get_chunk_targets, get_existing_chunks
+-from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
+-from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE, DM_INPUT_SIZE
+-from openpilot.selfdrive.modeld.constants import ModelConstants
+-from openpilot.selfdrive.modeld.helpers import TG_INPUT_DEVICES_PATH, chestnut_present, modeld_pkl_path
+-
+-
 -Import('env', 'arch')
--chunker_file = File("#common/file_chunker.py")
+-chunker_file = File("#openpilot/common/file_chunker.py")
 -lenv = env.Clone()
-+if os.environ.get('SP_USE_PINNED_MODELS') == '1':
-+  Import('env', 'arch')
-+  from pathlib import Path
-+  from openpilot.tools.laptop_device_build.verify_model_assets import verify_assets
-+  verify_assets(Path(Dir('#').abspath), require_qcom=(arch == 'larch64'), installed=True)
-+else:
-+  import glob
-+  import json
-+  import os
-+  from SCons.Script import Value
-+  from openpilot.common.file_chunker import chunk_file, get_chunk_paths
-+  from tinygrad import Device
- 
+-
 -tinygrad_root = env.Dir("#").abspath
 -tinygrad_files = ["#"+x for x in glob.glob(env.Dir("#tinygrad_repo").relpath + "/**", recursive=True, root_dir=tinygrad_root)
 -                  if 'pycache' not in x and os.path.isfile(os.path.join(tinygrad_root, x))]
-+  Import('env', 'arch')
-+  chunker_file = File("#common/file_chunker.py")
-+  lenv = env.Clone()
- 
+-
 -def estimate_pickle_max_size(onnx_size):
--  return 1.2 * onnx_size  + 10 * 1024 * 1024  # 20% + 10MB is plenty
+-  # QCOM programs for models with spatial recurrent features can approach 2x
+-  # the ONNX size. Overestimating only adds an empty trailing chunk.
+-  return 2.0 * onnx_size + 10 * 1024 * 1024
+-
+-if arch == 'comma_arm64':
+-  from openpilot.common.hardware import HARDWARE
+-  camera = _os_fisheye if HARDWARE.get_device_type() == "mici" else _ar_ox_fisheye
+-  camera_configs = [(camera.width, camera.height)]
+-  tg_backend = 'QCOM'
+-  tg_flags = f'DEV={tg_backend} IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1'
++
++if os.environ.get('SP_USE_PINNED_MODELS') == '1':
++  Import('env', 'arch')
++  from pathlib import Path
++  from tools.laptop_device_build.verify_model_assets import verify_assets
++  verify_assets(Path(Dir('#').abspath), require_qcom=(arch == 'comma_arm64'), installed=True)
+ else:
+-  camera_configs = [(c.width, c.height) for c in (_ar_ox_fisheye, _os_fisheye)]
+-  tg_backend = 'CPU'
+-  tg_flags = f'DEV=CPU' if arch == 'Darwin' else 'DEV=CPU:LLVM'
+-
+-tg_devices = { # which device to put jit inputs to at runtime
+-  'openpilot.selfdrive.modeld.dmonitoringmodeld': {
+-    'default': {'DEV': tg_backend}
+-  },
+-}
+-
+-CHESTNUT = chestnut_present()
+-if CHESTNUT:
+-  chestnut_tg_flags = 'DEBUG=1 DEV=USB+AMD:LLVM FRAME_DEV=CPU FLOAT16=1 JIT_BATCH_SIZE=0 GMMU=0 TC_OPT=2 TC_OCCUPANCY_OPT=1'
+-  # the USB+AMD GPU takes an exclusive flock; serialize all targets that touch it
+-  chestnut_lock = File("models/.chestnut.lock").abspath
+-
+-def write_tg_devices(target, source, env):
+-  with open(str(target[0]), "w") as f:
+-    json.dump(tg_devices, f)
+-    f.write("\n")
+-
+-tg_devices_node = lenv.Command(
+-  str(TG_INPUT_DEVICES_PATH),
+-  [Value(tg_devices)],
+-  write_tg_devices,
+-)
+-
+-# tinygrad calls brew which needs a $HOME in the env
+-mac_brew_string = f'HOME={os.path.expanduser("~")}' if arch == 'Darwin' else ''
+-
+-modeld_dir = Dir("#openpilot/selfdrive/modeld").abspath
+-compile_modeld_script = [
+-  File(f"{modeld_dir}/compile_modeld.py"),
+-  File(f"{modeld_dir}/get_model_metadata.py"),
+-  File("#openpilot/system/camerad/cameras/nv12_info.py"),
+-  File("#openpilot/common/hardware/hw.py"),
+-]
+-model_w, model_h = MEDMODEL_INPUT_SIZE
+-frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
+-
+-if not os.getenv('SKIP_TINYGRAD_COMPILE'):
+-  for chestnut in [False, True] if CHESTNUT else [False]:
+-    target_pkl_path = File(modeld_pkl_path(chestnut)).abspath
+-    file_prefix, cmd_flags = ('big_', chestnut_tg_flags) if chestnut else ('', tg_flags)
+-    driving_onnx_deps = get_existing_chunks(File(f"models/{file_prefix}driving_supercombo.onnx").abspath)
+-    camera_res_args = ' '.join(f'{cw}x{ch}' for cw, ch in camera_configs)
+-    # CPU 7 is isolated with isolcpus on AGNOS, so explicitly pin the compiler to it.
+-    taskset = 'taskset -c 7 ' if arch == 'comma_arm64' else ''
+-    cmd = (f'{cmd_flags} {mac_brew_string} {taskset}python3 {modeld_dir}/compile_modeld.py '
+-          f'--model-size {model_w}x{model_h} '
+-          f'--camera-resolutions {camera_res_args} '
+-          f'--onnx {File(f"models/{file_prefix}driving_supercombo.onnx").abspath} '
+-          f'--output {target_pkl_path} --frame-skip {frame_skip}')
+-    onnx_sizes_sum = sum(os.path.getsize(f) for f in driving_onnx_deps)
+-    chunk_targets = get_chunk_targets(target_pkl_path, estimate_pickle_max_size(onnx_sizes_sum))
+-    def do_compile(target, source, env, command=cmd, pkl=target_pkl_path, chunks=chunk_targets):
+-      from openpilot.system.hardware.chestnut.flash import link_up
+-      # chestnut can enumerate before its PCIe link is up due to varying 12V power behavior across cars
+-      for _ in range(10):
+-        if link_up():
+-          break
+-        time.sleep(1)
+-      else:
+-        print("Chestnut not ready, skipping big model build")
+-        return
+-      if ret := env.Execute(command):
+-        return ret
+-      chunk_file(pkl, chunks)
+-    def do_chunk(target, source, env, pkl=target_pkl_path, chunks=chunk_targets):
+-      chunk_file(pkl, chunks)
+-    actions = Action(do_compile, "  [CHESTNUT] $TARGET") if chestnut else [cmd, Action(do_chunk, "  [CHUNK] $TARGET")]
+-    node = lenv.Command(
++  import glob
++  import json
++  import os
++  import time
++  from SCons.Script import Action, Value
++  from openpilot.common.file_chunker import chunk_file, get_chunk_targets, get_existing_chunks
++  from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
++  from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE, DM_INPUT_SIZE
++  from openpilot.selfdrive.modeld.constants import ModelConstants
++  from openpilot.selfdrive.modeld.helpers import TG_INPUT_DEVICES_PATH, chestnut_present, modeld_pkl_path
++
++
++  Import('env', 'arch')
++  chunker_file = File("#openpilot/common/file_chunker.py")
++  lenv = env.Clone()
++
 +  tinygrad_root = env.Dir("#").abspath
 +  tinygrad_files = ["#"+x for x in glob.glob(env.Dir("#tinygrad_repo").relpath + "/**", recursive=True, root_dir=tinygrad_root)
 +                    if 'pycache' not in x and os.path.isfile(os.path.join(tinygrad_root, x))]
- 
--# THREADS=0 is need to prevent bug: https://github.com/tinygrad/tinygrad/issues/14689
--# get fastest TG config
--available = set(Device.get_available_devices())
--# FIXME-SP: reset when we bump tg
--if False:  # 'CUDA' in available:
--  tg_backend = 'CUDA'
--  tg_flags = f'DEV={tg_backend}'
--elif 'QCOM' in available:
--  tg_backend = 'QCOM'
--  tg_flags = f'DEV={tg_backend} FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0'
--else:
--  tg_backend = 'CPU' if arch == 'Darwin' else 'CPU CPU_LLVM=1'  # FIXME-SP: reset when we bump tg
--  tg_flags = f'DEV={tg_backend} THREADS=0'
++
 +  def estimate_pickle_max_size(onnx_size):
-+    return 1.2 * onnx_size  + 10 * 1024 * 1024  # 20% + 10MB is plenty
- 
--def write_tg_compiled_flags(target, source, env):
--  with open(str(target[0]), "w") as f:
--    json.dump({"DEV": tg_backend}, f)
--    f.write("\n")
-+  # THREADS=0 is need to prevent bug: https://github.com/tinygrad/tinygrad/issues/14689
-+  # get fastest TG config
-+  available = set(Device.get_available_devices())
-+  # FIXME-SP: reset when we bump tg
-+  if False:  # 'CUDA' in available:
-+    tg_backend = 'CUDA'
-+    tg_flags = f'DEV={tg_backend}'
-+  elif 'QCOM' in available:
++    # QCOM programs for models with spatial recurrent features can approach 2x
++    # the ONNX size. Overestimating only adds an empty trailing chunk.
++    return 2.0 * onnx_size + 10 * 1024 * 1024
++
++  if arch == 'comma_arm64':
++    from openpilot.common.hardware import HARDWARE
++    camera = _os_fisheye if HARDWARE.get_device_type() == "mici" else _ar_ox_fisheye
++    camera_configs = [(camera.width, camera.height)]
 +    tg_backend = 'QCOM'
-+    tg_flags = f'DEV={tg_backend} FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0'
++    tg_flags = f'DEV={tg_backend} IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1'
 +  else:
-+    tg_backend = 'CPU' if arch == 'Darwin' else 'CPU CPU_LLVM=1'  # FIXME-SP: reset when we bump tg
-+    tg_flags = f'DEV={tg_backend} THREADS=0'
- 
--compiled_flags_node = lenv.Command(
--  File("models/tg_compiled_flags.json").abspath,
--  tinygrad_files + [Value(tg_backend)],
--  write_tg_compiled_flags,
--)
-+  def write_tg_compiled_flags(target, source, env):
++    camera_configs = [(c.width, c.height) for c in (_ar_ox_fisheye, _os_fisheye)]
++    tg_backend = 'CPU'
++    tg_flags = f'DEV=CPU' if arch == 'Darwin' else 'DEV=CPU:LLVM'
++
++  tg_devices = { # which device to put jit inputs to at runtime
++    'openpilot.selfdrive.modeld.dmonitoringmodeld': {
++      'default': {'DEV': tg_backend}
++    },
++  }
++
++  CHESTNUT = chestnut_present()
++  if CHESTNUT:
++    chestnut_tg_flags = 'DEBUG=1 DEV=USB+AMD:LLVM FRAME_DEV=CPU FLOAT16=1 JIT_BATCH_SIZE=0 GMMU=0 TC_OPT=2 TC_OCCUPANCY_OPT=1'
++    # the USB+AMD GPU takes an exclusive flock; serialize all targets that touch it
++    chestnut_lock = File("models/.chestnut.lock").abspath
++
++  def write_tg_devices(target, source, env):
 +    with open(str(target[0]), "w") as f:
-+      json.dump({"DEV": tg_backend}, f)
++      json.dump(tg_devices, f)
 +      f.write("\n")
- 
--# tinygrad calls brew which needs a $HOME in the env
--mac_brew_string = f'HOME={os.path.expanduser("~")}' if arch == 'Darwin' else ''
-+  compiled_flags_node = lenv.Command(
-+    File("models/tg_compiled_flags.json").abspath,
-+    tinygrad_files + [Value(tg_backend)],
-+    write_tg_compiled_flags,
++
++  tg_devices_node = lenv.Command(
++    str(TG_INPUT_DEVICES_PATH),
++    [Value(tg_devices)],
++    write_tg_devices,
 +  )
- 
--# Get model metadata
--for model_name in ['driving_vision', 'driving_policy', 'dmonitoring_model']:
--  fn = File(f"models/{model_name}").abspath
--  script_files = [File(Dir("#selfdrive/modeld").File("get_model_metadata.py").abspath)]
--  cmd = f'{tg_flags} {mac_brew_string} python3 {Dir("#selfdrive/modeld").abspath}/get_model_metadata.py {fn}.onnx'
--  lenv.Command(fn + "_metadata.pkl", [fn + ".onnx"] + tinygrad_files + script_files + [compiled_flags_node], cmd)
++
 +  # tinygrad calls brew which needs a $HOME in the env
 +  mac_brew_string = f'HOME={os.path.expanduser("~")}' if arch == 'Darwin' else ''
- 
--image_flag = {
--     'larch64': 'IMAGE=2',
--}.get(arch, 'IMAGE=0')
--script_files = [File(Dir("#selfdrive/modeld").File("compile_warp.py").abspath)]
--compile_warp_cmd = f'{tg_flags} {mac_brew_string} python3 {Dir("#selfdrive/modeld").abspath}/compile_warp.py '
--from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
--warp_targets = []
--for cam in [_ar_ox_fisheye, _os_fisheye]:
--  w, h = cam.width, cam.height
--  warp_targets += [File(f"models/warp_{w}x{h}_tinygrad.pkl").abspath, File(f"models/dm_warp_{w}x{h}_tinygrad.pkl").abspath]
--lenv.Command(warp_targets, tinygrad_files + script_files + [compiled_flags_node], compile_warp_cmd)
-+  # Get model metadata
-+  for model_name in ['driving_vision', 'driving_policy', 'dmonitoring_model']:
-+    fn = File(f"models/{model_name}").abspath
-+    script_files = [File(Dir("#selfdrive/modeld").File("get_model_metadata.py").abspath)]
-+    cmd = f'{tg_flags} {mac_brew_string} python3 {Dir("#selfdrive/modeld").abspath}/get_model_metadata.py {fn}.onnx'
-+    lenv.Command(fn + "_metadata.pkl", [fn + ".onnx"] + tinygrad_files + script_files + [compiled_flags_node], cmd)
- 
--def tg_compile(flags, model_name):
--  pythonpath_string = 'PYTHONPATH="${PYTHONPATH}:' + env.Dir("#tinygrad_repo").abspath + '"'
--  fn = File(f"models/{model_name}").abspath
--  pkl = fn + "_tinygrad.pkl"
--  onnx_path = fn + ".onnx"
--  chunk_targets = get_chunk_paths(pkl, estimate_pickle_max_size(os.path.getsize(onnx_path)))
--  compile_node = lenv.Command(
--    pkl,
--    [onnx_path] + tinygrad_files + [chunker_file, compiled_flags_node],
--    f'{pythonpath_string} {flags} {image_flag} python3 {Dir("#tinygrad_repo").abspath}/examples/openpilot/compile3.py {fn}.onnx {pkl}',
--  )
--  def do_chunk(target, source, env):
--    chunk_file(pkl, chunk_targets)
--  return lenv.Command(
--    chunk_targets,
--    compile_node,
--    do_chunk,
--  )
-+  image_flag = {
-+       'larch64': 'IMAGE=2',
-+  }.get(arch, 'IMAGE=0')
-+  script_files = [File(Dir("#selfdrive/modeld").File("compile_warp.py").abspath)]
-+  compile_warp_cmd = f'{tg_flags} {mac_brew_string} python3 {Dir("#selfdrive/modeld").abspath}/compile_warp.py '
-+  from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
-+  warp_targets = []
-+  for cam in [_ar_ox_fisheye, _os_fisheye]:
-+    w, h = cam.width, cam.height
-+    warp_targets += [File(f"models/warp_{w}x{h}_tinygrad.pkl").abspath, File(f"models/dm_warp_{w}x{h}_tinygrad.pkl").abspath]
-+  lenv.Command(warp_targets, tinygrad_files + script_files + [compiled_flags_node], compile_warp_cmd)
- 
--# Compile small models
--for model_name in ['driving_vision', 'driving_policy', 'dmonitoring_model']:
--  tg_compile(tg_flags, model_name)
++
++  modeld_dir = Dir("#openpilot/selfdrive/modeld").abspath
++  compile_modeld_script = [
++    File(f"{modeld_dir}/compile_modeld.py"),
++    File(f"{modeld_dir}/get_model_metadata.py"),
++    File("#openpilot/system/camerad/cameras/nv12_info.py"),
++    File("#openpilot/common/hardware/hw.py"),
++  ]
++  model_w, model_h = MEDMODEL_INPUT_SIZE
++  frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
++
++  if not os.getenv('SKIP_TINYGRAD_COMPILE'):
++    for chestnut in [False, True] if CHESTNUT else [False]:
++      target_pkl_path = File(modeld_pkl_path(chestnut)).abspath
++      file_prefix, cmd_flags = ('big_', chestnut_tg_flags) if chestnut else ('', tg_flags)
++      driving_onnx_deps = get_existing_chunks(File(f"models/{file_prefix}driving_supercombo.onnx").abspath)
++      camera_res_args = ' '.join(f'{cw}x{ch}' for cw, ch in camera_configs)
++      # CPU 7 is isolated with isolcpus on AGNOS, so explicitly pin the compiler to it.
++      taskset = 'taskset -c 7 ' if arch == 'comma_arm64' else ''
++      cmd = (f'{cmd_flags} {mac_brew_string} {taskset}python3 {modeld_dir}/compile_modeld.py '
++            f'--model-size {model_w}x{model_h} '
++            f'--camera-resolutions {camera_res_args} '
++            f'--onnx {File(f"models/{file_prefix}driving_supercombo.onnx").abspath} '
++            f'--output {target_pkl_path} --frame-skip {frame_skip}')
++      onnx_sizes_sum = sum(os.path.getsize(f) for f in driving_onnx_deps)
++      chunk_targets = get_chunk_targets(target_pkl_path, estimate_pickle_max_size(onnx_sizes_sum))
++      def do_compile(target, source, env, command=cmd, pkl=target_pkl_path, chunks=chunk_targets):
++        from openpilot.system.hardware.chestnut.flash import link_up
++        # chestnut can enumerate before its PCIe link is up due to varying 12V power behavior across cars
++        for _ in range(10):
++          if link_up():
++            break
++          time.sleep(1)
++        else:
++          print("Chestnut not ready, skipping big model build")
++          return
++        if ret := env.Execute(command):
++          return ret
++        chunk_file(pkl, chunks)
++      def do_chunk(target, source, env, pkl=target_pkl_path, chunks=chunk_targets):
++        chunk_file(pkl, chunks)
++      actions = Action(do_compile, "  [CHESTNUT] $TARGET") if chestnut else [cmd, Action(do_chunk, "  [CHUNK] $TARGET")]
++      node = lenv.Command(
++        chunk_targets,
++        tinygrad_files + compile_modeld_script + driving_onnx_deps + [Value(camera_res_args), Value(chunk_targets), chunker_file],
++        actions,
++      )
++      if chestnut:
++        lenv.SideEffect(chestnut_lock, node)
++
++  # get model metadata
++  fn = File(f"models/dmonitoring_model").abspath
++  script_files = [File(Dir("#openpilot/selfdrive/modeld").File("get_model_metadata.py").abspath)]
++  cmd = f'{tg_flags} {mac_brew_string} python3 {Dir("#openpilot/selfdrive/modeld").abspath}/get_model_metadata.py {fn}.onnx'
++  lenv.Command(fn + "_metadata.pkl", [fn + ".onnx"] + tinygrad_files + script_files + [tg_devices_node], cmd)
++
++  dm_w, dm_h = DM_INPUT_SIZE
++  compile_dm_warp_script = [File(f"{modeld_dir}/compile_dm_warp.py")]
++  for cam_w, cam_h in camera_configs:
++    dm_pkl_path = File(f"models/dm_warp_{cam_w}x{cam_h}_tinygrad.pkl").abspath
++    cmd = (f'{tg_flags} {mac_brew_string} python3 {modeld_dir}/compile_dm_warp.py '
++           f'--camera-resolution {cam_w}x{cam_h} --warp-to {dm_w}x{dm_h} '
++           f'--output {dm_pkl_path}')
++    lenv.Command(dm_pkl_path, tinygrad_files + compile_dm_warp_script + compile_modeld_script + [tg_devices_node], cmd)
++
 +  def tg_compile(flags, model_name):
 +    pythonpath_string = 'PYTHONPATH="${PYTHONPATH}:' + env.Dir("#tinygrad_repo").abspath + '"'
 +    fn = File(f"models/{model_name}").abspath
 +    pkl = fn + "_tinygrad.pkl"
 +    onnx_path = fn + ".onnx"
-+    chunk_targets = get_chunk_paths(pkl, estimate_pickle_max_size(os.path.getsize(onnx_path)))
-+    compile_node = lenv.Command(
-+      pkl,
-+      [onnx_path] + tinygrad_files + [chunker_file, compiled_flags_node],
-+      f'{pythonpath_string} {flags} {image_flag} python3 {Dir("#tinygrad_repo").abspath}/examples/openpilot/compile3.py {fn}.onnx {pkl}',
-+    )
++    chunk_targets = get_chunk_targets(pkl, estimate_pickle_max_size(os.path.getsize(onnx_path)))
 +    def do_chunk(target, source, env):
 +      chunk_file(pkl, chunk_targets)
 +    return lenv.Command(
-+      chunk_targets,
-+      compile_node,
-+      do_chunk,
-+    )
- 
-+  # Compile small models
-+  for model_name in ['driving_vision', 'driving_policy', 'dmonitoring_model']:
-+    tg_compile(tg_flags, model_name)
-diff --git a/selfdrive/modeld/modeld.py b/selfdrive/modeld/modeld.py
-index 4f89058d70354bdf30dd206308596d7d31ae8449..767818271d02ba49df9465cfe6dbd343923d315a 100755
---- a/selfdrive/modeld/modeld.py
-+++ b/selfdrive/modeld/modeld.py
-@@ -33,6 +33,7 @@ from openpilot.selfdrive.modeld.parse_model_outputs import Parser
- from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState
- from openpilot.common.file_chunker import read_file_chunked
- from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
-+from openpilot.selfdrive.modeld.warp_compat import unpack_warp_result
- 
- from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
- from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
-@@ -220,7 +221,9 @@ class ModelState(ModelStateBase):
- 
-     out = self.update_imgs(self.img_queues['img'], self.full_frames['img'], self.transforms['img'],
-                            self.img_queues['big_img'], self.full_frames['big_img'], self.transforms['big_img'])
--    vision_inputs = {'img': out[0], 'big_img': out[1]}
-+    img_buffer, img_pair, big_img_buffer, big_img_pair = unpack_warp_result(out, self.img_queues['img'], self.img_queues['big_img'])
-+    self.img_queues['img'], self.img_queues['big_img'] = img_buffer.realize(), big_img_buffer.realize()
-+    vision_inputs = {'img': img_pair, 'big_img': big_img_pair}
- 
-     if prepare_only:
-       return None
-diff --git a/selfdrive/modeld/warp_compat.py b/selfdrive/modeld/warp_compat.py
-new file mode 100644
-index 0000000000000000000000000000000000000000..99c038f104e4ed215903feed59dc40fc5a4eec3d
---- /dev/null
-+++ b/selfdrive/modeld/warp_compat.py
-@@ -0,0 +1,7 @@
-+def unpack_warp_result(result, image_buffer, big_image_buffer):
-+  """Normalize captures that mutate buffers or return updated buffers explicitly."""
-+  if len(result) == 2:
-+    return image_buffer, result[0], big_image_buffer, result[1]
-+  if len(result) == 4:
-+    return tuple(result)
-+  raise ValueError(f"Expected 2 or 4 warp outputs, received {len(result)}")
-diff --git a/sunnypilot/modeld_v2/SConscript b/sunnypilot/modeld_v2/SConscript
-index 8526fd27293a3f3c1bc4e44dac102358da9c61d6..dbae2db8fca1d7410af611d2365cdb57cce632f3 100644
---- a/sunnypilot/modeld_v2/SConscript
-+++ b/sunnypilot/modeld_v2/SConscript
-@@ -1,59 +1,67 @@
- import os
--import glob
- 
--Import('env', 'arch')
--lenv = env.Clone()
--tinygrad_files = ["#"+x for x in glob.glob(env.Dir("#tinygrad_repo").relpath + "/**", recursive=True, root_dir=env.Dir("#").abspath) if 'pycache' not in x]
-+if os.environ.get('SP_USE_PINNED_MODELS') == '1':
-+  Import('env', 'arch')
-+  from pathlib import Path
-+  from openpilot.tools.laptop_device_build.verify_model_assets import verify_assets
-+  verify_assets(Path(Dir('#').abspath), require_qcom=(arch == 'larch64'), installed=True)
-+else:
-+  import os
-+  import glob
- 
--# Get model metadata
--PC = not os.path.isfile('/TICI')
--if PC:
--  inputs = tinygrad_files + [File(Dir("#sunnypilot/modeld_v2").File("install_models_pc.py").abspath)]
--  outputs = []
--  model_dir = Dir("models").abspath
--  cmd = f'python3 {Dir("#sunnypilot/modeld_v2").abspath}/install_models_pc.py {model_dir}'
-+  Import('env', 'arch')
-+  lenv = env.Clone()
-+  tinygrad_files = ["#"+x for x in glob.glob(env.Dir("#tinygrad_repo").relpath + "/**", recursive=True, root_dir=env.Dir("#").abspath) if 'pycache' not in x]
- 
-+  # Get model metadata
-+  PC = not os.path.isfile('/TICI')
-+  if PC:
-+    inputs = tinygrad_files + [File(Dir("#sunnypilot/modeld_v2").File("install_models_pc.py").abspath)]
-+    outputs = []
-+    model_dir = Dir("models").abspath
-+    cmd = f'python3 {Dir("#sunnypilot/modeld_v2").abspath}/install_models_pc.py {model_dir}'
-+
-+    for model_name in ['supercombo', 'driving_vision', 'driving_off_policy', 'driving_on_policy', 'driving_policy']:
-+      if File(f"models/{model_name}.onnx").exists():
-+          inputs.append(File(f"models/{model_name}.onnx"))
-+          inputs.append(File(f"models/{model_name}_tinygrad.pkl"))
-+          outputs.append(File(f"models/{model_name}_metadata.pkl"))
-+    if outputs:
-+      lenv.Command(outputs, inputs, cmd)
-+
-+  tg_flags = {
-+    'larch64': 'DEV=QCOM FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0',
-+    'Darwin': f'DEV=CPU THREADS=0 HOME={os.path.expanduser("~")}',
-+  }.get(arch, 'DEV=CPU CPU_LLVM=1 THREADS=0')
-+
-+  image_flag = {
-+    'larch64': 'IMAGE=2',
-+  }.get(arch, 'IMAGE=0')
-+
-+  def tg_compile(flags, model_name):
-+    pythonpath_string = 'PYTHONPATH="${PYTHONPATH}:' + env.Dir("#tinygrad_repo").abspath + '"'
-+    fn = File(f"models/{model_name}").abspath
-+    out = fn + "_tinygrad.pkl"
-+
-+    return lenv.Command(
-+      out,
-+      [fn + ".onnx"] + tinygrad_files,
-+      f'{pythonpath_string} {flags} {image_flag} python3 {Dir("#tinygrad_repo").abspath}/examples/openpilot/compile3.py {fn}.onnx {out}'
-+    )
-+
-+  # Compile models
-   for model_name in ['supercombo', 'driving_vision', 'driving_off_policy', 'driving_on_policy', 'driving_policy']:
-     if File(f"models/{model_name}.onnx").exists():
--        inputs.append(File(f"models/{model_name}.onnx"))
--        inputs.append(File(f"models/{model_name}_tinygrad.pkl"))
--        outputs.append(File(f"models/{model_name}_metadata.pkl"))
--  if outputs:
--    lenv.Command(outputs, inputs, cmd)
+       chunk_targets,
+-      tinygrad_files + compile_modeld_script + driving_onnx_deps + [Value(camera_res_args), Value(chunk_targets), chunker_file],
+-      actions,
++      [onnx_path] + tinygrad_files + [Value(chunk_targets), chunker_file, tg_devices_node],
++      [f'{pythonpath_string} {flags} python3 {Dir("#tinygrad_repo").abspath}/examples/openpilot/compile3.py {fn}.onnx {pkl}',
++       Action(do_chunk, "  [CHUNK] $TARGET")],
+     )
+-    if chestnut:
+-      lenv.SideEffect(chestnut_lock, node)
 -
--tg_flags = {
--  'larch64': 'DEV=QCOM FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0',
--  'Darwin': f'DEV=CPU THREADS=0 HOME={os.path.expanduser("~")}',
--}.get(arch, 'DEV=CPU CPU_LLVM=1 THREADS=0')
+-# get model metadata
+-fn = File(f"models/dmonitoring_model").abspath
+-script_files = [File(Dir("#openpilot/selfdrive/modeld").File("get_model_metadata.py").abspath)]
+-cmd = f'{tg_flags} {mac_brew_string} python3 {Dir("#openpilot/selfdrive/modeld").abspath}/get_model_metadata.py {fn}.onnx'
+-lenv.Command(fn + "_metadata.pkl", [fn + ".onnx"] + tinygrad_files + script_files + [tg_devices_node], cmd)
 -
--image_flag = {
--  'larch64': 'IMAGE=2',
--}.get(arch, 'IMAGE=0')
+-dm_w, dm_h = DM_INPUT_SIZE
+-compile_dm_warp_script = [File(f"{modeld_dir}/compile_dm_warp.py")]
+-for cam_w, cam_h in camera_configs:
+-  dm_pkl_path = File(f"models/dm_warp_{cam_w}x{cam_h}_tinygrad.pkl").abspath
+-  cmd = (f'{tg_flags} {mac_brew_string} python3 {modeld_dir}/compile_dm_warp.py '
+-         f'--camera-resolution {cam_w}x{cam_h} --warp-to {dm_w}x{dm_h} '
+-         f'--output {dm_pkl_path}')
+-  lenv.Command(dm_pkl_path, tinygrad_files + compile_dm_warp_script + compile_modeld_script + [tg_devices_node], cmd)
 -
 -def tg_compile(flags, model_name):
 -  pythonpath_string = 'PYTHONPATH="${PYTHONPATH}:' + env.Dir("#tinygrad_repo").abspath + '"'
 -  fn = File(f"models/{model_name}").abspath
--  out = fn + "_tinygrad.pkl"
--
+-  pkl = fn + "_tinygrad.pkl"
+-  onnx_path = fn + ".onnx"
+-  chunk_targets = get_chunk_targets(pkl, estimate_pickle_max_size(os.path.getsize(onnx_path)))
+-  def do_chunk(target, source, env):
+-    chunk_file(pkl, chunk_targets)
 -  return lenv.Command(
--    out,
--    [fn + ".onnx"] + tinygrad_files,
--    f'{pythonpath_string} {flags} {image_flag} python3 {Dir("#tinygrad_repo").abspath}/examples/openpilot/compile3.py {fn}.onnx {out}'
+-    chunk_targets,
+-    [onnx_path] + tinygrad_files + [Value(chunk_targets), chunker_file, tg_devices_node],
+-    [f'{pythonpath_string} {flags} python3 {Dir("#tinygrad_repo").abspath}/examples/openpilot/compile3.py {fn}.onnx {pkl}',
+-     Action(do_chunk, "  [CHUNK] $TARGET")],
 -  )
--
--# Compile models
--for model_name in ['supercombo', 'driving_vision', 'driving_off_policy', 'driving_on_policy', 'driving_policy']:
--  if File(f"models/{model_name}.onnx").exists():
--    tg_compile(tg_flags, model_name)
--
--script_files = [File("warp.py"), File(Dir("#selfdrive/modeld").File("compile_warp.py").abspath)]
--pythonpath_string = 'PYTHONPATH="${PYTHONPATH}:' + env.Dir("#tinygrad_repo").abspath + ':' + env.Dir("#").abspath + '"'
--compile_warp_cmd = f'{pythonpath_string} {tg_flags} python3 -m sunnypilot.modeld_v2.warp'
--
--from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
--warp_targets = []
--for cam in [_ar_ox_fisheye, _os_fisheye]:
--  w, h = cam.width, cam.height
--  for bl in [2, 5]:
--    warp_targets.append(File(f"models/warp_{w}x{h}_b{bl}_tinygrad.pkl").abspath)
--lenv.Command(warp_targets, tinygrad_files + script_files, compile_warp_cmd)
-+      tg_compile(tg_flags, model_name)
-+
-+  script_files = [File("warp.py"), File(Dir("#selfdrive/modeld").File("compile_warp.py").abspath)]
-+  pythonpath_string = 'PYTHONPATH="${PYTHONPATH}:' + env.Dir("#tinygrad_repo").abspath + ':' + env.Dir("#").abspath + '"'
-+  compile_warp_cmd = f'{pythonpath_string} {tg_flags} python3 -m sunnypilot.modeld_v2.warp'
-+
-+  from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
-+  warp_targets = []
-+  for cam in [_ar_ox_fisheye, _os_fisheye]:
-+    w, h = cam.width, cam.height
-+    for bl in [2, 5]:
-+      warp_targets.append(File(f"models/warp_{w}x{h}_b{bl}_tinygrad.pkl").abspath)
-+  lenv.Command(warp_targets, tinygrad_files + script_files, compile_warp_cmd)
-diff --git a/sunnypilot/modeld_v2/warp.py b/sunnypilot/modeld_v2/warp.py
-index fd8be46837d342856664c60a71b03f5c9eee51ca..7e38d3f71ea6b7e170451dbb4deb8baffcf0185b 100644
---- a/sunnypilot/modeld_v2/warp.py
-+++ b/sunnypilot/modeld_v2/warp.py
-@@ -5,6 +5,7 @@ from pathlib import Path
- from tinygrad.tensor import Tensor
- from tinygrad.engine.jit import TinyJit
- from tinygrad.device import Device
-+from openpilot.selfdrive.modeld.warp_compat import unpack_warp_result
  
- from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
- from openpilot.selfdrive.modeld.compile_warp import (
-@@ -116,8 +117,10 @@ class Warp:
-       self.full_buffers['img'], road_blob, self.transforms['img'],
-       self.full_buffers['big_img'], wide_blob, self.transforms['big_img'],
-     )
--    out_road = res[0].realize()
--    out_wide = res[1].realize()
-+    road_buffer, road_pair, wide_buffer, wide_pair = unpack_warp_result(res, self.full_buffers['img'], self.full_buffers['big_img'])
-+    self.full_buffers['img'], self.full_buffers['big_img'] = road_buffer.realize(), wide_buffer.realize()
-+    out_road = road_pair.realize()
-+    out_wide = wide_pair.realize()
- 
-     return {road: out_road, wide: out_wide}
- 
-diff --git a/sunnypilot/selfdrive/locationd/SConscript b/sunnypilot/selfdrive/locationd/SConscript
-index 3e71f367828c7ba73017c27aa72158cecc2f6662..a9206911d0d3c094f0e62f1d0a9d7e992e748989 100644
---- a/sunnypilot/selfdrive/locationd/SConscript
-+++ b/sunnypilot/selfdrive/locationd/SConscript
-@@ -24,7 +24,7 @@ if arch != "Darwin":
+-tg_compile(tg_flags, 'dmonitoring_model')
++  tg_compile(tg_flags, 'dmonitoring_model')
+diff --git a/openpilot/sunnypilot/selfdrive/locationd/SConscript b/openpilot/sunnypilot/selfdrive/locationd/SConscript
+index 3e71f367828c7ba73017c27aa72158cecc2f6662..2563f49a7b802945dc516e46f29fdfd7c2a6b04c 100644
+--- a/openpilot/sunnypilot/selfdrive/locationd/SConscript
++++ b/openpilot/sunnypilot/selfdrive/locationd/SConscript
+@@ -24,7 +24,10 @@ if arch != "Darwin":
    lenv["LINKFLAGS"] += ["-Wl,--no-as-needed"]
  
  lenv["LIBPATH"].append(Dir(rednose_gen_dir).abspath)
 -lenv["RPATH"].append(Dir(rednose_gen_dir).abspath)
-+lenv["RPATH"].append(lenv.Literal('\\\\$$ORIGIN/models/generated'))
++if arch == "comma_arm64":
++  lenv["RPATH"].append(lenv.Literal('\\$$ORIGIN/models/generated'))
++else:
++  lenv["RPATH"].append(Dir(rednose_gen_dir).abspath)
  locationd = lenv.Program("locationd", locationd_sources, LIBS=["live", "ekf_sym"] + loc_libs + transformations)
  lenv.Depends(locationd, rednose)
  lenv.Depends(locationd, live_ekf)
-diff --git a/system/loggerd/SConscript b/system/loggerd/SConscript
-index 45e8b25d208e045bca52f306c4a8c1cdb6c18104..83938a22e556164ca954ad311c7e48d1e3e2ecbd 100644
---- a/system/loggerd/SConscript
-+++ b/system/loggerd/SConscript
-@@ -14,6 +14,18 @@ if arch != "larch64":
-   else:
-     libs += ['va', 'va-drm', 'drm']
- 
-+if arch == "larch64":
-+  import ffmpeg
-+  # The pinned ARM FFmpeg archives include VAAPI references even though the
-+  # device uses V4L encoding. Link their bundled static dependencies explicitly
-+  # so the sysroot's shared libva cannot supply a mismatched vaMapBuffer2 ABI.
-+  for name in ('va', 'va-drm', 'drm'):
-+    archive = File(f'{ffmpeg.LIB_DIR}/lib{name}.a')
-+    if not archive.exists():
-+      raise RuntimeError(f'Missing pinned FFmpeg static dependency: {archive}')
-+    libs.append(archive)
-+  libs += ['dl']
+diff --git a/openpilot/system/loggerd/SConscript b/openpilot/system/loggerd/SConscript
+index 6890c296550a916060d6883289d881693dd1a7ad..4fcb0af253740b5745ed4f76636841e6f2f04bf2 100644
+--- a/openpilot/system/loggerd/SConscript
++++ b/openpilot/system/loggerd/SConscript
+@@ -1,3 +1,7 @@
++import glob
++import os
++import ffmpeg
 +
- if arch == "Darwin":
-   # exclude v4l
-   del src[src.index('encoder/v4l_encoder.cc')]
+ Import('env', 'arch', 'messaging', 'common', 'visionipc', 'ffmpeg_libs')
+ 
+ libs = [common, messaging, visionipc] + ffmpeg_libs + ['pthread', 'm', 'zstd']
+@@ -11,9 +15,24 @@ else:
+   if arch == "Darwin":
+     frameworks += ['VideoToolbox', 'CoreMedia', 'CoreFoundation', 'CoreVideo']
+ 
+-logger_lib = env.Library('logger', src)
++lenv = env.Clone()
++bundled_ffmpeg = []
++if arch == 'comma_arm64' and os.environ.get('SP_TICI_SYSROOT'):
++  # Frozen FFmpeg wheels use $ORIGIN for their own shared-library dependencies.
++  # Package them beside loggerd, since the build venv is excluded from release.
++  shared_libs = sorted(glob.glob(os.path.join(ffmpeg.LIB_DIR, 'lib*.so*')))
++  if not shared_libs:
++    raise SCons.Errors.UserError('The pinned device FFmpeg package must contain shared libraries')
++  for source in shared_libs:
++    bundled_ffmpeg += lenv.Command('lib/' + os.path.basename(source), source, Copy('$TARGET', '$SOURCE'))
++  lenv['RPATH'].append(lenv.Literal('\\$$ORIGIN/lib'))
++
++logger_lib = lenv.Library('logger', src)
+ libs.insert(0, logger_lib)
+ 
+-env.Program('loggerd', ['loggerd.cc'], LIBS=libs, FRAMEWORKS=frameworks)
+-env.Program('encoderd', ['encoderd.cc'], LIBS=libs, FRAMEWORKS=frameworks)
+-env.Program('bootlog.cc', LIBS=libs, FRAMEWORKS=frameworks)
++lenv.Program('loggerd', ['loggerd.cc'], LIBS=libs, FRAMEWORKS=frameworks)
++lenv.Program('encoderd', ['encoderd.cc'], LIBS=libs, FRAMEWORKS=frameworks)
++lenv.Program('bootlog.cc', LIBS=libs, FRAMEWORKS=frameworks)
++
++if bundled_ffmpeg:
++  lenv.Depends(['loggerd', 'encoderd', 'bootlog'], bundled_ffmpeg)

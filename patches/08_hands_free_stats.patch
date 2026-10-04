@@ -1,8 +1,8 @@
-diff --git a/selfdrive/hands_free_stats.py b/selfdrive/hands_free_stats.py
+diff --git a/openpilot/selfdrive/hands_free_stats.py b/openpilot/selfdrive/hands_free_stats.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..9830a8645cc5a153db07d0846e227ed534cd6a38
+index 0000000000000000000000000000000000000000..6aca079d2507c85b2bc72239bed279b3bc4e0b23
 --- /dev/null
-+++ b/selfdrive/hands_free_stats.py
++++ b/openpilot/selfdrive/hands_free_stats.py
 @@ -0,0 +1,99 @@
 +#!/usr/bin/env python3
 +import datetime
@@ -72,7 +72,7 @@ index 0000000000000000000000000000000000000000..9830a8645cc5a153db07d0846e227ed5
 +
 +
 +def persist_stats(params: Any, stats: HandsFreeStats) -> None:
-+  params.put_nonblocking(PARAM_KEY, asdict(stats))
++  params.put(PARAM_KEY, asdict(stats), block=False)
 +
 +
 +class HandsFreeStatsCollector:
@@ -103,12 +103,12 @@ index 0000000000000000000000000000000000000000..9830a8645cc5a153db07d0846e227ed5
 +      persist_stats(self.params, self.accumulator.stats)
 +      self._last_persist_time = now
 +      self._dirty = False
-diff --git a/selfdrive/tests/test_hands_free_stats.py b/selfdrive/tests/test_hands_free_stats.py
+diff --git a/openpilot/selfdrive/tests/test_hands_free_stats.py b/openpilot/selfdrive/tests/test_hands_free_stats.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..2f258b84fc824674eef1355e50a2558afaec7972
+index 0000000000000000000000000000000000000000..33f776bbf37cd4461974afa0d81cf591d44799b0
 --- /dev/null
-+++ b/selfdrive/tests/test_hands_free_stats.py
-@@ -0,0 +1,93 @@
++++ b/openpilot/selfdrive/tests/test_hands_free_stats.py
+@@ -0,0 +1,94 @@
 +import pytest
 +
 +from openpilot.selfdrive.hands_free_stats import HandsFreeStats, HandsFreeStatsAccumulator, HandsFreeStatsCollector, load_stats, persist_stats
@@ -121,7 +121,8 @@ index 0000000000000000000000000000000000000000..2f258b84fc824674eef1355e50a2558a
 +  def get(self, _key):
 +    return self.value
 +
-+  def put_nonblocking(self, _key, value):
++  def put(self, _key, value, block=False):
++    assert block is False
 +    self.value = value
 +
 +
@@ -202,10 +203,10 @@ index 0000000000000000000000000000000000000000..2f258b84fc824674eef1355e50a2558a
 +
 +  assert collector.accumulator.stats.trackedDistanceMeters == pytest.approx(10.0)
 +  assert collector.accumulator.stats.handsFreeDistanceMeters == pytest.approx(5.0)
-diff --git a/selfdrive/ui/sunnypilot/layouts/settings/trips.py b/selfdrive/ui/sunnypilot/layouts/settings/trips.py
+diff --git a/openpilot/selfdrive/ui/sunnypilot/layouts/settings/trips.py b/openpilot/selfdrive/ui/sunnypilot/layouts/settings/trips.py
 index 066f52507fba3bd1dc1889184e8fd8bdeb9f3a59..983bed86d77402a35a70bda84ea65f3f31d979a0 100644
---- a/selfdrive/ui/sunnypilot/layouts/settings/trips.py
-+++ b/selfdrive/ui/sunnypilot/layouts/settings/trips.py
+--- a/openpilot/selfdrive/ui/sunnypilot/layouts/settings/trips.py
++++ b/openpilot/selfdrive/ui/sunnypilot/layouts/settings/trips.py
 @@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
  This file is part of sunnypilot and is licensed under the MIT License.
  See the LICENSE.md file in the root directory for more details.
@@ -353,27 +354,27 @@ index 066f52507fba3bd1dc1889184e8fd8bdeb9f3a59..983bed86d77402a35a70bda84ea65f3f
      y = self._render_stat_group(x, y, w, card_height, tr("ALL TIME"), all_time, is_metric)
      y += spacing
      y = self._render_stat_group(x, y, w, card_height, tr("PAST WEEK"), week, is_metric)
-diff --git a/selfdrive/ui/sunnypilot/ui_state.py b/selfdrive/ui/sunnypilot/ui_state.py
-index 2cfd5bd4f2ae12ec0c24fea43fef0c33270199a0..96d0a2e940c452755e9c89df0eeef0e8c85dd97b 100644
---- a/selfdrive/ui/sunnypilot/ui_state.py
-+++ b/selfdrive/ui/sunnypilot/ui_state.py
-@@ -8,6 +8,7 @@ from enum import Enum
- 
- from cereal import messaging, log, car, custom
+diff --git a/openpilot/selfdrive/ui/sunnypilot/ui_state.py b/openpilot/selfdrive/ui/sunnypilot/ui_state.py
+index d130c3862a66c9c84a83e3e482bc63d112e32ca7..a74828c04e2a910bf974782e438df7c440a9d73d 100644
+--- a/openpilot/selfdrive/ui/sunnypilot/ui_state.py
++++ b/openpilot/selfdrive/ui/sunnypilot/ui_state.py
+@@ -9,6 +9,7 @@ from enum import Enum
+ from openpilot.cereal import messaging, log, custom
+ from opendbc.car.structs import car
  from openpilot.common.params import Params
 +from openpilot.selfdrive.hands_free_stats import HandsFreeStatsCollector
  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
+ from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
  from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
- from openpilot.system.ui.lib.application import gui_app
-@@ -34,6 +35,7 @@ class UIStateSP:
+@@ -37,6 +38,7 @@ class UIStateSP:
        "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
-       "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "liveDelay"
+       "gpsLocation", "lateralTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "lateralDelay"
      ]
 +    self.hands_free_stats = HandsFreeStatsCollector(self.params)
  
      self.sunnylink_state = SunnylinkState()
  
-@@ -42,6 +44,9 @@ class UIStateSP:
+@@ -66,6 +68,9 @@ class UIStateSP:
      self._sp_initialized: bool = False
  
    def update(self) -> None:

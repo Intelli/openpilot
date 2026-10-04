@@ -15,7 +15,7 @@ if [[ -d /Applications/Docker.app/Contents/Resources/bin ]]; then
   export PATH="/Applications/Docker.app/Contents/Resources/bin:${PATH}"
 fi
 
-IMAGE_NAME="${COMMA_BUILD_IMAGE:-ev9-sunnypilot-agnos17-builder:latest}"
+IMAGE_NAME="${COMMA_BUILD_IMAGE:-ev9-sunnypilot-agnos19-builder:latest}"
 SYSROOT_DIR_DEFAULT="${ROOT_DIR}/.comma_sysroot"
 SYSROOT_DIR="${COMMA_SYSROOT_DIR:-${SYSROOT_DIR_DEFAULT}}"
 HOST_SYSROOT_DIR="${COMMA_HOST_SYSROOT_DIR:-${SYSROOT_DIR}}"
@@ -41,13 +41,13 @@ Modes:
   setup-sysroot Sync required runtime/linker libs from a comma device over SSH.
   setup-sysroot-agnos Download AGNOS system image and extract sysroot locally.
   build-image   Build the Linux/aarch64 container image used for device-target builds.
-  build         Run larch64 scons build in container and set prebuilt flag.
-  scons         Run raw scons in the larch64 container (no prebuilt touch).
-  manager       Run system/manager/manager.py in the larch64 container.
+  build         Run comma_arm64 scons build in container and set prebuilt flag.
+  scons         Run raw scons in the comma_arm64 container (no prebuilt touch).
+  manager       Run openpilot/system/manager/manager.py in the comma_arm64 container.
   shell         Open an interactive shell in the build container with all mounts.
 
 Environment overrides:
-  COMMA_BUILD_IMAGE   Container image tag (default: ev9-sunnypilot-agnos17-builder:latest)
+  COMMA_BUILD_IMAGE   Container image tag (default: ev9-sunnypilot-agnos19-builder:latest)
   COMMA_SYSROOT_DIR   Sysroot location (default: ./.comma_sysroot)
   COMMA_AUTOSTART_DOCKER  Auto-launch Docker Desktop on macOS when needed (default: 1)
 EOF
@@ -149,7 +149,7 @@ expected_capnp_version() {
     return
   fi
 
-  local header_path="${ROOT_DIR}/cereal/gen/cpp/custom.capnp.h"
+  local header_path="${ROOT_DIR}/openpilot/cereal/gen/cpp/custom.capnp.h"
   if [[ ! -f "${header_path}" ]]; then
     err "Unable to determine expected Cap'n Proto version. Set COMMA_EXPECTED_CAPNP_VERSION or restore tools/laptop_device_build/Dockerfile ARG CAPNP_VERSION."
   fi
@@ -198,7 +198,7 @@ assert_runtime_machine() {
   local machine
   machine="$("${engine}" run --rm --platform linux/arm64 "${IMAGE_NAME}" bash -lc "readelf -h \$(command -v python3) | awk -F: '/Machine/ {gsub(/^ +/, \"\", \$2); print \$2}'" 2>/dev/null || true)"
   if [[ "${machine}" != "AArch64" ]]; then
-    err "Container Python runtime is '${machine:-unknown}', expected 'AArch64'. This image can still build device artifacts, but cannot run manager with larch64 Python extensions. Rebuild from an arm64-capable base image before using 'manager' mode."
+    err "Container Python runtime is '${machine:-unknown}', expected 'AArch64'. This image can still build device artifacts, but cannot run manager with comma_arm64 Python extensions. Rebuild from an arm64-capable base image before using 'manager' mode."
   fi
 }
 
@@ -287,7 +287,7 @@ scrub_mixed_arch_artifacts() {
   # third_party contains pinned SDK libraries and is deliberately preserved.
   rm -f "${ROOT_DIR}/.sconsign.dblite" "${ROOT_DIR}/prebuilt"
   local source_dir
-  for source_dir in common cereal msgq_repo rednose_repo selfdrive system sunnypilot panda opendbc_repo; do
+  for source_dir in openpilot msgq_repo rednose_repo panda opendbc_repo; do
     find "${ROOT_DIR}/${source_dir}" -type f \( -name '*.o' -o -name '*.os' -o -name '*.a' -o -name '*.so' -o -name '*.bin.signed' \) -delete
   done
 }
@@ -336,7 +336,7 @@ sync_sysroot_from_device() {
 }
 
 setup_sysroot_from_agnos() {
-  local manifest="${1:-system/hardware/tici/agnos.json}"
+  local manifest="${1:-openpilot/common/hardware/comma/agnos.json}"
   local engine
   engine="$(detect_engine)"
   ensure_image_exists "${engine}"
@@ -356,7 +356,7 @@ setup_sysroot_from_agnos() {
   repair_sysroot_linker
 }
 
-run_larch64_scons() {
+run_comma_arm64_scons() {
   local jobs="$1"
   shift || true
   local scrub_mode="${SP_SCONS_SCRUB_MODE:-full}"
@@ -374,7 +374,7 @@ run_larch64_scons() {
   fi
   started_at="$(date +%s)"
 
-  echo "==> Starting larch64 scons build"
+  echo "==> Starting comma_arm64 scons build"
   echo "    jobs: ${jobs}"
   echo "    note: warp artifact precompile can take several minutes on first run"
 
@@ -398,8 +398,7 @@ cmd="$(cat <<EOF
 set -euo pipefail
 export UV_CACHE_DIR=/work/.cache/uv
 export SCONS_CACHE=/work/.cache/scons
-export SP_FORCE_TICI=1
-export SP_FORCE_ARCH=larch64
+export SP_FORCE_COMMA=1
 export SP_TICI_SYSROOT=/opt/tici-sysroot
 export SP_USE_PINNED_MODELS=1
 export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/opt/tici-sysroot/usr/local/lib:/opt/tici-sysroot/usr/lib/aarch64-linux-gnu:/opt/tici-sysroot/lib/aarch64-linux-gnu:/system/vendor/lib64:\${LD_LIBRARY_PATH:-}
@@ -428,7 +427,7 @@ EOF
     -w /work \
     "${IMAGE_NAME}" bash -lc "${cmd}"
 
-  echo "==> larch64 scons completed in $(( $(date +%s) - started_at ))s"
+  echo "==> comma_arm64 scons completed in $(( $(date +%s) - started_at ))s"
 }
 
 setup_host_venv() {
@@ -449,28 +448,27 @@ setup_all() {
   if [[ -n "${host}" ]]; then
     sync_sysroot_from_device "${host}" "${user}" "${port}"
   else
-    setup_sysroot_from_agnos "system/hardware/tici/agnos.json"
+    setup_sysroot_from_agnos "openpilot/common/hardware/comma/agnos.json"
   fi
 }
 
-run_larch64_build() {
+run_comma_arm64_build() {
   local jobs="${1:-$(default_jobs)}"
   shift || true
   # CI must fail before compilation/publication if only host CPU captures or
   # mismatched model/compiler inputs are available.
   python3 tools/laptop_device_build/verify_model_assets.py --require-qcom --install
-  run_larch64_scons "${jobs}" --minimal "$@"
+  run_comma_arm64_scons "${jobs}" --minimal "$@"
   python3 tools/laptop_device_build/verify_build.py "${ROOT_DIR}"
   touch "${ROOT_DIR}/prebuilt"
 }
 
 manager_artifacts_ready() {
-  [[ -f "${ROOT_DIR}/msgq/ipc_pyx.so" ]] &&
-  [[ -f "${ROOT_DIR}/msgq/visionipc/visionipc_pyx.so" ]] &&
-  [[ -f "${ROOT_DIR}/common/params_pyx.so" ]] &&
-  [[ -f "${ROOT_DIR}/selfdrive/pandad/pandad" ]] &&
-  [[ -f "${ROOT_DIR}/selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so" ]] &&
-  [[ -f "${ROOT_DIR}/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so" ]]
+  [[ -f "${ROOT_DIR}/msgq_repo/msgq/ipc_pyx.so" ]] &&
+  [[ -f "${ROOT_DIR}/msgq_repo/msgq/visionipc/visionipc_pyx.so" ]] &&
+  [[ -f "${ROOT_DIR}/openpilot/common/libparams_c.so" ]] &&
+  [[ -f "${ROOT_DIR}/openpilot/selfdrive/pandad/pandad" ]] &&
+  [[ -f "${ROOT_DIR}/openpilot/selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so" ]]
 }
 
 run_manager() {
@@ -503,7 +501,7 @@ run_manager() {
 
   if [[ "${auto_build}" -eq 1 ]] && ! manager_artifacts_ready; then
     echo "Missing manager runtime artifacts. Running device-target build first..."
-    run_larch64_build "${jobs}"
+    run_comma_arm64_build "${jobs}"
   fi
 
   local engine
@@ -524,8 +522,7 @@ run_manager() {
 cmd="$(cat <<EOF
 set -euo pipefail
 export UV_CACHE_DIR=/work/.cache/uv
-export SP_FORCE_TICI=1
-export SP_FORCE_ARCH=larch64
+export SP_FORCE_COMMA=1
 export SP_TICI_SYSROOT=/opt/tici-sysroot
 export SP_USE_PINNED_MODELS=1
 export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/opt/tici-sysroot/usr/local/lib:/opt/tici-sysroot/usr/lib/aarch64-linux-gnu:/opt/tici-sysroot/lib/aarch64-linux-gnu:/system/vendor/lib64:\${LD_LIBRARY_PATH:-}
@@ -536,7 +533,7 @@ mkdir -p "\${PARAMS_ROOT}"
 UV_PROJECT_ENVIRONMENT=/work/.venv-linux-arm64 uv sync --frozen --all-extras --python /usr/bin/python3
 source /work/.venv-linux-arm64/bin/activate
 cd /work
-python3 system/manager/manager.py${manager_args_q}
+python3 openpilot/system/manager/manager.py${manager_args_q}
 EOF
 )"
 
@@ -627,7 +624,7 @@ main() {
       ;;
     setup-sysroot-agnos)
       shift || true
-      setup_sysroot_from_agnos "${1:-system/hardware/tici/agnos.json}"
+      setup_sysroot_from_agnos "${1:-openpilot/common/hardware/comma/agnos.json}"
       ;;
     build-image)
       build_container_image
@@ -640,11 +637,11 @@ main() {
       else
         jobs_arg="$(default_jobs)"
       fi
-      run_larch64_build "${jobs_arg}" "$@"
+      run_comma_arm64_build "${jobs_arg}" "$@"
       ;;
     scons)
       shift || true
-      run_larch64_scons "$(default_jobs)" "$@"
+      run_comma_arm64_scons "$(default_jobs)" "$@"
       ;;
     manager)
       shift || true

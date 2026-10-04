@@ -7,24 +7,28 @@ This guide describes Intelli/openpilot on `ev9-dev`. See [repository rules](../A
 
 Application upstream is `sunnypilot/sunnypilot`, branch `hkg-angle-steering-2025`.
 Vehicle upstream is `sunnypilot/opendbc`, branch `hkg-angle-steering-2025`.
-The restored application comes from Intelli commit `5928a37ad187`, immediately
-before the StarPilot migration. The archive branch tip `5655634b87` adds workflow
-archival only. The restored source and seven dependency pins were imported as
-ordinary tracked files, without upgrading their versions.
+The current official application baseline is `d021f6ca41375e58be8125801547e84939e0c503`,
+with embedded opendbc `28303fcd1cc457f67d405407858223e0b338df20`, recorded in
+[sunnypilot-upstream.json](../sunnypilot-upstream.json) and
+[opendbc-upstream.json](../opendbc-upstream.json). Application code now lives under
+`openpilot/{selfdrive,common,cereal,system,sunnypilot}/`. Dependencies remain vendored
+at their exact application pins.
 
-[sunnypilot-upstream.json](../sunnypilot-upstream.json) records application
-baseline `54fb2750bab4`, dependency baselines and restoration provenance.
-[opendbc-upstream.json](../opendbc-upstream.json) records vehicle baseline
-`7c35b7546940`, the exact opendbc pin in that official application baseline.
-The customized vehicle snapshot was `5a3f3761f586`; it is recorded as
-`restored_from`, not confused with the uncustomized patch baseline.
-Enabled forward patches preserve the custom source differences.
+The October 4 upgrade advances 798 upstream commits from official application
+`54fb2750bab4`. Before that upgrade, restoration used pre-StarPilot Intelli
+`5928a37ad187` and customized vehicle snapshot `5a3f3761f586`; its official vehicle
+baseline was `7c35b7546940`. Archive tip `5655634b87` added workflow archival only.
+These identify historical restoration, not the current imported baseline. Enabled
+patches now port the customization intent onto the newer upstream source.
 
 Edit vehicle code in `opendbc_repo/opendbc/`; `opendbc` is a symlink there.
 The standalone Intelli/opendbc checkout is historical reference only. Sync and
 builds use this repository, with no submodules or external dependency checkout.
 Git LFS payloads are hydrated as ordinary Git blobs; imported LFS filter attributes
-and submodule metadata are removed. Asset imports must verify payload size and hash.
+and submodule metadata are removed. Asset imports verify payload size and SHA-256. The roughly 730 MiB large driving
+ONNX is stored losslessly as 45 MiB chunks and an upstream-compatible manifest,
+avoiding GitHub's 100 MiB blob limit; this storage transformation does not select
+the optional large-model backend.
 
 ## Snapshot sync
 
@@ -65,10 +69,26 @@ sysroot tooling, `.githooks`, and maintenance documents. Upstream `.gitignore`
 is adapted with local cache exclusions. Keep application behavior in patches
 rather than adding application directories to the preservation list.
 
+Reimporting the same verified snapshot retains exact provenance JSON, including
+restoration history, and the existing root ignore/ordinary-blob attribute rules.
+Repository, commit, tree and every dependency pin must match; an explicit ref
+spelling alone does not change provenance. New snapshots regenerate metadata and
+import upstream ignore/attribute rules with the local vendoring adaptations.
+Active LFS attributes are never retained. The Intelli Docker image/registry helper
+`release/ci/docker_build_sp.sh` is preserved as maintenance tooling.
+
+The obsolete standalone opendbc deployment workflow is archived under
+`patches/archive/sunnypilot-consolidated-20261004/legacy-opendbc-ev9-sync.yaml`.
+It does not participate in the embedded dependency or current GitHub deployment.
+
 After importing, run `./apply_patch.sh`, review the source, stage it deliberately,
 and run focused checks. Replay never commits or pushes. A new upstream source
 may require refreshing patches; applicability is not guaranteed by the old
 baseline's successful replay.
+
+For a same-baseline round trip, import the recorded commit, replay the enabled
+patches, and stage the source. The resulting Git tree must equal the starting
+tree. Normal replay leaves the index unchanged until that final staging step.
 
 ## Patch ownership
 
@@ -79,8 +99,13 @@ Application patches replay alphabetically first, then vehicle patches.
 | --- | --- |
 | Application `01_`–`12_` | Separate defaults, driving helpers, lane centering, UI, alerts, warnings, statistics, branding, monitoring, power and asset features |
 | `boot_logo_ev9_edition.patch` | Retained EV9 Edition boot artwork and Sunnypilot installation hook |
-| `sunnypilot_device_build.patch` | Restored application's device-build portability changes |
-| Vehicle `opendbc/01_`–`06_` | Separate baseline, safety, steering, door, warning and regression-test features |
+| `sunnypilot_device_build.patch` | Current native build portability and fused-model compilation |
+| Vehicle `opendbc/02_`–`06_` | Separate safety, steering, door, warning and regression-test features |
+
+There are 14 application and five vehicle patches, 19 enabled in total. Vehicle
+baseline physics formerly in `01_modify_baseline.patch` is now upstream; its old
+implementation is archived rather than replayed. Driver-monitoring patch `10_`
+only changes the phone threshold; upstream already supplies the eye/blink thresholds.
 
 Create exports staged source as a forward diff. Update reconstructs the existing
 patch's original blob versions, preserving committed hunks. For shared files,
@@ -92,7 +117,9 @@ baseline files with an updated patch. Both helpers exclude maintenance files and
 
 The former two consolidated restoration patches remain unchanged under
 `patches/archive/sunnypilot-consolidated-20261004/`. Splitting them changed patch
-organization only; application and vehicle source remain unchanged.
+organization only at restoration time. Superseded patches and build-compatibility
+helpers from the later upgrade are documented in
+[the upgrade archive](../patches/archive/sunnypilot-upgrade-20261004/README.md).
 
 StarPilot ports and their earlier documentation remain under
 `patches/archive/starpilot-20260920/`. Original historical patch files and helper
@@ -113,8 +140,13 @@ extensions before tests that import compiled modules. Host checks do not replace
 the AGNOS build or on-vehicle validation.
 
 Pushing `ev9-dev` triggers the GitHub build on `ubuntu-24.04-arm`, pinned to the
-source SHA. The maintained container/sysroot tooling compiles the restored
-Sunnypilot application and vendored dependencies. The build publishes
+source SHA. The maintained container/sysroot tooling compiles the current
+Sunnypilot application and vendored dependencies for AGNOS 19.7 / `comma_arm64`.
+The fused compiler uses verified pinned QCOM captures for the official default
+small model and driver monitoring; it does not overlay upstream native binaries.
+See [the device-build guide](how-to/laptop-device-build.md) for exact model provenance
+and verification limits. The new full native build still requires GitHub validation
+and device inference remains to be checked. The build publishes
 `ev9-prebuilt` as a parentless snapshot with a `Source-Commit` trailer. The
 `master` workflow then copies its exact tree into a historical `ev9` commit
 with `Source-Commit` and `Build-Commit` trailers. Install `Intelli/ev9`.

@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 ENV UV_LINK_MODE=copy
 WORKDIR /work
 
-# AGNOS 17.2 uses the Ubuntu 24.04 / Python 3.12 ABI. Application/native
+# AGNOS 19.7 uses the Ubuntu 24.04 / Python 3.12 ABI. Application/native
 # dependency versions come from Sunnypilot's frozen uv.lock, not StarPilot's
 # current base image. This container runs natively on the ARM GitHub runner.
 # rsync/ssh-client are needed for optional sysroot sync from a comma device.

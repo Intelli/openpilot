@@ -1,48 +1,52 @@
 {
   "repository": "https://github.com/sunnypilot/sunnypilot.git",
+  "commit": "d021f6ca41375e58be8125801547e84939e0c503",
+  "tree": "76ffc56bd7a75313831ff061dd064a7edce7f0f5",
   "branch": "hkg-angle-steering-2025",
-  "commit": "54fb2750bab46111cda1fbf2fd2267ad7c2d5e03",
-  "tree": "185dcaefedba65e78d529184aa836c554aba5e03",
-  "restored_from": "5928a37ad18783068ee26b187f6a7ddb9ff9c3d3",
+  "requested_ref": "d021f6ca41375e58be8125801547e84939e0c503",
+  "legacy_patches_applied": false,
   "dependencies": {
     "msgq_repo": {
-      "commit": "b7688b9bd731dea4520adf248bf1eb49b6dde776",
-      "tree": "3ae0a9e1870cc5873298c791c4a89f8fd0144ac7",
-      "repository": "https://github.com/commaai/msgq.git"
+      "repository": "https://github.com/sunnypilot/msgq.git",
+      "commit": "e7396e76dadbb49e374d4b664ff6bbb43a39bcb0",
+      "tree": "1cc8f0e30182d8f6243fc77b96bf62884323040f",
+      "gitlink": "e7396e76dadbb49e374d4b664ff6bbb43a39bcb0"
     },
     "opendbc_repo": {
       "repository": "https://github.com/sunnypilot/opendbc.git",
-      "branch": "hkg-angle-steering-2025",
-      "commit": "7c35b75469408ef8bf14e78737a3e0ad83e15d61",
-      "tree": "eb375550ead895f9ee8ca6764df4105a0083c96e",
-      "restored_from": "5a3f3761f586b8107fb8a66b449fa50806cd8f6f",
-      "restored_tree": "558350c12db5a65f9cd500af53ed0993e72f2b0f"
+      "commit": "28303fcd1cc457f67d405407858223e0b338df20",
+      "tree": "dd8af515fbb308eeaa52c04d15395c571657fc0b",
+      "gitlink": "28303fcd1cc457f67d405407858223e0b338df20"
     },
-    "panda": {
-      "commit": "0a9ef7ab54224e0df79a77448eda67023b285406",
-      "tree": "7963875a722a94780f41a48562eeb2442214d9ce",
-      "repository": "https://github.com/sunnyhaibin/panda.git"
-    },
-    "rednose_repo": {
-      "commit": "7ffefa3d8811a842f8ec97d311103ce3a45dfae0",
-      "tree": "979f5ad29e62fc7f117755e21c336cced09d96f2",
-      "repository": "https://github.com/commaai/rednose.git"
-    },
-    "sunnypilot/neural_network_data": {
+    "openpilot/sunnypilot/neural_network_data": {
+      "repository": "https://github.com/sunnypilot/neural-network-data.git",
       "commit": "03cac2d30e111e0689c0429cb8c1fe6cb5a905af",
       "tree": "6241c8f46dd7f694432958ab3da14ab53a3eae0a",
-      "repository": "https://github.com/sunnypilot/neural-network-data.git"
+      "gitlink": "03cac2d30e111e0689c0429cb8c1fe6cb5a905af"
+    },
+    "panda": {
+      "repository": "https://github.com/sunnyhaibin/panda.git",
+      "commit": "74a0adced421e8b7acd728d0f9988ce225423f13",
+      "tree": "2c69a42e11640e77821c523c6e31160ec6d8bb8e",
+      "gitlink": "74a0adced421e8b7acd728d0f9988ce225423f13"
+    },
+    "rednose_repo": {
+      "repository": "https://github.com/commaai/rednose.git",
+      "commit": "28d4a7f69e80e1c3e0d24ca0733d7daeaeade3d0",
+      "tree": "4c6da4b33c1a811549a2f037ccf6bc2163465c40",
+      "gitlink": "28d4a7f69e80e1c3e0d24ca0733d7daeaeade3d0"
     },
     "teleoprtc_repo": {
-      "commit": "389815b8ca5302ce7c1504b7841d4eb61a8cd51b",
-      "tree": "04079e54a863082b39d15c7c28c84345f9809e5f",
-      "repository": "https://github.com/commaai/teleoprtc"
+      "repository": "https://github.com/commaai/teleoprtc",
+      "commit": "1aa8fc433bef1519a95c0700c96258c3be6dfb34",
+      "tree": "bd9739faee9e432d23f167c9134bd17eebdc0d9b",
+      "gitlink": "1aa8fc433bef1519a95c0700c96258c3be6dfb34"
     },
     "tinygrad_repo": {
-      "commit": "3501a714785ff370cffb966a45d5f9cdf6c9ea7a",
-      "tree": "a0a1703868004b5a9b3dc29edc8acaf3ad768a18",
-      "repository": "https://github.com/sunnypilot/tinygrad.git"
+      "repository": "https://github.com/sunnypilot/tinygrad.git",
+      "commit": "f6fc4e3f2c3db5fae1e19cbfbc3ad9fc579a12ae",
+      "tree": "355675f1be8712d3f334a3adda2d58a8fb899739",
+      "gitlink": "f6fc4e3f2c3db5fae1e19cbfbc3ad9fc579a12ae"
     }
-  },
-  "legacy_patches_applied": false
+  }
 }

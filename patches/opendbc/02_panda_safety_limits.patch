@@ -1,16 +1,27 @@
+diff --git a/opendbc/safety/declarations.h b/opendbc/safety/declarations.h
+index 9d5d46290826e53e887799944da16adfb0704b0d..9337c7f219a32e139113d920a0370adf273a398f 100644
+--- a/opendbc/safety/declarations.h
++++ b/opendbc/safety/declarations.h
+@@ -131,6 +131,7 @@ typedef struct {
+   const struct lookup_t angle_rate_up_lookup;
+   const struct lookup_t angle_rate_down_lookup;
+   const uint32_t frequency;              // Hz
++  const bool ev9_high_limits;            // explicitly enabled by the EV9 angle model
+ } AngleSteeringLimits;
+ 
+ typedef struct {
 diff --git a/opendbc/safety/lateral.h b/opendbc/safety/lateral.h
-index 2a0a8857b770719a5eb7aa0323ff775b79bad7c6..00dfe7de3a3e17e1d96159e13d632f79c36531d9 100644
+index 5dfc41783baac09dea21dad3a1703641aa4b5fbf..b943e0a75480d7b9fc9e50f54565b7627e0a80ec 100644
 --- a/opendbc/safety/lateral.h
 +++ b/opendbc/safety/lateral.h
-@@ -295,12 +295,13 @@ bool steer_angle_cmd_checks_vm(int desired_angle, bool steer_control_enabled, co
+@@ -355,12 +355,12 @@ bool steer_angle_cmd_checks_vm(int desired_angle, bool steer_control_enabled, co
    // This check uses a simple vehicle model to allow for constant lateral acceleration and jerk limits across all speeds.
    // TODO: remove the inaccurate breakpoint angle limiting function above and always use this one
  
 -  // Highway curves are rolled in the direction of the turn, add tolerance to compensate
 -  static const float MAX_LATERAL_ACCEL = ISO_LATERAL_ACCEL + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^2
 +  const float fudged_speed = SAFETY_MAX((vehicle_speed.min / VEHICLE_SPEED_FACTOR) - 1.0, 1.0);
-+  const bool using_ev9_vm = (params.steer_ratio > 15.5F) && (params.wheelbase > 3.0F);
-+  const bool use_high_limits = using_ev9_vm && (fudged_speed <= ((42.0F / 3.6F) + 0.1F));  // EV9: 4.2 m/s^2, taper above ~42 km/h
++  const bool use_high_limits = limits.ev9_high_limits && (fudged_speed <= ((42.0F / 3.6F) + 0.1F));  // EV9: 4.2 m/s^2, taper above ~42 km/h
 +  const float MAX_LATERAL_ACCEL = use_high_limits ? 4.2F : (ISO_LATERAL_ACCEL + (EARTH_G * AVERAGE_ROAD_ROLL));
    // Lower than ISO 11270 lateral jerk limit, which is 5.0 m/s^3
 -  static const float MAX_LATERAL_JERK = 3.0 + (EARTH_G * AVERAGE_ROAD_ROLL);  // ~3.6 m/s^3
@@ -20,3 +31,15 @@ index 2a0a8857b770719a5eb7aa0323ff775b79bad7c6..00dfe7de3a3e17e1d96159e13d632f79
    const float curvature_factor = get_curvature_factor(fudged_speed, params);
  
    bool violation = false;
+diff --git a/opendbc/safety/modes/hyundai_canfd.h b/opendbc/safety/modes/hyundai_canfd.h
+index 6cda8396581da22fb057c15f991969f9fed28599..187528fc0c1a51a849db3296309b97586d6ba727 100644
+--- a/opendbc/safety/modes/hyundai_canfd.h
++++ b/opendbc/safety/modes/hyundai_canfd.h
+@@ -169,6 +169,7 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *msg) {
+     .max_angle = 3600,
+     .angle_deg_to_can = 10,
+     .frequency = 100U,
++    .ev9_high_limits = hyundai_canfd_angle_model_id == HYUNDAI_ANGLE_MODEL_KIA_EV9,
+   };
+ 
+   // Per-vehicle angle steering params, resolved at init from safety_param_sp

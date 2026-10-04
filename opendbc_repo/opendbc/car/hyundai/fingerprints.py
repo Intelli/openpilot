@@ -41,6 +41,14 @@ FW_VERSIONS = {
       b'\xf1\x00IGhe SCC FHCUP      1.00 1.02 99110-M9000         ',
     ],
   },
+  CAR.HYUNDAI_AZERA_HEV_7TH_GEN: {
+    (Ecu.fwdCamera, 0x7c4, None): [
+      b'\xf1\x00GN7HMFC  AT KOR LHD 1.00 1.01 99211-N1110 240423',
+    ],
+    (Ecu.fwdRadar, 0x7d0, None): [
+      b'\xf1\x00GN7_ RDR -----      1.00 1.00 99110-N1100         ',
+    ],
+  },
   CAR.HYUNDAI_GENESIS: {
     (Ecu.fwdCamera, 0x7c4, None): [
       b'\xf1\x00DH LKAS 1.1 -150210',
@@ -779,6 +787,7 @@ FW_VERSIONS = {
       b'\xf1\x00SG2EMFC  AT USA LHD 1.00 1.00 99211-AT100 230216',
       b'\xf1\x00SG2EMFC  AT USA LHD 1.00 1.00 99211-AT200 240401',
       b'\xf1\x00SG2EMFC  AT USA LHD 1.01 1.09 99211-AT000 220801',
+      b'\xf1\x00SG2EMFC  AT EUR LHD 1.01 1.10 99211-AT000 230417',
     ],
   },
   CAR.KIA_NIRO_PHEV: {
@@ -1051,10 +1060,12 @@ FW_VERSIONS = {
     (Ecu.fwdRadar, 0x7d0, None): [
       b'\xf1\x00CV__ RDR -----      1.00 1.00 99110-XG500         ',
       b'\xf1\x00CV__ RDR -----      1.00 1.01 99110-CV500         ',
+      b'\xf1\x00CV__ RDR -----      1.00 1.02 99110-XG600         ',
     ],
     (Ecu.fwdCamera, 0x7c4, None): [
       b'\xf1\x00CV  MFC  AT KOR LHD 1.00 1.01 99210-CV500 240405',
       b'\xf1\x00CV  MFC  AT USA LHD 1.00 1.02 99210-XG500 241223',
+      b'\xf1\x00CV  MFC  AT USA LHD 1.00 1.04 99210-XG600 250922',
     ],
   },
   CAR.KIA_EV9: {
@@ -1063,6 +1074,7 @@ FW_VERSIONS = {
       b'\xf1\x00MV__ RDR -----      1.00 1.03 99110-DO000         ',
       b'\xf1\x00MV__ RDR -----      1.00 1.04 99110-DO000         ',
       b'\xf1\x00MV__ RDR -----      1.00 1.02 99110-DO700         ',
+      b'\xf1\x00MV__ RDR -----      1.00 1.04 99110-DO700         ',
     ],
     (Ecu.fwdCamera, 0x7c4, None): [
       b'\xf1\x00MV  MFC  AT KOR LHD 1.00 1.01 99211-DO000 230419',
@@ -1071,6 +1083,7 @@ FW_VERSIONS = {
       b'\xf1\x00MV  MFC  AT CAN LHD 1.00 1.00 99211-DO100 240403',
       b'\xf1\x00MV  MFC  AT USA LHD 1.00 1.01 99211-XA000 241023',
       b'\xf1\x00MV  MFC  AT CAN LHD 1.00 1.01 99211-DO100 241023',
+      b'\xf1\x00MV  MFC  AT CAN LHD 1.00 1.02 99211-DO100 241223',
     ],
   },
   CAR.HYUNDAI_IONIQ_5: {
@@ -1127,6 +1140,7 @@ FW_VERSIONS = {
       b'\xf1\x00CE  MFC  AT EUR LHD 1.00 1.04 99211-KL000 221213',
       b'\xf1\x00CE  MFC  AT USA LHD 1.00 1.04 99211-KL000 221213',
       b'\xf1\x00CE  MFC  AT USA LHD 1.00 1.06 99211-KL000 230915',
+      b'\xf1\x00CE  MFC  AT CAN LHD 1.00 1.06 99211-KL000 230915',
     ],
   },
   CAR.HYUNDAI_IONIQ_9: {
@@ -1136,6 +1150,7 @@ FW_VERSIONS = {
     (Ecu.fwdCamera, 0x7c4, None): [
       b'\xf1\x00ME  MFC  AT KOR LHD 1.00 1.00 99211-GO000 241007',
       b'\xf1\x00ME  MFC  AT KOR LHD 1.00 1.01 99211-GO000 250103',
+      b'\xf1\x00ME  MFC  AT USA LHD 1.00 1.00 99211-TD000 241007',
     ],
   },
   CAR.HYUNDAI_TUCSON_4TH_GEN: {

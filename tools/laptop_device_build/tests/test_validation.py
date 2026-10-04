@@ -12,7 +12,7 @@ BUILDER = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BUILDER))
 from verify_build import verify_elf
 import verify_build as build_validation
-from verify_model_assets import compiler_digest, verify_assets
+from verify_model_assets import capture_devices, compiler_digest, verify_assets
 
 
 @pytest.fixture
@@ -21,14 +21,15 @@ def model_root(tmp_path):
   runtime.mkdir(parents=True)
   (runtime / '__init__.py').write_text('runtime = 1\n')
   asset_root = tmp_path / 'tools/laptop_device_build/model_assets'
-  model_dir = asset_root / 'selfdrive/modeld/models'
+  model_dir = asset_root / 'openpilot/selfdrive/modeld/models'
   model_dir.mkdir(parents=True)
-  (model_dir / 'tg_compiled_flags.json').write_text('{"DEV": "QCOM"}')
-  (model_dir / 'driving_policy_tinygrad.pkl').write_bytes(pickle.dumps(('QCOM', 42)))
+  (model_dir / 'tg_input_devices.json').write_text('{"openpilot.selfdrive.modeld.dmonitoringmodeld": {"default": {"DEV": "QCOM"}}}')
+  (model_dir / 'driving_tinygrad.pkl').write_bytes(pickle.dumps(('QCOM', 42)))
   manifest = {
     'backend': 'QCOM',
     'tinygrad_runtime_sha256': compiler_digest(tmp_path),
     'source_inputs': {},
+    'formats': {'openpilot/selfdrive/modeld/models/driving_tinygrad.pkl': 'pickle'},
     'assets': {p.relative_to(asset_root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in model_dir.iterdir()},
   }
   manifest_path = tmp_path / 'tools/laptop_device_build/model_assets.json'
@@ -39,15 +40,15 @@ def model_root(tmp_path):
 def test_install_copies_verified_qcom_data(model_root):
   verify_assets(model_root, require_qcom=True, install=True)
   verify_assets(model_root, require_qcom=True, installed=True)
-  assert (model_root / 'selfdrive/modeld/models/driving_policy_tinygrad.pkl').read_bytes() == pickle.dumps(('QCOM', 42))
+  assert (model_root / 'openpilot/selfdrive/modeld/models/driving_tinygrad.pkl').read_bytes() == pickle.dumps(('QCOM', 42))
 
 
 def test_tampered_capture_fails_before_install(model_root):
-  stored = model_root / 'tools/laptop_device_build/model_assets/selfdrive/modeld/models/driving_policy_tinygrad.pkl'
+  stored = model_root / 'tools/laptop_device_build/model_assets/openpilot/selfdrive/modeld/models/driving_tinygrad.pkl'
   stored.write_bytes(b'modified')
   with pytest.raises(ValueError, match='Missing or modified'):
     verify_assets(model_root, require_qcom=True, install=True)
-  assert not (model_root / 'selfdrive/modeld/models').exists()
+  assert not (model_root / 'openpilot/selfdrive/modeld/models').exists()
 
 
 def test_changed_compiler_rejects_model_capture(model_root):
@@ -57,11 +58,11 @@ def test_changed_compiler_rejects_model_capture(model_root):
 
 
 def test_relabelled_cpu_capture_is_rejected(model_root):
-  stored = model_root / 'tools/laptop_device_build/model_assets/selfdrive/modeld/models/driving_policy_tinygrad.pkl'
+  stored = model_root / 'tools/laptop_device_build/model_assets/openpilot/selfdrive/modeld/models/driving_tinygrad.pkl'
   stored.write_bytes(pickle.dumps(('CPU', 42)))
   path = model_root / 'tools/laptop_device_build/model_assets.json'
   manifest = json.loads(path.read_text())
-  manifest['assets']['selfdrive/modeld/models/driving_policy_tinygrad.pkl'] = hashlib.sha256(stored.read_bytes()).hexdigest()
+  manifest['assets']['openpilot/selfdrive/modeld/models/driving_tinygrad.pkl'] = hashlib.sha256(stored.read_bytes()).hexdigest()
   path.write_text(json.dumps(manifest))
   with pytest.raises(ValueError, match='capture backend'):
     verify_assets(model_root, require_qcom=True)
@@ -69,9 +70,32 @@ def test_relabelled_cpu_capture_is_rejected(model_root):
 
 def test_installed_capture_tampering_is_rejected(model_root):
   verify_assets(model_root, install=True)
-  (model_root / 'selfdrive/modeld/models/driving_policy_tinygrad.pkl').write_bytes(b'modified')
+  (model_root / 'openpilot/selfdrive/modeld/models/driving_tinygrad.pkl').write_bytes(b'modified')
   with pytest.raises(ValueError, match='Missing or modified'):
     verify_assets(model_root, installed=True)
+
+
+def oob_capture():
+  buffers = []
+  opcodes = pickle.dumps(('QCOM', pickle.PickleBuffer(b'compiled kernel')), protocol=5, buffer_callback=buffers.append)
+  return struct.pack('<q', len(opcodes)) + opcodes + b''.join(struct.pack('<q', len(b.raw())) + b.raw() for b in buffers)
+
+
+def test_fused_capture_framing_is_checked_without_loading_pickle():
+  data = oob_capture()
+  assert capture_devices(data, 'oob') == {'QCOM'}
+  with pytest.raises(ValueError, match='buffer length'):
+    capture_devices(data[:-1], 'oob')
+  with pytest.raises(ValueError, match='opcode length'):
+    capture_devices(struct.pack('<q', len(data) + 1) + data[8:], 'oob')
+  opcode_end = 8 + struct.unpack('<q', data[:8])[0]
+  with pytest.raises(ValueError, match='buffer count'):
+    capture_devices(data[:opcode_end], 'oob')
+
+
+def test_pickle_trailing_payload_is_rejected():
+  with pytest.raises(ValueError, match='Trailing data'):
+    capture_devices(pickle.dumps(('QCOM', 42)) + b'ignored payload', 'pickle')
 
 
 @pytest.mark.parametrize('machine,valid', [(183, True), (62, False), (40, False)])
@@ -108,7 +132,7 @@ def test_missing_bootlog_rejects_device_build(tmp_path, monkeypatch):
   header[:6] = b'\x7fELF\x02\x01'
   header[18:20] = struct.pack('<H', 183)
   for name in build_validation.NATIVE_OUTPUTS:
-    if name == 'system/loggerd/bootlog':
+    if name == 'openpilot/system/loggerd/bootlog':
       continue
     path = tmp_path / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -119,5 +143,5 @@ def test_missing_bootlog_rejects_device_build(tmp_path, monkeypatch):
     path.write_bytes(b'\0' * 128)
   with pytest.raises(FileNotFoundError, match='bootlog'):
     build_validation.verify_build(tmp_path)
-  (tmp_path / 'system/loggerd/bootlog').write_bytes(header)
+  (tmp_path / 'openpilot/system/loggerd/bootlog').write_bytes(header)
   build_validation.verify_build(tmp_path)

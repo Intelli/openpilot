@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.car.common.filter_simple import FirstOrderFilter
@@ -33,7 +35,7 @@ MAX_ANGLE_CONSECUTIVE_FRAMES = 2
 CANCEL_BUTTON_DELAY_FRAMES = 10
 
 MAX_ANGLE_RATE = 5
-ANGLE_SAFETY_BASELINE_MODEL = "KIA_EV9"
+ANGLE_SAFETY_BASELINE_MODEL = "KIA_SPORTAGE_HEV_2026"
 EV9_ANGLE_LIMIT_SPEED_THRESHOLD_DEFAULT = 32.0 / 3.6
 ANGLE_OVERRIDE_EFFORT_MIN_PERCENT = 10.0
 ANGLE_OVERRIDE_EFFORT_MAX_PERCENT = 100.0
@@ -136,6 +138,9 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
     IntelligentCruiseButtonManagementInterface.__init__(self, CP, CP_SP)
     self.CAN = CanBus(CP)
     self.params = CarControllerParams(CP)
+    if CP.carFingerprint == CAR.KIA_EV9:
+      # Preserve the EV9 high-speed controller envelope without changing other models.
+      self.params.ANGLE_LIMITS = replace(self.params.ANGLE_LIMITS, MAX_LATERAL_ACCEL=3.0, MAX_LATERAL_JERK=3.0)
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.angle_limit_counter = 0
     self.angle_filter = FirstOrderFilter(0.0, 0.2, DT_CTRL)
@@ -240,10 +245,7 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
 
       apply_angle = apply_steer_angle_limits_vm(desired_angle, self.apply_angle_last, v_ego_raw, CS.out.steeringAngleDeg, CC.latActive, self.params, self.VM)
 
-      # if we are not the baseline model, we use the baseline model for further limits to prevent a panda block since it is hardcoded for baseline model.
-      if self.CP.carFingerprint != ANGLE_SAFETY_BASELINE_MODEL:
-        apply_angle = apply_steer_angle_limits_vm(apply_angle or desired_angle, self.apply_angle_last, v_ego_raw, CS.out.steeringAngleDeg, CC.latActive,
-                                                  self.params, self.BASELINE_VM)
+      # Panda now selects the matching per-vehicle model; no baseline-model clamp is needed.
 
       self.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = max_lat_accel
       self.params.ANGLE_LIMITS.MAX_LATERAL_JERK = max_lat_jerk
