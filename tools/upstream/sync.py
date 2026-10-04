@@ -24,6 +24,7 @@ PRESERVE = (
   "AGENTS.md", "sync-upstream.sh", "update.sh", "apply_patch.sh", "apply_patch_conflicts.sh", "fix_patch.sh",
   "create_patch.sh", "create_patch_manual.sh", "update_patch.sh", "patches", "tools/opendbc-patches", "tools/patches",
   "tools/upstream", "tools/maintenance", "tools/ci/sync_ev9_branch.sh", "tools/ci/tests", ".github/workflows",
+  ".github/pull_request_template.md",
   "release/ci/publish.sh", "release/ci/docker_build_sp.sh", ".githooks", "build", "scripts/laptop_device_build.sh", "tools/laptop_device_build",
   "docs/how-to/laptop-device-build.md", "docs/MAINTENANCE.md", "docs/EV9_BEHAVIOR.md", "docs/RECENT_DRIVE_REVIEW.md",
   "docs/C3X_UPDATE_WORKFLOW.md", APPLICATION_MANIFEST, OPENDBC_MANIFEST, "starpilot-upstream.json",
@@ -33,8 +34,11 @@ RAW_OPTIONS = (
   "-c", "filter.lfs.smudge=", "-c", "filter.lfs.clean=", "-c", "filter.lfs.required=false",
 )
 LFS_VERSION = b"version https://git-lfs.github.com/spec/v1\n"
+LARGE_MODEL_LIMIT = 95 * 1024 * 1024
+MODEL_CHUNK_SIZE = 45 * 1024 * 1024
 BINARY_ATTRIBUTES = """# Materialized upstream assets are ordinary Git blobs, with binary diffs.
 *.onnx binary
+*.onnx.chunk* binary
 *.pkl binary
 *.pkl.chunk* binary
 *.jpg binary
@@ -156,6 +160,19 @@ class Snapshot:
       offset = end + size + 2
     return result
 
+  def chunk_model(self, path, payload, size, entry, entries):
+    # Match openpilot.common.file_chunker so upstream readers/compilers consume
+    # large hydrated ONNX models without committing a GitHub-rejected blob.
+    count = (size + MODEL_CHUNK_SIZE - 1) // MODEL_CHUNK_SIZE
+    names = [path + ".chunkmanifest", *(f"{path}.chunk{i + 1:02d}of{count:02d}" for i in range(count))]
+    if any(name in entries for name in names):
+      raise ValueError(f"Chunk targets collide with upstream files: {path}")
+    result = {names[0]: (entry[0], "blob", self.store(str(count).encode()))}
+    with payload.open("rb") as source:
+      for name in names[1:]:
+        result[name] = (entry[0], "blob", self.store(source.read(MODEL_CHUNK_SIZE)))
+    return result
+
   def materialize(self, repository, ref, prefix="", ancestors=()):
     remote, commit, tree = self.fetch(repository, ref)
     identity = (repository, commit)
@@ -165,6 +182,7 @@ class Snapshot:
     entries = tree_entries(self.git, commit)
     small = self.small_blobs(entries)
     pointers = {}
+    chunked = {}
     for path, (mode, kind, oid) in entries.items():
       data = small.get(oid, b"")
       if kind == "blob" and mode != "120000" and data.startswith(LFS_VERSION):
@@ -190,18 +208,33 @@ class Snapshot:
             digest.update(chunk)
         if digest.hexdigest() != oid:
           raise ValueError(f"Invalid Git LFS payload: {prefix}{path}")
+        if path.endswith(".onnx") and size > LARGE_MODEL_LIMIT:
+          chunked.update(self.chunk_model(path, payload, size, entries[path], entries))
+          del entries[path]
+          continue
         stored = self.git("hash-object", "-w", "--no-filters", str(payload)).decode().strip()
         mode, kind, _ = entries[path]
         entries[path] = (mode, kind, stored)
     modules = {}
     if ".gitmodules" in entries:
-      config = configparser.RawConfigParser()
-      config.read_string(self.blob(entries[".gitmodules"][2]).decode())
-      for section in config.sections():
-        if section.startswith("submodule "):
-          path = valid_path(config.get(section, "path"))
-          modules[path] = relative_url(repository, config.get(section, "url"))
-    result = {}
+      # Git config permits mixed indentation; ConfigParser treats more-indented
+      # options as continuations and can lose a valid submodule URL.
+      records = self.git("config", "--blob=" + entries[".gitmodules"][2], "--null", "--list")
+      config = {}
+      for row in records.split(b"\0"):
+        if row:
+          key, _, value = row.partition(b"\n")
+          config[os.fsdecode(key)] = os.fsdecode(value)
+      for key, value in config.items():
+        if key.startswith("submodule.") and key.endswith(".path"):
+          path = valid_path(value)
+          if entries.get(path, (None, None, None))[1] != "commit":
+            continue
+          url = config.get(key[:-5] + ".url")
+          if not url:
+            raise ValueError(f"No .gitmodules URL for gitlink {prefix}{path}")
+          modules[path] = relative_url(repository, url)
+    result = {valid_path(prefix + path): entry for path, entry in chunked.items()}
     for path, entry in entries.items():
       mode, kind, oid = entry
       destination = valid_path(prefix + path)
@@ -479,6 +512,7 @@ def main():
             source[path] = retain_entry(root, snapshot, entry)
       source[manifest] = manifest_entry(root, snapshot, current, manifest, provenance)
       if "opendbc_repo" in snapshot.dependencies:
+        source["opendbc"] = ("120000", "blob", snapshot.store(b"opendbc_repo/opendbc"))
         vehicle = dict(snapshot.dependencies["opendbc_repo"], branch=BRANCH, source="application pin", legacy_patches_applied=False)
         vehicle_dependencies = {path: entry for path, entry in snapshot.dependencies.items() if path.startswith("opendbc_repo/")}
         if vehicle_dependencies:

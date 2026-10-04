@@ -10,7 +10,7 @@ from opendbc.car.hyundai.radar_interface import RadarInterface
 
 from opendbc.sunnypilot.car.hyundai.escc import ESCC_MSG
 from opendbc.sunnypilot.car.hyundai.longitudinal.helpers import get_longitudinal_tune
-from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP, HyundaiSafetyFlagsSP
+from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP, HyundaiSafetyFlagsSP, ANGLE_STEERING_MODEL_BY_CAR, encode_angle_model_id
 
 ButtonType = structs.CarState.ButtonEvent.Type
 Ecu = structs.CarParams.Ecu
@@ -142,9 +142,6 @@ class CarInterface(CarInterfaceBase):
     ret.radarUnavailable = RADAR_START_ADDR not in fingerprint[1] or Bus.radar not in DBC[ret.carFingerprint]
     ret.openpilotLongitudinalControl = alpha_long and ret.alphaLongitudinalAvailable
     ret.pcmCruise = not ret.openpilotLongitudinalControl
-    ret.startingState = True
-    ret.vEgoStarting = 0.1
-    ret.startAccel = 1.0
     ret.longitudinalActuatorDelay = 0.5
 
     if ret.openpilotLongitudinalControl:
@@ -225,6 +222,11 @@ class CarInterface(CarInterfaceBase):
         ret.flags |= HyundaiFlagsSP.HAS_LKAS12.value
 
     ret.intelligentCruiseButtonManagementAvailable = not (stock_cp.flags & HyundaiFlags.CANFD_ALT_BUTTONS)
+
+    # Encode angle steering vehicle model ID so the panda can use per-vehicle physics
+    if stock_cp.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
+      angle_model_id = ANGLE_STEERING_MODEL_BY_CAR.get(candidate, 0)
+      ret.safetyParam |= encode_angle_model_id(angle_model_id)
 
     return ret
 

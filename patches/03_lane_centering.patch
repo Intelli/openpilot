@@ -1,8 +1,8 @@
-diff --git a/cereal/log.capnp b/cereal/log.capnp
-index cf91e017e6fa078528d93ab699d4b45b78fc8947..bef70942bb34b0da51aa2b01ab6205ff189a6894 100644
---- a/cereal/log.capnp
-+++ b/cereal/log.capnp
-@@ -807,6 +807,14 @@ struct ControlsState @0x97ff69c53601abf1 {
+diff --git a/openpilot/cereal/log.capnp b/openpilot/cereal/log.capnp
+index 5cee3266e0e0a9c28f0c2954eeb5d5cded5fde25..0fc96d097a68e73775a3cc244c3998313c629cab 100644
+--- a/openpilot/cereal/log.capnp
++++ b/openpilot/cereal/log.capnp
+@@ -876,6 +876,14 @@ struct ControlsState @0x97ff69c53601abf1 {
    ufAccelCmd @33 :Float32;
    curvature @37 :Float32;  # path curvature from vehicle model
    desiredCurvature @61 :Float32;  # lag adjusted curvatures used by lateral controllers
@@ -17,8 +17,8 @@ index cf91e017e6fa078528d93ab699d4b45b78fc8947..bef70942bb34b0da51aa2b01ab6205ff
    forceDecel @51 :Bool;
  
    lateralControlState :union {
-@@ -864,6 +872,12 @@ struct ControlsState @0x97ff69c53601abf1 {
-     saturated @3 :Bool;
+@@ -945,6 +953,12 @@ struct ControlsState @0x97ff69c53601abf1 {
+     saturated @8 :Bool;
    }
  
 +  enum LaneCenteringSource {
@@ -30,10 +30,10 @@ index cf91e017e6fa078528d93ab699d4b45b78fc8947..bef70942bb34b0da51aa2b01ab6205ff
    deprecated :group {
      vEgo @0 :Float32;
      vEgoRaw @32 :Float32;
-diff --git a/selfdrive/controls/controlsd.py b/selfdrive/controls/controlsd.py
-index b53185ca2b4bbc7df9c765e968bbf350287a7f0c..f56be1f1edc1c48aec3988b4047dfdc1ce96e7cd 100755
---- a/selfdrive/controls/controlsd.py
-+++ b/selfdrive/controls/controlsd.py
+diff --git a/openpilot/selfdrive/controls/controlsd.py b/openpilot/selfdrive/controls/controlsd.py
+index f3c8782cb0aabe3c5cb5dcd8f109c1abb548c2c2..dec1906eb66f88c0e9f645748c438c44a1fd38b6 100755
+--- a/openpilot/selfdrive/controls/controlsd.py
++++ b/openpilot/selfdrive/controls/controlsd.py
 @@ -1,5 +1,7 @@
  #!/usr/bin/env python3
  import math
@@ -41,8 +41,8 @@ index b53185ca2b4bbc7df9c765e968bbf350287a7f0c..f56be1f1edc1c48aec3988b4047dfdc1
 +from collections import deque
  from numbers import Number
  
- from cereal import car, log
-@@ -10,6 +12,7 @@ from openpilot.common.realtime import config_realtime_process, DT_CTRL, Priority
+ from openpilot.cereal import log
+@@ -11,6 +13,7 @@ from openpilot.common.realtime import config_realtime_process, DT_CTRL, Priority
  from openpilot.common.swaglog import cloudlog
  
  from opendbc.car.car_helpers import interfaces
@@ -50,7 +50,7 @@ index b53185ca2b4bbc7df9c765e968bbf350287a7f0c..f56be1f1edc1c48aec3988b4047dfdc1
  from opendbc.car.vehicle_model import VehicleModel
  from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
  from openpilot.selfdrive.controls.lib.latcontrol import LatControl
-@@ -25,9 +28,94 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+@@ -27,9 +30,94 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
  State = log.SelfdriveState.OpenpilotState
  LaneChangeState = log.LaneChangeState
  LaneChangeDirection = log.LaneChangeDirection
@@ -145,7 +145,7 @@ index b53185ca2b4bbc7df9c765e968bbf350287a7f0c..f56be1f1edc1c48aec3988b4047dfdc1
  
  class Controls(ControlsExt):
    def __init__(self) -> None:
-@@ -50,6 +138,52 @@ class Controls(ControlsExt):
+@@ -52,6 +140,52 @@ class Controls(ControlsExt):
      self.steer_limited_by_safety = False
      self.curvature = 0.0
      self.desired_curvature = 0.0
@@ -198,7 +198,7 @@ index b53185ca2b4bbc7df9c765e968bbf350287a7f0c..f56be1f1edc1c48aec3988b4047dfdc1
  
      self.pose_calibrator = PoseCalibrator()
      self.calibrated_pose: Pose | None = None
-@@ -136,10 +270,213 @@ class Controls(ControlsExt):
+@@ -140,10 +274,213 @@ class Controls(ControlsExt):
      # Steering PID loop and lateral MPC
      # Reset desired curvature to current to avoid violating the limits on engage
      if self.sm.valid['lateralManeuverPlan']:
@@ -412,10 +412,10 @@ index b53185ca2b4bbc7df9c765e968bbf350287a7f0c..f56be1f1edc1c48aec3988b4047dfdc1
 +      self.centering_adjusting = False
 +      self._reset_paced_centering()
 +
-     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
  
      actuators.curvature = self.desired_curvature
-@@ -158,11 +495,555 @@ class Controls(ControlsExt):
+@@ -165,11 +502,555 @@ class Controls(ControlsExt):
          cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
          setattr(actuators, p, 0.0)
  
@@ -971,7 +971,7 @@ index b53185ca2b4bbc7df9c765e968bbf350287a7f0c..f56be1f1edc1c48aec3988b4047dfdc1
      # Orientation and angle rates can be useful for carcontroller
      # Only calibrated (car) frame is relevant for the carcontroller
      CC.currentCurvature = self.curvature
-@@ -208,6 +1089,14 @@ class Controls(ControlsExt):
+@@ -215,6 +1096,14 @@ class Controls(ControlsExt):
      cs.longitudinalPlanMonoTime = self.sm.logMonoTime['longitudinalPlan']
      cs.lateralPlanMonoTime = self.sm.logMonoTime['modelV2']
      cs.desiredCurvature = self.desired_curvature

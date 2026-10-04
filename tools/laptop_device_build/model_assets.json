@@ -1,151 +1,107 @@
 {
-  "donor_commit": "d69599e89a5cd28ad773415d4c89952735bbb52d",
-  "source_commit": "5928a37ad18783068ee26b187f6a7ddb9ff9c3d3",
-  "tinygrad_commit": "3501a714785ff370cffb966a45d5f9cdf6c9ea7a",
+  "donor_commit": "a5f44653d7f43ad57fef2f546f3916ec4cbf3c56",
+  "source_commit": "d021f6ca41375e58be8125801547e84939e0c503",
+  "tinygrad_commit": "f6fc4e3f2c3db5fae1e19cbfbc3ad9fc579a12ae",
   "backend": "QCOM",
-  "tinygrad_runtime_sha256": "b1a59e07c345306f6e81daf471c3fdc23ac87e63c147684734506bbb9507a697",
+  "tinygrad_runtime_sha256": "93b6bf3927ab380c6783d76380026b5afd9190bf29a5fa801315de0321b3e173",
   "source_inputs": {
-    "selfdrive/modeld/models/driving_vision.onnx": "940e9006a25f27f0b6e85da798e6a8fd1f6dd492dd7d0b9ff1a9436460f46129",
-    "selfdrive/modeld/models/driving_policy.onnx": "853c6634746ff439a848349d00e4d5581cd941f13f7c1862c31b72a31cc24858",
-    "selfdrive/modeld/models/dmonitoring_model.onnx": "2fd471febb6e973313ac0d0c6755f6410c1937ba92230b58a433761e8c883072",
-    "selfdrive/modeld/compile_warp.py": "aa6660c4ac53534f00a5fff62e5666550197f4cc36d6aa22decbab9dd415a7e8",
-    "selfdrive/modeld/get_model_metadata.py": "045d9fd4b10ff989adc5837b9a5dfad2b961b890f46f0bbe995335dae5e68789",
-    "sunnypilot/modeld_v2/warp.py": "94285177850c41935455d0de461dabc6ad39e9fd14d3118bb0cb4bd38c5b6a67",
-    "system/camerad/cameras/nv12_info.py": "90b0b00df8a7baa638940c2e73cbe2e79059af0acd19812ca6d765793ce4fda0",
-    "common/transformations/camera.py": "3ac87fd236aa9c9e284059c47c9eb96a7c6e0be5106f514a95e6ec06e1060fb5",
-    "common/file_chunker.py": "3a6ca82e6717ca0784ee7e3ea2cfbc02387af7a966982a2cb1e589c4c08f68c6",
-    "selfdrive/modeld/modeld.py": "06037ac29af9828e8bde32c3776e945f997d6f92f58c0ef0965b8619fd20ec3d",
-    "selfdrive/modeld/warp_compat.py": "975df613408a4026f9c6e7728199057d75b02be0460f5ce1ea6b558dad03736d"
+    "openpilot/selfdrive/modeld/models/driving_supercombo.onnx": "659727c4d4839adc4992a254409a54259a8756a743f2d567bf5fdc6579f8009b",
+    "openpilot/selfdrive/modeld/models/dmonitoring_model.onnx": "dd299afabe7a3e0d04cbe2bd97fdb0c93bba8ad6d3cc3663a0e0ededaf243ac2",
+    "openpilot/selfdrive/modeld/compile_modeld.py": "bb5c2a6db8481163ae90eec57a299a1d5ecf58e3f4ef6cefdc9f9189205f514e",
+    "openpilot/selfdrive/modeld/compile_dm_warp.py": "3910bc069a65abbeb49352285777adbc4e9fff3e011bdb4a9ebbc8df2c29a9f5",
+    "openpilot/selfdrive/modeld/get_model_metadata.py": "2cbaa92e12016e911911e3bd403366d6202fc5bc41f5834eb2c8e733dd1678bf",
+    "openpilot/selfdrive/modeld/helpers.py": "a93869e3d541ce1c3d80831e9555cd718ef5992d79d6245ff0ae1492afa55d43",
+    "openpilot/selfdrive/modeld/constants.py": "5d597d287df626d08b234a17db05e884302fead646ff4e7f0153079547c8010c",
+    "openpilot/system/camerad/cameras/nv12_info.py": "b3f39bbfdd75c43d396b01f746d460068aa8e98862217d46bf3cd426cd034e1a",
+    "openpilot/common/transformations/camera.py": "1de3f9e6147f28195c71673ae5c8ec38e65ede997ac98d2e1e3b114eda873ec4",
+    "openpilot/common/transformations/model.py": "c87aad27074362fe9fe361a71da92c1fc90daf63bcfd4d8c47d65d3a936ec15e",
+    "openpilot/common/file_chunker.py": "fa424c1549ee879e90117cd5ecf50c5101e5cf5e7a0df35347f1ff76b18b9533"
   },
   "assets": {
-    "selfdrive/modeld/models/driving_policy_tinygrad.pkl.chunkmanifest": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "selfdrive/modeld/models/driving_policy_tinygrad.pkl.chunk01of01": "6bb21a8e7f86be3eb8f7c042522f09ffa2404668667a50d91620c24b4f039ee5",
-    "selfdrive/modeld/models/driving_policy_metadata.pkl": "5ce4fa01c7edde9e27e3a9ed6ac0ca24e5de0adc384e66a9fb73e13488e60630",
-    "selfdrive/modeld/models/driving_vision_tinygrad.pkl.chunkmanifest": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
-    "selfdrive/modeld/models/driving_vision_tinygrad.pkl.chunk01of02": "dbe1c5b5984206da16a8d75674edc76f9231f19c570e654efb5e7c8eb860b605",
-    "selfdrive/modeld/models/driving_vision_tinygrad.pkl.chunk02of02": "45efd8978f77fc20ca3434fb78a77c5fcdd8b3b8404eb1ede8ce838a3df0e190",
-    "selfdrive/modeld/models/driving_vision_metadata.pkl": "a2be39088d38550e818f5ac1c6300a64605ba0bd0676a27fe7bbea9fddae90a1",
-    "selfdrive/modeld/models/dm_warp_1344x760_tinygrad.pkl": "86e7fec6c84d5e3ffec032a744da7647907e56df14e70e7946db8accf300d138",
-    "selfdrive/modeld/models/dm_warp_1928x1208_tinygrad.pkl": "56a3e7b1b42d4bd75d11595d4b4ee069744cf4bdfee96d3ae34f768ccd298daa",
-    "selfdrive/modeld/models/dmonitoring_model_metadata.pkl": "9263280bf48d2a8fd9d4f1b57cdaa865a64ac46258cf5d307f9bf05e5da987e4",
-    "selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl.chunk01of01": "aae5070d656b948e16803b97ef67b2ece3b25aa01bf6c4284d09ef46e0dc8fc6",
-    "selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl.chunkmanifest": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "selfdrive/modeld/models/warp_1344x760_tinygrad.pkl": "9d2f5fcccadb83415d802dd2bfc414f7fb2ffd6df8ada308cc0bf9f9988b9a3d",
-    "selfdrive/modeld/models/warp_1928x1208_tinygrad.pkl": "a16fcdd601cf0d3ad460503fdd41246ee2ba8aaaf87f1c72b26f373e72311ee3",
-    "sunnypilot/modeld_v2/models/warp_1344x760_b2_tinygrad.pkl": "354dee3b97177ddf3e56dfbec7c44532305edecf0bc2a7a9154e691e171c5338",
-    "sunnypilot/modeld_v2/models/warp_1344x760_b5_tinygrad.pkl": "8186edf6adbab6b656f2351f3a88f8d635bfc3b3ff0caac4d35dfff07b038448",
-    "sunnypilot/modeld_v2/models/warp_1928x1208_b2_tinygrad.pkl": "ea6f9e7598c5ff2fe19f8331db618327b5188426c5c9639440ad4b9ccd1a9b8f",
-    "sunnypilot/modeld_v2/models/warp_1928x1208_b5_tinygrad.pkl": "7019bcd87d2e92bca45db8e27e231ae5877b8250fe650804c7b0fdfa368f51f8",
-    "selfdrive/modeld/models/tg_compiled_flags.json": "0cc266c1d76b6b5414bd29b664e3248685b13cf8a21261cf097a7ea57c3d4144"
+    "openpilot/selfdrive/modeld/models/dm_warp_1344x760_tinygrad.pkl": "4aba91f7c7eac9a8c2e7f33beb75c9a3d19a9d05459c097ab606e8cd1925eb43",
+    "openpilot/selfdrive/modeld/models/dm_warp_1928x1208_tinygrad.pkl": "ce49c3d5c3e6f9cb0f2086a42b619bd1b11b87d36676ee3a445495aaeb717976",
+    "openpilot/selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl.chunk01of01": "e966850e6bc69c883cc83a150bc6d74a3a9f7c3fe5f3d7c1e7415f7b6899eb15",
+    "openpilot/selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl.chunkmanifest": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "openpilot/selfdrive/modeld/models/driving_tinygrad.pkl.chunk01of04": "55762b946b96afd97bcdf96d2376ee43268708d967a8d488aa860363de31fc74",
+    "openpilot/selfdrive/modeld/models/driving_tinygrad.pkl.chunk02of04": "2289014d914829e89e8a5dd8513274de57aacfba4df14abbff204756302c8967",
+    "openpilot/selfdrive/modeld/models/driving_tinygrad.pkl.chunk03of04": "8fe606881b5c885f0ce7a13838903e2049f476709c5af745627c349930912445",
+    "openpilot/selfdrive/modeld/models/driving_tinygrad.pkl.chunk04of04": "7a0c46860581d7d801d11ea4a1233b2793b5c6ceb7e6179d1e0ea6fb9172b2c2",
+    "openpilot/selfdrive/modeld/models/driving_tinygrad.pkl.chunkmanifest": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+    "openpilot/selfdrive/modeld/models/tg_input_devices.json": "049595a02376a5ff0f31a1a64e60cb8815953dec31ac4677b146c14d44089e45",
+    "openpilot/selfdrive/modeld/models/dmonitoring_model_metadata.pkl": "0eecba47426d3d2a9af5c4208f078b4d998d01f58dee2bd48a9650f306e2759e"
   },
-  "provenance": {
-    "selfdrive/modeld/models/driving_policy_tinygrad.pkl.chunkmanifest": {
-      "url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai6/-/raw/main/models/recompiled15/model-Pop%20Model%20v2%20%28March%2024%2C%202026%29-141/driving_policy_pmv2_tinygrad.pkl",
-      "original_sha256": "6bb21a8e7f86be3eb8f7c042522f09ffa2404668667a50d91620c24b4f039ee5",
-      "onnx_source_commit": "62bf6fb072880905a4c490f0f4f4a6b3c23346ec"
+  "formats": {
+    "openpilot/selfdrive/modeld/models/driving_tinygrad.pkl": "oob",
+    "openpilot/selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl": "pickle",
+    "openpilot/selfdrive/modeld/models/dm_warp_1344x760_tinygrad.pkl": "pickle",
+    "openpilot/selfdrive/modeld/models/dm_warp_1928x1208_tinygrad.pkl": "pickle"
+  },
+  "hf_repository": "sunnypilot/sunnypilot_models_v1",
+  "hf_revision": "25b84092909b782d51a0536bc58d3a55b3760b2d",
+  "provenance": [
+    {
+      "name": "driving_tinygrad.pkl.chunk01of04",
+      "url": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/25b84092909b782d51a0536bc58d3a55b3760b2d/models/defaults/small/model-CD210-a5f44653-92/driving_cd210_tinygrad.pkl.chunk01of04",
+      "sha256": "55762b946b96afd97bcdf96d2376ee43268708d967a8d488aa860363de31fc74",
+      "size": 47185920
     },
-    "selfdrive/modeld/models/driving_policy_tinygrad.pkl.chunk01of01": {
-      "url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai6/-/raw/main/models/recompiled15/model-Pop%20Model%20v2%20%28March%2024%2C%202026%29-141/driving_policy_pmv2_tinygrad.pkl",
-      "original_sha256": "6bb21a8e7f86be3eb8f7c042522f09ffa2404668667a50d91620c24b4f039ee5",
-      "onnx_source_commit": "62bf6fb072880905a4c490f0f4f4a6b3c23346ec"
+    {
+      "name": "driving_tinygrad.pkl.chunk02of04",
+      "url": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/25b84092909b782d51a0536bc58d3a55b3760b2d/models/defaults/small/model-CD210-a5f44653-92/driving_cd210_tinygrad.pkl.chunk02of04",
+      "sha256": "2289014d914829e89e8a5dd8513274de57aacfba4df14abbff204756302c8967",
+      "size": 47185920
     },
-    "selfdrive/modeld/models/driving_policy_metadata.pkl": {
-      "url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai6/-/raw/main/models/recompiled15/model-Pop%20Model%20v2%20%28March%2024%2C%202026%29-141/driving_policy_pmv2_metadata.pkl",
-      "original_sha256": "5ce4fa01c7edde9e27e3a9ed6ac0ca24e5de0adc384e66a9fb73e13488e60630",
-      "onnx_source_commit": "62bf6fb072880905a4c490f0f4f4a6b3c23346ec"
+    {
+      "name": "driving_tinygrad.pkl.chunk03of04",
+      "url": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/25b84092909b782d51a0536bc58d3a55b3760b2d/models/defaults/small/model-CD210-a5f44653-92/driving_cd210_tinygrad.pkl.chunk03of04",
+      "sha256": "8fe606881b5c885f0ce7a13838903e2049f476709c5af745627c349930912445",
+      "size": 47185920
     },
-    "selfdrive/modeld/models/driving_vision_tinygrad.pkl.chunkmanifest": {
-      "url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai6/-/raw/main/models/recompiled15/model-Pop%20Model%20v2%20%28March%2024%2C%202026%29-141/driving_vision_pmv2_tinygrad.pkl",
-      "original_sha256": "6466db507cd4479f0b4e5dd41c62a5173de5fb8b70e719da66041ca86f664b5d",
-      "onnx_source_commit": "62bf6fb072880905a4c490f0f4f4a6b3c23346ec"
+    {
+      "name": "driving_tinygrad.pkl.chunk04of04",
+      "url": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/25b84092909b782d51a0536bc58d3a55b3760b2d/models/defaults/small/model-CD210-a5f44653-92/driving_cd210_tinygrad.pkl.chunk04of04",
+      "sha256": "7a0c46860581d7d801d11ea4a1233b2793b5c6ceb7e6179d1e0ea6fb9172b2c2",
+      "size": 34806786
     },
-    "selfdrive/modeld/models/driving_vision_tinygrad.pkl.chunk01of02": {
-      "url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai6/-/raw/main/models/recompiled15/model-Pop%20Model%20v2%20%28March%2024%2C%202026%29-141/driving_vision_pmv2_tinygrad.pkl",
-      "original_sha256": "6466db507cd4479f0b4e5dd41c62a5173de5fb8b70e719da66041ca86f664b5d",
-      "onnx_source_commit": "62bf6fb072880905a4c490f0f4f4a6b3c23346ec"
+    {
+      "name": "dmonitoring_model_tinygrad.pkl.chunk01of01",
+      "url": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/25b84092909b782d51a0536bc58d3a55b3760b2d/models/defaults/dm/model-dmonitoring_model-%28September-14%2C-2026%29-a5f44653-93/dmonitoring_model_tinygrad.pkl.chunk01of01",
+      "sha256": "e966850e6bc69c883cc83a150bc6d74a3a9f7c3fe5f3d7c1e7415f7b6899eb15",
+      "size": 24890248
     },
-    "selfdrive/modeld/models/driving_vision_tinygrad.pkl.chunk02of02": {
-      "url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai6/-/raw/main/models/recompiled15/model-Pop%20Model%20v2%20%28March%2024%2C%202026%29-141/driving_vision_pmv2_tinygrad.pkl",
-      "original_sha256": "6466db507cd4479f0b4e5dd41c62a5173de5fb8b70e719da66041ca86f664b5d",
-      "onnx_source_commit": "62bf6fb072880905a4c490f0f4f4a6b3c23346ec"
+    {
+      "name": "dm_warp_1344x760_tinygrad.pkl",
+      "url": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/25b84092909b782d51a0536bc58d3a55b3760b2d/models/defaults/dm/model-dmonitoring_model-%28September-14%2C-2026%29-a5f44653-93/dm_warp_1344x760_tinygrad.pkl",
+      "sha256": "4aba91f7c7eac9a8c2e7f33beb75c9a3d19a9d05459c097ab606e8cd1925eb43",
+      "size": 1403629
     },
-    "selfdrive/modeld/models/driving_vision_metadata.pkl": {
-      "url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai6/-/raw/main/models/recompiled15/model-Pop%20Model%20v2%20%28March%2024%2C%202026%29-141/driving_vision_pmv2_metadata.pkl",
-      "original_sha256": "a2be39088d38550e818f5ac1c6300a64605ba0bd0676a27fe7bbea9fddae90a1",
-      "onnx_source_commit": "62bf6fb072880905a4c490f0f4f4a6b3c23346ec"
+    {
+      "name": "dm_warp_1928x1208_tinygrad.pkl",
+      "url": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/25b84092909b782d51a0536bc58d3a55b3760b2d/models/defaults/dm/model-dmonitoring_model-%28September-14%2C-2026%29-a5f44653-93/dm_warp_1928x1208_tinygrad.pkl",
+      "sha256": "ce49c3d5c3e6f9cb0f2086a42b619bd1b11b87d36676ee3a445495aaeb717976",
+      "size": 1403459
+    }
+  ],
+  "donor_source_validation": "Compiler helpers, geometry, model constants and NV12 source files are byte-identical to donor; both ONNX SHA256 match official catalogs and source LFS pointers.",
+  "catalogs": {
+    "small": {
+      "url": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/25b84092909b782d51a0536bc58d3a55b3760b2d/models/defaults/small/default_models.json",
+      "sha256": "db835643c8f996b6aa4512bb221b0d5368c0769aa71b6fdefeccab10534a7ed7"
     },
-    "selfdrive/modeld/models/dm_warp_1344x760_tinygrad.pkl": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/selfdrive/modeld/models/dm_warp_1344x760_tinygrad.pkl",
-      "git_blob": "9db66e577e90ac3d15bd9fe52def70bf9db7673f",
-      "sha256": "86e7fec6c84d5e3ffec032a744da7647907e56df14e70e7946db8accf300d138"
-    },
-    "selfdrive/modeld/models/dm_warp_1928x1208_tinygrad.pkl": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/selfdrive/modeld/models/dm_warp_1928x1208_tinygrad.pkl",
-      "git_blob": "529efa310b71098fcd42a7b87163acdd2881b9b0",
-      "sha256": "56a3e7b1b42d4bd75d11595d4b4ee069744cf4bdfee96d3ae34f768ccd298daa"
-    },
-    "selfdrive/modeld/models/dmonitoring_model_metadata.pkl": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/selfdrive/modeld/models/dmonitoring_model_metadata.pkl",
-      "git_blob": "a007b081aca1eb6a078dbaf2ad35ab279c859792",
-      "sha256": "9263280bf48d2a8fd9d4f1b57cdaa865a64ac46258cf5d307f9bf05e5da987e4"
-    },
-    "selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl.chunk01of01": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl.chunk01of01",
-      "git_blob": "ea588af916615d42258207824ddabb5e28c8885d",
-      "sha256": "aae5070d656b948e16803b97ef67b2ece3b25aa01bf6c4284d09ef46e0dc8fc6"
-    },
-    "selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl.chunkmanifest": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl.chunkmanifest",
-      "git_blob": "56a6051ca2b02b04ef92d5150c9ef600403cb1de",
-      "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
-    },
-    "selfdrive/modeld/models/warp_1344x760_tinygrad.pkl": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/selfdrive/modeld/models/warp_1344x760_tinygrad.pkl",
-      "git_blob": "1dd22337086321b77b4cc46de4531b209f3810af",
-      "sha256": "9d2f5fcccadb83415d802dd2bfc414f7fb2ffd6df8ada308cc0bf9f9988b9a3d"
-    },
-    "selfdrive/modeld/models/warp_1928x1208_tinygrad.pkl": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/selfdrive/modeld/models/warp_1928x1208_tinygrad.pkl",
-      "git_blob": "1ef817c83ac91517009e50f4ae1452b172d1dbaa",
-      "sha256": "a16fcdd601cf0d3ad460503fdd41246ee2ba8aaaf87f1c72b26f373e72311ee3"
-    },
-    "sunnypilot/modeld_v2/models/warp_1344x760_b2_tinygrad.pkl": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/sunnypilot/modeld_v2/models/warp_1344x760_b2_tinygrad.pkl",
-      "git_blob": "66280627f6c36b7e04d2b28fafd26610d6eb7ef5",
-      "sha256": "354dee3b97177ddf3e56dfbec7c44532305edecf0bc2a7a9154e691e171c5338"
-    },
-    "sunnypilot/modeld_v2/models/warp_1344x760_b5_tinygrad.pkl": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/sunnypilot/modeld_v2/models/warp_1344x760_b5_tinygrad.pkl",
-      "git_blob": "64891423866eecfa178f76afd6126b8146d80d89",
-      "sha256": "8186edf6adbab6b656f2351f3a88f8d635bfc3b3ff0caac4d35dfff07b038448"
-    },
-    "sunnypilot/modeld_v2/models/warp_1928x1208_b2_tinygrad.pkl": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/sunnypilot/modeld_v2/models/warp_1928x1208_b2_tinygrad.pkl",
-      "git_blob": "dd940a9ee5dbc859ce3cf5d66f6a7a14588c7807",
-      "sha256": "ea6f9e7598c5ff2fe19f8331db618327b5188426c5c9639440ad4b9ccd1a9b8f"
-    },
-    "sunnypilot/modeld_v2/models/warp_1928x1208_b5_tinygrad.pkl": {
-      "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot/d69599e89a5cd28ad773415d4c89952735bbb52d/sunnypilot/modeld_v2/models/warp_1928x1208_b5_tinygrad.pkl",
-      "git_blob": "48f7b207864019ad1d65b369d77cd9b3b16329c6",
-      "sha256": "7019bcd87d2e92bca45db8e27e231ae5877b8250fe650804c7b0fdfa368f51f8"
-    },
-    "selfdrive/modeld/models/tg_compiled_flags.json": {
-      "generated": "All executable captures independently verified QCOM with pickletools; no CPU captures retained"
+    "dm": {
+      "url": "https://huggingface.co/datasets/sunnypilot/sunnypilot_models_v1/resolve/25b84092909b782d51a0536bc58d3a55b3760b2d/models/defaults/dm/default_models.json",
+      "sha256": "58d26351675fae5605d97986b2e61a55db2317d68a6622dc705e4ea9f9bade0e"
     }
   },
-  "driving_model_catalog": {
-    "url": "https://raw.githubusercontent.com/sunnypilot/sunnypilot-models/refs/heads/gh-pages/docs/driving_models_v16.json",
-    "ref": "62bf6fb072880905a4c490f0f4f4a6b3c23346ec",
-    "tinygrad_commit": "3501a714785ff370cffb966a45d5f9cdf6c9ea7a"
+  "metadata_provenance": {
+    "path": "openpilot/selfdrive/modeld/models/dmonitoring_model_metadata.pkl",
+    "generation": "Preserved-source get_model_metadata.py with exact tinygrad and ONNX, Python3.12; DEV=CPU only for parsing/shape metadata, no inference capture.",
+    "sha256": "0eecba47426d3d2a9af5c4208f078b4d998d01f58dee2bd48a9650f306e2759e"
   },
-  "compatibility": {
-    "metadata_semantics": "Driving policy, driving vision and driver monitoring metadata exactly match preserved source-generated metadata (safe pickletools comparison).",
-    "donor_tinygrad_difference": "Only .github workflows removed; runtime/compiler Python files match saved3501a714 pin.",
-    "warp_math_ast_sha256": {
-      "warp_perspective_tinygrad": "e52fe9f574d7e372f0dfeb15a91377d9ae57b95bff206a0ca78d08d5af73085d",
-      "make_frame_prepare": "7d26f364d9e7c83f34ba059c23b70d744db9fde177ed4f89b0812c29254e99e5",
-      "make_warp_dm": "d6cc60587a1bf87cb9da01d836017344415b311730452501cd47b89a5597dac0"
-    },
-    "road_warp_interface": "Caller adapter accepts original2return/inplace buffers and donor4return/explicit buffers; pixel math and buffer shapes unchanged."
+  "capture_sha256": {
+    "openpilot/selfdrive/modeld/models/driving_tinygrad.pkl": "fe8e79a683ecd56c9abc07aa8e2c34ee84fe408d387d8c57ecef2ffd39c2ffb2",
+    "openpilot/selfdrive/modeld/models/dmonitoring_model_tinygrad.pkl": "e966850e6bc69c883cc83a150bc6d74a3a9f7c3fe5f3d7c1e7415f7b6899eb15",
+    "openpilot/selfdrive/modeld/models/dm_warp_1344x760_tinygrad.pkl": "4aba91f7c7eac9a8c2e7f33beb75c9a3d19a9d05459c097ab606e8cd1925eb43",
+    "openpilot/selfdrive/modeld/models/dm_warp_1928x1208_tinygrad.pkl": "ce49c3d5c3e6f9cb0f2086a42b619bd1b11b87d36676ee3a445495aaeb717976"
   }
 }

@@ -1,5 +1,21 @@
+* text=auto
+
+# to move existing files into LFS:
+# git add --renormalize .
+*.onnx  -diff -merge -text
+*.svg  -diff -merge -text
+*.png  -diff -merge -text
+*.gif  -diff -merge -text
+*.ttf  -diff -merge -text
+*.otf  -diff -merge -text
+*.wav  -diff -merge -text
+
+openpilot/selfdrive/car/tests/test_models_segs.txt  -diff -merge -text
+openpilot/common/hardware/comma/updater  -diff -merge -text
+
 # Materialized upstream assets are ordinary Git blobs, with binary diffs.
 *.onnx binary
+*.onnx.chunk* binary
 *.pkl binary
 *.pkl.chunk* binary
 *.jpg binary

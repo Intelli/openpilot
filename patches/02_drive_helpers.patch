@@ -1,8 +1,8 @@
-diff --git a/cereal/custom.capnp b/cereal/custom.capnp
-index fe3ed9196f3108163087e988cb5e9c9965942af2..0d0a8331f05c81b0f41e9b2a0b86949d20fb9fd1 100644
---- a/cereal/custom.capnp
-+++ b/cereal/custom.capnp
-@@ -351,6 +351,10 @@ struct CarParamsSP @0x80ae746ee2596b11 {
+diff --git a/openpilot/cereal/custom.capnp b/openpilot/cereal/custom.capnp
+index cfbbbe472aff06d8e4fbc9b75a4cca791c9bbd20..0dce1b4e748043eea6a19b5ea7d8086cf32c8418 100644
+--- a/openpilot/cereal/custom.capnp
++++ b/openpilot/cereal/custom.capnp
+@@ -363,6 +363,10 @@ struct CarParamsSP @0x80ae746ee2596b11 {
    pcmCruiseSpeed @3 :Bool;
    intelligentCruiseButtonManagementAvailable @4 :Bool;
    enableGasInterceptor @5 :Bool;
@@ -13,7 +13,7 @@ index fe3ed9196f3108163087e988cb5e9c9965942af2..0d0a8331f05c81b0f41e9b2a0b86949d
  
    neuralNetworkLateralControl @2 :NeuralNetworkLateralControl;
  
-@@ -435,6 +439,8 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
+@@ -447,6 +451,8 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
  
  struct CarStateSP @0xb86e6369214c01c8 {
    speedLimit @0 :Float32;
@@ -22,10 +22,10 @@ index fe3ed9196f3108163087e988cb5e9c9965942af2..0d0a8331f05c81b0f41e9b2a0b86949d
  }
  
  struct LiveMapDataSP @0xf416ec09499d9d19 {
-diff --git a/selfdrive/controls/lib/drive_helpers.py b/selfdrive/controls/lib/drive_helpers.py
-index 1e2fb27b51d55bb1d792cbec8279ab41034fa6ff..2561030d186a70c37511bfdd597fdd9d22d1c28a 100644
---- a/selfdrive/controls/lib/drive_helpers.py
-+++ b/selfdrive/controls/lib/drive_helpers.py
+diff --git a/openpilot/selfdrive/controls/lib/drive_helpers.py b/openpilot/selfdrive/controls/lib/drive_helpers.py
+index 35ca45e56e28d6dc2acab17f2b7611fe79689eb6..031b2e7d57ef22d87c3ef5aa5eba1dbbc35ed5bf 100644
+--- a/openpilot/selfdrive/controls/lib/drive_helpers.py
++++ b/openpilot/selfdrive/controls/lib/drive_helpers.py
 @@ -1,5 +1,6 @@
  import numpy as np
  from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
@@ -33,7 +33,7 @@ index 1e2fb27b51d55bb1d792cbec8279ab41034fa6ff..2561030d186a70c37511bfdd597fdd9d
  from openpilot.common.realtime import DT_CTRL, DT_MDL
  
  MIN_SPEED = 1.0
-@@ -22,7 +23,7 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
+@@ -25,7 +26,7 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
    alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
    return alpha * val + (1 - alpha) * prev_val
  
@@ -42,7 +42,7 @@ index 1e2fb27b51d55bb1d792cbec8279ab41034fa6ff..2561030d186a70c37511bfdd597fdd9d
    # This function respects ISO lateral jerk and acceleration limits + a max curvature
    v_ego = max(v_ego, MIN_SPEED)
    max_curvature_rate = MAX_LATERAL_JERK / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
-@@ -30,12 +31,22 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, b
+@@ -33,12 +34,22 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, b
                            prev_curvature - max_curvature_rate * DT_CTRL,
                            prev_curvature + max_curvature_rate * DT_CTRL)
  
@@ -68,11 +68,11 @@ index 1e2fb27b51d55bb1d792cbec8279ab41034fa6ff..2561030d186a70c37511bfdd597fdd9d
    return float(new_curvature), limited_accel or limited_max_curv
  
  
-diff --git a/sunnypilot/selfdrive/car/interfaces.py b/sunnypilot/selfdrive/car/interfaces.py
-index e4db6c8e97f0568a8b1b082a5745a162b2eb9cba..a273b3379a5ec2ecab7dab75f2f758ee35f2fbe8 100644
---- a/sunnypilot/selfdrive/car/interfaces.py
-+++ b/sunnypilot/selfdrive/car/interfaces.py
-@@ -115,6 +115,9 @@ def initialize_params(params) -> list[dict[str, Any]]:
+diff --git a/openpilot/sunnypilot/selfdrive/car/interfaces.py b/openpilot/sunnypilot/selfdrive/car/interfaces.py
+index 4988e863b1e6322e807e7dff248335081ff7d79a..8a98b508f85a268182f8140a81489cfccb996cb8 100644
+--- a/openpilot/sunnypilot/selfdrive/car/interfaces.py
++++ b/openpilot/sunnypilot/selfdrive/car/interfaces.py
+@@ -118,6 +118,9 @@ def initialize_params(params) -> list[dict[str, Any]]:
    # hyundai
    keys.extend([
      "HyundaiLongitudinalTuning",

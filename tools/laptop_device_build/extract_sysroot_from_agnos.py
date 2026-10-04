@@ -37,7 +37,7 @@ ANDROID_SPARSE_MAGIC = 0xED26FF3A
 
 def parse_args() -> argparse.Namespace:
   p = argparse.ArgumentParser(description="Extract TICI sysroot dirs from AGNOS system image")
-  p.add_argument("--manifest", default="system/hardware/tici/agnos.json", help="Path to AGNOS manifest JSON")
+  p.add_argument("--manifest", default="openpilot/common/hardware/comma/agnos.json", help="Path to AGNOS manifest JSON")
   p.add_argument("--output-dir", required=True, help="Destination sysroot directory")
   p.add_argument("--cache-dir", default=".cache/agnos", help="Cache directory for downloaded images")
   p.add_argument("--url", default=None, help="Override AGNOS system image URL")

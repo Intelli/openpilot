@@ -1,4 +1,5 @@
 """Boot artwork installation is idempotent and restores a remounted root on failure."""
+import builtins
 import importlib.util
 from io import BytesIO
 from pathlib import Path
@@ -10,7 +11,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[3]
-spec = importlib.util.spec_from_file_location("ev9_boot_logo", ROOT / "sunnypilot/system/boot_logo.py")
+spec = importlib.util.spec_from_file_location("ev9_boot_logo", ROOT / "openpilot/sunnypilot/system/boot_logo.py")
 boot_logo = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boot_logo)
 
@@ -44,3 +45,16 @@ def test_install_restores_mount_and_skips_matching_artwork(tmp_path, monkeypatch
     commands.clear()
     assert boot_logo.install_boot_logo(tmp_path)
     assert commands == []
+
+
+def test_missing_image_library_does_not_stop_manager(tmp_path, monkeypatch):
+  original_import = builtins.__import__
+
+  def without_pillow(name, *args, **kwargs):
+    if name == "PIL":
+      raise ImportError("Pillow is unavailable")
+    return original_import(name, *args, **kwargs)
+
+  monkeypatch.setattr(builtins, "__import__", without_pillow)
+  spec.loader.exec_module(boot_logo)
+  assert not boot_logo.install_boot_logo(tmp_path)

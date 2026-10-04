@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import unittest  # noqa: TID251 - maintenance checks run without application dependencies
+import unittest
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -446,6 +446,16 @@ shutil.copy2 = fail_new_file
     self.assertEqual(metadata["dependencies"]["opendbc_repo"]["repository"], relative)
     self.assertEqual((self.local / "opendbc_repo/opendbc/example.txt").read_text(), "pinned vehicle\n")
 
+  def test_gitmodules_mixed_indentation_uses_git_config_semantics(self):
+    modules = self.upstream / ".gitmodules"
+    contents = modules.read_text().replace("\turl =", "  url =")
+    modules.write_text(contents)
+    self.publish(self.upstream, self.application_bare)
+    self.sync("--allow")
+    metadata = json.loads((self.local / "sunnypilot-upstream.json").read_text())
+    self.assertEqual(metadata["dependencies"]["opendbc_repo"]["commit"], self.pin)
+    self.assertEqual((self.local / "opendbc_repo/opendbc/example.txt").read_text(), "pinned vehicle\n")
+
   def test_nested_dependencies_are_recursively_vendored_at_their_pins(self):
     nested = self.repo("nested", "main")
     self.write(nested, "support.txt", "nested pin\n")
@@ -474,10 +484,10 @@ shutil.copy2 = fail_new_file
     self.assertEqual((self.local / "next.txt").read_text(), "next source\n")
     self.assertEqual((self.local / "cache.bin").read_text(), "local cache\n")
 
-  def add_lfs_asset(self, payload, available):
+  def add_lfs_asset(self, payload, available, filename="asset.bin"):
     oid = hashlib.sha256(payload).hexdigest()
-    self.write(self.upstream, "asset.bin", f"version https://git-lfs.github.com/spec/v1\noid sha256:{oid}\nsize {len(payload)}\n")
-    self.write(self.upstream, ".gitattributes", "*.bin filter=lfs diff=lfs merge=lfs -text\n")
+    self.write(self.upstream, filename, f"version https://git-lfs.github.com/spec/v1\noid sha256:{oid}\nsize {len(payload)}\n")
+    self.write(self.upstream, ".gitattributes", f"*{Path(filename).suffix} filter=lfs diff=lfs merge=lfs -text\n")
     # The fixture stages pointer bytes without relying on hooks or local LFS filters.
     self.git(self.upstream, "-c", "filter.lfs.clean=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false", "add", "-A")
     self.git(self.upstream, "-c", "core.hooksPath=/dev/null", "commit", "-m", "LFS fixture")
@@ -486,6 +496,36 @@ shutil.copy2 = fail_new_file
       target = self.application_bare / "lfs/objects" / oid[:2] / oid[2:4] / oid
       target.parent.mkdir(parents=True, exist_ok=True)
       target.write_bytes(payload)
+
+  def test_large_onnx_is_chunked_losslessly_and_reimports_without_differences(self):
+    script = self.local / "tools/upstream/sync.py"
+    script.write_text(script.read_text().replace("LARGE_MODEL_LIMIT = 95 * 1024 * 1024", "LARGE_MODEL_LIMIT = 8")
+                      .replace("MODEL_CHUNK_SIZE = 45 * 1024 * 1024", "MODEL_CHUNK_SIZE = 4"))
+    payload = b"ONNX fixture\0\xff123"
+    self.add_lfs_asset(payload, True, "big.onnx")
+    self.sync("--allow")
+    self.assertFalse((self.local / "big.onnx").exists())
+    count = (len(payload) + 3) // 4
+    self.assertEqual((self.local / "big.onnx.chunkmanifest").read_text(), str(count))
+    chunks = [self.local / f"big.onnx.chunk{i + 1:02d}of{count:02d}" for i in range(count)]
+    self.assertEqual(b"".join(path.read_bytes() for path in chunks), payload)
+    self.assertTrue(all(path.stat().st_size <= 4 for path in chunks))
+    self.assertEqual(self.git(self.local, "check-attr", "diff", "--", chunks[0].name).stdout.strip(), f"{chunks[0].name}: diff: unset")
+    self.commit(self.local)
+    self.head = self.git(self.local, "rev-parse", "HEAD").stdout.strip()
+    self.sync("--allow")
+    self.assertEqual(self.git(self.local, "diff", "--cached", "--stat").stdout, "")
+
+  def test_chunk_target_collision_refuses_import_without_overwriting_files(self):
+    script = self.local / "tools/upstream/sync.py"
+    script.write_text(script.read_text().replace("LARGE_MODEL_LIMIT = 95 * 1024 * 1024", "LARGE_MODEL_LIMIT = 8")
+                      .replace("MODEL_CHUNK_SIZE = 45 * 1024 * 1024", "MODEL_CHUNK_SIZE = 4"))
+    self.write(self.upstream, "big.onnx.chunkmanifest", "upstream companion\n")
+    self.add_lfs_asset(b"ONNX fixture\0\xff123", True, "big.onnx")
+    before = self.state()
+    result = self.sync("--allow", success=False)
+    self.assertIn("collide", result.stderr)
+    self.assertEqual(self.state(), before)
 
   def test_lfs_payloads_are_materialized_as_normal_git_blobs_without_hooks(self):
     if subprocess.run(["git", "lfs", "version"], env=self.env, capture_output=True).returncode:

@@ -1,4 +1,27 @@
-# Sunnypilot restoration
+# Sunnypilot maintenance history
+
+## October 4, 2026: latest Sunnypilot port
+
+Imported official application `d021f6ca41375e58be8125801547e84939e0c503` and exact
+embedded opendbc `28303fcd1cc457f67d405407858223e0b338df20`, advancing 798 upstream
+application commits from `54fb2750bab4`. Ports move application paths under
+`openpilot/` and preserve the newer parameter API, renamed control services,
+model selector and MADS rendering gates.
+
+The enabled inventory is 14 application plus five vehicle patches. Upstream now
+supplies the former vehicle baseline-physics patch; its implementation is archived.
+Driver-monitoring eye/blink settings already match upstream; the remaining phone
+threshold customization is ported to `monitoring/policy.py`.
+
+The build targets AGNOS 19.7 / `comma_arm64`, the fused driving compiler and
+verified pinned QCOM default small-model/driver-monitoring captures. The oversized
+large-model ONNX is hash-verified and imported losslessly in 45 MiB chunks;
+this preserves its bytes without enabling optional Chestnut capture. Superseded
+patches/helpers remain in [the upgrade archive](archive/sunnypilot-upgrade-20261004/README.md).
+
+Focused port, model-validator and maintenance checks do not qualify the new full
+native build or vehicle behavior. GitHub compilation and on-device validation remain
+required before making those claims. Patch-helper staging semantics are unchanged.
 
 ## Verified StarPilot preservation
 
@@ -35,7 +58,7 @@ The September 2026 StarPilot source is preserved at local branch
 Its enabled application/vehicle patches and behavior notes are archived in
 [`archive/starpilot-20260920/`](archive/starpilot-20260920/).
 
-The working source restores the preserved Sunnypilot application
+The initial restoration imported the preserved Sunnypilot application
 `5928a37ad18783068ee26b187f6a7ddb9ff9c3d3` and its exact seven dependency pins.
 All dependencies are ordinary tracked files; the `opendbc` symlink still resolves
 to `opendbc_repo/opendbc/`. Upstream LFS inputs are materialized before import.

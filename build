@@ -25,7 +25,7 @@ add_panda_targets() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --params|-params|-param)
-      shortcut_targets+=("common/params_pyx.so")
+      shortcut_targets+=("openpilot/common/libparams_c.so")
       ;;
     --panda|-panda)
       shortcut_includes_panda=1
@@ -33,10 +33,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cereal|-cereal)
       shortcut_targets+=(
-        "cereal/libcereal.a"
-        "cereal/libsocketmaster.a"
-        "cereal/messaging/bridge"
-        "cereal/services.h"
+        "openpilot/cereal/libcereal.a"
+        "openpilot/cereal/libsocketmaster.a"
+        "openpilot/cereal/messaging/bridge"
+        "openpilot/cereal/services.h"
       )
       ;;
     *)

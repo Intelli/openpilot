@@ -1,8 +1,8 @@
 diff --git a/opendbc/car/hyundai/carstate.py b/opendbc/car/hyundai/carstate.py
-index 6ddbe77519895e1ec72518a40850bb0d157fc953..5599799375f2f0e31a4ceeb5c32d48ad44b61774 100644
+index fa4a851c5c22524c69188bb0b1f3a2359c8c2e24..6c7b16b88695831895cb5fe46afd1f2886b6fa10 100644
 --- a/opendbc/car/hyundai/carstate.py
 +++ b/opendbc/car/hyundai/carstate.py
-@@ -241,7 +241,14 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
+@@ -239,7 +239,14 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
  
      ret.brakePressed = cp.vl["TCS"]["DriverBraking"] == 1
  

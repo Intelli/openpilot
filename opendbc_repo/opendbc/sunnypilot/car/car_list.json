@@ -488,6 +488,18 @@
     ],
     "package": "Adaptive Cruise Control (ACC) & Lane Assist"
   },
+  "CUPRA Born 2021-23": {
+    "platform": "CUPRA_BORN_MK1",
+    "make": "CUPRA",
+    "brand": "volkswagen",
+    "model": "Born",
+    "year": [
+      "2021",
+      "2022",
+      "2023"
+    ],
+    "package": "Adaptive Cruise Control (ACC) & Lane Assist"
+  },
   "Dodge Durango 2020-21": {
     "platform": "DODGE_DURANGO",
     "make": "Dodge",
@@ -656,23 +668,31 @@
     ],
     "package": "Co-Pilot360 Assist 2.0"
   },
-  "Ford Focus 2018": {
+  "Ford Focus 2018-22": {
     "platform": "FORD_FOCUS_MK4",
     "make": "Ford",
     "brand": "ford",
     "model": "Focus",
     "year": [
-      "2018"
+      "2018",
+      "2019",
+      "2020",
+      "2021",
+      "2022"
     ],
     "package": "Adaptive Cruise Control with Lane Centering"
   },
-  "Ford Focus Hybrid 2018": {
+  "Ford Focus Hybrid 2018-22": {
     "platform": "FORD_FOCUS_MK4",
     "make": "Ford",
     "brand": "ford",
     "model": "Focus Hybrid",
     "year": [
-      "2018"
+      "2018",
+      "2019",
+      "2020",
+      "2021",
+      "2022"
     ],
     "package": "Adaptive Cruise Control with Lane Centering"
   },
@@ -1043,7 +1063,7 @@
     ],
     "package": "All"
   },
-  "Honda Accord Hybrid 2023-25": {
+  "Honda Accord Hybrid 2023-26": {
     "platform": "HONDA_ACCORD_11G",
     "make": "Honda",
     "brand": "honda",
@@ -1051,17 +1071,20 @@
     "year": [
       "2023",
       "2024",
-      "2025"
+      "2025",
+      "2026"
     ],
     "package": "All"
   },
-  "Honda City (Brazil only) 2023": {
+  "Honda City (Brazil only) 2023-25": {
     "platform": "HONDA_CITY_7G",
     "make": "Honda",
     "brand": "honda",
     "model": "City (Brazil only)",
     "year": [
-      "2023"
+      "2023",
+      "2024",
+      "2025"
     ],
     "package": "All"
   },
@@ -1089,7 +1112,7 @@
     ],
     "package": "All"
   },
-  "Honda Civic 2022-24": {
+  "Honda Civic 2022-26": {
     "platform": "HONDA_CIVIC_2022",
     "make": "Honda",
     "brand": "honda",
@@ -1097,7 +1120,9 @@
     "year": [
       "2022",
       "2023",
-      "2024"
+      "2024",
+      "2025",
+      "2026"
     ],
     "package": "All"
   },
@@ -1179,7 +1204,7 @@
       "2020",
       "2021"
     ],
-    "package": "Honda Sensing"
+    "package": "All"
   },
   "Honda CR-V 2015-16": {
     "platform": "HONDA_CRV",
@@ -1488,6 +1513,16 @@
     ],
     "package": "All"
   },
+  "Hyundai AZERA Hybrid (with HDA II & LFA2) 2025": {
+    "platform": "HYUNDAI_AZERA_HEV_7TH_GEN",
+    "make": "Hyundai",
+    "brand": "hyundai",
+    "model": "AZERA Hybrid (with HDA II & LFA2)",
+    "year": [
+      "2025"
+    ],
+    "package": "Highway Driving Assist II & Lane Follow Assist 2"
+  },
   "Hyundai Custin 2023": {
     "platform": "HYUNDAI_CUSTIN_1ST_GEN",
     "make": "Hyundai",
@@ -1646,6 +1681,17 @@
       "2024"
     ],
     "package": "Highway Driving Assist II"
+  },
+  "Hyundai Ioniq 6 (without HDA II) 2023-24": {
+    "platform": "HYUNDAI_IONIQ_6",
+    "make": "Hyundai",
+    "brand": "hyundai",
+    "model": "Ioniq 6 (without HDA II)",
+    "year": [
+      "2023",
+      "2024"
+    ],
+    "package": "Highway Driving Assist"
   },
   "Hyundai Ioniq 9 (with HDA II & LFA2) 2025-26": {
     "platform": "HYUNDAI_IONIQ_9",
@@ -2122,6 +2168,17 @@
     ],
     "package": "Highway Driving Assist II"
   },
+  "Kia EV6 (with HDA II) 2025-26": {
+    "platform": "KIA_EV6_2025",
+    "make": "Kia",
+    "brand": "hyundai",
+    "model": "EV6 (with HDA II)",
+    "year": [
+      "2025",
+      "2026"
+    ],
+    "package": "Highway Driving Assist II"
+  },
   "Kia EV6 (without HDA II) 2022-24": {
     "platform": "KIA_EV6",
     "make": "Kia",
@@ -2453,12 +2510,14 @@
     ],
     "package": "All"
   },
-  "Kia Sorento Hybrid 2026 with LFA2": {
+  "Kia Sorento Hybrid 2026": {
     "platform": "KIA_SORENTO_HEV_4TH_GEN_LFA2",
     "make": "Kia",
     "brand": "hyundai",
-    "model": "Sorento Hybrid 2026 with LFA2",
-    "year": [],
+    "model": "Sorento Hybrid",
+    "year": [
+      "2026"
+    ],
     "package": "All"
   },
   "Kia Sorento Plug-in Hybrid 2022-23": {
@@ -2891,7 +2950,7 @@
     ],
     "package": "All"
   },
-  "Nissan Altima 2019-20, 2024": {
+  "Nissan Altima 2019-24": {
     "platform": "NISSAN_ALTIMA",
     "make": "Nissan",
     "brand": "nissan",
@@ -2899,6 +2958,9 @@
     "year": [
       "2019",
       "2020",
+      "2021",
+      "2022",
+      "2023",
       "2024"
     ],
     "package": "ProPILOT Assist"
@@ -2908,6 +2970,21 @@
     "make": "Nissan",
     "brand": "nissan",
     "model": "Leaf",
+    "year": [
+      "2018",
+      "2019",
+      "2020",
+      "2021",
+      "2022",
+      "2023"
+    ],
+    "package": "ProPILOT Assist"
+  },
+  "Nissan Leaf IC 2018-23": {
+    "platform": "NISSAN_LEAF_IC",
+    "make": "Nissan",
+    "brand": "nissan",
+    "model": "Leaf IC",
     "year": [
       "2018",
       "2019",
@@ -4288,6 +4365,29 @@
       "2022",
       "2023",
       "2024"
+    ],
+    "package": "Adaptive Cruise Control (ACC) & Lane Assist"
+  },
+  "Volkswagen ID.4 2021-23": {
+    "platform": "VOLKSWAGEN_ID4_MK1",
+    "make": "Volkswagen",
+    "brand": "volkswagen",
+    "model": "ID.4",
+    "year": [
+      "2021",
+      "2022",
+      "2023"
+    ],
+    "package": "Adaptive Cruise Control (ACC) & Lane Assist"
+  },
+  "Volkswagen ID.4 2024-25": {
+    "platform": "VOLKSWAGEN_ID4_MK2",
+    "make": "Volkswagen",
+    "brand": "volkswagen",
+    "model": "ID.4",
+    "year": [
+      "2024",
+      "2025"
     ],
     "package": "Adaptive Cruise Control (ACC) & Lane Assist"
   },

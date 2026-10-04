@@ -2,8 +2,8 @@ import re
 from dataclasses import dataclass, field
 from enum import IntFlag
 
-from opendbc.car import Bus, CarSpecs, DbcDict, PlatformConfig, Platforms, uds, ACCELERATION_DUE_TO_GRAVITY
-from opendbc.car.lateral import AngleSteeringLimits, ISO_LATERAL_ACCEL
+from opendbc.car import Bus, CarSpecs, DbcDict, PlatformConfig, Platforms, uds
+from opendbc.car.lateral import AngleSteeringLimitsVM
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.structs import CarParams
 from opendbc.car.docs_definitions import CarHarness, CarDocs, CarParts, SupportType
@@ -13,26 +13,18 @@ from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP
 
 Ecu = CarParams.Ecu
 
-# Add extra tolerance for average banked road since safety doesn't have the roll
-AVERAGE_ROAD_ROLL = 0.06  # ~0 degrees, 0% superelevation. higher actual roll lowers lateral acceleration (it's 0 for HKG to remove margin)
-
 
 class CarControllerParams:
-  ACCEL_MIN = -3.5 # m/s
-  ACCEL_MAX = 2.0 # m/s
+  ACCEL_MIN = -3.5 # m/s^2
+  ACCEL_MAX = 2.0 # m/s^2
 
-  ANGLE_LIMITS: AngleSteeringLimits = AngleSteeringLimits(
+  ANGLE_LIMITS: AngleSteeringLimitsVM = AngleSteeringLimitsVM(
     # Steering angle limits based on observed stock ADAS behavior:
     # - LKAS max requested angle is 176.7°, but no fault occurs if higher values are requested.
     # - LFA max stock value is 119.9°.
     # The ADAS ECU clamps LKAS commands above 176.7° down to 176.7°,
     # and clamps LFA commands above 119.9° down to 119.9°.
     360,  # degrees (safe upper bound for command, allowing some margin)
-    # HKG uses a vehicle model instead, check carcontroller.py for details
-    ([], []),
-    ([], []),
-    MAX_LATERAL_ACCEL=(ISO_LATERAL_ACCEL + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL)),  # ~3.6 m/s^2
-    MAX_LATERAL_JERK=(3.0 + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL)),  # ~3.6 m/s^3,
     MAX_ANGLE_RATE=5  # comfort rate limit for angle commands, in degrees per frame.
   )
 
@@ -195,11 +187,11 @@ class HyundaiNonSccCarDocs(CarDocs):
 
 @dataclass
 class HyundaiPlatformConfig(PlatformConfig):
-  dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: "hyundai_kia_generic"})
+  dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: "hyundai_can_generated"})
 
   def init(self):
     if self.flags & HyundaiFlags.MANDO_RADAR:
-      self.dbc_dict = {Bus.pt: "hyundai_kia_generic", Bus.radar: 'hyundai_kia_mando_front_radar_generated'}
+      self.dbc_dict = {Bus.pt: "hyundai_can_generated", Bus.radar: 'hyundai_kia_mando_front_radar_generated'}
 
     if self.flags & HyundaiFlags.MIN_STEER_32_MPH:
       self.specs = self.specs.override(minSteerSpeed=32 * CV.MPH_TO_MS)
@@ -207,7 +199,7 @@ class HyundaiPlatformConfig(PlatformConfig):
 
 @dataclass
 class HyundaiNonSccPlatformConfig(PlatformConfig):
-  dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: "hyundai_kia_generic"})
+  dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: "hyundai_can_generated"})
 
   def init(self):
     self.sp_flags |= HyundaiFlagsSP.NON_SCC
@@ -237,6 +229,14 @@ class CAR(Platforms):
     ],
     CarSpecs(mass=1675, wheelbase=2.885, steerRatio=14.5),
     flags=HyundaiFlags.HYBRID,
+  )
+  HYUNDAI_AZERA_HEV_7TH_GEN = HyundaiCanFDPlatformConfig(
+    [
+      HyundaiCarDocs("Hyundai AZERA Hybrid (with HDA II & LFA2) 2025", "Highway Driving Assist II & Lane Follow Assist 2",
+                     car_parts=CarParts.common([CarHarness.hyundai_s])),
+    ],
+    CarSpecs(mass=1720, wheelbase=2.895, steerRatio=13.5),
+    flags=HyundaiFlags.CANFD_ANGLE_STEERING,
   )
   HYUNDAI_ELANTRA = HyundaiPlatformConfig(
     [
@@ -431,7 +431,10 @@ class CAR(Platforms):
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING,
   )
   HYUNDAI_IONIQ_6 = HyundaiCanFDPlatformConfig(
-    [HyundaiCarDocs("Hyundai Ioniq 6 (with HDA II) 2023-24", "Highway Driving Assist II", car_parts=CarParts.common([CarHarness.hyundai_p]))],
+    [
+        HyundaiCarDocs("Hyundai Ioniq 6 (without HDA II) 2023-24", "Highway Driving Assist", car_parts=CarParts.common([CarHarness.hyundai_l])),
+        HyundaiCarDocs("Hyundai Ioniq 6 (with HDA II) 2023-24", "Highway Driving Assist II", car_parts=CarParts.common([CarHarness.hyundai_p])),
+    ],
     HYUNDAI_IONIQ_5.specs,
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_NO_RADAR_DISABLE,
   )
@@ -557,7 +560,7 @@ class CAR(Platforms):
   KIA_OPTIMA_H_G4_FL = HyundaiPlatformConfig(
     [HyundaiCarDocs("Kia Optima Hybrid 2019", car_parts=CarParts.common([CarHarness.hyundai_h]))],
     CarSpecs(mass=3558 * CV.LB_TO_KG, wheelbase=2.8, steerRatio=13.75, tireStiffnessFactor=0.5),
-    flags=HyundaiFlags.HYBRID | HyundaiFlags.UNSUPPORTED_LONGITUDINAL,
+    flags=HyundaiFlags.HYBRID,
   )
   KIA_SELTOS = HyundaiPlatformConfig(
     [HyundaiCarDocs("Kia Seltos 2021", car_parts=CarParts.common([CarHarness.hyundai_a]))],
@@ -633,7 +636,8 @@ class CAR(Platforms):
   )
   KIA_EV6_2025 = HyundaiCanFDPlatformConfig(
     [
-      HyundaiCarDocs("Kia EV6 (with HDA I) 2025", "Highway Driving Assist I", car_parts=CarParts.common([CarHarness.hyundai_p]))
+      HyundaiCarDocs("Kia EV6 (with HDA I) 2025", "Highway Driving Assist I", car_parts=CarParts.common([CarHarness.hyundai_p])),
+      HyundaiCarDocs("Kia EV6 (with HDA II) 2025-26", "Highway Driving Assist II", car_parts=CarParts.common([CarHarness.hyundai_p]))
     ],
     CarSpecs(mass=2055, wheelbase=2.9, steerRatio=16, tireStiffnessFactor=0.65),
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING,
@@ -810,7 +814,9 @@ def match_fw_to_car_fuzzy(live_fw_versions, vin, offline_fw_versions) -> set[str
   # Non-electric CAN FD platforms often do not have platform code specifiers needed
   # to distinguish between hybrid and ICE. All EVs so far are either exclusively
   # electric or specify electric in the platform code.
-  fuzzy_platform_blacklist = {str(c) for c in (CANFD_CAR - EV_CAR - CANFD_FUZZY_WHITELIST)}
+  canfd_cars = {c for c in CAR if c.config.flags & HyundaiFlags.CANFD}
+  ev_cars = {c for c in CAR if c.config.flags & HyundaiFlags.EV}
+  fuzzy_platform_blacklist = {str(c) for c in canfd_cars - ev_cars - CANFD_FUZZY_WHITELIST}
   candidates: set[str] = set()
 
   for candidate, fws in offline_fw_versions.items():
@@ -875,6 +881,7 @@ PART_NUMBER_FW_PATTERN = re.compile(b'(?<=[0-9][.,][0-9]{2} )([0-9]{5}[-/]?[A-Z]
 
 # We've seen both ICE and hybrid for these platforms, and they have hybrid descriptors (e.g. MQ4 vs MQ4H)
 CANFD_FUZZY_WHITELIST = {CAR.KIA_SORENTO_4TH_GEN, CAR.KIA_SORENTO_HEV_4TH_GEN, CAR.KIA_K8_HEV_1ST_GEN,
+                         CAR.KIA_SPORTAGE_5TH_GEN,
                          # TODO: the hybrid variant is not out yet
                          CAR.KIA_CARNIVAL_4TH_GEN, CAR.KIA_SORENTO_HEV_4TH_GEN_LFA2}
 
@@ -888,6 +895,7 @@ DATE_FW_ECUS = [Ecu.fwdCamera]
 # Note: an ECU on CAN FD cars may sometimes send 0x30080aaaaaaaaaaa (flow control continue) while we
 # are attempting to query ECUs. This currently does not seem to affect fingerprinting from the camera
 FW_QUERY_CONFIG = FwQueryConfig(
+  fw_version_regex=br"\xf1\x00[\x00-\xff]{19,56}",
   requests=[
     # TODO: add back whitelists
     # CAN queries (OBD-II port)

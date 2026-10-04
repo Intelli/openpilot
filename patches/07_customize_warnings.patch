@@ -1,21 +1,8 @@
-diff --git a/selfdrive/controls/lib/latcontrol_angle.py b/selfdrive/controls/lib/latcontrol_angle.py
-index 9aa5b3cd01b5b040bb3b0278f3862ec55e6f3b56..99b2b173534ccb3321c7239160b59dd9b544d447 100644
---- a/selfdrive/controls/lib/latcontrol_angle.py
-+++ b/selfdrive/controls/lib/latcontrol_angle.py
-@@ -10,7 +10,7 @@ STEER_ANGLE_SATURATION_THRESHOLD = 2.5  # Degrees
- class LatControlAngle(LatControl):
-   def __init__(self, CP, CP_SP, CI, dt):
-     super().__init__(CP, CP_SP, CI, dt)
--    self.sat_check_min_speed = 5.
-+    self.sat_check_min_speed = 2.5 / 3.6  # 2.5 km/h
-     self.use_steer_limited_by_safety = CP.brand in ("tesla", "hyundai")
- 
-   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
-diff --git a/selfdrive/selfdrived/selfdrived.py b/selfdrive/selfdrived/selfdrived.py
-index 1a10d91cd7a513af36e1bada4f17a1dec39bb128..42f9444297f98d4d4f4fee9acfdaf603ba74d5b9 100755
---- a/selfdrive/selfdrived/selfdrived.py
-+++ b/selfdrive/selfdrived/selfdrived.py
-@@ -412,16 +412,31 @@ class SelfdriveD(CruiseHelper):
+diff --git a/openpilot/selfdrive/selfdrived/selfdrived.py b/openpilot/selfdrive/selfdrived/selfdrived.py
+index dfaa94e013b2a358c3fe836e19828ed20844d947..5b9e895bf9c603aa3b8c506f775adefb53e5070c 100755
+--- a/openpilot/selfdrive/selfdrived/selfdrived.py
++++ b/openpilot/selfdrive/selfdrived/selfdrived.py
+@@ -477,16 +477,31 @@ class SelfdriveD(CruiseHelper):
        self.last_steering_pressed_frame = self.sm.frame
      recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
      controlstate = self.sm['controlsState']
@@ -49,3 +36,16 @@ index 1a10d91cd7a513af36e1bada4f17a1dec39bb128..42f9444297f98d4d4f4fee9acfdaf603
  
      # Check for FCW
      stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
+diff --git a/openpilot/selfdrive/controls/lib/latcontrol_angle.py b/openpilot/selfdrive/controls/lib/latcontrol_angle.py
+index 18ccbae57b08bca91716862907b3f14fff95a2b6..3d921fb89cfd3ad7d643e89ed7e302d15f09cf59 100644
+--- a/openpilot/selfdrive/controls/lib/latcontrol_angle.py
++++ b/openpilot/selfdrive/controls/lib/latcontrol_angle.py
+@@ -10,7 +10,7 @@ STEER_ANGLE_SATURATION_THRESHOLD = 2.5  # Degrees
+ class LatControlAngle(LatControl):
+   def __init__(self, CP, CP_SP, CI, dt):
+     super().__init__(CP, CP_SP, CI, dt)
+-    self.sat_check_min_speed = 5.
++    self.sat_check_min_speed = 2.5 / 3.6  # 2.5 km/h
+     self.use_steer_limited_by_safety = CP.brand in ("tesla", "hyundai")
+ 
+   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):

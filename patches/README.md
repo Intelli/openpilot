@@ -28,17 +28,17 @@ Current enabled application patches replay in this order:
 | `07_customize_warnings.patch` | Steering saturation warning policy |
 | `08_hands_free_stats.patch` | Statistics recording, UI, trips and tests |
 | `09_ev9_edition.patch` | EV9 branding and vehicle-only startup restriction |
-| `10_driver_monitoring.patch` | Restored driver-monitoring customization |
+| `10_driver_monitoring.patch` | Phone threshold 0.68; eye/blink thresholds already match upstream |
 | `11_power_management.patch` | Offroad power, screen and model-manager behavior |
 | `12_custom_assets.patch` | Custom engagement audio and preserved auto-lock icons |
 | `boot_logo_ev9_edition.patch` | Boot artwork and its Sunnypilot installation hook |
-| `sunnypilot_device_build.patch` | Native build portability and model-capture compatibility |
+| `sunnypilot_device_build.patch` | AGNOS 19.7 / `comma_arm64` native build and fused-model compatibility |
 
-Then the vehicle patches replay, with paths relative to `opendbc_repo/`:
+There are 14 enabled application patches. Then five vehicle patches replay, with
+paths relative to `opendbc_repo/` (19 enabled patches in total):
 
 | Patch | Feature ownership |
 | --- | --- |
-| `opendbc/01_modify_baseline.patch` | Hyundai CAN-FD safety baseline constants |
 | `opendbc/02_panda_safety_limits.patch` | EV9 lateral safety thresholds |
 | `opendbc/03_steering_and_ev9_limits.patch` | EV9 controller, tuning/interface and steering/HOD signals |
 | `opendbc/04_door_signals.patch` | All-door detection |
@@ -51,14 +51,20 @@ The former consolidated patches are archived unchanged under
 patches replace their replay role. Asset retention does not enable the disabled
 auto-lock implementation.
 
-The application was restored from Intelli `5928a37ad187`, with customized vehicle
-snapshot `5a3f3761f586` and the original dependency pins. Those customized snapshots
-are restoration provenance; the enabled forward patches use official baselines.
-The current vehicle baseline is the exact pin of the official application baseline,
-not a guessed merge-base of deployment history.
+Current official baselines are application `d021f6ca41375e58be8125801547e84939e0c503`
+and its opendbc pin `28303fcd1cc457f67d405407858223e0b338df20`. Application patch
+paths now start with `openpilot/`. The upgrade advanced 798 upstream commits from
+`54fb2750bab4`; ports preserve new upstream behavior while retaining custom features.
+Vehicle `01_modify_baseline.patch` is archived because current upstream supplies
+its EV9 baseline physics. Superseded implementations and helpers are described in
+[the upgrade archive](archive/sunnypilot-upgrade-20261004/README.md).
+
+Historical restoration used Intelli `5928a37ad187`, customized vehicle snapshot
+`5a3f3761f586`, and its original dependency pins. Those identify restoration history,
+rather than the current official baselines.
 
 StarPilot implementations are retained under `archive/starpilot-20260920/`,
-including their documentation. They are not applied to restored Sunnypilot.
+including their documentation. They are not applied to current Sunnypilot.
 Its [catalog](archive/starpilot-20260920/manifest.json) records all 13 application
 and six vehicle patches, hashes and original context. Their complete replay was
 verified against the recorded StarPilot baseline and matches the preserved source.
@@ -124,7 +130,7 @@ selection. Its no-argument/`--all` mode selects only enabled vehicle patches.
 Stage the intended source changes, then export them:
 
 ```sh
-git add selfdrive/path/to/file.py
+git add openpilot/selfdrive/path/to/file.py
 ./create_patch.sh example
 
 # Vehicle-only export, stored with standalone opendbc paths:
@@ -164,7 +170,7 @@ committed original hunks and captures committed changes to existing patch paths;
 unstaged edits are excluded.
 
 Some features share a source file: warnings and EV9 startup branding share
-`selfdrive/selfdrived/selfdrived.py`; steering signals and doors share
+`openpilot/selfdrive/selfdrived/selfdrived.py`; steering signals and doors share
 `opendbc_repo/opendbc/car/hyundai/carstate.py`. For an enabled patch with peers
 in its selected files, the helper reconstructs and replays the series in temporary
 indexes, finds changes beyond the recorded series, and transfers only the requested
@@ -211,7 +217,7 @@ filename. Empty exports or errors leave existing patch contents unchanged.
 Both helpers accept an optional path selection after `--`:
 
 ```sh
-./create_patch.sh example -- selfdrive/path/to/file.py
+./create_patch.sh example -- openpilot/selfdrive/path/to/file.py
 ./update_patch.sh opendbc/04_door_signals -- opendbc/car/hyundai/carstate.py
 ```
 

@@ -1,4 +1,4 @@
-diff --git a/sunnypilot/selfdrive/assets/images/ev9_boot.jpg b/sunnypilot/selfdrive/assets/images/ev9_boot.jpg
+diff --git a/openpilot/sunnypilot/selfdrive/assets/images/ev9_boot.jpg b/openpilot/sunnypilot/selfdrive/assets/images/ev9_boot.jpg
 new file mode 100644
 index 0000000000000000000000000000000000000000..f1b7c1f5298d61c1fa5180157810f3c27cd315df
 GIT binary patch
@@ -8673,25 +8673,24 @@ hu=kIac39!ib(&UaG4Mf&wDu3ZvFUQ%(;feN@_#g%mZ|^%
 literal 0
 HcmV?d00001
 
-diff --git a/sunnypilot/system/boot_logo.py b/sunnypilot/system/boot_logo.py
+diff --git a/openpilot/sunnypilot/system/boot_logo.py b/openpilot/sunnypilot/system/boot_logo.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..f665a7165c3815659c87ae6afa95eaac45f39834
+index 0000000000000000000000000000000000000000..a68ef7a0a3bf606f1bd6ac01ed6466c61c1a33d7
 --- /dev/null
-+++ b/sunnypilot/system/boot_logo.py
-@@ -0,0 +1,49 @@
++++ b/openpilot/sunnypilot/system/boot_logo.py
+@@ -0,0 +1,48 @@
 +"""Install the EV9 artwork for AGNOS boot without changing driving settings."""
 +from io import BytesIO
 +from pathlib import Path
 +import subprocess
 +import tempfile
 +
-+from PIL import Image
-+
-+
 +ARTWORK = Path(__file__).resolve().parents[1] / "selfdrive/assets/images/ev9_boot.jpg"
 +
 +
 +def logo_images(source: Path, landscape_jpeg: bool) -> dict[str, bytes]:
++  from PIL import Image
++
 +  with Image.open(source) as image:
 +    image = image.convert("RGB")
 +    landscape = image if image.width >= image.height else image.transpose(Image.Transpose.ROTATE_90)
@@ -8725,22 +8724,22 @@ index 0000000000000000000000000000000000000000..f665a7165c3815659c87ae6afa95eaac
 +      finally:
 +        subprocess.run(["sudo", "mount", "-o", f"remount,{mount_options}", "/"], check=True)
 +    return True
-+  except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
++  except (ImportError, OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
 +    print(f"EV9 boot artwork could not be installed: {error}")
 +    return False
-diff --git a/system/manager/manager.py b/system/manager/manager.py
-index 15a09d0a378f8f1806fb3a300abedd7bfeaa854d..6e4d42b2063018f0c06977ab3532b565fbaa4fd9 100755
---- a/system/manager/manager.py
-+++ b/system/manager/manager.py
-@@ -23,6 +23,7 @@ from openpilot.system.hardware.hw import Paths
- from openpilot.system.hardware import PC
+diff --git a/openpilot/system/manager/manager.py b/openpilot/system/manager/manager.py
+index 7befb7f4aedf093f8bd4ac621a4f050dff0e9300..9e9da0de8bfcfa6a47a1efd8f2d3965847dfe80c 100755
+--- a/openpilot/system/manager/manager.py
++++ b/openpilot/system/manager/manager.py
+@@ -22,6 +22,7 @@ from openpilot.common.version import get_build_metadata
+ from openpilot.common.hardware.hw import Paths
  
  from openpilot.sunnypilot.system.params_migration import run_migration
 +from openpilot.sunnypilot.system.boot_logo import install_boot_logo
  
  
  def manager_init() -> None:
-@@ -53,6 +54,7 @@ def manager_init() -> None:
+@@ -52,6 +53,7 @@ def manager_init() -> None:
  
    if not PC:
      run_migration(params)
@@ -8748,3 +8747,78 @@ index 15a09d0a378f8f1806fb3a300abedd7bfeaa854d..6e4d42b2063018f0c06977ab3532b565
  
    # set unset params to their default value
    for k in params.all_keys():
+diff --git a/pyproject.toml b/pyproject.toml
+index 6a13796d70be4902a3131d35be706acc88cf3f96..15eaa317a11b32393a24427bb89b5b4fd9505786 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -51,6 +51,7 @@ dependencies = [
+ 
+   # ui
+   "comma-deps-raylib",
++  "pillow",  # EV9 boot artwork conversion
+ ]
+ 
+ [project.optional-dependencies]
+diff --git a/uv.lock b/uv.lock
+index 30be99f497f7db43fc4d99129385ee87960482b9..5d3eb5304595355d55d5f3ac98bb005c824b0a30 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -769,6 +769,7 @@ dependencies = [
+     { name = "inputs" },
+     { name = "jeepney" },
+     { name = "numpy" },
++    { name = "pillow" },
+     { name = "pycapnp" },
+     { name = "pyjwt", extra = ["crypto"] },
+     { name = "pyzmq" },
+@@ -841,6 +842,7 @@ requires-dist = [
+     { name = "numpy", specifier = ">=2.0" },
+     { name = "opendbc", marker = "extra == 'submodules'", editable = "opendbc_repo" },
+     { name = "pandacan", marker = "extra == 'submodules'", editable = "panda" },
++    { name = "pillow" },
+     { name = "pycapnp", specifier = "==2.1.0" },
+     { name = "pyjwt", extras = ["crypto"] },
+     { name = "pyzmq" },
+@@ -1247,7 +1249,7 @@ provides-extras = ["dev"]
+ 
+ [[package]]
+ name = "tinygrad"
+-version = "0.13.0"
++version = "0.14.0"
+ source = { editable = "tinygrad_repo" }
+ 
+ [package.metadata]
+@@ -1261,6 +1263,7 @@ requires-dist = [
+     { name = "hypothesis", marker = "extra == 'testing-minimal'", specifier = ">=6.148.9" },
+     { name = "influxdb3-python", marker = "extra == 'testing'" },
+     { name = "librosa", marker = "extra == 'testing'" },
++    { name = "mako", marker = "extra == 'autogen'" },
+     { name = "markdown-callouts", marker = "extra == 'docs'" },
+     { name = "markdown-exec", extras = ["ansi"], marker = "extra == 'docs'" },
+     { name = "mkdocs", marker = "extra == 'docs'" },
+@@ -1275,7 +1278,7 @@ requires-dist = [
+     { name = "numpy", marker = "extra == 'testing-minimal'" },
+     { name = "onnx", marker = "extra == 'testing'", specifier = "==1.19.0" },
+     { name = "onnx2torch", marker = "extra == 'testing'" },
+-    { name = "onnxruntime", marker = "extra == 'testing'" },
++    { name = "onnxruntime", marker = "extra == 'testing'", specifier = "==1.24.1" },
+     { name = "openai", marker = "extra == 'testing-unit'" },
+     { name = "opencv-python", marker = "extra == 'testing'" },
+     { name = "pandas", marker = "extra == 'testing'" },
+@@ -1286,6 +1289,7 @@ requires-dist = [
+     { name = "pytest", marker = "extra == 'testing-minimal'" },
+     { name = "pytest-split", marker = "extra == 'testing-minimal'" },
+     { name = "pytest-xdist", marker = "extra == 'testing-minimal'" },
++    { name = "pyyaml", marker = "extra == 'autogen'" },
+     { name = "ruff", marker = "extra == 'linting'", specifier = "==0.14.10" },
+     { name = "safetensors", marker = "extra == 'testing-unit'" },
+     { name = "sentencepiece", marker = "extra == 'testing'" },
+@@ -1301,7 +1305,7 @@ requires-dist = [
+     { name = "typing-extensions", marker = "extra == 'linting'" },
+     { name = "z3-solver", marker = "extra == 'testing-minimal'", specifier = "<4.15.4" },
+ ]
+-provides-extras = ["linting", "testing-minimal", "testing-unit", "testing", "docs", "mesa"]
++provides-extras = ["linting", "testing-minimal", "testing-unit", "testing", "docs", "mesa", "autogen"]
+ 
+ [[package]]
+ name = "tomli"

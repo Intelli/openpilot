@@ -1,0 +1,38 @@
+import glob
+import os
+import ffmpeg
+
+Import('env', 'arch', 'messaging', 'common', 'visionipc', 'ffmpeg_libs')
+
+libs = [common, messaging, visionipc] + ffmpeg_libs + ['pthread', 'm', 'zstd']
+frameworks = []
+
+src = ['logger.cc', 'zstd_writer.cc', 'video_writer.cc', 'encoder/encoder.cc', 'encoder/jpeg_encoder.cc']
+if arch == "comma_arm64":
+  src += ['clip_encoder.cc', 'encoder/v4l_encoder.cc', 'encoder/v4l_decoder.cc']
+else:
+  src += ['encoder/ffmpeg_encoder.cc']
+  if arch == "Darwin":
+    frameworks += ['VideoToolbox', 'CoreMedia', 'CoreFoundation', 'CoreVideo']
+
+lenv = env.Clone()
+bundled_ffmpeg = []
+if arch == 'comma_arm64' and os.environ.get('SP_TICI_SYSROOT'):
+  # Frozen FFmpeg wheels use $ORIGIN for their own shared-library dependencies.
+  # Package them beside loggerd, since the build venv is excluded from release.
+  shared_libs = sorted(glob.glob(os.path.join(ffmpeg.LIB_DIR, 'lib*.so*')))
+  if not shared_libs:
+    raise SCons.Errors.UserError('The pinned device FFmpeg package must contain shared libraries')
+  for source in shared_libs:
+    bundled_ffmpeg += lenv.Command('lib/' + os.path.basename(source), source, Copy('$TARGET', '$SOURCE'))
+  lenv['RPATH'].append(lenv.Literal('\\$$ORIGIN/lib'))
+
+logger_lib = lenv.Library('logger', src)
+libs.insert(0, logger_lib)
+
+lenv.Program('loggerd', ['loggerd.cc'], LIBS=libs, FRAMEWORKS=frameworks)
+lenv.Program('encoderd', ['encoderd.cc'], LIBS=libs, FRAMEWORKS=frameworks)
+lenv.Program('bootlog.cc', LIBS=libs, FRAMEWORKS=frameworks)
+
+if bundled_ffmpeg:
+  lenv.Depends(['loggerd', 'encoderd', 'bootlog'], bundled_ffmpeg)

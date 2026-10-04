@@ -28,7 +28,7 @@ jobs:
         run: scripts/laptop_device_build.sh build-image
       - name: Extract device sysroot from upstream AGNOS image
         run: scripts/laptop_device_build.sh setup-sysroot-agnos
-      - name: Compile Sunnypilot for AGNOS 17.2
+      - name: Compile Sunnypilot for AGNOS 19.7
         # Rebuild all native application/firmware targets from this source.
         # Only allowlisted, hash-verified QCOM model captures are preserved.
         run: |
