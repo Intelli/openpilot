@@ -45,7 +45,10 @@ The EV9 controller uses the preserved Sunnypilot acceleration/jerk envelope:
 application retains its separate higher-speed 3.0 m/s² limit with road-bank
 compensation. These limits depend on speed and do not impose a fixed 45° cap.
 
-Custom override effort defaults to 10%. On EV9, the custom reduction and manual
+Custom override effort defaults to 100% in compiled parameters and vehicle
+fallbacks, disabling the extra gain reduction for new installs. Improved Manual
+Control remains off by default. Existing saved settings remain authoritative.
+On EV9, the custom reduction and manual
 handoff require both driver torque and confirmed HOD contact (status 1–4, with an
 actual signal timestamp no more than 300 ms old). Hands-off, missing, reserved,
 stale or future-dated HOD readings bypass custom override and release its latches
@@ -61,6 +64,7 @@ vehicle behavior; the selected model and effective settings also matter.
 
 ## Appearance, statistics and power
 
+The steering arc (`TorqueBar`) is enabled by default for new installs.
 EV9 path coloring and the lane-centering overlay retain the newer upstream MADS
 rendering gates and path-width filtering. Model settings retain the new small/big
 model selector and camera-offset control alongside the custom centering and EV9

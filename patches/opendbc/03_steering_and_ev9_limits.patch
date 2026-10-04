@@ -1,5 +1,5 @@
 diff --git a/opendbc/car/hyundai/carcontroller.py b/opendbc/car/hyundai/carcontroller.py
-index d460c6a7d0878463f1c06cb32b4703bbfd83287c..0d61e63445a4c3a01d0fcaa4f4567658c99ad351 100644
+index d460c6a7d0878463f1c06cb32b4703bbfd83287c..1a3c139e41409894507bf6cd22916ccb282a2fc8 100644
 --- a/opendbc/car/hyundai/carcontroller.py
 +++ b/opendbc/car/hyundai/carcontroller.py
 @@ -1,3 +1,5 @@
@@ -15,7 +15,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..0d61e63445a4c3a01d0fcaa4f4567658
 +EV9_ANGLE_LIMIT_SPEED_THRESHOLD_DEFAULT = 32.0 / 3.6
 +ANGLE_OVERRIDE_EFFORT_MIN_PERCENT = 10.0
 +ANGLE_OVERRIDE_EFFORT_MAX_PERCENT = 100.0
-+ANGLE_OVERRIDE_EFFORT_DEFAULT_PERCENT = 10.0
++ANGLE_OVERRIDE_EFFORT_DEFAULT_PERCENT = 100.0
 +ANGLE_OVERRIDE_GAIN_MIN_FLOOR = 0.10
 +ANGLE_OVERRIDE_STEER_THRESHOLD_HYSTERESIS = 40.0
 +EV9_HOD_TIMEOUT_NS = 300_000_000
@@ -370,7 +370,7 @@ index 61657042bebf46979cad8b417d06b3995a041f4f..cb6dfe81a6ac2c75f99af94ea3277a8d
 +  handsOnWheel: bool = auto_field()
 +  handsOnWheelValid: bool = auto_field()
 diff --git a/opendbc/sunnypilot/car/interfaces.py b/opendbc/sunnypilot/car/interfaces.py
-index 5adbf06afeb018247efed03196e5011d2815239d..06a994ffd890782a905c90c7d1c24848c11ded5c 100644
+index 5adbf06afeb018247efed03196e5011d2815239d..b24d5d6bfb67902397e794e38b80a650ae49ae95 100644
 --- a/opendbc/sunnypilot/car/interfaces.py
 +++ b/opendbc/sunnypilot/car/interfaces.py
 @@ -97,6 +97,33 @@ def _initialize_custom_longitudinal_tuning(CI, CP: structs.CarParams, CP_SP: str
@@ -389,7 +389,7 @@ index 5adbf06afeb018247efed03196e5011d2815239d..06a994ffd890782a905c90c7d1c24848
 +    CP_SP.hkgSharedAutonomyEnabled = CP_SP.hkgSharedAutonomyMode != 0
 +
 +    # Steering override effort scaling in percent: 100 keeps stock behavior, 10 minimizes assist during manual override.
-+    CP_SP.hkgTuningAngleOverrideEffortPercent = 10.0
++    CP_SP.hkgTuningAngleOverrideEffortPercent = 100.0
 +    override_effort_percent = params_dict.get("HkgTuningAngleOverrideEffortPercent")
 +    if override_effort_percent is not None:
 +      try:
