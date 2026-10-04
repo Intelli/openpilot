@@ -60,6 +60,8 @@ tracked and hands-free distance; custom engagement audio and branding remain.
 Retained auto-lock icons do not enable the disabled auto-lock implementation.
 
 Offroad power, screen and model-manager changes are adapted to the newer source.
+Idle state uses the current `IsOffroad` setting; the removed `IsOnroad` parameter
+must not block model-catalog refresh or override Panda's device-state and ignition guards.
 Boot artwork lives at `openpilot/sunnypilot/selfdrive/assets/images/ev9_boot.jpg`.
 On manager startup, `openpilot/sunnypilot/system/boot_logo.py` installs the AGNOS
 JPEG and, when present, PNG variant, preserving orientation and root mount options.

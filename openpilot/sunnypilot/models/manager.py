@@ -326,8 +326,7 @@ class ModelManagerSP:
       try:
         screen_off = self.params.get_bool("ScreenOff")
         is_offroad = self.params.get_bool("IsOffroad")
-        is_onroad = self.params.get_bool("IsOnroad")
-        desired_low_power = screen_off and is_offroad and not is_onroad
+        desired_low_power = screen_off and is_offroad
         if desired_low_power != low_power_loop:
           low_power_loop = desired_low_power
           rk = Ratekeeper(IDLE_RATE_HZ if low_power_loop else ACTIVE_RATE_HZ, print_delay_threshold=None)
