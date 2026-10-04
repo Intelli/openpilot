@@ -42,6 +42,7 @@ ANGLE_OVERRIDE_EFFORT_MAX_PERCENT = 100.0
 ANGLE_OVERRIDE_EFFORT_DEFAULT_PERCENT = 10.0
 ANGLE_OVERRIDE_GAIN_MIN_FLOOR = 0.10
 ANGLE_OVERRIDE_STEER_THRESHOLD_HYSTERESIS = 40.0
+EV9_HOD_TIMEOUT_NS = 300_000_000
 SHARED_AUTONOMY_MODE_STOCK = 0
 SHARED_AUTONOMY_MODE_IMPROVED = 1
 SHARED_AUTONOMY_MODE_IMPROVED_LEGACY = 2
@@ -51,6 +52,11 @@ DISABLED_REENTRY_GUARD_AFTER_UNLATCH_S = 2.0
 DISABLED_REENTRY_GRIP_DWELL_S = 0.1
 MANUAL_OVERRIDE_KEEP_ACTIVE_ENTER_ANGLE_DEG = 90.0
 MANUAL_OVERRIDE_KEEP_ACTIVE_EXIT_ANGLE_DEG = 15.0
+
+
+def ev9_hands_on(raw, timestamp, now_nanos):
+  # Contact is driver intent only while the actual HOD signal is valid and fresh.
+  return raw in (1, 2, 3, 4) and timestamp > 0 and 0 <= now_nanos - timestamp <= EV9_HOD_TIMEOUT_NS
 
 
 def get_baseline_safety_cp():
@@ -180,7 +186,11 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
 
     self.apply_angle_last = 0
 
-  def _get_override_active(self, steering_torque, steering_pressed):
+  def _get_override_active(self, steering_torque, steering_pressed, hands_on_grip):
+    if self.car_fingerprint == CAR.KIA_EV9 and (not hands_on_grip or self.angle_override_effort_scale >= 0.999):
+      self.override_active = False
+      return False
+
     # Keep stock behavior when override effort tuning is effectively disabled.
     if self.angle_override_effort_scale >= 0.999:
       return steering_pressed
@@ -197,6 +207,10 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
     return self.override_active
 
   def _get_disabled_torque_override_active(self, steering_torque, hands_on_grip):
+    if self.car_fingerprint == CAR.KIA_EV9 and not hands_on_grip:
+      self.disabled_torque_override_active = False
+      return False
+
     torque_abs = abs(steering_torque)
     enter_threshold = float(self.params.STEER_THRESHOLD)
     exit_threshold = max(0.0, enter_threshold - ANGLE_OVERRIDE_STEER_THRESHOLD_HYSTERESIS)
@@ -251,11 +265,15 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
       self.params.ANGLE_LIMITS.MAX_LATERAL_JERK = max_lat_jerk
 
       improved_manual_control_enabled = self.shared_autonomy_mode != SHARED_AUTONOMY_MODE_STOCK
-      hands_on_grip = bool(getattr(CS, "hands_on_steering_grip", 0)) if improved_manual_control_enabled else False
+      if self.car_fingerprint == CAR.KIA_EV9:
+        hands_on_grip = ev9_hands_on(getattr(CS, "hands_on_steering_grip", None),
+                                    getattr(CS, "hands_on_steering_ts_nanos", 0), now_nanos)
+      else:
+        hands_on_grip = bool(getattr(CS, "hands_on_steering_grip", 0)) if improved_manual_control_enabled else False
       touch_torque_override = False
       torque_override_active = False
       if self.shared_autonomy_mode == SHARED_AUTONOMY_MODE_STOCK:
-        torque_override_active = self._get_override_active(CS.out.steeringTorque, CS.out.steeringPressed)
+        torque_override_active = self._get_override_active(CS.out.steeringTorque, CS.out.steeringPressed, hands_on_grip)
       else:
         self.override_active = False
         if CC.latActive:
@@ -264,6 +282,9 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
       apply_torque_base, apply_torque = compute_torque_reduction_gain(CS.out.steeringTorque, v_ego_raw, CC.latActive,
                                                                        override_active, self.angle_override_effort_scale,
                                                                        self.apply_torque_base_last)
+      if self.car_fingerprint == CAR.KIA_EV9:
+        # Custom effort may reduce native assistance, but its floor must never raise it.
+        apply_torque = min(apply_torque_base, apply_torque)
       # For angle steering, keep angle-control active state aligned with lateral activity
       # rather than reduction-gain magnitude.
       apply_steer_req = CC.latActive

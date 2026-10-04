@@ -770,3 +770,54 @@ class TestHyundaiCanfdEV9AngleLimits(unittest.TestCase):
     # Similar dimensions must not select the EV9-only limits.
     for jerk in (False, True):
       self._check_envelope(CAR.HYUNDAI_IONIQ_9, self.SPEED_GATE_MPS - 0.2, jerk=jerk)
+
+
+class TestEV9OverrideContactCAN(unittest.TestCase):
+  def test_hands_off_gain_and_angle_commands_pass_actual_panda(self):
+    from types import SimpleNamespace
+    from opendbc.car.structs import CarState, CarControl, CarControlSP
+    from opendbc.car.hyundai.tests.test_hyundai import make_ev9_override_controller, ev9_override_controller_context
+
+    # Seed permissions and speed explicitly: this tests command acceptance, not engagement.
+    safety = libsafety_py.libsafety
+    for speed_kph in (20, 30):
+      for sign in (-1, 1):
+        with self.subTest(speed_kph=speed_kph, sign=sign):
+          controller = make_ev9_override_controller()
+          cc = CarControl.new_message(enabled=True, latActive=True)
+          cc.actuators.steeringAngleDeg = sign * 140
+          cs = SimpleNamespace(out=CarState.new_message(vEgo=speed_kph / 3.6, vEgoRaw=speed_kph / 3.6,
+                                                       steeringTorque=sign * 200, steeringPressed=True),
+                               is_metric=True, hands_on_steering_grip=0, hands_on_steering_ts_nanos=0)
+          safety.set_current_safety_param_sp(encode_angle_model_id(ANGLE_STEERING_MODEL_BY_CAR[CAR.KIA_EV9]))
+          safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd,
+                                  HyundaiSafetyFlags.CANFD_LKA_STEER_MSG | HyundaiSafetyFlags.CANFD_LKA_STEER_MSG_ALT |
+                                  HyundaiSafetyFlags.CANFD_ANGLE_STEERING | HyundaiSafetyFlags.EV_GAS)
+          safety.init_tests()
+          safety.set_controls_allowed(True)
+          self.assertEqual(safety.get_hyundai_angle_model_id(), 4)
+          packer = CANPackerSafety("hyundai_canfd_generated")
+          speed_msg = {f"WHL_Spd{pos}Val": speed_kph for pos in ("FL", "FR", "RL", "RR")}
+          for _ in range(common.MAX_SAMPLE_VALS):
+            self.assertTrue(safety.safety_rx_hook(packer.make_can_msg_safety("WHEEL_SPEEDS", 1, speed_msg)))
+          safety.set_desired_angle_last(0)
+          with ev9_override_controller_context(controller, pack_steering=True):
+            for frame in range(300):
+              now = 1_000_000_000 + frame * 10_000_000
+              cs.hands_on_steering_ts_nanos = now - 10_000_000
+              output, messages = controller.update(cc.as_reader(), CarControlSP(), cs, now)
+              self.assertAlmostEqual(output.torqueOutputCan, controller.apply_torque_base_last, places=6)
+              safety.set_timer(now // 1000)
+              self.assertEqual(len(messages), 1)
+              addr, data, bus = messages[0]
+              self.assertEqual((addr, bus), (0x110, 0))
+              self.assertEqual((data[9] >> 4) & 3, 2)
+              self.assertAlmostEqual(data[12] * 0.004, controller.apply_torque_base_last, places=6)
+              angle_ticks = (data[11] << 6) | (data[10] >> 2)
+              if angle_ticks & (1 << 13):
+                angle_ticks -= 1 << 14
+              self.assertAlmostEqual(angle_ticks / 10, output.steeringAngleDeg, delta=0.051)
+              self.assertTrue(safety.safety_tx_hook(libsafety_py.make_CANPacket(addr, bus, data)), (speed_kph, sign, frame))
+              cs.out.steeringAngleDeg = output.steeringAngleDeg
+          self.assertAlmostEqual(output.steeringAngleDeg, sign * 140, places=3)
+          self.assertGreater(output.torqueOutputCan, 0.1)

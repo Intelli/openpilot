@@ -76,6 +76,7 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
     self.is_canfd_angle_steering = CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING
     self.imu_lateral_acceleration = 0.0  # used for CAN FD cars with angle steering
     self.hands_on_steering_grip = 0
+    self.hands_on_steering_ts_nanos = 0
 
   def recent_button_interaction(self) -> bool:
     # On some newer model years, the CANCEL button acts as a pause/resume button based on the PCM state
@@ -270,6 +271,7 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
     if self.is_canfd_angle_steering:
       ret.steerFaultTemporary = ret.steerFaultTemporary or cp.vl["MDPS"]["MDPS_ADAS_AciFltSig_Lv2"] != 0
       self.hands_on_steering_grip = cp.vl["HOD_FD_01_100ms"]["HOD_Dir_Status"]
+      self.hands_on_steering_ts_nanos = cp.ts_nanos["HOD_FD_01_100ms"]["HOD_Dir_Status"]
       if self.CP.carFingerprint == CAR.KIA_EV9:
         ret_sp.handsOnWheelValid = self.hands_on_steering_grip in HOD_VALID_STATUSES
         ret_sp.handsOnWheel = self.hands_on_steering_grip in HOD_HANDS_ON_STATUSES

@@ -1,13 +1,14 @@
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from opendbc.car import gen_empty_fingerprint
+from opendbc.car import Bus, gen_empty_fingerprint
+from opendbc.can import CANPacker
 from opendbc.car.structs import CarParams, CarParamsSP, CarState, CarControl, CarControlSP
 from opendbc.car.hyundai import carcontroller
-from opendbc.car.hyundai.carstate import HOD_HANDS_ON_STATUSES, HOD_VALID_STATUSES
+from opendbc.car.hyundai.carstate import CarState as HyundaiCarState, HOD_HANDS_ON_STATUSES, HOD_VALID_STATUSES
 from opendbc.car.fw_versions import build_fw_dict
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai.hyundaicanfd import CanBus
@@ -322,3 +323,144 @@ class TestEV9ControllerLimits(unittest.TestCase):
         self.assertEqual(captured[-1].MAX_LATERAL_JERK, expected)
         self.assertAlmostEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
         self.assertAlmostEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)
+
+
+def make_ev9_override_controller(car_name=CAR.KIA_EV9, mode=0, effort=10):
+  cp = CarInterface.get_non_essential_params(car_name)
+  cp.flags = int(cp.flags | HyundaiFlags.CANFD_LKA_STEER_MSG | HyundaiFlags.CANFD_LKA_STEER_MSG_ALT)
+  cp_sp = CarParamsSP(hkgTuningAngleCustomLimitMaxSpeedKph=40, hkgTuningAngleOverrideEffortPercent=effort,
+                     hkgSharedAutonomyMode=mode, hkgSharedAutonomyEnabled=mode != 0)
+  return carcontroller.CarController(DBC[car_name], cp, cp_sp)
+
+
+@contextmanager
+def ev9_override_controller_context(controller, pack_steering=False):
+  """Run real steering update; bypass unrelated cruise, HUD and longitudinal work."""
+  with ExitStack() as stack:
+    for cls in (carcontroller.EsccCarController, carcontroller.LeadDataCarController,
+                carcontroller.MadsCarController, carcontroller.LongitudinalController):
+      stack.enter_context(patch.object(cls, "update"))
+    stack.enter_context(patch.object(carcontroller.IntelligentCruiseButtonManagementInterface, "update", return_value=[]))
+    if pack_steering:
+      def steering_only(active, gain, *_):
+        return carcontroller.hyundaicanfd.create_steering_messages(controller.packer, controller.CP, controller.CAN,
+                                                                 True, active, gain, controller.apply_angle_last, 2)
+      stack.enter_context(patch.object(controller, "create_canfd_msgs", side_effect=steering_only))
+    else:
+      stack.enter_context(patch.object(controller, "create_canfd_msgs", return_value=[]))
+    yield
+
+
+class TestEV9OverrideContact(unittest.TestCase):
+  def setUp(self):
+    self.controller = make_ev9_override_controller()
+    self.cc = CarControl.new_message(enabled=True, latActive=True)
+    self.cc.actuators.steeringAngleDeg = 20
+    self.cs = SimpleNamespace(out=CarState.new_message(vEgo=20 / 3.6, vEgoRaw=20 / 3.6, steeringAngleDeg=20,
+                                                     steeringTorque=200, steeringPressed=True),
+                              is_metric=True, hands_on_steering_grip=0, hands_on_steering_ts_nanos=0)
+    self.now = 1_000_000_000
+
+  def step(self, status, age=10_000_000):
+    self.cs.hands_on_steering_grip = status
+    self.cs.hands_on_steering_ts_nanos = self.now - age if age is not None else 0
+    with ev9_override_controller_context(self.controller):
+      output, _ = self.controller.update(self.cc.as_reader(), CarControlSP(), self.cs, self.now)
+    self.now += 10_000_000
+    return output.torqueOutputCan, self.controller.apply_torque_base_last
+
+  def settle(self, status, age=10_000_000):
+    for _ in range(250):
+      result = self.step(status, age)
+    return result
+
+  def test_no_confirmed_contact_keeps_native_gain(self):
+    cases = [(0, 10_000_000), (1, 300_000_001), (1, None), (1, -1),
+             (5, 10_000_000), (6, 10_000_000), (7, 10_000_000)]
+    for status, age in cases:
+      with self.subTest(status=status, age=age):
+        gain, base = self.settle(status, age)
+        self.assertGreater(base, 0.1)
+        self.assertAlmostEqual(gain, base, places=6)
+        self.assertFalse(self.controller.override_active)
+
+  def test_fresh_contact_with_torque_applies_custom_floor(self):
+    for status in (1, 2, 3, 4):
+      for age in (10_000_000, 300_000_000):
+        with self.subTest(status=status, age=age):
+          gain, base = self.settle(status, age)
+          self.assertGreater(base, 0.1)
+          self.assertAlmostEqual(gain, 0.1)
+
+  def test_contact_without_torque_keeps_native_gain(self):
+    self.cs.out.steeringTorque = 0
+    self.cs.out.steeringPressed = False
+    gain, base = self.settle(1)
+    self.assertAlmostEqual(gain, base, places=6)
+    self.assertFalse(self.controller.override_active)
+
+  def test_contact_loss_clears_all_manual_state_same_frame(self):
+    for mode in (0, 1, 2):
+      for status, age in ((0, 10_000_000), (1, 300_000_001), (5, 10_000_000), (1, None), (1, -1)):
+        with self.subTest(mode=mode, status=status, age=age):
+          self.controller = make_ev9_override_controller(mode=mode)
+          self.cs.out.steeringAngleDeg = self.cc.actuators.steeringAngleDeg = 100
+          self.settle(1)
+          gain, base = self.step(status, age)
+          self.assertAlmostEqual(gain, base, places=6)
+          for field in ("override_active", "disabled_torque_override_active", "disabled_manual_override_latched",
+                        "manual_override_keep_active_latched"):
+            self.assertFalse(getattr(self.controller, field), field)
+          self.assertEqual(self.controller.disabled_low_demand_release_timer, 0)
+          self.assertEqual(self.controller.disabled_reentry_grip_dwell_timer, 0)
+
+  def test_contact_cut_does_not_change_native_gain_history(self):
+    self.settle(0)
+    base_before = self.controller.apply_torque_base_last
+    gain, base_contact = self.step(1)
+    self.assertAlmostEqual(gain, 0.1)
+    self.assertEqual(base_contact, base_before)
+    gain, base_released = self.step(0)
+    self.assertAlmostEqual(gain, base_released, places=6)
+    self.assertEqual(base_released, base_contact)
+
+  def test_full_effort_matches_native_and_floor_never_increases_gain(self):
+    self.controller = make_ev9_override_controller(effort=100)
+    gain, base = self.step(1)
+    self.assertLess(base, 0.1)
+    self.assertAlmostEqual(gain, base, places=6)
+    gain, base = self.settle(1)
+    self.assertAlmostEqual(gain, base, places=6)
+    self.controller = make_ev9_override_controller()
+    gain, base = self.step(1)
+    self.assertGreater(base, 0)
+    self.assertLess(base, 0.1)
+    self.assertAlmostEqual(gain, base, places=6)
+
+  def test_other_angle_models_keep_existing_torque_override(self):
+    self.controller = make_ev9_override_controller(CAR.HYUNDAI_IONIQ_9)
+    gain, base = self.settle(0)
+    self.assertGreater(base, 0.1)
+    self.assertAlmostEqual(gain, 0.1)
+
+
+class TestEV9HODTimestamp(unittest.TestCase):
+  def test_timestamp_tracks_received_hod_packet_not_update_time(self):
+    controller = make_ev9_override_controller()
+    state = HyundaiCarState(controller.CP, controller.CP_SP)
+    parsers = state.get_can_parsers(controller.CP, controller.CP_SP)
+    parser = parsers[Bus.pt]
+    packer = CANPacker(DBC[CAR.KIA_EV9][Bus.pt])
+    self.assertEqual(state.hands_on_steering_ts_nanos, 0)
+    state.update_canfd(parsers)
+    self.assertEqual(state.hands_on_steering_ts_nanos, 0)
+    stamp = 1_000_000_000
+    hod = packer.make_can_msg("HOD_FD_01_100ms", parser.bus, {"HOD_Dir_Status": 3})
+    parser.update([(stamp, [hod])])
+    _, state_sp = state.update_canfd(parsers)
+    self.assertTrue(state_sp.handsOnWheel)
+    self.assertEqual(state.hands_on_steering_ts_nanos, stamp)
+    wheels = packer.make_can_msg("WHEEL_SPEEDS", parser.bus, {"WHL_SpdFLVal": 20})
+    parser.update([(stamp + 500_000_000, [wheels])])
+    state.update_canfd(parsers)
+    self.assertEqual(state.hands_on_steering_ts_nanos, stamp)

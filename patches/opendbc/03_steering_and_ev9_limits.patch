@@ -1,5 +1,5 @@
 diff --git a/opendbc/car/hyundai/carcontroller.py b/opendbc/car/hyundai/carcontroller.py
-index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e81005f87c2ad 100644
+index d460c6a7d0878463f1c06cb32b4703bbfd83287c..0d61e63445a4c3a01d0fcaa4f4567658c99ad351 100644
 --- a/opendbc/car/hyundai/carcontroller.py
 +++ b/opendbc/car/hyundai/carcontroller.py
 @@ -1,3 +1,5 @@
@@ -8,7 +8,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
  import numpy as np
  from opendbc.car.vehicle_model import VehicleModel
  from opendbc.car.common.filter_simple import FirstOrderFilter
-@@ -34,6 +36,21 @@ CANCEL_BUTTON_DELAY_FRAMES = 10
+@@ -34,6 +36,27 @@ CANCEL_BUTTON_DELAY_FRAMES = 10
  
  MAX_ANGLE_RATE = 5
  ANGLE_SAFETY_BASELINE_MODEL = "KIA_SPORTAGE_HEV_2026"
@@ -18,6 +18,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
 +ANGLE_OVERRIDE_EFFORT_DEFAULT_PERCENT = 10.0
 +ANGLE_OVERRIDE_GAIN_MIN_FLOOR = 0.10
 +ANGLE_OVERRIDE_STEER_THRESHOLD_HYSTERESIS = 40.0
++EV9_HOD_TIMEOUT_NS = 300_000_000
 +SHARED_AUTONOMY_MODE_STOCK = 0
 +SHARED_AUTONOMY_MODE_IMPROVED = 1
 +SHARED_AUTONOMY_MODE_IMPROVED_LEGACY = 2
@@ -27,10 +28,15 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
 +DISABLED_REENTRY_GRIP_DWELL_S = 0.1
 +MANUAL_OVERRIDE_KEEP_ACTIVE_ENTER_ANGLE_DEG = 90.0
 +MANUAL_OVERRIDE_KEEP_ACTIVE_EXIT_ANGLE_DEG = 15.0
++
++
++def ev9_hands_on(raw, timestamp, now_nanos):
++  # Contact is driver intent only while the actual HOD signal is valid and fresh.
++  return raw in (1, 2, 3, 4) and timestamp > 0 and 0 <= now_nanos - timestamp <= EV9_HOD_TIMEOUT_NS
  
  
  def get_baseline_safety_cp():
-@@ -41,7 +58,7 @@ def get_baseline_safety_cp():
+@@ -41,7 +64,7 @@ def get_baseline_safety_cp():
    return CarInterface.get_non_essential_params(ANGLE_SAFETY_BASELINE_MODEL)
  
  
@@ -39,7 +45,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
    if lat_active:
      ceiling = np.interp(v_ego, [0.5, 1.5], [1.0, 0.85])
      shelf = np.interp(v_ego, [2, 11], [0.45, 0.6])
-@@ -54,8 +71,21 @@ def compute_torque_reduction_gain(steering_torque, v_ego, lat_active, last_gain)
+@@ -54,8 +77,21 @@ def compute_torque_reduction_gain(steering_torque, v_ego, lat_active, last_gain)
  
    else:
      target = 0.0
@@ -63,7 +69,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
  
  
  def process_hud_alert(enabled, fingerprint, hud_control):
-@@ -108,6 +138,9 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
+@@ -108,6 +144,9 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
      IntelligentCruiseButtonManagementInterface.__init__(self, CP, CP_SP)
      self.CAN = CanBus(CP)
      self.params = CarControllerParams(CP)
@@ -73,7 +79,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
      self.packer = CANPacker(dbc_names[Bus.pt])
      self.angle_limit_counter = 0
      self.angle_filter = FirstOrderFilter(0.0, 0.2, DT_CTRL)
-@@ -118,13 +151,64 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
+@@ -118,13 +157,72 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
      self.apply_angle_last = 0
  
      self.accel_last = 0
@@ -106,7 +112,11 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
 +
      self.apply_angle_last = 0
  
-+  def _get_override_active(self, steering_torque, steering_pressed):
++  def _get_override_active(self, steering_torque, steering_pressed, hands_on_grip):
++    if self.car_fingerprint == CAR.KIA_EV9 and (not hands_on_grip or self.angle_override_effort_scale >= 0.999):
++      self.override_active = False
++      return False
++
 +    # Keep stock behavior when override effort tuning is effectively disabled.
 +    if self.angle_override_effort_scale >= 0.999:
 +      return steering_pressed
@@ -123,6 +133,10 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
 +    return self.override_active
 +
 +  def _get_disabled_torque_override_active(self, steering_torque, hands_on_grip):
++    if self.car_fingerprint == CAR.KIA_EV9 and not hands_on_grip:
++      self.disabled_torque_override_active = False
++      return False
++
 +    torque_abs = abs(steering_torque)
 +    enter_threshold = float(self.params.STEER_THRESHOLD)
 +    exit_threshold = max(0.0, enter_threshold - ANGLE_OVERRIDE_STEER_THRESHOLD_HYSTERESIS)
@@ -138,7 +152,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
    def update(self, CC, CC_SP, CS, now_nanos):
      EsccCarController.update(self, CS)
      LeadDataCarController.update(self, CC_SP)
-@@ -134,6 +218,7 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
+@@ -134,6 +232,7 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
  
      actuators = CC.actuators
      hud_control = CC.hudControl
@@ -146,7 +160,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
  
      # steering torque
      if not self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
-@@ -142,6 +227,7 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
+@@ -142,6 +241,7 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
                                                                           MAX_ANGLE_CONSECUTIVE_FRAMES)
        new_torque = int(round(actuators.torque * self.params.STEER_MAX))
        apply_torque = apply_driver_steer_torque_limits(new_torque, self.apply_torque_last, CS.out.steeringTorque, self.params)
@@ -154,7 +168,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
  
      # angle control
      else:
-@@ -151,21 +237,114 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
+@@ -151,21 +251,121 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
        self.angle_filter.update_alpha(float(np.interp(CS.out.vEgo, [5, 10, 20], [0.2, 0.1, 0.0])))
        desired_angle = self.angle_filter.update(desired_angle)
  
@@ -171,18 +185,22 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
 -      #   apply_angle = apply_steer_angle_limits_vm(apply_angle or desired_angle, self.apply_angle_last, v_ego_raw, CS.out.steeringAngleDeg, CC.latActive,
 -      #                                             self.params, self.BASELINE_VM)
 +      # Panda now selects the matching per-vehicle model; no baseline-model clamp is needed.
++
++      self.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = max_lat_accel
++      self.params.ANGLE_LIMITS.MAX_LATERAL_JERK = max_lat_jerk
  
 -      apply_torque = compute_torque_reduction_gain(CS.out.steeringTorque, v_ego_raw, CC.latActive, self.apply_torque_last)
 -      apply_steer_req = CC.latActive and apply_torque != 0
-+      self.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = max_lat_accel
-+      self.params.ANGLE_LIMITS.MAX_LATERAL_JERK = max_lat_jerk
-+
 +      improved_manual_control_enabled = self.shared_autonomy_mode != SHARED_AUTONOMY_MODE_STOCK
-+      hands_on_grip = bool(getattr(CS, "hands_on_steering_grip", 0)) if improved_manual_control_enabled else False
++      if self.car_fingerprint == CAR.KIA_EV9:
++        hands_on_grip = ev9_hands_on(getattr(CS, "hands_on_steering_grip", None),
++                                    getattr(CS, "hands_on_steering_ts_nanos", 0), now_nanos)
++      else:
++        hands_on_grip = bool(getattr(CS, "hands_on_steering_grip", 0)) if improved_manual_control_enabled else False
 +      touch_torque_override = False
 +      torque_override_active = False
 +      if self.shared_autonomy_mode == SHARED_AUTONOMY_MODE_STOCK:
-+        torque_override_active = self._get_override_active(CS.out.steeringTorque, CS.out.steeringPressed)
++        torque_override_active = self._get_override_active(CS.out.steeringTorque, CS.out.steeringPressed, hands_on_grip)
 +      else:
 +        self.override_active = False
 +        if CC.latActive:
@@ -191,6 +209,9 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
 +      apply_torque_base, apply_torque = compute_torque_reduction_gain(CS.out.steeringTorque, v_ego_raw, CC.latActive,
 +                                                                       override_active, self.angle_override_effort_scale,
 +                                                                       self.apply_torque_base_last)
++      if self.car_fingerprint == CAR.KIA_EV9:
++        # Custom effort may reduce native assistance, but its floor must never raise it.
++        apply_torque = min(apply_torque_base, apply_torque)
 +      # For angle steering, keep angle-control active state aligned with lateral activity
 +      # rather than reduction-gain magnitude.
 +      apply_steer_req = CC.latActive
@@ -275,7 +296,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
  
        # After we've used the last angle wherever we needed it, we now update it.
        self.apply_angle_last = apply_angle
-@@ -175,8 +354,17 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
+@@ -175,8 +375,17 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
          self.angle_filter.x = self.apply_angle_last
  
      if not CC.latActive:
@@ -295,7 +316,7 @@ index d460c6a7d0878463f1c06cb32b4703bbfd83287c..c42ab65b445724602e754286c10e8100
  
      # accel + longitudinal
 diff --git a/opendbc/car/hyundai/carstate.py b/opendbc/car/hyundai/carstate.py
-index 54a93f2b420b50d4eb22b7458b77bfeb94eb0f25..fa4a851c5c22524c69188bb0b1f3a2359c8c2e24 100644
+index 54a93f2b420b50d4eb22b7458b77bfeb94eb0f25..0a1d8bf62810ce8c8ba37fea7e64fd2448181e23 100644
 --- a/opendbc/car/hyundai/carstate.py
 +++ b/opendbc/car/hyundai/carstate.py
 @@ -20,6 +20,9 @@ PREV_BUTTON_SAMPLES = 8
@@ -308,10 +329,19 @@ index 54a93f2b420b50d4eb22b7458b77bfeb94eb0f25..fa4a851c5c22524c69188bb0b1f3a235
  # Cancel button can sometimes be ACC pause/resume button, main button can also enable on some cars
  ENABLE_BUTTONS = (Buttons.RES_ACCEL, Buttons.SET_DECEL, Buttons.CANCEL)
  BUTTONS_DICT = {Buttons.RES_ACCEL: ButtonType.accelCruise, Buttons.SET_DECEL: ButtonType.decelCruise,
-@@ -260,6 +263,9 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
+@@ -73,6 +76,7 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
+     self.is_canfd_angle_steering = CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING
+     self.imu_lateral_acceleration = 0.0  # used for CAN FD cars with angle steering
+     self.hands_on_steering_grip = 0
++    self.hands_on_steering_ts_nanos = 0
+ 
+   def recent_button_interaction(self) -> bool:
+     # On some newer model years, the CANCEL button acts as a pause/resume button based on the PCM state
+@@ -260,6 +264,10 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
      if self.is_canfd_angle_steering:
        ret.steerFaultTemporary = ret.steerFaultTemporary or cp.vl["MDPS"]["MDPS_ADAS_AciFltSig_Lv2"] != 0
        self.hands_on_steering_grip = cp.vl["HOD_FD_01_100ms"]["HOD_Dir_Status"]
++      self.hands_on_steering_ts_nanos = cp.ts_nanos["HOD_FD_01_100ms"]["HOD_Dir_Status"]
 +      if self.CP.carFingerprint == CAR.KIA_EV9:
 +        ret_sp.handsOnWheelValid = self.hands_on_steering_grip in HOD_VALID_STATUSES
 +        ret_sp.handsOnWheel = self.hands_on_steering_grip in HOD_HANDS_ON_STATUSES
