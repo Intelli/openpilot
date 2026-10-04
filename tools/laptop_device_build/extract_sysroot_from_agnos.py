@@ -12,6 +12,8 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 
+from repair_sysroot_linker import repair_loader
+
 
 REQUIRED_DIRS = [
   ("usr/local/lib", "/usr/local/lib"),
@@ -264,6 +266,7 @@ def main() -> int:
     os.symlink("../../usr/lib/aarch64-linux-gnu", vendor_dst, target_is_directory=True)
 
   populate_optional_host_includes(output_dir)
+  repair_loader(output_dir)
 
   missing = []
   for rel in ("usr/local/lib", "usr/local/include", "lib/aarch64-linux-gnu", "usr/lib/aarch64-linux-gnu", "usr/include", "system/vendor/lib64"):

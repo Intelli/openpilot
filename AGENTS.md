@@ -47,6 +47,7 @@
 - Python: use this checkout's `.venv` with Python 3.12, matching `pyproject.toml` (`>=3.12.3,<3.13`). Dependencies: `CC=/usr/bin/clang CXX=/usr/bin/clang++ uv sync --frozen --all-extras` on macOS.
 - Imported device binaries target AGNOS. Build host-native extensions before tests that import compiled modules. See `docs/how-to/laptop-device-build.md` for the device compilation path.
 - Run focused checks appropriate to the restored Sunnypilot implementation. Maintenance checks use disposable repositories: `python -m pytest tools/ci/tests -q -o addopts='' --confcutdir=tools/ci/tests`; they do not build or deploy vehicle software.
+- Local lint: `scripts/lint/lint.sh`.
 
 ## Style, Commits & Security
 - Follow `pyproject.toml` and neighboring code: two-space Python indentation, a 160-column limit, and conventional `snake_case`, `CamelCase`, and `UPPER_SNAKE_CASE` names.

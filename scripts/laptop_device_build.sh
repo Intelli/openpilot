@@ -259,19 +259,9 @@ is_aarch64_elf() {
 }
 
 repair_sysroot_linker() {
-  local lib_ld="${SYSROOT_DIR}/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
-  local usr_ld="${SYSROOT_DIR}/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
-
-  # Some sysroot extraction paths can create this as an empty directory.
-  if [[ -d "${lib_ld}" ]]; then
-    rm -rf "${lib_ld}"
-  fi
-
-  # Ensure lib-path loader exists (symlink to usr/lib loader is fine).
-  if [[ ! -e "${lib_ld}" && -f "${usr_ld}" ]]; then
-    mkdir -p "$(dirname "${lib_ld}")"
-    ln -s "../../usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1" "${lib_ld}"
-  fi
+  # glibc's linker script also requires /lib/ld-linux-aarch64.so.1. Resolve
+  # absolute device links within this sysroot, never against host /lib.
+  python3 "${ROOT_DIR}/tools/laptop_device_build/repair_sysroot_linker.py" "${SYSROOT_DIR}"
 }
 
 resolve_ldso_source() {
@@ -363,6 +353,7 @@ setup_sysroot_from_agnos() {
       --manifest "${manifest}" \
       --output-dir /opt/tici-sysroot \
       --cache-dir /work/.cache/agnos
+  repair_sysroot_linker
 }
 
 run_larch64_scons() {
@@ -672,4 +663,6 @@ main() {
   esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
