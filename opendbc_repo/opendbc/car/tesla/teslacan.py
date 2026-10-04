@@ -1,37 +1,42 @@
-import numpy as np
-
 from opendbc.car.common.conversions import Conversions as CV
-from opendbc.car.tesla.values import CANBUS, CarControllerParams
+from opendbc.car.tesla.values import CANBUS, CarControllerParams, TeslaFlags
+
+
+def get_steer_ctrl_type(flags: int, ctrl_type: int) -> int:
+  # Returns the flipped signal value for DAS_steeringControlType on FSD 14
+  if flags & TeslaFlags.FSD_14:
+    return {1: 2, 2: 1}.get(ctrl_type, ctrl_type)
+  else:
+    return ctrl_type
 
 
 class TeslaCAN:
-  def __init__(self, packer):
+  def __init__(self, CP, packer):
+    self.CP = CP
     self.packer = packer
-    self.gas_release_frame = 0
 
-  def create_steering_control(self, angle, enabled):
+  def create_steering_control(self, angle, enabled, control_type):
+    # On FSD 14+, ANGLE_CONTROL behavior changed to allow user winddown while actuating.
+    # with openpilot, after overriding w/ ANGLE_CONTROL the wheel snaps back to the original angle abruptly
+    # so we now use LANE_KEEP_ASSIST to match stock FSD.
+    # see carstate.py for more details
     values = {
       "DAS_steeringAngleRequest": -angle,
       "DAS_steeringHapticRequest": 0,
-      "DAS_steeringControlType": 1 if enabled else 0,
+      "DAS_steeringControlType": get_steer_ctrl_type(self.CP.flags, control_type if enabled else 0),
     }
 
     return self.packer.make_can_msg("DAS_steeringControl", CANBUS.party, values)
 
-  def create_longitudinal_command(self, acc_state, accel, counter, frame, v_ego, gas_pressed):
+  def create_longitudinal_command(self, acc_state, accel, counter, v_ego, active):
     set_speed = min(max(v_ego + accel, 0) * CV.MS_TO_KPH, 400)
-
-    if gas_pressed:
-      self.gas_release_frame = frame
-
-    jerk = float(np.interp(frame - self.gas_release_frame, [0, 100], [0.0, CarControllerParams.JERK_LIMIT_MAX]))
 
     values = {
       "DAS_setSpeed": set_speed,
       "DAS_accState": acc_state,
       "DAS_aebEvent": 0,
-      "DAS_jerkMin": -jerk,
-      "DAS_jerkMax": jerk,
+      "DAS_jerkMin": CarControllerParams.JERK_LIMIT_MIN,
+      "DAS_jerkMax": CarControllerParams.JERK_LIMIT_MAX,
       "DAS_accelMin": accel,
       "DAS_accelMax": max(accel, 0),
       "DAS_controlCounter": counter,

@@ -5,6 +5,7 @@ import onnx.backend.test
 import numpy as np
 from tinygrad import Tensor, Device, dtypes
 from tinygrad.helpers import getenv, OSX
+from tinygrad.device import is_dtype_supported
 from tinygrad.nn.onnx import OnnxRunner
 
 # pip3 install tabulate
@@ -69,7 +70,7 @@ backend_test.exclude('test_resize_downsample_scales_linear_align_corners_cpu')
 backend_test.exclude('test_resize_downsample_scales_cubic_align_corners_cpu')
 
 # about different dtypes
-if dtypes.float64 not in Device[Device.DEFAULT].renderer.supported_dtypes():
+if not is_dtype_supported(dtypes.float64):
   backend_test.exclude('float64')
   backend_test.exclude('DOUBLE')
   # these have float64 inputs
@@ -79,7 +80,7 @@ if dtypes.float64 not in Device[Device.DEFAULT].renderer.supported_dtypes():
   backend_test.exclude('test_einsum_*')
   backend_test.exclude('test_cumsum_*')
 
-if dtypes.float16 not in Device[Device.DEFAULT].renderer.supported_dtypes():
+if not is_dtype_supported(dtypes.float16):
   backend_test.exclude('float16')
   backend_test.exclude('FLOAT16')
 

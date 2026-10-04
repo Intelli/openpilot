@@ -59,20 +59,10 @@ class TestSubaruPreglobalSafety(common.CarSafetyTest, common.DriverTorqueSteerin
     values = {"Cruise_Activated": enable}
     return self.packer.make_can_msg_safety("CruiseControl", 0, values)
 
-  def _toggle_aol(self, toggle_on):
-    # CruiseControl, Cruise_On is the main on button
-    values = {"Cruise_On": 1 if toggle_on else 0}
-    return self.packer.make_can_msg_panda("CruiseControl", 0, values)
-
 
 class TestSubaruPreglobalReversedDriverTorqueSafety(TestSubaruPreglobalSafety):
   FLAGS = SubaruSafetyFlags.PREGLOBAL_REVERSED_DRIVER_TORQUE
   DBC = "subaru_outback_2019_generated"
-
-
-class TestSubaruPreglobalStopAndGoSafety(TestSubaruPreglobalSafety):
-  FLAGS = SubaruSafetyFlags.STOP_AND_GO
-  TX_MSGS = [[0x161, 0], [0x164, 0], [0x140, 2], [0xD1, 2]]
 
 
 if __name__ == "__main__":

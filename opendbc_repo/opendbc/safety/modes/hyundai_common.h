@@ -17,6 +17,13 @@ enum {
   HYUNDAI_BTN_CANCEL = 4,
 };
 
+enum {
+  HYUNDAI_PARAM_SP_ESCC = 1,
+  HYUNDAI_PARAM_SP_LONGITUDINAL_MAIN_CRUISE_TOGGLEABLE = 2,
+  HYUNDAI_PARAM_SP_HAS_LDA_BUTTON = 4,
+  HYUNDAI_PARAM_SP_NON_SCC = 8,
+};
+
 // common state
 extern bool hyundai_ev_gas_signal;
 bool hyundai_ev_gas_signal = false;
@@ -30,8 +37,8 @@ bool hyundai_longitudinal = false;
 extern bool hyundai_camera_scc;
 bool hyundai_camera_scc = false;
 
-extern bool hyundai_canfd_lka_steering;
-bool hyundai_canfd_lka_steering = false;
+extern bool hyundai_canfd_lka_steer_msg;
+bool hyundai_canfd_lka_steer_msg = false;
 
 extern bool hyundai_alt_limits;
 bool hyundai_alt_limits = false;
@@ -42,37 +49,22 @@ bool hyundai_fcev_gas_signal = false;
 extern bool hyundai_alt_limits_2;
 bool hyundai_alt_limits_2 = false;
 
-extern bool hyundai_can_canfd_blended;
-bool hyundai_can_canfd_blended = false;
+// ESCC
+extern bool hyundai_escc;
+bool hyundai_escc = false;
+
+extern bool hyundai_longitudinal_main_cruise_toggleable;
+bool hyundai_longitudinal_main_cruise_toggleable = false;
 
 extern bool hyundai_has_lda_button;
 bool hyundai_has_lda_button = false;
 
-extern bool hyundai_aol_lkas_on_engage;
-bool hyundai_aol_lkas_on_engage = false;
-
-extern bool hyundai_aol_main_lkas_on_engage;
-bool hyundai_aol_main_lkas_on_engage = false;
-
 extern bool hyundai_non_scc;
 bool hyundai_non_scc = false;
 
-extern bool hyundai_cancel_button_enable;
-bool hyundai_cancel_button_enable = false;
-
-extern bool hyundai_can_refresh_msgs;
-bool hyundai_can_refresh_msgs = false;
-
-extern bool hyundai_has_lkas12;
-bool hyundai_has_lkas12 = false;
-
-extern bool hyundai_elantra_hev_2024;
-bool hyundai_elantra_hev_2024 = false;
-
-extern bool hyundai_aol_main_lkas_sync;
-bool hyundai_aol_main_lkas_sync = false;
-
 static uint8_t hyundai_last_button_interaction;  // button messages since the user pressed an enable button
+
+static bool main_button_prev;
 static bool acc_main_on_prev;
 static bool acc_main_on_tx;
 static uint32_t acc_main_on_mismatches;
@@ -81,39 +73,27 @@ void hyundai_common_init(uint16_t param) {
   const uint16_t HYUNDAI_PARAM_EV_GAS = 1;
   const uint16_t HYUNDAI_PARAM_HYBRID_GAS = 2;
   const uint16_t HYUNDAI_PARAM_CAMERA_SCC = 8;
-  const uint16_t HYUNDAI_PARAM_CANFD_LKA_STEERING = 16;
+  const uint16_t HYUNDAI_PARAM_CANFD_LKA_STEER_MSG = 16;
   const uint16_t HYUNDAI_PARAM_ALT_LIMITS = 64; // TODO: shift this down with the rest of the common flags
   const uint16_t HYUNDAI_PARAM_FCEV_GAS = 256;
   const uint16_t HYUNDAI_PARAM_ALT_LIMITS_2 = 512;
 
-  const int HYUNDAI_PARAM_HAS_LDA_BUTTON = 1024;
-  const uint16_t HYUNDAI_PARAM_AOL_MAIN_LKAS_ON_ENGAGE = 128;
-  const uint16_t HYUNDAI_PARAM_AOL_LKAS_ON_ENGAGE = 2048;
-  const uint16_t HYUNDAI_PARAM_NON_SCC = 4096;
-  const uint16_t HYUNDAI_PARAM_CAN_CANFD_BLENDED = 8192;
-  const uint16_t HYUNDAI_PARAM_CANCEL_BTN_ENABLE = 16384;
-  const uint16_t HYUNDAI_PARAM_CAN_REFRESH_MSGS = 32768U;
-
   hyundai_ev_gas_signal = GET_FLAG(param, HYUNDAI_PARAM_EV_GAS);
   hyundai_hybrid_gas_signal = !hyundai_ev_gas_signal && GET_FLAG(param, HYUNDAI_PARAM_HYBRID_GAS);
   hyundai_camera_scc = GET_FLAG(param, HYUNDAI_PARAM_CAMERA_SCC);
-  hyundai_canfd_lka_steering = GET_FLAG(param, HYUNDAI_PARAM_CANFD_LKA_STEERING);
+  hyundai_canfd_lka_steer_msg = GET_FLAG(param, HYUNDAI_PARAM_CANFD_LKA_STEER_MSG);
   hyundai_alt_limits = GET_FLAG(param, HYUNDAI_PARAM_ALT_LIMITS);
   hyundai_fcev_gas_signal = GET_FLAG(param, HYUNDAI_PARAM_FCEV_GAS);
   hyundai_alt_limits_2 = GET_FLAG(param, HYUNDAI_PARAM_ALT_LIMITS_2);
-  hyundai_can_canfd_blended = GET_FLAG(param, HYUNDAI_PARAM_CAN_CANFD_BLENDED);
 
-  hyundai_has_lda_button = GET_FLAG(param, HYUNDAI_PARAM_HAS_LDA_BUTTON);
-  hyundai_aol_main_lkas_on_engage = GET_FLAG(param, HYUNDAI_PARAM_AOL_MAIN_LKAS_ON_ENGAGE);
-  hyundai_aol_lkas_on_engage = GET_FLAG(param, HYUNDAI_PARAM_AOL_LKAS_ON_ENGAGE);
-  hyundai_non_scc = GET_FLAG(param, HYUNDAI_PARAM_NON_SCC);
-  hyundai_cancel_button_enable = GET_FLAG(param, HYUNDAI_PARAM_CANCEL_BTN_ENABLE);
-  hyundai_can_refresh_msgs = GET_FLAG(param, HYUNDAI_PARAM_CAN_REFRESH_MSGS);
-  hyundai_has_lkas12 = false;
-  hyundai_elantra_hev_2024 = hyundai_can_refresh_msgs && hyundai_hybrid_gas_signal && hyundai_camera_scc;
-  hyundai_aol_main_lkas_sync = false;
+  hyundai_escc = GET_FLAG(current_safety_param_sp, HYUNDAI_PARAM_SP_ESCC);
+  hyundai_longitudinal_main_cruise_toggleable = GET_FLAG(current_safety_param_sp, HYUNDAI_PARAM_SP_LONGITUDINAL_MAIN_CRUISE_TOGGLEABLE);
+  hyundai_has_lda_button = GET_FLAG(current_safety_param_sp, HYUNDAI_PARAM_SP_HAS_LDA_BUTTON);
+  hyundai_non_scc = GET_FLAG(current_safety_param_sp, HYUNDAI_PARAM_SP_NON_SCC);
 
   hyundai_last_button_interaction = HYUNDAI_PREV_BUTTON_SAMPLES;
+
+  main_button_prev = false;
   acc_main_on_prev = false;
   acc_main_on_tx = false;
   acc_main_on_mismatches = 0U;
@@ -134,10 +114,6 @@ void hyundai_common_cruise_state_check(const bool cruise_engaged) {
   if (!hyundai_longitudinal) {
     if (cruise_engaged && !cruise_engaged_prev && (hyundai_last_button_interaction < HYUNDAI_PREV_BUTTON_SAMPLES)) {
       controls_allowed = true;
-
-      if (hyundai_aol_lkas_on_engage && ((alternative_experience & ALT_EXP_ALWAYS_ON_LATERAL) != 0)) {
-        lkas_on = true;
-      }
     }
 
     if (!cruise_engaged) {
@@ -158,35 +134,23 @@ void hyundai_common_cruise_buttons_check(const int cruise_button, const bool mai
     // enter controls on falling edge of resume or set
     bool set = (cruise_button != HYUNDAI_BTN_SET) && (cruise_button_prev == HYUNDAI_BTN_SET);
     bool res = (cruise_button != HYUNDAI_BTN_RESUME) && (cruise_button_prev == HYUNDAI_BTN_RESUME);
-    bool cancel_enable = hyundai_cancel_button_enable && !cruise_engaged_prev &&
-                         (cruise_button != HYUNDAI_BTN_CANCEL) && (cruise_button_prev == HYUNDAI_BTN_CANCEL);
-    if (set || res || cancel_enable) {
+    if (set || res) {
       controls_allowed = true;
-
-      if (hyundai_aol_lkas_on_engage && ((alternative_experience & ALT_EXP_ALWAYS_ON_LATERAL) != 0)) {
-        lkas_on = true;
-      }
     }
 
     // exit controls on cancel press
-    if ((cruise_button == HYUNDAI_BTN_CANCEL) && !(hyundai_cancel_button_enable && !cruise_engaged_prev)) {
+    if (cruise_button == HYUNDAI_BTN_CANCEL) {
       controls_allowed = false;
     }
 
-    cruise_button_prev = cruise_button;
-  }
-
-  if (main_button && !main_button_prev) {
-    if (!hyundai_aol_main_lkas_sync) {
-      const bool main_turning_on = !acc_main_on;
-      acc_main_on = main_turning_on;
-      if (main_turning_on && hyundai_aol_main_lkas_on_engage &&
-          ((alternative_experience & ALT_EXP_ALWAYS_ON_LATERAL) != 0)) {
-        lkas_on = true;
-      }
+    // toggle main cruise state on rising edge of main cruise button
+    if (main_button && !main_button_prev && hyundai_longitudinal_main_cruise_toggleable) {
+      acc_main_on = !acc_main_on;
     }
+
+    cruise_button_prev = cruise_button;
+    main_button_prev = main_button;
   }
-  main_button_prev = main_button;
 }
 
 uint32_t hyundai_common_canfd_compute_checksum(const CANPacket_t *msg) {
@@ -214,6 +178,7 @@ uint32_t hyundai_common_canfd_compute_checksum(const CANPacket_t *msg) {
   return crc;
 }
 
+// reset mismatches on rising edge of acc_main_on to avoid rare race conditions when using non-PCM main cruise state
 void hyundai_common_reset_acc_main_on_mismatches(void) {
   if (acc_main_on && !acc_main_on_prev) {
     acc_main_on_mismatches = 0U;
@@ -222,12 +187,14 @@ void hyundai_common_reset_acc_main_on_mismatches(void) {
   acc_main_on_prev = acc_main_on;
 }
 
+// exit lateral controls allowed if sunnypilot and panda main cruise states are desynced
 void hyundai_common_acc_main_on_sync(void) {
   if (acc_main_on && !acc_main_on_tx) {
     acc_main_on_mismatches += 1U;
 
-    if (acc_main_on_mismatches >= 3U) {
+    if (acc_main_on_mismatches >= 3U) {  // desync by 3 frames
       acc_main_on = false;
+      mads_exit_controls(MADS_DISENGAGE_REASON_NON_PCM_ACC_MAIN_DESYNC);
     }
   } else {
     acc_main_on_mismatches = 0U;
@@ -236,12 +203,4 @@ void hyundai_common_acc_main_on_sync(void) {
 
 uint32_t get_acc_main_on_mismatches(void) {
   return acc_main_on_mismatches;
-}
-
-void hyundai_lkas_button_check(const bool lkas_button) {
-  const bool lkas_button_controls_aol = !hyundai_elantra_hev_2024 || hyundai_aol_lkas_on_engage;
-  if (lkas_button_controls_aol && lkas_button && !lkas_button_prev) {
-    lkas_on = !lkas_on;
-  }
-  lkas_button_prev = lkas_button;
 }

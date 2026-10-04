@@ -12,13 +12,15 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 
+from repair_sysroot_linker import repair_loader
+
 
 REQUIRED_DIRS = [
   ("usr/local/lib", "/usr/local/lib"),
   ("usr/local/include", "/usr/local/include"),
-  ("usr/local/venv/lib/python3.12/site-packages/raylib/install", "/usr/local/venv/lib/python3.12/site-packages/raylib/install"),
   ("lib/aarch64-linux-gnu", "/lib/aarch64-linux-gnu"),
   ("usr/lib/aarch64-linux-gnu", "/usr/lib/aarch64-linux-gnu"),
+  ("usr/lib/gcc", "/usr/lib/gcc"),
   ("usr/include", "/usr/include"),
 ]
 VENDOR_CANDIDATES = ["/system/vendor/lib64", "/vendor/lib64"]
@@ -66,6 +68,10 @@ def download(url: str, dst: Path) -> None:
 
 
 def download_and_prepare_image(url: str, cache_dir: Path, force_download: bool) -> Path:
+  # A restored application can select an older AGNOS image. Never reuse a
+  # cached sysroot image downloaded from a different manifest URL.
+  import hashlib
+  cache_dir = cache_dir / hashlib.sha256(url.encode()).hexdigest()
   cache_dir.mkdir(parents=True, exist_ok=True)
   compressed = cache_dir / "agnos_system.img.xz"
   raw_image = cache_dir / "agnos_system.img"
@@ -228,7 +234,7 @@ def main() -> int:
 
   url = args.url or get_system_url(manifest_path)
   image_path = download_and_prepare_image(url, cache_dir, args.force_download)
-  image_path = ensure_debugfs_readable_image(image_path, cache_dir)
+  image_path = ensure_debugfs_readable_image(image_path, image_path.parent)
 
   for rel_dst, src_path in REQUIRED_DIRS:
     dst = output_dir / rel_dst
@@ -248,7 +254,7 @@ def main() -> int:
 
   if not vendor_ok:
     print(
-      "WARN: vendor libs not found in AGNOS image at /system/vendor/lib64 or /vendor/lib64; "
+      "WARN: vendor libs not found in AGNOS image at /system/vendor/lib64 or /vendor/lib64; " +
       "falling back to usr/lib/aarch64-linux-gnu",
       flush=True,
     )
@@ -260,6 +266,7 @@ def main() -> int:
     os.symlink("../../usr/lib/aarch64-linux-gnu", vendor_dst, target_is_directory=True)
 
   populate_optional_host_includes(output_dir)
+  repair_loader(output_dir)
 
   missing = []
   for rel in ("usr/local/lib", "usr/local/include", "lib/aarch64-linux-gnu", "usr/lib/aarch64-linux-gnu", "usr/include", "system/vendor/lib64"):
@@ -279,4 +286,4 @@ if __name__ == "__main__":
     raise
   except Exception as exc:
     print(f"ERROR: {exc}", file=sys.stderr)
-    raise SystemExit(1)
+    raise SystemExit(1) from exc

@@ -28,5 +28,5 @@ if [[ -n "$previous_sha" ]]; then
   fi
 fi
 # Keep only the latest build on this branch. ev9 retains deployment history.
-build_sha="$(git commit-tree "$build_tree" -m "StarPilot deployment from ${source_sha}" -m "Source-Commit: ${source_sha}")"
+build_sha="$(git commit-tree "$build_tree" -m "Sunnypilot deployment from ${source_sha}" -m "Source-Commit: ${source_sha}")"
 git push --force-with-lease="refs/heads/ev9-prebuilt:$previous_sha" origin "$build_sha:refs/heads/ev9-prebuilt"

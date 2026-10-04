@@ -6,33 +6,33 @@ cd $DIR
 
 source ../../../setup.sh
 
-# reset coverage data and generate gcc note file
+# reset coverage data
 rm -f ./libsafety/*.gcda
-if [ "$1" == "--ubsan" ]; then
-  scons -j$(nproc) -D --ubsan
-else
-  scons -j$(nproc) -D
-fi
 
 # run safety tests and generate coverage data
-PYTEST_WORKERS=(-n8)
-if [ "$(uname -s)" = "Darwin" ]; then
-  PYTEST_WORKERS=(-n0)
+python -m unittest discover -s .
+
+# NOTE: we accept that these tools will have slight differences,
+# and in return, we get to use the stock toolchain instead of
+# installing LLVM on all users' machines
+if [ "$(uname)" = "Darwin" ]; then
+  GCOV_EXEC="llvm-cov gcov"
+else
+  GCOV_EXEC="gcov"
 fi
-pytest "${PYTEST_WORKERS[@]}" --ignore-glob=misra/*
 
 # generate and open report
 if [ "$1" == "--report" ]; then
   mkdir -p coverage-out
-  gcovr -r ../ --html-nested coverage-out/index.html
+  gcovr -r ../ --gcov-executable "$GCOV_EXEC" --html-nested coverage-out/index.html
   sensible-browser coverage-out/index.html
 fi
 
 # test coverage
-GCOV="gcovr -r $DIR/../ -d --fail-under-line=99 -e ^libsafety -e ^../board"
-if ! GCOV_OUTPUT="$($GCOV)"; then
+GCOV="gcovr -r $DIR/../ --gcov-executable \"$GCOV_EXEC\" -d --fail-under-line=100 -e ^libsafety"
+if ! GCOV_OUTPUT="$(eval $GCOV)"; then
   echo -e "FAILED:\n$GCOV_OUTPUT"
   exit 1
 else
-  echo "SUCCESS: All checked files meet the coverage threshold!"
+  echo "SUCCESS: All checked files have 100% coverage!"
 fi

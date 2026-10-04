@@ -30,14 +30,10 @@ cpdef enum VisionStreamType:
 
 cdef class VisionBuf:
   @staticmethod
-  cdef create(cppVisionBuf * cbuf, object owner):
+  cdef create(cppVisionBuf * cbuf):
     buf = VisionBuf()
     buf.buf = cbuf
-    buf._owner = owner
     return buf
-
-  def __dealloc__(self):
-    self._owner = None
 
   @property
   def data(self):
@@ -67,16 +63,12 @@ cdef class VisionBuf:
   def fd(self):
     return self.buf.fd
 
-  @property
-  def frame_id(self):
-    return self.buf.get_frame_id()
-
 
 cdef class VisionIpcServer:
   cdef cppVisionIpcServer * server
 
   def __init__(self, string name):
-    self.server = new cppVisionIpcServer(name, NULL, NULL)
+    self.server = new cppVisionIpcServer(name)
 
   def create_buffers(self, VisionStreamType tp, size_t num_buffers, size_t width, size_t height):
     self.server.create_buffers(tp, num_buffers, width, height)
@@ -110,11 +102,8 @@ cdef class VisionIpcClient:
   cdef cppVisionIpcClient * client
   cdef VisionIpcBufExtra extra
 
-  def __cinit__(self, string name, VisionStreamType stream, bool conflate, CLContext context = None):
-    if context:
-      self.client = new cppVisionIpcClient(name, stream, conflate, context.device_id, context.context)
-    else:
-      self.client = new cppVisionIpcClient(name, stream, conflate, NULL, NULL)
+  def __cinit__(self, string name, VisionStreamType stream, bool conflate):
+    self.client = new cppVisionIpcClient(name, stream, conflate)
 
   def __dealloc__(self):
     del self.client
@@ -163,7 +152,7 @@ cdef class VisionIpcClient:
     buf = self.client.recv(&self.extra, timeout_ms)
     if not buf:
       return None
-    return VisionBuf.create(buf, self)
+    return VisionBuf.create(buf)
 
   def connect(self, bool blocking):
     return self.client.connect(blocking)

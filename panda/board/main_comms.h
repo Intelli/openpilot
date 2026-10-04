@@ -12,7 +12,7 @@ static int get_health_pkt(void *dat) {
   health->voltage_pkt = current_board->read_voltage_mV();
   health->current_pkt = current_board->read_current_mA();
 
-  health->ignition_line_pkt = (uint8_t)(panda_ignition_line());
+  health->ignition_line_pkt = (uint8_t)(harness_check_ignition());
   health->ignition_can_pkt = ignition_can;
 
   health->controls_allowed_pkt = controls_allowed;
@@ -24,13 +24,11 @@ static int get_health_pkt(void *dat) {
   health->safety_mode_pkt = (uint8_t)(current_safety_mode);
   health->safety_param_pkt = current_safety_param;
   health->alternative_experience_pkt = alternative_experience;
-  health->power_save_enabled_pkt = power_save_status == POWER_SAVE_STATUS_ENABLED;
+  health->power_save_enabled_pkt = power_save_enabled;
   health->heartbeat_lost_pkt = heartbeat_lost;
   health->safety_rx_checks_invalid_pkt = safety_rx_checks_invalid;
 
-  #ifndef STM32F4
   health->spi_error_count_pkt = spi_error_count;
-  #endif
 
   health->fault_status_pkt = fault_status;
   health->faults_pkt = faults;
@@ -38,12 +36,16 @@ static int get_health_pkt(void *dat) {
   health->interrupt_load_pkt = interrupt_load;
 
   health->fan_power = fan_state.power;
-  health->fan_stall_count = fan_state.total_stall_count;
 
   health->sbu1_voltage_mV = harness.sbu1_voltage_mV;
   health->sbu2_voltage_mV = harness.sbu2_voltage_mV;
 
   health->som_reset_triggered = bootkick_reset_triggered;
+
+  health->sound_output_level_pkt = sound_output_level;
+
+  health->controls_allowed_lateral_pkt = controls_allowed || controls_allowed_lateral;
+  health->controls_allowed_longitudinal_pkt = controls_allowed;
 
   return sizeof(*health);
 }
@@ -98,6 +100,14 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
       resp[1] = ((fan_state.rpm & 0xFF00U) >> 8U);
       resp_len = 2;
       break;
+    // **** 0xb5: request deep sleep, wakes on CAN or SBU
+    #ifdef ALLOW_DEBUG
+    case 0xb5:
+      set_safety_mode(SAFETY_SILENT, 0U);
+      set_power_save_state(true);
+      stop_mode_requested = true;
+      break;
+    #endif
     // **** 0xc0: reset communications state
     case 0xc0:
       comms_can_reset();
@@ -219,13 +229,13 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
     case 0xdc:
       set_safety_mode(req->param1, (uint16_t)req->param2);
       break;
-    // **** 0xdd: get healthpacket and CANPacket versions
-    case 0xdd:
-      resp[0] = HEALTH_PACKET_VERSION;
-      resp[1] = CAN_PACKET_VERSION;
-      resp[2] = CAN_HEALTH_PACKET_VERSION;
-      resp_len = 3;
+    // **** 0xdd: get health and CAN packet versions
+    case 0xdd: {
+      uint32_t versions[2] = {HEALTH_PACKET_VERSION, CAN_PACKET_VERSION_HASH};
+      (void)memcpy(resp, (uint8_t *)versions, sizeof(versions));
+      resp_len = sizeof(versions);
       break;
+    }
     // **** 0xde: set can bitrate
     case 0xde:
       if ((req->param1 < PANDA_CAN_CNT) && is_speed_valid(req->param2, speeds, sizeof(speeds)/sizeof(speeds[0]))) {
@@ -239,6 +249,8 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
       // you can only set this if you are in a non car safety mode
       if (!is_car_safety_mode(current_safety_mode)) {
         alternative_experience = req->param1;
+        current_safety_param_sp = req->param2;
+        mads_set_alternative_experience(&alternative_experience);
       }
       break;
     // **** 0xe0: uart read
@@ -266,7 +278,7 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
       break;
     // **** 0xe7: set power save state
     case 0xe7:
-      set_power_save_state(req->param1);
+      set_power_save_state(req->param1 != 0U);
       break;
     // **** 0xe8: set can-fd auto swithing mode
     case 0xe8:
@@ -291,6 +303,7 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
         heartbeat_lost = false;
         heartbeat_disabled = false;
         heartbeat_engaged = (req->param1 == 1U);
+        heartbeat_engaged_mads = (req->param2 == 1U);
         break;
       }
     // **** 0xf6: set siren enabled

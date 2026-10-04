@@ -1,5 +1,3 @@
-import math
-
 from opendbc.car import CanBusBase, structs
 
 HUDControl = structs.CarControl.HUDControl
@@ -35,40 +33,20 @@ def calculate_lat_ctl2_checksum(mode: int, counter: int, dat: bytearray) -> int:
   return 0xFF - (checksum & 0xFF)
 
 
-def create_lka_msg(packer, CAN: CanBus, active: bool = False, apply_angle: float = 0.0,
-                   direction: int = 0, ramp_type: int = 0, curvature: float = 0.0):
+def create_lka_msg(packer, CAN: CanBus):
   """
-  Creates a CAN message for the Ford LKA Command.
+  Creates an empty CAN message for the Ford LKA Command.
 
-  On LKA-steering platforms, this command applies Lane Keeping Aid maneuvers through the PSCM.
+  This command can apply "Lane Keeping Aid" maneuvers, which are subject to the PSCM lockout.
 
   Frequency is 33Hz.
   """
 
-  if active:
-    mrad = math.radians(max(-5.8, min(5.8, apply_angle))) * 1000.0
-    mrad = max(-102.4, min(102.3, mrad))
-    curvature = max(-0.01023, min(0.01023, curvature))
-  else:
-    mrad = 0.0
-    direction = 0
-    ramp_type = 0
-    curvature = 0.0
-
-  values = {
-    "LkaDrvOvrrd_D_Rq": 0,
-    "LkaActvStats_D2_Req": direction if active else 0,
-    "LaRefAng_No_Req": mrad,
-    "LaRampType_B_Req": ramp_type,
-    "LaCurvature_No_Calc": curvature,
-    "LdwActvStats_D_Req": 0,
-    "LdwActvIntns_D_Req": 3,
-  }
-  return packer.make_can_msg("Lane_Assist_Data1", CAN.main, values)
+  return packer.make_can_msg("Lane_Assist_Data1", CAN.main, {})
 
 
 def create_lat_ctl_msg(packer, CAN: CanBus, lat_active: bool, path_offset: float, path_angle: float, curvature: float,
-                       curvature_rate: float, stock_lmc=None):
+                       curvature_rate: float):
   """
   Creates a CAN message for the Ford TJA/LCA Command.
 
@@ -90,33 +68,20 @@ def create_lat_ctl_msg(packer, CAN: CanBus, lat_active: bool, path_offset: float
   Frequency is 20Hz.
   """
 
-  if stock_lmc is not None:
-    values = {
-      "LatCtlRng_L_Max": stock_lmc["LatCtlRng_L_Max"],
-      "HandsOffCnfm_B_Rq": stock_lmc["HandsOffCnfm_B_Rq"],
-      "LatCtl_D_Rq": 0,
-      "LatCtlRampType_D_Rq": stock_lmc["LatCtlRampType_D_Rq"],
-      "LatCtlPrecision_D_Rq": stock_lmc["LatCtlPrecision_D_Rq"],
-      "LatCtlPathOffst_L_Actl": stock_lmc["LatCtlPathOffst_L_Actl"],
-      "LatCtlPath_An_Actl": stock_lmc["LatCtlPath_An_Actl"],
-      "LatCtlCurv_NoRate_Actl": stock_lmc["LatCtlCurv_NoRate_Actl"],
-      "LatCtlCurv_No_Actl": stock_lmc["LatCtlCurv_No_Actl"],
-    }
-  else:
-    values = {
-      "LatCtlRng_L_Max": 0,                       # Unknown [0|126] meter
-      "HandsOffCnfm_B_Rq": 0,                     # Unknown: 0=Inactive, 1=Active [0|1]
-      "LatCtl_D_Rq": 1 if lat_active else 0,      # Mode: 0=None, 1=ContinuousPathFollowing, 2=InterventionLeft,
-                                                  #       3=InterventionRight, 4-7=NotUsed [0|7]
-      "LatCtlRampType_D_Rq": 0,                   # Ramp speed: 0=Slow, 1=Medium, 2=Fast, 3=Immediate [0|3]
-                                                  #             Makes no difference with curvature control
-      "LatCtlPrecision_D_Rq": 1,                  # Precision: 0=Comfortable, 1=Precise, 2/3=NotUsed [0|3]
-                                                  #            The stock system always uses comfortable
-      "LatCtlPathOffst_L_Actl": path_offset,      # Path offset [-5.12|5.11] meter
-      "LatCtlPath_An_Actl": path_angle,           # Path angle [-0.5|0.5235] radians
-      "LatCtlCurv_NoRate_Actl": curvature_rate,   # Curvature rate [-0.001024|0.00102375] 1/meter^2
-      "LatCtlCurv_No_Actl": curvature,            # Curvature [-0.02|0.02094] 1/meter
-    }
+  values = {
+    "LatCtlRng_L_Max": 0,                       # Unknown [0|126] meter
+    "HandsOffCnfm_B_Rq": 0,                     # Unknown: 0=Inactive, 1=Active [0|1]
+    "LatCtl_D_Rq": 1 if lat_active else 0,      # Mode: 0=None, 1=ContinuousPathFollowing, 2=InterventionLeft,
+                                                #       3=InterventionRight, 4-7=NotUsed [0|7]
+    "LatCtlRampType_D_Rq": 0,                   # Ramp speed: 0=Slow, 1=Medium, 2=Fast, 3=Immediate [0|3]
+                                                #             Makes no difference with curvature control
+    "LatCtlPrecision_D_Rq": 1,                  # Precision: 0=Comfortable, 1=Precise, 2/3=NotUsed [0|3]
+                                                #            The stock system always uses comfortable
+    "LatCtlPathOffst_L_Actl": path_offset,      # Path offset [-5.12|5.11] meter
+    "LatCtlPath_An_Actl": path_angle,           # Path angle [-0.5|0.5235] radians
+    "LatCtlCurv_NoRate_Actl": curvature_rate,   # Curvature rate [-0.001024|0.00102375] 1/meter^2
+    "LatCtlCurv_No_Actl": curvature,            # Curvature [-0.02|0.02094] 1/meter
+  }
   return packer.make_can_msg("LateralMotionControl", CAN.main, values)
 
 
@@ -181,7 +146,7 @@ def create_acc_msg(packer, CAN: CanBus, long_active: bool, gas: float, accel: fl
 
 
 def create_acc_ui_msg(packer, CAN: CanBus, CP, main_on: bool, enabled: bool, fcw_alert: bool, standstill: bool,
-                      show_distance_bars: bool, hud_control, stock_values: dict, hands_free_cluster: bool = False):
+                      show_distance_bars: bool, hud_control, stock_values: dict):
   """
   Creates a CAN message for the Ford IPC adaptive cruise, forward collision warning and traffic jam
   assist status.
@@ -197,8 +162,6 @@ def create_acc_ui_msg(packer, CAN: CanBus, CP, main_on: bool, enabled: bool, fcw
       status = 3  # ActiveInterventionLeft
     elif hud_control.rightLaneDepart:
       status = 4  # ActiveInterventionRight
-    elif hands_free_cluster:
-      status = 7  # Hands-free assistance display
     else:
       status = 2  # Active
   elif main_on:

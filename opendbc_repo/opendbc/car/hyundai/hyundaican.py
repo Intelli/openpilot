@@ -1,15 +1,17 @@
-import crcmod
-from opendbc.car.hyundai.hyundaicanfd import CanBus
-from opendbc.car.hyundai.lead_data import CanLeadData
+from opendbc.car.crc import CRC8J1850, mk_crc8_fun
 from opendbc.car.hyundai.values import CAR, HyundaiFlags
 
-hyundai_checksum = crcmod.mkCrcFun(0x11D, initCrc=0xFD, rev=False, xorOut=0xdf)
+from opendbc.sunnypilot.car.hyundai.escc import EnhancedSmartCruiseControl
+from opendbc.sunnypilot.car.hyundai.lead_data_ext import CanLeadData
+
+hyundai_checksum = mk_crc8_fun(CRC8J1850, init_crc=0xFD, xor_out=0xDF)
 
 
 def create_lkas11(packer, frame, CP, apply_torque, steer_req,
                   torque_fault, lkas11, sys_warning, sys_state, enabled,
                   left_lane, right_lane,
-                  left_lane_depart, right_lane_depart, lka_icon):
+                  left_lane_depart, right_lane_depart,
+                  lkas_icon):
   values = {s: lkas11[s] for s in [
     "CF_Lkas_LdwsActivemode",
     "CF_Lkas_LdwsSysState",
@@ -40,9 +42,10 @@ def create_lkas11(packer, frame, CP, apply_torque, steer_req,
                            CAR.HYUNDAI_IONIQ_EV_2020, CAR.HYUNDAI_IONIQ_PHEV, CAR.KIA_SELTOS, CAR.HYUNDAI_ELANTRA_2021, CAR.GENESIS_G70_2020,
                            CAR.HYUNDAI_ELANTRA_HEV_2021, CAR.HYUNDAI_SONATA_HYBRID, CAR.HYUNDAI_KONA_EV, CAR.HYUNDAI_KONA_HEV, CAR.HYUNDAI_KONA_EV_2022,
                            CAR.HYUNDAI_SANTA_FE_2022, CAR.KIA_K5_2021, CAR.HYUNDAI_IONIQ_HEV_2022, CAR.HYUNDAI_SANTA_FE_HEV_2022,
-                           CAR.HYUNDAI_SANTA_FE_PHEV_2022, CAR.KIA_STINGER_2022, CAR.KIA_K5_HEV_2020, CAR.KIA_CEED, CAR.KIA_XCEED_PHEV,
-                           CAR.HYUNDAI_AZERA_6TH_GEN, CAR.HYUNDAI_AZERA_HEV_6TH_GEN, CAR.HYUNDAI_CUSTIN_1ST_GEN, CAR.HYUNDAI_KONA_2022, CAR.KIA_RAY_EV,
-                           CAR.HYUNDAI_ELANTRA_2024, CAR.HYUNDAI_ELANTRA_HEV_2024):
+                           CAR.HYUNDAI_SANTA_FE_PHEV_2022, CAR.KIA_STINGER_2022, CAR.KIA_K5_HEV_2020, CAR.KIA_CEED,
+                           CAR.HYUNDAI_AZERA_6TH_GEN, CAR.HYUNDAI_AZERA_HEV_6TH_GEN, CAR.HYUNDAI_CUSTIN_1ST_GEN, CAR.HYUNDAI_KONA_2022,
+                           CAR.KIA_CEED_PHEV_2022_NON_SCC, CAR.HYUNDAI_KONA_EV_NON_SCC, CAR.HYUNDAI_ELANTRA_2022_NON_SCC,
+                           CAR.GENESIS_G70_2021_NON_SCC, CAR.KIA_SELTOS_2023_NON_SCC, CAR.HYUNDAI_BAYON_1ST_GEN_NON_SCC):
     values["CF_Lkas_LdwsActivemode"] = int(left_lane) + (int(right_lane) << 1)
     values["CF_Lkas_LdwsOpt_USM"] = 2
 
@@ -52,7 +55,7 @@ def create_lkas11(packer, frame, CP, apply_torque, steer_req,
     # FcwOpt_USM 2 = Green car + lanes
     # FcwOpt_USM 1 = White car + lanes
     # FcwOpt_USM 0 = No car + lanes
-    values["CF_Lkas_FcwOpt_USM"] = lka_icon if CP.carFingerprint == CAR.GENESIS_G70_2020 else 2 if enabled else 1
+    values["CF_Lkas_FcwOpt_USM"] = lkas_icon
 
     # SysWarning 4 = keep hands on wheel
     # SysWarning 5 = keep hands on wheel (red)
@@ -69,25 +72,17 @@ def create_lkas11(packer, frame, CP, apply_torque, steer_req,
     # SysState 1-2 = white car + lanes
     # SysState 3 = green car + lanes, green steering wheel
     # SysState 4 = green car + lanes
-    values["CF_Lkas_LdwsSysState"] = lka_icon if CP.carFingerprint == CAR.HYUNDAI_KONA_NON_SCC else 3 if enabled else 1
+    values["CF_Lkas_LdwsSysState"] = lkas_icon
     values["CF_Lkas_LdwsOpt_USM"] = 2  # non-2 changes above SysState definition
 
     # these have no effect
     values["CF_Lkas_LdwsActivemode"] = 0
     values["CF_Lkas_FcwOpt_USM"] = 0
 
-  elif CP.carFingerprint == CAR.HYUNDAI_GENESIS:
+  elif CP.carFingerprint in (CAR.HYUNDAI_GENESIS, CAR.KIA_OPTIMA_H):
     # This field is actually LdwsActivemode
     # Genesis and Optima fault when forwarding while engaged
     values["CF_Lkas_LdwsActivemode"] = 2
-
-  if CP.carFingerprint == CAR.KIA_RAY_EV:
-    if not enabled:
-      values["CF_Lkas_LdwsActivemode"] = lkas11["CF_Lkas_LdwsActivemode"]
-      values["CF_Lkas_LdwsSysState"] = lkas11["CF_Lkas_LdwsSysState"]
-      values["CF_Lkas_FcwOpt_USM"] = lkas11["CF_Lkas_FcwOpt_USM"]
-    values["CF_Lkas_LdwsOpt_USM"] = 0
-    values["CF_Lkas_Chksum"] = 0
 
   dat = packer.make_can_msg("LKAS11", 0, values)[1]
 
@@ -105,61 +100,6 @@ def create_lkas11(packer, frame, CP, apply_torque, steer_req,
   values["CF_Lkas_Chksum"] = checksum
 
   return packer.make_can_msg("LKAS11", 0, values)
-
-
-def create_lkas12(packer, lkas12):
-  values = {s: lkas12[s] for s in (
-    "CF_Lkas_TsrSlifOpt",
-    "CF_LkasTsrStatus",
-    "CF_Lkas_TsrSpeed_Display_Clu",
-    "CF_LkasTsrSpeed_Display_Navi",
-    "CF_Lkas_TsrAddinfo_Display",
-    "CF_Lkas_Daw_USM",
-  ) if s in lkas12}
-  values["CF_LkasDawStatus"] = 0
-  return packer.make_can_msg("LKAS12", 0, values)
-
-
-def create_checksum_can_canfd_blended(packer, bus, addr, values):
-  dat = packer.make_can_msg(addr, bus, values)[1]
-  return hyundai_checksum(dat[1:8])
-
-
-def create_lkas11_can_canfd_blended(packer, frame, CP, apply_steer, steer_req,
-                                    torque_fault, lkas11, sys_warning, sys_state, enabled,
-                                    left_lane, right_lane,
-                                    left_lane_depart, right_lane_depart, msg_364,
-                                    include_alerts=True, counter_mod=0x10):
-  bus = CanBus(CP).ECAN
-  values = {
-    "CF_Lkas_LdwsActivemode": int(left_lane) + (int(right_lane) << 1),
-    "CF_Lkas_LdwsLHWarning": left_lane_depart,
-    "CF_Lkas_LdwsRHWarning": right_lane_depart,
-    "CF_Lkas_FcwOpt_USM": 2 if enabled else 1,
-    "CR_Lkas_StrToqReq": apply_steer,
-    "CF_Lkas_ActToi": steer_req,
-    "CF_Lkas_ToiFlt": torque_fault,
-    "CF_Lkas_MsgCount": frame % counter_mod,
-    "NEW_SIGNAL_1": 0,
-    "NEW_SIGNAL_5": 100,
-  }
-  values["CF_Lkas_Chksum"] = create_checksum_can_canfd_blended(packer, bus, "LKAS11", values)
-
-  alerts_364 = {k: v for k, v in msg_364.items() if k not in ("CHECKSUM", "COUNTER")} if msg_364 else {}
-  alerts_364.setdefault("BYTE2", 0)
-  alerts_364.setdefault("BYTE3", 0)
-  alerts_364.setdefault("DAW_Status", 0)
-  alerts_364["DAW_Warning"] = 0
-  alerts_364.setdefault("BYTE5", 0)
-  alerts_364.setdefault("BYTE6", 0)
-  alerts_364.setdefault("BYTE7", 0)
-  alerts_364["COUNTER"] = frame % counter_mod
-  alerts_364["CHECKSUM"] = create_checksum_can_canfd_blended(packer, bus, "ALERTS_364", alerts_364)
-
-  ret = [packer.make_can_msg("LKAS11", bus, values)]
-  if include_alerts:
-    ret.append(packer.make_can_msg("ALERTS_364", bus, alerts_364))
-  return ret
 
 
 def create_clu11(packer, frame, clu11, button, CP):
@@ -180,225 +120,142 @@ def create_clu11(packer, frame, clu11, button, CP):
   values["CF_Clu_CruiseSwState"] = button
   values["CF_Clu_AliveCnt1"] = frame % 0x10
   # send buttons to camera on camera-scc based cars
-  if CP.flags & HyundaiFlags.CAMERA_SCC:
-    bus = 2
-  elif CP.flags & HyundaiFlags.CAN_CANFD_BLENDED:
-    bus = CanBus(CP).ECAN
-  else:
-    bus = 0
+  bus = 2 if CP.flags & HyundaiFlags.CAMERA_SCC else 0
   return packer.make_can_msg("CLU11", bus, values)
 
 
-def create_lfahda_mfc(packer, enabled, frame=None, CP=None, lfa_icon=None):
-  if lfa_icon is None:
-    lfa_icon = 2 if enabled else 0
-
+def create_lfahda_mfc(packer, enabled, lfa_icon):
   values = {
-    "LFA_Icon_State": lfa_icon,
-  }
-  can_canfd_blended = CP is not None and bool(CP.flags & HyundaiFlags.CAN_CANFD_BLENDED)
-  bus = CanBus(CP).ECAN if can_canfd_blended else 0
-  if can_canfd_blended:
-    values["COUNTER"] = 0 if frame is None else frame % 0x10
-    values["CHECKSUM"] = create_checksum_can_canfd_blended(packer, bus, "LFAHDA_MFC", values)
-  return packer.make_can_msg("LFAHDA_MFC", bus, values)
-
-
-def create_ray_lfahda_mfc(packer, lat_active, lfa_icon):
-  values = {
-    "HDA_USM": 2,
-    "HDA_Icon_State": 2 if lfa_icon else 0,
-    "HDA_VSetReq": 0,
-    "HDA_Icon_Wheel": int(lat_active),
     "LFA_Icon_State": lfa_icon,
   }
   return packer.make_can_msg("LFAHDA_MFC", 0, values)
 
 
-def create_acc_commands_can_canfd_blended(packer, enabled, accel, upper_jerk, idx, hud_control, set_speed,
-                                          stopping, long_override, use_fca, CP):
+def create_acc_commands(packer, enabled, accel, upper_jerk, idx, lead_data: CanLeadData,
+                        hud_control, set_speed, stopping, long_override, use_fca, CP,
+                        main_cruise_enabled, tuning, ESCC: EnhancedSmartCruiseControl | None = None):
   commands = []
-  bus = CanBus(CP).ECAN
 
-  scc11_values = {
-    "aReqRaw": accel,
-    "aReqValue": accel,
-    "JerkUpperLimit": upper_jerk,
-    "JerkLowerLimit": 5.0,
-    "ComfortBandUpper": 0.0,
-    "ComfortBandLower": 0.0,
-    "COUNTER": idx % 0x10,
-  }
-  scc11_values["CHECKSUM"] = create_checksum_can_canfd_blended(packer, bus, "SCC11", scc11_values)
-  commands.append(packer.make_can_msg("SCC11", bus, scc11_values))
-
-  scc12_values = {
-    "MainMode_ACC": 1,
-    "ACCMode_Inactive": 0 if enabled else 1,
-    "TauGapSet": hud_control.leadDistanceBars,
-    "VSetDis": set_speed if enabled else 0,
-    "ACC_ObjDist": 1,
-    "ACCMode": 2 if enabled and long_override else 1 if enabled else 0,
-    "StopReq": 1 if stopping else 0,
-    "ACC_ObjDist_Ref": 1,
-    "COUNTER": idx % 0x10,
-  }
-  scc12_values["CHECKSUM"] = create_checksum_can_canfd_blended(packer, bus, "SCC12", scc12_values)
-  commands.append(packer.make_can_msg("SCC12", bus, scc12_values))
-
-  scc14_values = {
-    "ACC_ObjRelSpd": 0,
-    "ObjValid": 1,
-    "ObjStatus": 1,
-    "COUNTER": idx % 0x10,
-  }
-  scc14_values["CHECKSUM"] = create_checksum_can_canfd_blended(packer, bus, "SCC14", scc14_values)
-  commands.append(packer.make_can_msg("SCC14", bus, scc14_values))
-
-  if use_fca and not (CP.flags & HyundaiFlags.CAMERA_SCC):
-    fca11_values = {
-      "cr_vsm_deccmd": 255,
-      "cf_vsm_deccmdact": 127,
-      "COUNTER": idx % 0x10,
-    }
-    fca11_values["CHECKSUM"] = create_checksum_can_canfd_blended(packer, bus, "FCA11", fca11_values)
-    commands.append(packer.make_can_msg("FCA11", bus, fca11_values))
-
-  return commands
-
-
-def create_acc_commands_can_canfd_blended_hda2(packer, enabled, accel, accel_last, upper_jerk, idx,
-                                               hud_control, set_speed, stopping, long_override, use_fca, CP):
-  commands = []
-  bus = CanBus(CP).ECAN
-  jerk = 5.0
-
-  if not enabled or long_override:
-    accel_raw, accel_value = 0.0, 0.0
-  else:
-    accel_raw = accel
-    accel_value = max(accel_last - jerk / 50.0, min(accel, accel_last + jerk / 50.0))
-
-  message_values = [
-    ("SCC11", {
-      "aReqRaw": accel_raw,
-      "aReqValue": accel_value,
-      "JerkUpperLimit": upper_jerk,
-      "JerkLowerLimit": jerk if enabled else 1.0,
-    }),
-    ("SCC12", {
-      "MainMode_ACC": 1,
-      "ACCMode_Inactive": 0 if enabled else 1,
+  def get_scc11_values():
+    return {
+      "MainMode_ACC": 1 if main_cruise_enabled else 0,
       "TauGapSet": hud_control.leadDistanceBars,
-      "VSetDis": set_speed,
-      "ACC_ObjDist": 1,
-      "ACCMode": 2 if enabled and long_override else 1 if enabled else 0,
-      "StopReq": 1 if stopping else 0,
-    }),
-    ("SCC14", {
-      "ACC_ObjRelSpd": 0,
-      "ObjValid": 0,
-      "ObjStatus": 2 if hud_control.leadVisible and enabled else 1 if hud_control.leadVisible else 0,
-    }),
-  ]
-
-  if use_fca and not (CP.flags & HyundaiFlags.CAMERA_SCC):
-    # These values reproduce the stock status bytes without requesting AEB/FCA actuation.
-    message_values.append(("FCA11", {
-      "cr_vsm_deccmd": 255,
-      "cf_vsm_deccmdact": 0,
-    }))
-
-  for name, values in message_values:
-    values["COUNTER"] = idx % 0xF
-    values["CHECKSUM"] = create_checksum_can_canfd_blended(packer, bus, name, values)
-    commands.append(packer.make_can_msg(name, bus, values))
-
-  return commands
-
-
-def create_acc_commands(packer, enabled, accel, upper_jerk, idx, hud_control, set_speed, stopping, long_override, use_fca, CP,
-                        main_cruise_enabled=True, lead_data: CanLeadData | None = None):
-  commands = []
-  lead_data = lead_data or CanLeadData()
-
-  scc11_values = {
-    "MainMode_ACC": int(bool(main_cruise_enabled)),
-    "TauGapSet": hud_control.leadDistanceBars,
-    "VSetDis": set_speed if enabled else 0,
-    "AliveCounterACC": idx % 0x10,
-    "ObjValid": int(lead_data.lead_visible),
-    "ACC_ObjStatus": int(lead_data.lead_visible),
-    "ACC_ObjLatPos": 0,
-    "ACC_ObjRelSpd": lead_data.lead_rel_speed,
-    "ACC_ObjDist": int(lead_data.lead_distance),
+      "VSetDis": set_speed if enabled else 0,
+      "AliveCounterACC": idx % 0x10,
+      "ObjValid": int(lead_data.lead_visible), # close lead makes controls tighter
+      "ACC_ObjStatus": int(lead_data.lead_visible), # close lead makes controls tighter
+      "ACC_ObjLatPos": 0,
+      "ACC_ObjRelSpd": lead_data.lead_rel_speed,
+      "ACC_ObjDist": int(lead_data.lead_distance), # close lead makes controls tighter
     }
+
+  def get_scc12_values():
+    scc12_values = {
+      "ACCMode": 2 if enabled and long_override else 1 if enabled else 0,
+      "StopReq": 1 if tuning.stopping else 0,
+      "aReqRaw": tuning.desired_accel,
+      "aReqValue": tuning.actual_accel,  # stock ramps up and down respecting jerk limit until it reaches aReqRaw
+      "CR_VSM_Alive": idx % 0xF,
+    }
+
+    # show AEB disabled indicator on dash with SCC12 if not sending FCA messages.
+    # these signals also prevent a TCS fault on non-FCA cars with alpha longitudinal
+    if not use_fca:
+      scc12_values["CF_VSM_ConfMode"] = 1
+      scc12_values["AEB_Status"] = 1 # AEB disabled
+
+    # Since we have ESCC available, we can update SCC12 with ESCC values.
+    if ESCC and ESCC.enabled:
+      ESCC.update_scc12(scc12_values)
+
+    return scc12_values
+
+  def calculate_scc12_checksum(values):
+    scc12_dat = packer.make_can_msg("SCC12", 0, values)[1]
+    values["CR_VSM_ChkSum"] = 0x10 - sum(sum(divmod(i, 16)) for i in scc12_dat) % 0x10
+    return values
+
+  def get_scc14_values():
+    return {
+      "ComfortBandUpper": tuning.comfort_band_upper, # stock usually is 0 but sometimes uses higher values
+      "ComfortBandLower": tuning.comfort_band_lower, # stock usually is 0 but sometimes uses higher values
+      "JerkUpperLimit": tuning.jerk_upper, # stock usually is 1.0 but sometimes uses higher values
+      "JerkLowerLimit": tuning.jerk_lower, # stock usually is 0.5 but sometimes uses higher values
+      "ACCMode": 2 if enabled and long_override else 1 if enabled else 4, # stock will always be 4 instead of 0 after first disengage
+      "ObjGap": lead_data.object_gap, # 5: >30, m, 4: 25-30 m, 3: 20-25 m, 2: < 20 m, 0: no lead
+      "ObjDistStat": lead_data.object_rel_gap,
+    }
+
+  def get_fca11_values():
+    return {
+      "CR_FCA_Alive": idx % 0xF,
+      "PAINT1_Status": 1,
+      "FCA_DrvSetStatus": 1,
+      "FCA_Status": 1,
+    }
+
+  def calculate_fca11_checksum(values):
+    fca11_dat = packer.make_can_msg("FCA11", 0, values)[1]
+    values["CR_FCA_ChkSum"] = hyundai_checksum(fca11_dat[:7])
+    return values
+
+  scc11_values = get_scc11_values()
   commands.append(packer.make_can_msg("SCC11", 0, scc11_values))
 
-  scc12_values = {
-    "ACCMode": 2 if enabled and long_override else 1 if enabled else 0,
-    "StopReq": 1 if stopping else 0,
-    "aReqRaw": accel,
-    "aReqValue": accel,  # stock ramps up and down respecting jerk limit until it reaches aReqRaw
-    "CR_VSM_Alive": idx % 0xF,
-  }
-
-  # Keep ESC/TCS happy on non-FCA cars without explicitly showing the disabled AEB icon.
-  if not use_fca:
-    scc12_values["CF_VSM_ConfMode"] = 1
-    scc12_values["AEB_Status"] = 2
-
-  scc12_dat = packer.make_can_msg("SCC12", 0, scc12_values)[1]
-  scc12_values["CR_VSM_ChkSum"] = 0x10 - sum(sum(divmod(i, 16)) for i in scc12_dat) % 0x10
-
+  scc12_values = get_scc12_values()
+  scc12_values = calculate_scc12_checksum(scc12_values)
   commands.append(packer.make_can_msg("SCC12", 0, scc12_values))
 
-  scc14_values = {
-    "ComfortBandUpper": 0.0, # stock usually is 0 but sometimes uses higher values
-    "ComfortBandLower": 0.0, # stock usually is 0 but sometimes uses higher values
-    "JerkUpperLimit": upper_jerk, # stock usually is 1.0 but sometimes uses higher values
-    "JerkLowerLimit": 5.0, # stock usually is 0.5 but sometimes uses higher values
-    "ACCMode": 2 if enabled and long_override else 1 if enabled else 4, # stock will always be 4 instead of 0 after first disengage
-    "ObjGap": lead_data.object_gap, # 5: >30 m, 4: 25-30 m, 3: 20-25 m, 2: <20 m, 0: no lead
-    "ObjDistStat": lead_data.object_rel_gap,
-  }
+  scc14_values = get_scc14_values()
   commands.append(packer.make_can_msg("SCC14", 0, scc14_values))
 
   # Only send FCA11 on cars where it exists on the bus
   # On Camera SCC cars, FCA11 is not disabled, so we forward stock FCA11 back to the car forward hooks
-  if use_fca and not (CP.flags & HyundaiFlags.CAMERA_SCC):
+  # If we don't use ESCC since ESCC does not block FCA11 from stock radar
+  if use_fca and not ((CP.flags & HyundaiFlags.CAMERA_SCC) or (ESCC and ESCC.enabled)):
     # note that some vehicles most likely have an alternate checksum/counter definition
     # https://github.com/commaai/opendbc/commit/9ddcdb22c4929baf310295e832668e6e7fcfa602
-    fca11_values = {
-      "CR_FCA_Alive": idx % 0xF,
-      "PAINT1_Status": 1,
-      "FCA_DrvSetStatus": 1,
-      "FCA_Status": 2,
-    }
-    fca11_dat = packer.make_can_msg("FCA11", 0, fca11_values)[1]
-    fca11_values["CR_FCA_ChkSum"] = hyundai_checksum(fca11_dat[:7])
+    fca11_values = get_fca11_values()
+    fca11_values = calculate_fca11_checksum(fca11_values)
     commands.append(packer.make_can_msg("FCA11", 0, fca11_values))
 
   return commands
 
 
-def create_acc_opt(packer, CP):
+def create_acc_opt(packer, CP, ESCC: EnhancedSmartCruiseControl | None = None):
+  """
+    Creates SCC13 and FCA12. If ESCC is enabled, it will only create SCC13 since ESCC does not block FCA12.
+    :param packer:
+    :param ESCC:
+    :return:
+  """
+
+  def get_scc13_values():
+    return {
+      "SCCDrvModeRValue": 2,
+      "SCC_Equip": 1,
+      "Lead_Veh_Dep_Alert_USM": 2,
+    }
+
+  def get_fca12_values():
+    return {
+      "FCA_DrvSetState": 2,
+      "FCA_USM": 1, # AEB disabled
+    }
+
   commands = []
 
-  scc13_values = {
-    "SCCDrvModeRValue": 2,
-    "SCC_Equip": 1,
-    "Lead_Veh_Dep_Alert_USM": 2,
-  }
+  scc13_values = get_scc13_values()
   commands.append(packer.make_can_msg("SCC13", 0, scc13_values))
+
+  # If ESCC is available and enabled, we skip FCA12, since ESCC does not block FCA12
+  if ESCC and ESCC.enabled:
+    return commands
 
   # TODO: this needs to be detected and conditionally sent on unsupported long cars
   # On Camera SCC cars, FCA12 is not disabled, so we forward stock FCA12 back to the car forward hooks
   if not (CP.flags & HyundaiFlags.CAMERA_SCC):
-    fca12_values = {
-      "FCA_DrvSetState": 2,
-      "FCA_USM": 2,
-    }
+    fca12_values = get_fca12_values()
     commands.append(packer.make_can_msg("FCA12", 0, fca12_values))
 
   return commands
@@ -409,30 +266,3 @@ def create_frt_radar_opt(packer):
     "CF_FCA_Equip_Front_Radar": 1,
   }
   return packer.make_can_msg("FRT_RADAR11", 0, frt_radar11_values)
-
-
-def create_radar_aux_messages(packer, CAN, frame, hda2=False):
-  commands = []
-
-  message_specs = (
-    ("RADAR_0x363", 2, {"FCA_ESA": 1}),
-    ("RADAR_0x398", 5, {"BYTE4": 0x80, "BYTE5": 0x5D}),
-    ("RADAR_0x399", 5, {"BYTE2": 0x02}),
-    ("RADAR_0x39a", 5, {"BYTE7": 0xFF}),
-    ("RADAR_0x39b", 5, {}),
-    ("RADAR_0x39c", 5, {"BYTE5": 0xE0, "BYTE6": 0x79}),
-    ("RADAR_0x43a", 20, {"BYTE2": 0x07}),
-  ) if hda2 else (
-    ("RADAR_0x363", 2, {"FCA_ESA": 1}),
-    ("RADAR_0x398", 5, {"BYTE4": 0x80, "BYTE5": 0x10}),
-  )
-
-  for addr, freq, values in message_specs:
-    if frame % freq != 0:
-      continue
-
-    msg_values = values | {"COUNTER": frame % (0xF if hda2 else 0x10)}
-    msg_values["CHECKSUM"] = create_checksum_can_canfd_blended(packer, CAN.ECAN, addr, msg_values)
-    commands.append(packer.make_can_msg(addr, CAN.ECAN, msg_values))
-
-  return commands

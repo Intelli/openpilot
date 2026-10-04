@@ -1,9 +1,15 @@
 import os
 import enum
+import hashlib
 from typing import NamedTuple
 
 BASEDIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../")
 FW_PATH = os.path.join(BASEDIR, "board/obj/")
+
+def compute_version_hash(filepath):
+  with open(filepath, "rb") as f:
+    # Normalize line endings on Windows
+    return int.from_bytes(hashlib.sha256(f.read().replace(b'\r', b'')).digest()[:4], 'little')
 
 USBPACKET_MAX_SIZE = 0x40
 
@@ -24,6 +30,7 @@ class McuConfig(NamedTuple):
     # assume bootstub is in sector 0
     return self.bootstub_address + sum(self.sector_sizes[:i])
 
+
 F4Config = McuConfig(
   "STM32F4",
   0x463,
@@ -37,6 +44,7 @@ F4Config = McuConfig(
   0x8000000,
   "bootstub.panda.bin",
 )
+
 
 H7Config = McuConfig(
   "STM32H7",

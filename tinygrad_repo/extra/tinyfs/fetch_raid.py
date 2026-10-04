@@ -3,7 +3,6 @@ from pathlib import Path
 
 from tinygrad.tensor import Tensor
 from tinygrad.helpers import tqdm, getenv
-from tinygrad.nn.state import fs_load
 
 raid_root = Path(getenv("RAID_ROOT", "/raid"))
 
@@ -15,7 +14,7 @@ def fetch_file(item):
   path.parent.mkdir(parents=True, exist_ok=True)
 
   try:
-    pt = fs_load(Tensor(bytes.fromhex(h), device="CPU"), size).to(f"disk:{path.as_posix()}").realize()
+    pt = Tensor(bytes.fromhex(h), device="CPU").fs_load(size).to(f"disk:{path.as_posix()}").realize()
   except Exception as e:
     print(f"error fetching {path}, {h}, {size}: {e}")
     raise
@@ -23,7 +22,7 @@ def fetch_file(item):
   pt.uop.buffer.deallocate()
 
 def fetch_mapping(h, l):
-  mapping_tensor = fs_load(Tensor(bytes.fromhex(h)), l).realize()
+  mapping_tensor = Tensor(bytes.fromhex(h)).fs_load(l).realize()
   mapping = mapping_tensor.data().tobytes().decode()
   mapping = json.loads(mapping)
   mapped_files = mapping.items()

@@ -6,7 +6,7 @@
 
 #include "third_party/json11/json11.hpp"
 #include "system/hardware/hw.h"
-#include "tools/replay/api.h"
+#include "tools/replay/py_downloader.h"
 #include "tools/replay/replay.h"
 #include "tools/replay/util.h"
 
@@ -15,7 +15,7 @@ Route::Route(const std::string &route, const std::string &data_dir, bool auto_so
 
 RouteIdentifier Route::parseRoute(const std::string &str) {
   RouteIdentifier identifier = {};
-  static const std::regex pattern(R"(^(([a-z0-9]{16})[|_/])?(.{20})((--|/)((-?\d+(:(-?\d+)?)?)|(:-?\d+)))?(/[qra])?$)");
+  static const std::regex pattern(R"(^(([a-z0-9]{16})[|_/])?(.{20})((--|/)((-?\d+(:(-?\d+)?)?)|(:-?\d+)))?$)");
   std::smatch match;
 
   if (std::regex_match(str, match, pattern)) {
@@ -103,51 +103,44 @@ bool Route::loadFromAutoSource() {
   return !segments_.empty();
 }
 
-bool Route::loadFromServer(int retries) {
-  const auto api_hosts = CommaApi2::route_api_hosts();
-  for (const auto &api_host : api_hosts) {
-    const std::string url = api_host + "/v1/route/" + route_.str + "/files";
-    for (int i = 1; i <= retries; ++i) {
-      long response_code = 0;
-      std::string result = CommaApi2::httpGet(url, &response_code, api_host);
-      if (response_code == 200) {
-        return loadFromJson(result);
-      }
-
-      if (response_code == 401 || response_code == 403) {
-        rWarning(">> Unauthorized. Authenticate with tools/lib/auth.py <<");
-        err_ = RouteLoadError::Unauthorized;
-        return false;
-      }
-      if (response_code == 404) {
-        err_ = RouteLoadError::FileNotFound;
-        break;
-      }
-
-      err_ = RouteLoadError::NetworkError;
-      rWarning("Retrying %d/%d", i, retries);
-      util::sleep_for(3000);
-    }
-
-    if (err_ == RouteLoadError::NetworkError) {
-      return false;
-    }
-  }
-
-  rWarning(api_hosts.size() > 1 ? "The specified route could not be found on comma or Konik." : "The specified route could not be found on the server.");
-  err_ = RouteLoadError::FileNotFound;
-  return false;
-}
-
-bool Route::loadFromJson(const std::string &json) {
-  const static std::regex rx(R"(\/(\d+)\/)");
-  std::string err;
-  auto jsonData = json11::Json::parse(json, err);
-  if (!err.empty()) {
-    rWarning("JSON parsing error: %s", err.c_str());
+bool Route::loadFromServer() {
+  std::string result = PyDownloader::getRouteFiles(route_.str);
+  if (result.empty()) {
+    err_ = RouteLoadError::NetworkError;
+    rWarning("Failed to fetch route files from server");
     return false;
   }
-  for (const auto &value : jsonData.object_items()) {
+
+  // Check for error field in JSON response
+  std::string parse_err;
+  auto json = json11::Json::parse(result, parse_err);
+  if (!parse_err.empty()) {
+    err_ = RouteLoadError::NetworkError;
+    rWarning("Failed to parse route files response");
+    return false;
+  }
+
+  if (json.is_object() && json["error"].is_string()) {
+    const std::string &error = json["error"].string_value();
+    if (error == "unauthorized") {
+      rWarning(">> Unauthorized. Authenticate with tools/lib/auth.py <<");
+      err_ = RouteLoadError::Unauthorized;
+    } else if (error == "not_found") {
+      rWarning("The specified route could not be found on the server.");
+      err_ = RouteLoadError::FileNotFound;
+    } else {
+      rWarning("API error: %s", error.c_str());
+      err_ = RouteLoadError::NetworkError;
+    }
+    return false;
+  }
+
+  return loadFromJson(json);
+}
+
+bool Route::loadFromJson(const json11::Json &json) {
+  const static std::regex rx(R"(\/(\d+)\/)");
+  for (const auto &value : json.object_items()) {
     const auto &urlArray = value.second.array_items();
     for (const auto &url : urlArray) {
       std::string url_str = url.string_value();
@@ -233,10 +226,10 @@ void Segment::loadFile(int id, const std::string file) {
   bool success = false;
   if (id < MAX_CAMERAS) {
     frames[id] = std::make_unique<FrameReader>();
-    success = frames[id]->load((CameraType)id, file, flags & REPLAY_FLAG_NO_HW_DECODER, &abort_, local_cache, 20 * 1024 * 1024, 3);
+    success = frames[id]->load((CameraType)id, file, flags & REPLAY_FLAG_NO_HW_DECODER, &abort_, local_cache);
   } else {
     log = std::make_unique<LogReader>(filters_);
-    success = log->load(file, &abort_, local_cache, 0, 3);
+    success = log->load(file, &abort_, local_cache);
   }
 
   if (!success) {

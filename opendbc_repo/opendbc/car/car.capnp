@@ -190,8 +190,6 @@ struct CarState {
   steeringTorque @8 :Float32;      # Native CAN units, only needed on cars where it's used for control
   steeringTorqueEps @27 :Float32;  # Native CAN units, only needed on cars where it's used for control
   steeringPressed @9 :Bool;        # is the user overring the steering wheel?
-  handsOnWheel @61 :Bool;         # valid capacitive touch/grip indication; check its timestamp for freshness
-  handsOnWheelTimestamp @62 :UInt64; # monotonic nanoseconds of a valid hands-on sensor sample; zero when unavailable/invalid
   steeringDisengage @58 :Bool;     # more force than steeringPressed, disengages for applicable brands
   steerFaultTemporary @35 :Bool;
   steerFaultPermanent @36 :Bool;
@@ -376,28 +374,12 @@ struct CarControl {
     brake @1: Float32; # [0.0, 1.0]
     torqueOutputCan @8: Float32;   # value sent over can to the car
     speed @6: Float32;  # m/s
-    lateralControlMode @9: LateralControlMode;
-    manualSteeringOverride @10: Bool;  # controller is following the driver's manual steering request
-
-    # Retired custom-planner telemetry. Preserve wire ordinals; never reuse them.
-    reserved11DEPRECATED @11: Float32;
-    reserved12DEPRECATED @12: Float32;
-    reserved13DEPRECATED @13: Bool;
-    reserved14DEPRECATED @14: UInt64;
-    reserved15DEPRECATED @15: Bool;
 
     enum LongControlState @0xe40f3a917d908282{
       off @0;
       pid @1;
       stopping @2;
       starting @3;
-    }
-
-    enum LateralControlMode {
-      inactive @0;
-      torque @1;
-      angle @2;
-      torqueRecovering @3;
     }
   }
 
@@ -528,7 +510,6 @@ struct CarParams {
   startingState @70 :Bool; # Does this car make use of special starting state
 
   steerActuatorDelay @36 :Float32; # Steering wheel actuator delay in seconds
-  lateralSmoothSeconds @78 :Float32; # Speed-scheduled curvature smoothing used by select angle-control platforms
   longitudinalActuatorDelay @58 :Float32; # Gas/Brake actuator delay in seconds
   openpilotLongitudinalControl @37 :Bool; # is openpilot doing the longitudinal control?
   carVin @38 :Text; # VIN number queried during fingerprinting
@@ -654,8 +635,6 @@ struct CarParams {
     fcaGiorgio @32;
     rivian @33;
     volkswagenMeb @34;
-    teslaPreAP @35;
-    volvo @36;
   }
 
   enum SteerControlType {

@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 
+from series import update_series
+
 
 ROOT = Path(__file__).resolve().parents[2]
 # Keep maintenance and archived patches out of application patch exports.
@@ -15,7 +17,9 @@ MAINTENANCE = (
   'AGENTS.md', 'sync-upstream.sh', 'update.sh', 'apply_patch.sh', 'apply_patch_conflicts.sh', 'fix_patch.sh',
   'create_patch.sh', 'create_patch_manual.sh', 'update_patch.sh', 'patches', 'tools/patches', 'tools/opendbc-patches',
   'tools/ci/sync_ev9_branch.sh', 'tools/ci/tests', '.github/workflows', 'release/ci/publish.sh',
-  'docs/MAINTENANCE.md', 'docs/EV9_BEHAVIOR.md', 'docs/RECENT_DRIVE_REVIEW.md', 'docs/C3X_UPDATE_WORKFLOW.md', 'starpilot-upstream.json',
+  'docs/MAINTENANCE.md', 'docs/EV9_BEHAVIOR.md', 'docs/RECENT_DRIVE_REVIEW.md', 'docs/C3X_UPDATE_WORKFLOW.md',
+  'sunnypilot-upstream.json', 'opendbc-upstream.json', 'tools/upstream', '.githooks', '.gitattributes',
+  'build', 'scripts/laptop_device_build.sh', 'tools/laptop_device_build', 'docs/how-to/laptop-device-build.md',
 )
 SUFFIXES = ('.patch', '.patch.temp-disabled', '.patch.disabled', '.patch.OUTDATED.disabled')
 
@@ -111,10 +115,21 @@ def automatic_update(output: Path, vehicle: bool, paths: list[str]) -> bytes:
   try:
     existing = patch_paths(output, vehicle)
     selected = source_paths(paths, vehicle)
+    staged = git('diff', '--cached', '--name-only', '--no-renames', '-z', 'HEAD', '--', *selected)
     if not paths:
-      staged = git('diff', '--cached', '--name-only', '--no-renames', '-z', 'HEAD', '--', *selected)
       scope = sorted(set(existing) | {os.fsdecode(p) for p in staged.split(b'\0') if p})
       selected = [':(top,literal)' + p for p in scope] + [':(top,exclude)' + p for p in MAINTENANCE]
+    else:
+      prefixes = [('opendbc_repo/' if vehicle else '') + path for path in paths]
+      candidates = set(existing) | {os.fsdecode(p) for p in git('ls-files', '-z', '--', *selected).split(b'\0') if p}
+      scope = sorted(p for p in candidates if any(p == prefix or p.startswith(prefix + '/') for prefix in prefixes))
+    scope = {p for p in scope if not any(p == item or p.startswith(item + '/') for item in MAINTENANCE)}
+    if output.suffix == '.patch':
+      peers = [(patch, folder.name == 'opendbc', set(patch_paths(patch, folder.name == 'opendbc')))
+               for folder in (ROOT / 'patches', ROOT / 'patches/opendbc')
+               for patch in sorted(folder.glob('*.patch')) if patch.is_file() and not patch.is_symlink()]
+      if any(patch != output and owned & scope for patch, _, owned in peers):
+        return update_series(ROOT, git, output, vehicle, scope, peers)
 
     with tempfile.TemporaryDirectory(prefix='update-patch-') as directory:
       temp = Path(directory)

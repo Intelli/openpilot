@@ -1,7 +1,7 @@
 # basic self-contained tests of the external functionality of tinygrad
 import unittest, random
 from tinygrad import Tensor, Context, Variable, TinyJit, dtypes, Device, nn
-from tinygrad.helpers import getenv, OSX
+from tinygrad.helpers import IMAGE, CI, getenv
 
 class TestTiny(unittest.TestCase):
 
@@ -39,29 +39,22 @@ class TestTiny(unittest.TestCase):
     out = Tensor.ones(N).contiguous().sum()
     self.assertEqual(out.item(), N)
 
-  def test_eye(self):
-    out = Tensor.eye(3).flatten()
-    self.assertListEqual(out.tolist(), [1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1.0])
-
-  def test_gemm(self, N=getenv("GEMM_N", 64), dtype=dtypes.float):
-    a = Tensor.ones(N,N, dtype=dtype).contiguous()
-    b = Tensor.eye(N, dtype=dtype).clone()
+  def test_gemm(self, N=getenv("GEMM_N", 64), out_dtype=dtypes.float):
+    a = Tensor.ones(N,N).contiguous()
+    b = Tensor.eye(N).contiguous()
     lst = (out:=a@b).tolist()
     for y in range(N):
       for x in range(N):
         self.assertEqual(lst[y][x], 1.0, msg=f"mismatch at ({y},{x})")
-    self.assertEqual(out.dtype, dtype)
-
-  @unittest.skipIf(Device.DEFAULT == "DSP", "half is broken on DSP")
-  def test_hgemm(self): self.test_gemm(dtype=dtypes.half)
+    if IMAGE < 2: self.assertEqual(out.dtype, out_dtype)
 
   def test_gemv(self, N=getenv("GEMV_N", 64), out_dtype=dtypes.float):
     a = Tensor.ones(1,N).contiguous()
-    b = Tensor.eye(N).clone()
+    b = Tensor.eye(N).contiguous()
     lst = (out:=a@b).tolist()
     for x in range(N):
       self.assertEqual(lst[0][x], 1.0, msg=f"mismatch at {x}")
-    self.assertEqual(out.dtype, out_dtype)
+    if IMAGE < 2: self.assertEqual(out.dtype, out_dtype)
 
   # *** randomness ***
 
@@ -96,7 +89,6 @@ class TestTiny(unittest.TestCase):
 
   # *** BEAM (for Kernel speed) ***
 
-  @unittest.skipIf(Device.DEFAULT == "WEBGPU" and OSX, "WEBGPU's timestamp-query is unreliable on dawn's metal backend")
   def test_beam(self):
     with Context(BEAM=1, IGNORE_BEAM_CACHE=1): self.test_plus()
 
@@ -119,7 +111,7 @@ class TestTiny(unittest.TestCase):
   # *** a model ***
 
   # TODO: this is failing because of how swizzling rewrites the ShapeTracker of the final STORE
-  @unittest.skipIf(Device.DEFAULT == "DSP", "failing because of make things that can't be images not images")
+  @unittest.skipIf(CI and Device.DEFAULT == "DSP", "failing because of make things that can't be images not images")
   def test_mnist(self):
     layers = [
       nn.Conv2d(1, 32, 5), Tensor.relu,
@@ -138,7 +130,7 @@ class TestTiny(unittest.TestCase):
     self.assertEqual(len(probs[0]), 10)
 
   # TODO: this is failing because of how swizzling rewrites the ShapeTracker of the final STORE
-  @unittest.skipIf(Device.DEFAULT == "DSP", "failing because of make things that can't be images not images")
+  @unittest.skipIf(CI and Device.DEFAULT == "DSP", "failing because of make things that can't be images not images")
   def test_mnist_backward(self):
     # NOTE: we don't have the whole model here for speed
     layers = [
@@ -149,6 +141,7 @@ class TestTiny(unittest.TestCase):
     Tensor.realize(*[p.replace(Tensor.ones_like(p).contiguous()) for p in nn.state.get_parameters(layers)])
 
     # realize gradients
+    for x in nn.state.get_parameters(layers): x.requires_grad_()
     Tensor.empty(4, 1, 14, 14).sequential(layers).sum().backward()
     Tensor.realize(*[x.grad for x in nn.state.get_parameters(layers) if x.grad is not None])
 
@@ -156,7 +149,7 @@ class TestTiny(unittest.TestCase):
 
   @unittest.skipIf(Device.DEFAULT != "CL", "image only supported on CL")
   def test_image(self):
-    with Context(IMAGE=1): self.test_gemm(N=64)
+    with Context(IMAGE=2): self.test_gemm(N=4, out_dtype=dtypes.imagef((4, 1, 4)))
 
   def test_beam_image(self):
     with Context(BEAM=1, IGNORE_BEAM_CACHE=1): self.test_image()

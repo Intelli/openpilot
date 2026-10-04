@@ -91,34 +91,24 @@ private:
 } // namespace
 
 
-Params::Params(const std::string &path, bool memory) {
+Params::Params(const std::string &path) {
   params_prefix = "/" + util::getenv("OPENPILOT_PREFIX", "d");
-
-  // StarPilot variables
-  std::string params_folder;
-  if (memory) {
-    params_folder = Path::shm_path() + "/params";
-  } else {
-    cache_path = Path::params_cache() + params_prefix + "/";
-    params_folder = path;
-  }
-  params_path = ensure_params_path(params_prefix, params_folder);
+  params_path = ensure_params_path(params_prefix, path);
 }
 
 Params::~Params() {
   if (future.valid()) {
     future.wait();
   }
-  std::scoped_lock lk(pending_writes_lock);
   assert(queue.empty());
-  assert(pending_writes.empty());
-  assert(!writer_running);
 }
 
-std::vector<std::string> Params::allKeys() const {
+std::vector<std::string> Params::allKeys(ParamKeyFlag flag) const {
   std::vector<std::string> ret;
   for (auto &p : keys) {
-    ret.push_back(p.first);
+    if (flag == ALL || (p.second.flags & flag)) {
+      ret.push_back(p.first);
+    }
   }
   return ret;
 }
@@ -181,12 +171,6 @@ int Params::put(const char* key, const char* value, size_t value_size) {
 int Params::remove(const std::string &key) {
   FileLock file_lock(params_path + "/.lock");
   int result = unlink(getParamPath(key).c_str());
-
-  // StarPilot variables
-  if (!cache_path.empty()) {
-    unlink((cache_path + key).c_str());
-  }
-
   if (result != 0) {
     return result;
   }
@@ -233,11 +217,6 @@ void Params::clearAll(ParamKeyFlag key_flag) {
         auto it = keys.find(de->d_name);
         if (it == keys.end() || (it->second.flags & key_flag)) {
           unlink(getParamPath(de->d_name).c_str());
-
-          // StarPilot variables
-          if (!cache_path.empty()) {
-            unlink((cache_path + de->d_name).c_str());
-          }
         }
       }
     }
@@ -248,75 +227,18 @@ void Params::clearAll(ParamKeyFlag key_flag) {
 }
 
 void Params::putNonBlocking(const std::string &key, const std::string &val) {
-  bool should_enqueue = false;
-  bool should_start_thread = false;
-
-  {
-    std::scoped_lock lk(pending_writes_lock);
-    auto it = pending_writes.find(key);
-    if (it == pending_writes.end()) {
-      pending_writes.emplace(key, val);
-      should_enqueue = true;
-    } else {
-      it->second = val;
-    }
-
-    if (!writer_running) {
-      writer_running = true;
-      should_start_thread = true;
-    }
-  }
-
-  if (should_enqueue) {
-    queue.push(key);
-  }
-
-  if (should_start_thread) {
+   queue.push(std::make_pair(key, val));
+  // start thread on demand
+  if (!future.valid() || future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
     future = std::async(std::launch::async, &Params::asyncWriteThread, this);
   }
 }
 
 void Params::asyncWriteThread() {
-  std::string key;
-  while (true) {
-    if (!queue.try_pop(key, 0)) {
-      std::scoped_lock lk(pending_writes_lock);
-      if (queue.empty() && pending_writes.empty()) {
-        writer_running = false;
-        return;
-      }
-      continue;
-    }
-
-    std::string val;
-    {
-      std::scoped_lock lk(pending_writes_lock);
-      auto it = pending_writes.find(key);
-      if (it == pending_writes.end()) {
-        continue;
-      }
-      val = std::move(it->second);
-      pending_writes.erase(it);
-    }
-
+  // TODO: write the latest one if a key has multiple values in the queue.
+  std::pair<std::string, std::string> p;
+  while (queue.try_pop(p, 0)) {
     // Params::put is Thread-Safe
-    put(key, val);
+    put(p.first, p.second);
   }
-}
-
-// StarPilot variables
-int Params::getTuningLevel(const std::string &key) {
-  return keys[key].tuning_level;
-}
-
-ParamSettingsTier Params::getSettingsTier(const std::string &key) {
-  return keys[key].settings_tier;
-}
-
-std::optional<std::string> Params::getStockValue(const std::string &key) {
-  ParamKeyAttributes &attributes = keys[key];
-  if (attributes.stock_value) {
-    return attributes.stock_value;
-  }
-  return attributes.default_value;
 }

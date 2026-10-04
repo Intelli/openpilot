@@ -13,17 +13,19 @@ class FastEnum(IntEnum):
 class Ops(FastEnum):
   # ** 1 -- defines/special **
 
+  # define GLOBAL/VAR are ptrs to outside the Kernel
+  DEFINE_VAR = auto(); BIND = auto()
+
   # this is a RANGE for GPU dimensions, similar to symbolic shapes but not exactly
   SPECIAL = auto()
 
-  # BUFFER allocates global/local/register storage depending on its addrspace
-  BUFFER = auto()
+  # define LOCAL/REG allocate things
+  DEFINE_LOCAL = auto(); DEFINE_REG = auto()
 
   # ** 2 -- non op uops **
 
   # uops that aren't rendered
   NOOP = auto(); REWRITE_ERROR = auto()
-  # CALL is a kernel invocation; calls with RETURNED inputs are value-producing (and gradient-able), the rest are opaque
   PARAM = auto(); CALL = auto()
 
   # renderer
@@ -35,18 +37,12 @@ class Ops(FastEnum):
   SINK = auto(); AFTER = auto(); GROUP = auto()
 
   # vector creation / item selection
-  STACK = auto()
-
-  # RETURNED is a placeholder for a buffer a call writes and returns: it's an input to the call and you AFTER on it
-  RETURNED = auto()
-
-  # hcq specific
-  GETADDR = auto()
+  GEP = auto(); VECTORIZE = auto()
 
   # ** 3 -- load/store **
 
   # INDEX is a BinaryOp similar to ADD, but it operates on pointers
-  INDEX = auto(); SHRINK = auto()
+  INDEX = auto()
 
   # load/store before math
   LOAD = auto(); STORE = auto()
@@ -61,11 +57,10 @@ class Ops(FastEnum):
   SQRT = auto(); RECIPROCAL = auto(); NEG = auto(); TRUNC = auto()
 
   # BinaryOps
-  ADD = auto(); MUL = auto(); SHL = auto(); SHR = auto(); CDIV = auto(); MAX = auto(); CMOD = auto()
+  ADD = auto(); MUL = auto(); SHL = auto(); SHR = auto(); IDIV = auto(); MAX = auto(); MOD = auto()
   CMPLT = auto(); CMPNE = auto(); CMPEQ = auto()
   XOR = auto(); OR = auto(); AND = auto()
   THREEFRY = auto(); SUB = auto(); FDIV = auto(); POW = auto()
-  FLOORDIV = auto(); FLOORMOD = auto()
 
   # TernaryOps
   WHERE = auto(); MULACC = auto()
@@ -75,49 +70,52 @@ class Ops(FastEnum):
   # control flow ops
   BARRIER = auto(); RANGE = auto(); IF = auto(); END = auto(); ENDIF = auto()
 
-  # const.
-  CONST = auto()
+  # consts. VCONST is a vectorized const
+  VCONST = auto(); CONST = auto()
 
   # CUSTOM/CUSTOMI are used to output strings into codegen. the I makes the string inline
   CUSTOM = auto(); CUSTOMI = auto()
 
-  # INS is a machine instruction
-  INS = auto()
-
   # ** 6 -- ops that don't exist in programs **
+
+  # tensor graph ops
+  UNIQUE = auto(); DEVICE = auto(); ASSIGN = auto()
+
+  # local unique
+  LUNIQUE = auto()
 
   # ops that adjust the behavior of the scheduler
   CONTIGUOUS = auto(); CONTIGUOUS_BACKWARD = auto(); DETACH = auto()
 
   # buffer ops
-  STAGE = auto(); COPY = auto(); MSELECT = auto(); MSTACK = auto(); CUSTOM_FUNCTION = auto()
+  BUFFERIZE = auto(); COPY = auto(); BUFFER = auto(); BUFFER_VIEW = auto(); MSELECT = auto(); MSTACK = auto(); ENCDEC = auto()
 
   # the core 6 movement ops! these only exist in the tensor graph
-  RESHAPE = auto(); PERMUTE = auto(); EXPAND = auto(); PAD = auto(); FLIP = auto()
-  UNSHARD = auto()  # UNSHARD is really a movement op
+  RESHAPE = auto(); PERMUTE = auto(); EXPAND = auto(); PAD = auto(); SHRINK = auto(); FLIP = auto()
+  MULTI = auto()  # MULTI is really a movement op
 
   # reduce
-  REDUCE = auto(); ALLREDUCE = auto()
+  REDUCE_AXIS = auto(); REDUCE = auto(); ALLREDUCE = auto()
 
-  # ** 7 -- pattern compiler IR (used in upat.py) **
-  # PYLITERAL carries a Python literal as an arg for CUSTOM predicates
-  PYLITERAL = auto()
+  # expander ops
+  UNROLL = auto(); CONTRACT = auto(); CAT = auto(); PTRCAT = auto()
 
 class GroupOp:
   Unary = {Ops.EXP2, Ops.LOG2, Ops.SIN, Ops.SQRT, Ops.RECIPROCAL, Ops.NEG, Ops.TRUNC}
-  Binary = {Ops.ADD, Ops.MUL, Ops.CDIV, Ops.MAX, Ops.CMOD, Ops.CMPLT, Ops.CMPNE, Ops.CMPEQ,
-            Ops.XOR, Ops.SHL, Ops.SHR, Ops.OR, Ops.AND, Ops.THREEFRY, Ops.SUB, Ops.FDIV, Ops.POW, Ops.FLOORDIV, Ops.FLOORMOD}
+  Binary = {Ops.ADD, Ops.MUL, Ops.IDIV, Ops.MAX, Ops.MOD, Ops.CMPLT, Ops.CMPNE, Ops.CMPEQ,
+            Ops.XOR, Ops.SHL, Ops.SHR, Ops.OR, Ops.AND, Ops.THREEFRY, Ops.SUB, Ops.FDIV, Ops.POW}
   Ternary = {Ops.WHERE, Ops.MULACC}
   ALU = set.union(Unary, Binary, Ternary)
-  Broadcastable = set.union(Binary, Ternary)
 
   # TODO: is BITCAST always Elementwise if it's shape changing?
   Elementwise = set.union(ALU, {Ops.CAST, Ops.BITCAST})
 
-  Defines = {Ops.PARAM, Ops.BUFFER}
+  Defines = {Ops.PARAM, Ops.DEFINE_LOCAL, Ops.DEFINE_REG}
 
-  Irreducible = {Ops.CONST, Ops.SPECIAL, Ops.RANGE, Ops.PARAM, Ops.GETADDR}
+  Irreducible = {Ops.CONST, Ops.DEFINE_VAR, Ops.SPECIAL, Ops.RANGE}
   Movement = {Ops.RESHAPE, Ops.EXPAND, Ops.PERMUTE, Ops.PAD, Ops.SHRINK, Ops.FLIP}
+
+  Buffer = {Ops.LOAD, Ops.STORE, Ops.CONST, Ops.DEFINE_VAR}
 
   # BinaryOps that can be flipped
   Commutative = {Ops.ADD, Ops.MUL, Ops.MAX, Ops.CMPNE, Ops.CMPEQ, Ops.XOR, Ops.AND, Ops.OR}
@@ -128,10 +126,10 @@ class GroupOp:
   # BinaryOps that satisfy f(x,x)=x see https://en.wikipedia.org/wiki/Idempotence
   Idempotent = {Ops.OR, Ops.AND, Ops.MAX}
 
-  # ALU ops valid as the reduce op in REDUCE/ALLREDUCE arg
-  Reduce = {Ops.ADD, Ops.MUL, Ops.MAX}
-
   # These can change the dtype to bool
   Comparison = {Ops.CMPLT, Ops.CMPNE, Ops.CMPEQ}
+
+  # do not preserve f(0) = 0
+  UnsafePad = {Ops.RECIPROCAL, Ops.LOG2, Ops.EXP2, Ops.IDIV, Ops.POW}
 
   All = set(Ops)

@@ -30,11 +30,10 @@
 #define SAFETY_FAW 26U
 #define SAFETY_BODY 27U
 #define SAFETY_HYUNDAI_CANFD 28U
+#define SAFETY_CHRYSLER_CUSW 30U
 #define SAFETY_PSA 31U
 #define SAFETY_RIVIAN 33U
 #define SAFETY_VOLKSWAGEN_MEB 34U
-#define SAFETY_TESLA_PREAP 35U
-#define SAFETY_VOLVO 36U
 
 #define GET_BIT(msg, b) ((bool)!!(((msg)->data[((b) / 8U)] >> ((b) % 8U)) & 0x1U))
 #define GET_FLAG(value, mask) (((value) & (mask)) == (mask))
@@ -57,7 +56,6 @@
   } while (0);
 
 #define UPDATE_VEHICLE_SPEED(val_ms) (update_sample(&vehicle_speed, ROUND((val_ms) * VEHICLE_SPEED_FACTOR)))
-#define UPDATE_VEHICLE_SPEED_2(val_ms) (update_sample(&vehicle_speed_2, ROUND((val_ms) * VEHICLE_SPEED_FACTOR)))
 
 uint32_t GET_BYTES(const CANPacket_t *msg, int start, int len);
 
@@ -133,23 +131,11 @@ typedef struct {
   const int max_angle_error;             // used to limit error between meas and cmd while enabled
   const float angle_error_min_speed;     // minimum speed to start limiting angle error
   const uint32_t frequency;              // Hz
-  // Vehicle-model angle checks: zero selects the standard road-roll-adjusted limits.
-  const float max_lateral_accel;
-  const float max_lateral_jerk;
 
   const bool angle_is_curvature;         // if true, we can apply max lateral acceleration limits
   const bool enforce_angle_error;        // enables max_angle_error check
   const bool inactive_angle_is_zero;     // if false, enforces angle near meas when disabled (default)
 } AngleSteeringLimits;
-
-typedef struct {
-  const int max_curvature;               // rad/m * curvature_to_can
-  const float curvature_to_can;          // CAN units per rad/m
-  const uint32_t frequency;              // Hz
-  const int max_curvature_error;         // max deviation from measured curvature (0 disables)
-  const float curvature_error_min_speed; // minimum speed for curvature error checks [m/s]
-  const int max_steer_power;             // max steering authority value (0 disables)
-} CurvatureSteeringLimits;
 
 // parameters for lateral accel/jerk angle limiting using a simple vehicle model
 typedef struct {
@@ -230,7 +216,6 @@ typedef bool (*fwd_hook)(int bus_num, int addr);      // returns true if the mes
 typedef struct {
   safety_hook_init init;
   rx_hook rx;
-  rx_hook rx_all;
   tx_hook tx;
   fwd_hook fwd;
   get_checksum_t get_checksum;
@@ -251,18 +236,16 @@ bool steer_torque_cmd_checks(int desired_torque, int steer_req, const TorqueStee
 bool steer_angle_cmd_checks(int desired_angle, bool steer_control_enabled, const AngleSteeringLimits limits);
 bool steer_angle_cmd_checks_vm(int desired_angle, bool steer_control_enabled, const AngleSteeringLimits limits,
                                const AngleSteeringParams params);
-bool steer_curvature_cmd_checks(int desired_curvature, int steer_power, bool steer_control_enabled, const CurvatureSteeringLimits limits);
 bool longitudinal_accel_checks(int desired_accel, const LongitudinalLimits limits);
 bool longitudinal_speed_checks(int desired_speed, const LongitudinalLimits limits);
 bool longitudinal_gas_checks(int desired_gas, const LongitudinalLimits limits);
 bool longitudinal_transmission_rpm_checks(int desired_transmission_rpm, const LongitudinalLimits limits);
 bool longitudinal_brake_checks(int desired_brake, const LongitudinalLimits limits);
+bool longitudinal_interceptor_checks(const CANPacket_t *msg);  // gas interceptor
 void pcm_cruise_check(bool cruise_engaged);
 void speed_mismatch_check(const float speed_2);
 
 void safety_tick(const safety_config *safety_config);
-
-bool longitudinal_interceptor_checks(const CANPacket_t *to_send);
 
 // This can be set by the safety hooks
 extern bool controls_allowed;
@@ -277,16 +260,12 @@ extern bool steering_disengage;
 extern bool steering_disengage_prev;
 extern bool cruise_engaged_prev;
 extern struct sample_t vehicle_speed;
-extern struct sample_t vehicle_speed_2;
 extern bool vehicle_moving;
 extern bool acc_main_on; // referred to as "ACC off" in ISO 15622:2018
 extern int cruise_button_prev;
 extern bool safety_rx_checks_invalid;
-
-extern bool aol_allowed;
-extern bool lkas_button_prev;
-extern bool lkas_on;
-extern bool main_button_prev;
+extern bool enable_gas_interceptor;
+extern int gas_interceptor_prev;
 
 // for safety modes with torque steering control
 extern int desired_torque_last;       // last desired steer torque
@@ -308,20 +287,6 @@ extern uint32_t ts_angle_check_last;
 extern int desired_angle_last;
 extern struct sample_t angle_meas;         // last 6 steer angles/curvatures
 
-typedef struct {
-  int desired_last;
-  uint32_t rt_msgs;
-  uint32_t rt_msgs_prev;
-  uint32_t ts_check_last;
-  int steer_power_last;
-  struct sample_t meas;
-} CurvatureSteeringState;
-extern CurvatureSteeringState curvature_state;
-
-extern bool enable_gas_interceptor;
-extern int gas_interceptor_prev;
-extern bool gm_remote_start_boots_comma;
-
 // Alt experiences can be set with a USB command
 // It enables features that allow alternative experiences, like not disengaging on gas press
 // It is only either 0 or 1 on mainline comma.ai openpilot
@@ -340,10 +305,6 @@ extern bool gm_remote_start_boots_comma;
 // This flag allows AEB to be commanded from openpilot.
 #define ALT_EXP_ALLOW_AEB 16
 
-#define ALT_EXP_ALWAYS_ON_LATERAL 32
-#define ALT_EXP_GM_REMAP_CANCEL_TO_DISTANCE 64
-#define ALT_EXP_TOYOTA_AUTO_HOLD 128
-
 extern int alternative_experience;
 
 // time since safety mode has been changed
@@ -356,6 +317,7 @@ typedef struct {
 
 extern uint16_t current_safety_mode;
 extern uint16_t current_safety_param;
+extern uint16_t current_safety_param_sp;
 extern safety_config current_safety_config;
 
 int safety_fwd_hook(int bus_num, int addr);
@@ -363,6 +325,7 @@ int set_safety_hooks(uint16_t mode, uint16_t param);
 
 extern const safety_hooks body_hooks;
 extern const safety_hooks chrysler_hooks;
+extern const safety_hooks chrysler_cusw_hooks;
 extern const safety_hooks elm327_hooks;
 extern const safety_hooks nooutput_hooks;
 extern const safety_hooks alloutput_hooks;
@@ -380,10 +343,7 @@ extern const safety_hooks subaru_preglobal_hooks;
 extern const safety_hooks tesla_hooks;
 extern const safety_hooks toyota_hooks;
 extern const safety_hooks volkswagen_mlb_hooks;
-extern const safety_hooks volkswagen_meb_hooks;
 extern const safety_hooks volkswagen_mqb_hooks;
 extern const safety_hooks volkswagen_pq_hooks;
 extern const safety_hooks rivian_hooks;
 extern const safety_hooks psa_hooks;
-extern const safety_hooks volvo_hooks;
-extern const safety_hooks tesla_preap_hooks;

@@ -2,6 +2,9 @@
 from opendbc.car.structs import CarParams
 from opendbc.car.chrysler.values import CAR
 
+from opendbc.sunnypilot.car.fingerprints_ext import merge_fw_versions
+from opendbc.sunnypilot.car.chrysler.fingerprints_ext import FW_VERSIONS_EXT
+
 Ecu = CarParams.Ecu
 
 FW_VERSIONS = {
@@ -278,6 +281,26 @@ FW_VERSIONS = {
       b'68676877AB',
     ],
   },
+  CAR.JEEP_CHEROKEE_5TH_GEN: {
+    (Ecu.combinationMeter, 0x18da60f1, None): [
+      b'68492643AC',
+    ],
+    (Ecu.srs, 0x18dac0f1, None): [
+      b'68469498AA',
+    ],
+    (Ecu.abs, 0x18da28f1, None): [
+      b'68477674AB',
+    ],
+    (Ecu.eps, 0x18da30f1, None): [
+      b'68319152AJ',
+    ],
+    (Ecu.engine, 0x18da10f1, None): [
+      b'68493558AD ',
+    ],
+    (Ecu.transmission, 0x18da18f1, None): [
+      b'68492011AD',
+    ],
+  },
   CAR.JEEP_GRAND_CHEROKEE: {
     (Ecu.combinationMeter, 0x742, None): [
       b'68243549AG',
@@ -441,7 +464,6 @@ FW_VERSIONS = {
       b'68453483AC',
       b'68453483AD',
       b'68453487AD',
-      b'68453485AC',
       b'68453491AC',
       b'68453491AD',
       b'68453499AD',
@@ -462,7 +484,6 @@ FW_VERSIONS = {
       b'68510282AG',
       b'68510282AH',
       b'68510283AG',
-      b'68510283AH',
       b'68527346AE',
       b'68527361AD',
       b'68527375AD',
@@ -557,7 +578,6 @@ FW_VERSIONS = {
       b'68552788AA',
       b'68552789AA',
       b'68552790AA',
-      b'68552791AA',
       b'68552791AB',
       b'68552794AA',
       b'68552794AD',
@@ -578,7 +598,6 @@ FW_VERSIONS = {
       b'05036067AE ',
       b'05036193AA ',
       b'05149368AA ',
-      b'05149390AA ',
       b'05149374AA ',
       b'05149591AD ',
       b'05149591AE ',
@@ -594,7 +613,6 @@ FW_VERSIONS = {
       b'05190346AD',
       b'68378695AI ',
       b'68378695AJ ',
-      b'68378696AI ',
       b'68378695AK ',
       b'68378696AJ ',
       b'68378696AK ',
@@ -631,7 +649,6 @@ FW_VERSIONS = {
       b'68500630AE',
       b'68500630AF',
       b'68500631AE',
-      b'68500631AF',
       b'68502719AC ',
       b'68502722AC ',
       b'68502733AC ',
@@ -673,7 +690,6 @@ FW_VERSIONS = {
       b'68360085AL',
       b'68360085AO',
       b'68360086AH',
-      b'68360086AL',
       b'68360086AK',
       b'68360086AN',
       b'68384328AD',
@@ -692,7 +708,6 @@ FW_VERSIONS = {
       b'68502994AC',
       b'68502994AD',
       b'68502996AD',
-      b'68502996AC',
       b'68520867AE',
       b'68520867AF',
       b'68520870AC',
@@ -709,22 +724,14 @@ FW_VERSIONS = {
     (Ecu.combinationMeter, 0x742, None): [
       b'68361606AH',
       b'68437735AC',
-      b'68437746AD',
-      b'68492682AD',
-      b'68525438AB',
       b'68492693AD',
       b'68525485AB',
       b'68525487AB',
       b'68525498AB',
       b'68528791AF',
-      b'68620919AB',
-      b'68620921AC',
-      b'68620923AB',
-      b'68620923AC',
       b'68628474AB',
     ],
     (Ecu.srs, 0x744, None): [
-      b'68346749AB',
       b'68399794AC',
       b'68428503AA',
       b'68428505AA',
@@ -738,7 +745,6 @@ FW_VERSIONS = {
       b'68504022AC',
       b'68530686AB',
       b'68530686AC',
-      b'68530686AD',
       b'68544596AC',
       b'68641704AA',
     ],
@@ -761,19 +767,14 @@ FW_VERSIONS = {
       b'52370131AF',
       b'52370231AF',
       b'52370231AG',
-      b'52370231AK',
       b'52370491AA',
       b'52370931CT',
       b'52401032AE',
       b'52421132AF',
       b'52421332AF',
-      b'52421332AG',
       b'68527616AD ',
-      b'68528545AF',
       b'M2370131MB',
       b'M2421132MB',
-      b'52421232AF',
-      b'52421492AA',
     ],
   },
   CAR.DODGE_DURANGO: {
@@ -807,3 +808,5 @@ FW_VERSIONS = {
     ],
   },
 }
+
+FW_VERSIONS = merge_fw_versions(FW_VERSIONS, FW_VERSIONS_EXT)

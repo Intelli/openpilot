@@ -203,14 +203,6 @@ enum class LongControlState_e40f3a917d908282: uint16_t {
   STARTING,
 };
 CAPNP_DECLARE_ENUM(LongControlState, e40f3a917d908282);
-CAPNP_DECLARE_SCHEMA(ae3e44f889dc64f0);
-enum class LateralControlMode_ae3e44f889dc64f0: uint16_t {
-  INACTIVE,
-  TORQUE,
-  ANGLE,
-  TORQUE_RECOVERING,
-};
-CAPNP_DECLARE_ENUM(LateralControlMode, ae3e44f889dc64f0);
 CAPNP_DECLARE_SCHEMA(b20e386e0e0ba8d3);
 CAPNP_DECLARE_SCHEMA(d895c87c4eb03a38);
 CAPNP_DECLARE_SCHEMA(90d78e84616e17d4);
@@ -284,8 +276,6 @@ enum class SafetyModel_95551e5b1edaf451: uint16_t {
   FCA_GIORGIO,
   RIVIAN,
   VOLKSWAGEN_MEB,
-  TESLA_PRE_A_P,
-  VOLVO,
 };
 CAPNP_DECLARE_ENUM(SafetyModel, 95551e5b1edaf451);
 CAPNP_DECLARE_SCHEMA(d661512be2def77f);
@@ -384,7 +374,7 @@ struct CarState {
   struct ButtonEvent;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(9da4fa09e052903c, 11, 6)
+    CAPNP_DECLARE_STRUCT_HEADER(9da4fa09e052903c, 10, 6)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -513,11 +503,9 @@ struct CarControl::Actuators {
   class Pipeline;
   typedef ::capnp::schemas::LongControlState_e40f3a917d908282 LongControlState;
 
-  typedef ::capnp::schemas::LateralControlMode_ae3e44f889dc64f0 LateralControlMode;
-
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(e97275a919432828, 7, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(e97275a919432828, 5, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -1023,10 +1011,6 @@ public:
 
   inline bool getBlockPcmEnable() const;
 
-  inline bool getHandsOnWheel() const;
-
-  inline  ::uint64_t getHandsOnWheelTimestamp() const;
-
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -1263,12 +1247,6 @@ public:
 
   inline bool getBlockPcmEnable();
   inline void setBlockPcmEnable(bool value);
-
-  inline bool getHandsOnWheel();
-  inline void setHandsOnWheel(bool value);
-
-  inline  ::uint64_t getHandsOnWheelTimestamp();
-  inline void setHandsOnWheelTimestamp( ::uint64_t value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -2119,20 +2097,6 @@ public:
 
   inline float getTorqueOutputCan() const;
 
-  inline  ::cereal::CarControl::Actuators::LateralControlMode getLateralControlMode() const;
-
-  inline bool getManualSteeringOverride() const;
-
-  inline float getReserved11DEPRECATED() const;
-
-  inline float getReserved12DEPRECATED() const;
-
-  inline bool getReserved13DEPRECATED() const;
-
-  inline  ::uint64_t getReserved14DEPRECATED() const;
-
-  inline bool getReserved15DEPRECATED() const;
-
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -2187,27 +2151,6 @@ public:
 
   inline float getTorqueOutputCan();
   inline void setTorqueOutputCan(float value);
-
-  inline  ::cereal::CarControl::Actuators::LateralControlMode getLateralControlMode();
-  inline void setLateralControlMode( ::cereal::CarControl::Actuators::LateralControlMode value);
-
-  inline bool getManualSteeringOverride();
-  inline void setManualSteeringOverride(bool value);
-
-  inline float getReserved11DEPRECATED();
-  inline void setReserved11DEPRECATED(float value);
-
-  inline float getReserved12DEPRECATED();
-  inline void setReserved12DEPRECATED(float value);
-
-  inline bool getReserved13DEPRECATED();
-  inline void setReserved13DEPRECATED(bool value);
-
-  inline  ::uint64_t getReserved14DEPRECATED();
-  inline void setReserved14DEPRECATED( ::uint64_t value);
-
-  inline bool getReserved15DEPRECATED();
-  inline void setReserved15DEPRECATED(bool value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -2719,8 +2662,6 @@ public:
 
   inline bool getSteerAtStandstill() const;
 
-  inline float getLateralSmoothSeconds() const;
-
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -3031,9 +2972,6 @@ public:
 
   inline bool getSteerAtStandstill();
   inline void setSteerAtStandstill(bool value);
-
-  inline float getLateralSmoothSeconds();
-  inline void setLateralSmoothSeconds(float value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -5352,34 +5290,6 @@ inline void CarState::Builder::setBlockPcmEnable(bool value) {
       ::capnp::bounded<371>() * ::capnp::ELEMENTS, value);
 }
 
-inline bool CarState::Reader::getHandsOnWheel() const {
-  return _reader.getDataField<bool>(
-      ::capnp::bounded<372>() * ::capnp::ELEMENTS);
-}
-
-inline bool CarState::Builder::getHandsOnWheel() {
-  return _builder.getDataField<bool>(
-      ::capnp::bounded<372>() * ::capnp::ELEMENTS);
-}
-inline void CarState::Builder::setHandsOnWheel(bool value) {
-  _builder.setDataField<bool>(
-      ::capnp::bounded<372>() * ::capnp::ELEMENTS, value);
-}
-
-inline  ::uint64_t CarState::Reader::getHandsOnWheelTimestamp() const {
-  return _reader.getDataField< ::uint64_t>(
-      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
-}
-
-inline  ::uint64_t CarState::Builder::getHandsOnWheelTimestamp() {
-  return _builder.getDataField< ::uint64_t>(
-      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
-}
-inline void CarState::Builder::setHandsOnWheelTimestamp( ::uint64_t value) {
-  _builder.setDataField< ::uint64_t>(
-      ::capnp::bounded<10>() * ::capnp::ELEMENTS, value);
-}
-
 inline float CarState::WheelSpeeds::Reader::getFl() const {
   return _reader.getDataField<float>(
       ::capnp::bounded<0>() * ::capnp::ELEMENTS);
@@ -6389,104 +6299,6 @@ inline float CarControl::Actuators::Builder::getTorqueOutputCan() {
 inline void CarControl::Actuators::Builder::setTorqueOutputCan(float value) {
   _builder.setDataField<float>(
       ::capnp::bounded<8>() * ::capnp::ELEMENTS, value);
-}
-
-inline  ::cereal::CarControl::Actuators::LateralControlMode CarControl::Actuators::Reader::getLateralControlMode() const {
-  return _reader.getDataField< ::cereal::CarControl::Actuators::LateralControlMode>(
-      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
-}
-
-inline  ::cereal::CarControl::Actuators::LateralControlMode CarControl::Actuators::Builder::getLateralControlMode() {
-  return _builder.getDataField< ::cereal::CarControl::Actuators::LateralControlMode>(
-      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
-}
-inline void CarControl::Actuators::Builder::setLateralControlMode( ::cereal::CarControl::Actuators::LateralControlMode value) {
-  _builder.setDataField< ::cereal::CarControl::Actuators::LateralControlMode>(
-      ::capnp::bounded<11>() * ::capnp::ELEMENTS, value);
-}
-
-inline bool CarControl::Actuators::Reader::getManualSteeringOverride() const {
-  return _reader.getDataField<bool>(
-      ::capnp::bounded<288>() * ::capnp::ELEMENTS);
-}
-
-inline bool CarControl::Actuators::Builder::getManualSteeringOverride() {
-  return _builder.getDataField<bool>(
-      ::capnp::bounded<288>() * ::capnp::ELEMENTS);
-}
-inline void CarControl::Actuators::Builder::setManualSteeringOverride(bool value) {
-  _builder.setDataField<bool>(
-      ::capnp::bounded<288>() * ::capnp::ELEMENTS, value);
-}
-
-inline float CarControl::Actuators::Reader::getReserved11DEPRECATED() const {
-  return _reader.getDataField<float>(
-      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
-}
-
-inline float CarControl::Actuators::Builder::getReserved11DEPRECATED() {
-  return _builder.getDataField<float>(
-      ::capnp::bounded<10>() * ::capnp::ELEMENTS);
-}
-inline void CarControl::Actuators::Builder::setReserved11DEPRECATED(float value) {
-  _builder.setDataField<float>(
-      ::capnp::bounded<10>() * ::capnp::ELEMENTS, value);
-}
-
-inline float CarControl::Actuators::Reader::getReserved12DEPRECATED() const {
-  return _reader.getDataField<float>(
-      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
-}
-
-inline float CarControl::Actuators::Builder::getReserved12DEPRECATED() {
-  return _builder.getDataField<float>(
-      ::capnp::bounded<11>() * ::capnp::ELEMENTS);
-}
-inline void CarControl::Actuators::Builder::setReserved12DEPRECATED(float value) {
-  _builder.setDataField<float>(
-      ::capnp::bounded<11>() * ::capnp::ELEMENTS, value);
-}
-
-inline bool CarControl::Actuators::Reader::getReserved13DEPRECATED() const {
-  return _reader.getDataField<bool>(
-      ::capnp::bounded<289>() * ::capnp::ELEMENTS);
-}
-
-inline bool CarControl::Actuators::Builder::getReserved13DEPRECATED() {
-  return _builder.getDataField<bool>(
-      ::capnp::bounded<289>() * ::capnp::ELEMENTS);
-}
-inline void CarControl::Actuators::Builder::setReserved13DEPRECATED(bool value) {
-  _builder.setDataField<bool>(
-      ::capnp::bounded<289>() * ::capnp::ELEMENTS, value);
-}
-
-inline  ::uint64_t CarControl::Actuators::Reader::getReserved14DEPRECATED() const {
-  return _reader.getDataField< ::uint64_t>(
-      ::capnp::bounded<6>() * ::capnp::ELEMENTS);
-}
-
-inline  ::uint64_t CarControl::Actuators::Builder::getReserved14DEPRECATED() {
-  return _builder.getDataField< ::uint64_t>(
-      ::capnp::bounded<6>() * ::capnp::ELEMENTS);
-}
-inline void CarControl::Actuators::Builder::setReserved14DEPRECATED( ::uint64_t value) {
-  _builder.setDataField< ::uint64_t>(
-      ::capnp::bounded<6>() * ::capnp::ELEMENTS, value);
-}
-
-inline bool CarControl::Actuators::Reader::getReserved15DEPRECATED() const {
-  return _reader.getDataField<bool>(
-      ::capnp::bounded<290>() * ::capnp::ELEMENTS);
-}
-
-inline bool CarControl::Actuators::Builder::getReserved15DEPRECATED() {
-  return _builder.getDataField<bool>(
-      ::capnp::bounded<290>() * ::capnp::ELEMENTS);
-}
-inline void CarControl::Actuators::Builder::setReserved15DEPRECATED(bool value) {
-  _builder.setDataField<bool>(
-      ::capnp::bounded<290>() * ::capnp::ELEMENTS, value);
 }
 
 inline bool CarControl::CruiseControl::Reader::getCancel() const {
@@ -8096,20 +7908,6 @@ inline bool CarParams::Builder::getSteerAtStandstill() {
 inline void CarParams::Builder::setSteerAtStandstill(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<999>() * ::capnp::ELEMENTS, value);
-}
-
-inline float CarParams::Reader::getLateralSmoothSeconds() const {
-  return _reader.getDataField<float>(
-      ::capnp::bounded<35>() * ::capnp::ELEMENTS);
-}
-
-inline float CarParams::Builder::getLateralSmoothSeconds() {
-  return _builder.getDataField<float>(
-      ::capnp::bounded<35>() * ::capnp::ELEMENTS);
-}
-inline void CarParams::Builder::setLateralSmoothSeconds(float value) {
-  _builder.setDataField<float>(
-      ::capnp::bounded<35>() * ::capnp::ELEMENTS, value);
 }
 
 inline  ::cereal::CarParams::SafetyModel CarParams::SafetyConfig::Reader::getSafetyModel() const {

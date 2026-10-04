@@ -3,7 +3,7 @@ from opendbc.car.disable_ecu import disable_ecu
 from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.subaru.carcontroller import CarController
 from opendbc.car.subaru.carstate import CarState
-from opendbc.car.subaru.values import CAR, CanBus, GLOBAL_ES_ADDR, SUBARU_STOP_START_CARS, SubaruFlags, SubaruSafetyFlags
+from opendbc.car.subaru.values import CAR, GLOBAL_ES_ADDR, SubaruFlags, SubaruSafetyFlags
 
 
 class CarInterface(CarInterfaceBase):
@@ -18,8 +18,8 @@ class CarInterface(CarInterfaceBase):
     # - replacement for ES_Distance so we can cancel the cruise control
     # - to find the Cruise_Activated bit from the car
     # - proper panda safety setup (use the correct cruise_activated bit, throttle from Throttle_Hybrid, etc)
-    ret.dashcamOnly = bool(ret.flags & (SubaruFlags.PREGLOBAL | SubaruFlags.HYBRID))
-    ret.autoResumeSng = not (ret.flags & SubaruFlags.GLOBAL_GEN2 or ret.flags & SubaruFlags.HYBRID)
+    ret.dashcamOnly = bool(ret.flags & (SubaruFlags.PREGLOBAL | SubaruFlags.LKAS_ANGLE | SubaruFlags.HYBRID))
+    ret.autoResumeSng = False
 
     # Detect infotainment message sent from the camera
     if not (ret.flags & SubaruFlags.PREGLOBAL) and 0x323 in fingerprint[2]:
@@ -29,21 +29,10 @@ class CarInterface(CarInterfaceBase):
       ret.enableBsm = 0x25c in fingerprint[0]
       ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.subaruPreglobal)]
     else:
-      bsm_bus = CanBus.main
-      ret.enableBsm = 0x228 in fingerprint[bsm_bus]
+      ret.enableBsm = 0x228 in fingerprint[0]
       ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.subaru)]
       if ret.flags & SubaruFlags.GLOBAL_GEN2:
         ret.safetyConfigs[0].safetyParam |= SubaruSafetyFlags.GEN2.value
-      if ret.flags & SubaruFlags.LKAS_ANGLE:
-        ret.safetyConfigs[0].safetyParam |= SubaruSafetyFlags.LKAS_ANGLE.value
-      if ret.flags & SubaruFlags.D_PLATFORM:
-        ret.safetyConfigs[0].safetyParam |= SubaruSafetyFlags.D_PLATFORM.value
-      if ret.flags & SubaruFlags.D_PLATFORM_CAMERA:
-        ret.safetyConfigs[0].safetyParam |= SubaruSafetyFlags.D_PLATFORM_CAMERA.value
-      if candidate in SUBARU_STOP_START_CARS:
-        ret.safetyConfigs[0].safetyParam |= SubaruSafetyFlags.STOP_START_BUTTON.value
-      if candidate in (CAR.SUBARU_LEGACY_2025, CAR.SUBARU_ASCENT_2023, CAR.SUBARU_OUTBACK_2023):
-        ret.safetyConfigs[0].safetyParam |= SubaruSafetyFlags.FIXED_ANGLE_LIMITS.value
 
     ret.steerLimitTimer = 0.4
     ret.steerActuatorDelay = 0.1
@@ -53,10 +42,8 @@ class CarInterface(CarInterfaceBase):
 
     if ret.flags & SubaruFlags.LKAS_ANGLE:
       ret.steerControlType = structs.CarParams.SteerControlType.angle
-      if candidate == CAR.SUBARU_OUTBACK_2023:
-        ret.lateralSmoothSeconds = 0.4
 
-    elif candidate in (CAR.SUBARU_ASCENT, CAR.SUBARU_ASCENT_2023):
+    elif candidate == CAR.SUBARU_ASCENT:
       ret.steerActuatorDelay = 0.3  # end-to-end angle controller
       ret.lateralTuning.init('pid')
       ret.lateralTuning.pid.kf = 0.00003
@@ -79,13 +66,13 @@ class CarInterface(CarInterfaceBase):
     elif candidate == CAR.SUBARU_CROSSTREK_HYBRID:
       ret.steerActuatorDelay = 0.1
 
-    elif candidate in (CAR.SUBARU_FORESTER, CAR.SUBARU_FORESTER_2022, CAR.SUBARU_FORESTER_HYBRID):
+    elif candidate in (CAR.SUBARU_FORESTER, CAR.SUBARU_FORESTER_HYBRID):
       ret.lateralTuning.init('pid')
       ret.lateralTuning.pid.kf = 0.000038
       ret.lateralTuning.pid.kiBP, ret.lateralTuning.pid.kpBP = [[0., 14., 23.], [0., 14., 23.]]
       ret.lateralTuning.pid.kpV, ret.lateralTuning.pid.kiV = [[0.01, 0.065, 0.2], [0.001, 0.015, 0.025]]
 
-    elif candidate in (CAR.SUBARU_OUTBACK, CAR.SUBARU_LEGACY, CAR.SUBARU_OUTBACK_2023):
+    elif candidate in (CAR.SUBARU_OUTBACK, CAR.SUBARU_LEGACY):
       ret.steerActuatorDelay = 0.1
 
     elif candidate in (CAR.SUBARU_FORESTER_PREGLOBAL, CAR.SUBARU_OUTBACK_PREGLOBAL_2018):
@@ -113,7 +100,17 @@ class CarInterface(CarInterfaceBase):
     return ret
 
   @staticmethod
-  def init(CP, can_recv, can_send, communication_control=None):
+  def _get_params_sp(stock_cp: structs.CarParams, ret: structs.CarParamsSP, candidate, fingerprint: dict[int, dict[int, int]],
+                     car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
+    stock_cp.dashcamOnly = bool(stock_cp.flags & (SubaruFlags.LKAS_ANGLE | SubaruFlags.HYBRID))
+
+    if not stock_cp.flags & (SubaruFlags.GLOBAL_GEN2 | SubaruFlags.HYBRID):
+      stock_cp.autoResumeSng = True
+
+    return ret
+
+  @staticmethod
+  def init(CP, CP_SP, can_recv, can_send, communication_control=None):
     if CP.flags & SubaruFlags.DISABLE_EYESIGHT:
       if communication_control is None:
         communication_control = bytes([uds.SERVICE_TYPE.COMMUNICATION_CONTROL, uds.CONTROL_TYPE.DISABLE_RX_DISABLE_TX, uds.MESSAGE_TYPE.NORMAL])

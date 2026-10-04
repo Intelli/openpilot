@@ -11,7 +11,8 @@ from examples.stable_diffusion import AutoencoderKL
 def set_eval_params():
   # override these as needed from cli
   for k,v in {"MODEL": "stable_diffusion", "GPUS": "8", "EVAL_SAMPLES": "600", "CONTEXT_BS": "816", "DENOISE_BS": "600", "DECODE_BS": "384",
-   "INCEPTION_BS": "560", "CLIP_BS": "240", "DATADIR": "/raid/datasets/stable_diffusion", "CKPTDIR": "/raid/weights/stable_diffusion"}.items():
+   "INCEPTION_BS": "560", "CLIP_BS": "240", "DATADIR": "/raid/datasets/stable_diffusion", "CKPTDIR": "/raid/weights/stable_diffusion",
+   "AMD_LLVM": "0"}.items():
     os.environ[k] = getenv(k, v)
 
 class TestEval(unittest.TestCase):
@@ -51,7 +52,7 @@ class TestEval(unittest.TestCase):
       vae = AutoencoderKL()
       for p in get_parameters(vae): p.to_(GPUS).realize()
       x = Tensor.zeros(48,4,64,64).contiguous().to(GPUS).realize()
-      x.uop = x.uop.unshard(0)
+      x.uop = x.uop.multi(0)
       for _ in range(2): vae_decode(x, vae)
 
 if __name__=="__main__":

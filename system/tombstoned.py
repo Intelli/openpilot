@@ -19,9 +19,6 @@ MAX_TOMBSTONE_FN_LEN = 62  # 85 - 23 ("<dongle id>/crash/")
 
 TOMBSTONE_DIR = "/data/tombstones/"
 APPORT_DIR = "/var/crash/"
-IGNORED_APPORT_EXECUTABLES = {
-  "/data/agnos-compat/bin/hal3_direct_widthfix",
-}
 
 
 def safe_fn(s):
@@ -47,27 +44,6 @@ def get_apport_stacktrace(fn):
     return "Timeout getting stacktrace"
 
 
-def get_apport_executable_path(fn: str) -> str:
-  try:
-    with open(fn) as f:
-      for line in f:
-        if line.startswith("ExecutablePath:"):
-          return line.strip().split(': ', 1)[-1]
-        if line.startswith("CoreDump"):
-          break
-  except OSError:
-    pass
-
-  return ""
-
-
-def remove_crashlog(fn: str) -> None:
-  try:
-    os.remove(fn)
-  except PermissionError:
-    pass
-
-
 def get_tombstones():
   """Returns list of (filename, ctime) for all crashlogs"""
   files = []
@@ -86,12 +62,6 @@ def report_tombstone_apport(fn):
   f_size = os.path.getsize(fn)
   if f_size > MAX_SIZE:
     cloudlog.error(f"Tombstone {fn} too big, {f_size}. Skipping...")
-    return
-
-  executable_path = get_apport_executable_path(fn)
-  if executable_path in IGNORED_APPORT_EXECUTABLES:
-    cloudlog.warning(f"Ignoring known agnos-compat tombstone: {executable_path}")
-    remove_crashlog(fn)
     return
 
   message = ""  # One line description of the crash
@@ -164,7 +134,10 @@ def report_tombstone_apport(fn):
   # Files could be on different filesystems, copy, then delete
   shutil.copy(fn, os.path.join(crashlog_dir, new_fn))
 
-  remove_crashlog(fn)
+  try:
+    os.remove(fn)
+  except PermissionError:
+    pass
 
 
 def main() -> NoReturn:

@@ -14,7 +14,7 @@ git fetch --no-tags origin \
 build_sha="$(git rev-parse origin/ev9-prebuilt)"
 source_sha="$(git log -1 --format=%B "$build_sha" | git interpret-trailers --parse | sed -n 's/^Source-Commit: //p')"
 if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
-  echo 'ev9-prebuilt has no valid Source-Commit trailer; publish a StarPilot build first.' >&2
+  echo 'ev9-prebuilt has no valid Source-Commit trailer; publish a Sunnypilot build first.' >&2
   exit 1
 fi
 git cat-file -e "$source_sha^{commit}"
@@ -41,7 +41,7 @@ export GIT_AUTHOR_EMAIL="${SYNC_AUTHOR_EMAIL:-github-actions[bot]@users.noreply.
 export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
 export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
 new_commit="$(git commit-tree "$build_tree" -p "$prod_sha" \
-  -m "deploy: StarPilot build @ ${source_sha:0:12}" \
+  -m "deploy: Sunnypilot build @ ${source_sha:0:12}" \
   -m "Source-Commit: $source_sha
 Build-Commit: $build_sha")"
 git push origin "$new_commit:refs/heads/ev9"

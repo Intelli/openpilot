@@ -4,6 +4,7 @@ from opendbc.car.rivian.carcontroller import CarController
 from opendbc.car.rivian.carstate import CarState
 from opendbc.car.rivian.radar_interface import RadarInterface
 from opendbc.car.rivian.values import RivianFlags, RivianSafetyFlags
+from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 
 class CarInterface(CarInterfaceBase):
@@ -12,57 +13,45 @@ class CarInterface(CarInterfaceBase):
   RadarInterface = RadarInterface
 
   @staticmethod
-  def _apply_angle_caps(ret: structs.CarParams) -> None:
-    """Enable capabilities that are safe only with the xnor Extreme angle box."""
-    ret.flags |= RivianFlags.ANGLE_HARNESS.value
-    ret.safetyConfigs[0].safetyParam |= RivianSafetyFlags.ANGLE_CONTROL.value
-    ret.steerActuatorDelay = 0.1
-    ret.lateralSmoothSeconds = 0.4
-    ret.steerAtStandstill = True
-
-  @staticmethod
   def _get_params(ret: structs.CarParams, candidate, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
     ret.brand = "rivian"
 
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.rivian)]
 
-    # Gen 2 (2025+) does not publish SCCM_WheelTouch on the powertrain bus.
+    # GEN2 (2025+) doesn't have SCCM_WheelTouch on the bus
     if 0x321 not in fingerprint[0]:
       ret.flags |= RivianFlags.GEN2.value
 
-    angle_harness = 0x1310 in fingerprint[1]
-    longitudinal_harness = 0x131A in fingerprint[1]
-
-    if angle_harness:
-      CarInterface._apply_angle_caps(ret)
-
-    if longitudinal_harness:
-      ret.flags |= RivianFlags.LONGITUDINAL_HARNESS.value
-
-    # A base comma harness and the xnor longitudinal harness are valid torque
-    # configurations. Angle-only caps remain gated to the detected Extreme box.
-    if not angle_harness:
-      ret.steerActuatorDelay = 0.15
-      ret.lateralSmoothSeconds = 0.0
-      ret.steerAtStandstill = False
+    ret.steerActuatorDelay = 0.15
     ret.steerLimitTimer = 0.4
     CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
     ret.steerControlType = structs.CarParams.SteerControlType.torque
-    ret.radarUnavailable = not longitudinal_harness
-    ret.enableBsm = longitudinal_harness
+    ret.radarUnavailable = True
 
-    ret.alphaLongitudinalAvailable = longitudinal_harness
-    if alpha_long and ret.alphaLongitudinalAvailable:
+    # TODO: pending finding/handling missing set speed
+    ret.alphaLongitudinalAvailable = False
+    if alpha_long:
       ret.openpilotLongitudinalControl = True
       ret.safetyConfigs[0].safetyParam |= RivianSafetyFlags.LONG_CONTROL.value
 
-    # AdventurePilot road data measured roughly 0.26-0.38 s command-to-aEgo
-    # lag. 0.3 s puts the planner near the center of the observed plant delay.
-    ret.longitudinalActuatorDelay = 0.3
+    ret.longitudinalActuatorDelay = 0.35
     ret.vEgoStopping = 0.25
-    ret.stopAccel = -0.2
-    ret.longitudinalTuning.kiBP = [0.]
-    ret.longitudinalTuning.kiV = [0.2]
+    ret.stopAccel = 0
+
+    return ret
+
+  @staticmethod
+  def _get_params_sp(stock_cp: structs.CarParams, ret: structs.CarParamsSP, candidate, fingerprint: dict[int, dict[int, int]],
+                     car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
+    if 0x131a in fingerprint[1]:
+      ret.flags |= RivianFlagsSP.LONGITUDINAL_HARNESS_UPGRADE.value
+      stock_cp.radarUnavailable = False
+      stock_cp.enableBsm = True
+      stock_cp.alphaLongitudinalAvailable = True
+
+    if alpha_long and stock_cp.alphaLongitudinalAvailable:
+      stock_cp.openpilotLongitudinalControl = True
+      stock_cp.safetyConfigs[0].safetyParam |= RivianSafetyFlags.LONG_CONTROL.value
 
     return ret

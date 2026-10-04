@@ -1,12 +1,12 @@
 from opendbc.car import structs
 from opendbc.car.crc import CRC8J1850
-from opendbc.car.chrysler.values import RAM_CARS
+from opendbc.car.chrysler.values import CUSW_CARS, RAM_CARS
 
 GearShifter = structs.CarState.GearShifter
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 
 
-def create_lkas_hud(packer, CP, lkas_active, hud_alert, hud_count, car_model, auto_high_beam):
+def create_lkas_hud(packer, CP, lkas_active, hud_alert, hud_count, car_model, auto_high_beam, mads):
   # LKAS_HUD - Controls what lane-keeping icon is displayed
 
   # == Color ==
@@ -29,7 +29,10 @@ def create_lkas_hud(packer, CP, lkas_active, hud_alert, hud_count, car_model, au
   # 7 Normal
   # 6 lane departure place hands on wheel
 
-  color = 2 if lkas_active else 1
+  if mads.enable_mads:
+    color = 2 if lkas_active else 1 if mads.paused else 0
+  else:
+    color = 2 if lkas_active else 1
   lines = 3 if lkas_active else 0
   alerts = 7 if lkas_active else 0
 
@@ -45,7 +48,7 @@ def create_lkas_hud(packer, CP, lkas_active, hud_alert, hud_count, car_model, au
     "LKAS_ICON_COLOR": color,
     "CAR_MODEL": car_model,
     "LKAS_LANE_LINES": lines,
-    "LKAS_ALERTS": alerts,
+    "LKAS_ALERTS": alerts if CP.carFingerprint not in CUSW_CARS else 0,  # TODO: HUD behavior not yet understood for CUSW
   }
 
   if CP.carFingerprint in RAM_CARS:
@@ -64,28 +67,15 @@ def create_lkas_command(packer, CP, apply_torque, lkas_control_bit):
   return packer.make_can_msg("LKAS_COMMAND", 0, values)
 
 
-def create_cruise_buttons(packer, frame, bus, button_message, cancel=False, resume=False):
+def create_cruise_buttons(packer, frame, bus, cancel=False, resume=False, accel=False, decel=False):
   values = {
     "ACC_Cancel": cancel,
     "ACC_Resume": resume,
+    "ACC_Accel": accel,
+    "ACC_Decel": decel,
     "COUNTER": frame % 0x10,
   }
-  return packer.make_can_msg(button_message, bus, values)
-
-
-def create_das_3_command(packer, counter_offset, brake_decel, das_3):
-  values = das_3.copy()
-  values["ACC_AVAILABLE"] = 1
-  values["ACC_ACTIVE"] = 1
-  values["ACC_GO"] = 0
-  values["ACC_STANDSTILL"] = 0
-  values["ACC_DECEL_REQ"] = 1
-  values["ACC_DECEL"] = brake_decel
-  values["ACC_BRK_PREP"] = 0
-  values["ENGINE_TORQUE_REQUEST_MAX"] = 0
-  values["GR_MAX_REQ"] = 2
-  values["COUNTER"] = (das_3["COUNTER"] + counter_offset) % 0x10
-  return packer.make_can_msg("DAS_3", 0, values)
+  return packer.make_can_msg("CRUISE_BUTTONS", bus, values)
 
 
 def chrysler_checksum(address: int, sig, d: bytearray) -> int:

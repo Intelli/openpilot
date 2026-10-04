@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 
-from opendbc import DBC_PATH
+from opendbc import DBC_PATH, get_generated_dbcs
 
 # TODO: these should just be passed in along with the DBC file
 from opendbc.car.honda.hondacan import honda_checksum
@@ -13,7 +13,7 @@ from opendbc.car.subaru.subarucan import subaru_checksum
 from opendbc.car.chrysler.chryslercan import chrysler_checksum, fca_giorgio_checksum
 from opendbc.car.hyundai.hyundaicanfd import hkg_can_fd_checksum
 from opendbc.car.volkswagen.mlbcan import volkswagen_mlb_checksum
-from opendbc.car.volkswagen.mqbcan import volkswagen_meb_alt_crc_checksum, volkswagen_mqb_meb_checksum, xor_checksum
+from opendbc.car.volkswagen.mqbcan import volkswagen_mqb_meb_checksum, xor_checksum
 from opendbc.car.tesla.teslacan import tesla_checksum
 from opendbc.car.body.bodycan import body_checksum
 from opendbc.car.psa.psacan import psa_checksum
@@ -34,7 +34,6 @@ class SignalType:
   TESLA_CHECKSUM = 11
   PSA_CHECKSUM = 12
   VOLKSWAGEN_MLB_CHECKSUM = 13
-  PEDAL_CHECKSUM = 14
 
 
 @dataclass
@@ -78,16 +77,29 @@ VAL_SPLIT_RE = re.compile(r'["]+')
 @cache
 class DBC:
   def __init__(self, name: str):
-    dbc_path = name
-    if not os.path.exists(dbc_path):
+    if os.path.exists(name):
+      self._parse_file(name)
+    else:
       dbc_path = os.path.join(DBC_PATH, name + ".dbc")
+      if content := get_generated_dbcs().get(name):
+        self._parse_content(name, content)
+      elif os.path.exists(dbc_path):
+        self._parse_file(dbc_path)
+      else:
+        raise FileNotFoundError(f"DBC not found: {name}")
 
-    self._parse(dbc_path)
-
-  def _parse(self, path: str):
+  def _parse_file(self, path: str):
     self.name = os.path.basename(path).replace(".dbc", "")
     with open(path) as f:
       lines = f.readlines()
+    self._parse_lines(lines)
+
+  def _parse_content(self, name: str, content: str):
+    self.name = name
+    lines = content.splitlines(keepends=True)
+    self._parse_lines(lines)
+
+  def _parse_lines(self, lines: list[str]):
 
     checksum_state = get_checksum_state(self.name)
     be_bits = [j + i * 8 for i in range(64) for j in range(7, -1, -1)]
@@ -163,20 +175,6 @@ def tesla_setup_signal(sig: Signal, dbc_name: str, line_num: int) -> None:
     sig.calc_checksum = tesla_checksum
 
 
-def pedal_checksum(address: int, sig: Signal, d: bytearray) -> int:
-  # CRC8 over payload excluding CHECKSUM_PEDAL byte (last byte), matches legacy parser behavior.
-  crc = 0xFF
-  poly = 0xD5
-  for i in range(len(d) - 2, -1, -1):
-    crc ^= d[i]
-    for _ in range(8):
-      if (crc & 0x80) != 0:
-        crc = ((crc << 1) ^ poly) & 0xFF
-      else:
-        crc = (crc << 1) & 0xFF
-  return crc
-
-
 @dataclass
 class ChecksumState:
   checksum_size: int
@@ -194,10 +192,8 @@ def get_checksum_state(dbc_name: str) -> ChecksumState | None:
     return ChecksumState(4, 2, 3, 5, False, SignalType.HONDA_CHECKSUM, honda_checksum)
   elif dbc_name.startswith(("toyota_", "lexus_")):
     return ChecksumState(8, -1, 7, -1, False, SignalType.TOYOTA_CHECKSUM, toyota_checksum)
-  elif dbc_name.startswith(("hyundai_canfd_generated", "hyundai_radar_210_21f_generated")):
+  elif dbc_name.startswith("hyundai_canfd_generated"):
     return ChecksumState(16, -1, 0, -1, True, SignalType.HKG_CAN_FD_CHECKSUM, hkg_can_fd_checksum)
-  elif dbc_name.startswith("vw_meb_2024"):
-    return ChecksumState(8, 4, 0, 0, True, SignalType.VOLKSWAGEN_MQB_MEB_CHECKSUM, volkswagen_meb_alt_crc_checksum)
   elif dbc_name.startswith(("vw_mqb", "vw_mqbevo", "vw_meb")):
     return ChecksumState(8, 4, 0, 0, True, SignalType.VOLKSWAGEN_MQB_MEB_CHECKSUM, volkswagen_mqb_meb_checksum)
   elif dbc_name.startswith("vw_mlb"):
@@ -207,7 +203,7 @@ def get_checksum_state(dbc_name: str) -> ChecksumState | None:
   elif dbc_name.startswith("subaru_global_"):
     return ChecksumState(8, -1, 0, -1, True, SignalType.SUBARU_CHECKSUM, subaru_checksum)
   elif dbc_name.startswith("chrysler_"):
-    return ChecksumState(8, -1, 7, -1, False, SignalType.CHRYSLER_CHECKSUM, chrysler_checksum)
+    return ChecksumState(8, 4, 7, -1, False, SignalType.CHRYSLER_CHECKSUM, chrysler_checksum)
   elif dbc_name.startswith("fca_giorgio"):
     return ChecksumState(8, -1, 7, -1, False, SignalType.FCA_GIORGIO_CHECKSUM, fca_giorgio_checksum)
   elif dbc_name.startswith("comma_body"):
@@ -229,14 +225,3 @@ def set_signal_type(sig: Signal, chk: ChecksumState | None, dbc_name: str, line_
       sig.calc_checksum = chk.calc_checksum
     elif sig.name == "COUNTER":
       sig.type = SignalType.COUNTER
-
-  # Legacy interceptor support parity: these names are used on GAS_SENSOR / GAS_COMMAND.
-  if sig.name == "CHECKSUM_PEDAL":
-    if sig.size != 8:
-      raise RuntimeError(f"CHECKSUM_PEDAL not 8 bits long in {dbc_name}:{line_num}")
-    sig.type = SignalType.PEDAL_CHECKSUM
-    sig.calc_checksum = pedal_checksum
-  elif sig.name == "COUNTER_PEDAL":
-    if sig.size != 4:
-      raise RuntimeError(f"COUNTER_PEDAL not 4 bits long in {dbc_name}:{line_num}")
-    sig.type = SignalType.COUNTER

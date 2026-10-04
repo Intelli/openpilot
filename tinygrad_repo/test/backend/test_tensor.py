@@ -1,12 +1,12 @@
 import numpy as np
 import torch
 import unittest, copy, mmap, random, math, array
-from tinygrad import Tensor, Device, dtypes, nn, Context
+from tinygrad import Tensor, Device, dtypes, nn
 from tinygrad.helpers import getenv, temp, mv_address
 from extra.gradcheck import numerical_jacobian, jacobian, gradcheck
 from hypothesis import given, settings, strategies as strat
+from tinygrad.device import is_dtype_supported
 from tinygrad.dtype import DTYPES_DICT
-from tinygrad.uop.ops import UOp
 
 settings.register_profile("my_profile", max_examples=200, deadline=None, derandomize=getenv("DERANDOMIZE_CI", False))
 settings.load_profile("my_profile")
@@ -23,19 +23,6 @@ class TestTinygrad(unittest.TestCase):
     self.assertEqual(Tensor(55).shape, ())
     self.assertEqual(Tensor(3.14).shape, ())
 
-  def test_deviceless_const_construct_device_repr(self):
-    t = Tensor(UOp.const(2.0).cast(dtypes.float))
-    self.assertIsNone(t.uop.device)
-    self.assertIsNone(t.device)
-    self.assertIn("<UOp None", repr(t))
-
-  def test_deviceless_const_realize_noop(self):
-    t = Tensor(UOp.const(2.0).cast(dtypes.float))
-    uop = t.uop
-    t.realize()
-    self.assertIs(t.uop, uop)
-    self.assertIsNone(t.uop.device)
-
   def test_plus_equals(self):
     a = Tensor.randn(10,10)
     b = Tensor.randn(10,10)
@@ -47,8 +34,8 @@ class TestTinygrad(unittest.TestCase):
 
   def test_backward_pass(self):
     def test_tinygrad():
-      x = Tensor(x_init)
-      W = Tensor(W_init)
+      x = Tensor(x_init, requires_grad=True)
+      W = Tensor(W_init, requires_grad=True)
       m = Tensor(m_init)
       out = x.dot(W).relu()
       out = out.log_softmax()
@@ -71,8 +58,8 @@ class TestTinygrad(unittest.TestCase):
 
   # A simple test is to check that we can accumulate gradients (run backward twice or more times)
   def test_accumulate_gradients(self):
-    x = Tensor(x_init)
-    W = Tensor(W_init)
+    x = Tensor(x_init, requires_grad=True)
+    W = Tensor(W_init, requires_grad=True)
     m = Tensor(m_init)
     out = x.dot(W).relu()
     out = out.log_softmax()
@@ -98,10 +85,10 @@ class TestTinygrad(unittest.TestCase):
       return second_derivative.numpy()
 
     def test_tinygrad():
-      x_val = Tensor([2.0])
+      x_val = Tensor(2.0)
       f = x_val**3
-      first_derivative = f.sum().gradient(x_val)[0]
-      second_derivative = first_derivative.sum().gradient(x_val)[0]
+      first_derivative = f.gradient(x_val)[0]
+      second_derivative = first_derivative.gradient(x_val)[0]
       return second_derivative.numpy()
 
     np.testing.assert_allclose(test_tinygrad(), test_pytorch(), atol=1e-5)
@@ -109,8 +96,8 @@ class TestTinygrad(unittest.TestCase):
   # passing `gradient` to backward
   def test_backward_pass_vjp(self):
     def test_tinygrad():
-      x = Tensor(x_init)
-      W = Tensor(W_init)
+      x = Tensor(x_init, requires_grad=True)
+      W = Tensor(W_init, requires_grad=True)
       m = Tensor(m_init)
       out = x.dot(W).relu()
       out = out.log_softmax()
@@ -133,9 +120,9 @@ class TestTinygrad(unittest.TestCase):
 
   def test_backward_pass_diamond_model(self):
     def test_tinygrad():
-      u = Tensor(U_init)
-      v = Tensor(V_init)
-      w = Tensor(W_init)
+      u = Tensor(U_init, requires_grad=True)
+      v = Tensor(V_init, requires_grad=True)
+      w = Tensor(W_init, requires_grad=True)
       x = u.mul(v).relu()
       y = u.mul(w).relu()
       out = x.add(y).mul(y).relu()
@@ -170,8 +157,8 @@ class TestTinygrad(unittest.TestCase):
       return w1.grad, w2.grad
 
     def test_tinygrad():
-      w1 = Tensor(init).clone()
-      w2 = Tensor(init).clone()
+      w1 = Tensor(init, requires_grad=True)
+      w2 = Tensor(init, requires_grad=True)
       out = w1.add(w2)
       out.backward()
       return w1.grad.numpy(), w2.grad.numpy()
@@ -190,11 +177,12 @@ class TestTinygrad(unittest.TestCase):
       return w1.grad.numpy(), w2.grad.numpy()
 
     def test_tinygrad():
-      w1 = Tensor(init).clone()
-      w2 = Tensor(init).clone()
-      assert w1.is_param is True and w2.is_param is True
+      w1 = Tensor(init)
+      w2 = Tensor(init)
+      assert w1.requires_grad is None and w2.requires_grad is None
+      # optimizer sets requires_grad=True for params with requires_grad=None
       nn.optim.SGD([w1, w2], lr=0.01)
-      assert w1.is_param is True and w2.is_param is True
+      assert w1.requires_grad is True and w2.requires_grad is True
       out = w1.add(w2)
       out.backward()
       return w1.grad.numpy(), w2.grad.numpy()
@@ -202,8 +190,23 @@ class TestTinygrad(unittest.TestCase):
     for x, y in zip(test_tinygrad(), test_pytorch()):
       np.testing.assert_allclose(x, y, atol=1e-5)
 
+  def test_nograd(self):
+    x = Tensor(x_init, requires_grad=False)
+    m = Tensor(m_init, requires_grad=False)
+    W = Tensor(W_init, requires_grad=True)
+    tmp = x.mul(m)
+    mm = tmp.matmul(W)
+    out = mm.relu()
+    out = out.sum()
+    out.backward()
+    assert x.grad is None
+    assert m.grad is None
+    assert tmp.grad is None
+    assert mm.grad is not None
+    assert W.grad is not None
+
   def test_dropout(self):
-    with Context(TRAINING=1):
+    with Tensor.train():
       n, rate = 1_000_000, 0.1
       w = Tensor.ones(n).dropout(rate)
       non_zeros = np.count_nonzero(w.numpy())
@@ -219,8 +222,8 @@ class TestTinygrad(unittest.TestCase):
     def torch_func(x): return torch.nn.functional.log_softmax(x.matmul(torch_W).relu(), dim=1)
     PJ = torch.autograd.functional.jacobian(torch_func, torch_x).squeeze().numpy()
 
-    tiny_x = Tensor(x)
-    tiny_W = Tensor(W)
+    tiny_x = Tensor(x, requires_grad=True)
+    tiny_W = Tensor(W, requires_grad=True)
     def tiny_func(x): return x.dot(tiny_W).relu().log_softmax()
     J = jacobian(tiny_func, tiny_x)
     NJ = numerical_jacobian(tiny_func, tiny_x)
@@ -232,8 +235,8 @@ class TestTinygrad(unittest.TestCase):
     W = np.random.RandomState(1337).random((10, 5)).astype(np.float32)
     x = np.random.RandomState(7331).random((1, 10)).astype(np.float32)
 
-    tiny_x = Tensor(x)
-    tiny_W = Tensor(W)
+    tiny_x = Tensor(x, requires_grad=True)
+    tiny_W = Tensor(W, requires_grad=True)
     def tiny_func(x): return x.dot(tiny_W).relu().log_softmax()
 
     self.assertTrue(gradcheck(tiny_func, tiny_x, eps = 1e-3))
@@ -253,12 +256,9 @@ class TestTinygrad(unittest.TestCase):
   def test_randperm(self):
     Tensor.manual_seed(0)
     a = Tensor.randperm(10).realize()
-    np.testing.assert_equal(a.numpy(), [8, 9, 4, 3, 6, 1, 7, 5, 2, 0])
+    np.testing.assert_equal(a.numpy(), [5, 2, 8, 1, 3, 7, 9, 6, 0, 4])
     b = Tensor.randperm(1000).realize()
     np.testing.assert_equal(set(b.numpy()), set(range(1000)))
-
-  def test_rand_rejects_unknown_kwargs(self):
-    with self.assertRaises(TypeError): Tensor.rand(5, generator="foo")
 
   def test_randn_isnt_inf_on_zero(self):
     # simulate failure case of rand handing a zero to randn
@@ -352,7 +352,7 @@ class TestTinygrad(unittest.TestCase):
       assert dtype.itemsize == Tensor.randn(3, dtype=dtype).element_size(), f"Tensor.element_size() not matching Tensor.dtype.itemsize for {dtype}"
 
   def test_deepwalk_ctx_check(self):
-    layer = Tensor.uniform(1, 1)
+    layer = Tensor.uniform(1, 1, requires_grad=True)
     x = Tensor.randn(1, 1, 1)
     x.dot(layer).mean().backward()
     x = Tensor.randn(1, 1, 1)
@@ -449,7 +449,7 @@ class TestTinygrad(unittest.TestCase):
     np.testing.assert_equal(Tensor(data, dtype=dtypes.float).numpy(), torch.tensor(data, dtype=torch.float).numpy())
 
   def test_tensor_list_special_values(self):
-    if dtypes.float16 in Device[Device.DEFAULT].renderer.supported_dtypes():
+    if is_dtype_supported(dtypes.float16):
       data = [math.nan, -math.inf, 65504, 65519, 65519.999, 65520, 65520.1]
       data = data + [-x for x in data]
       with np.errstate(over='ignore'): np.testing.assert_allclose(Tensor(data, dtype=dtypes.float16).numpy(), np.array(data).astype(np.float16))
@@ -464,7 +464,6 @@ class TestTinygrad(unittest.TestCase):
     data = data + [-x for x in data]
     np.testing.assert_allclose(Tensor(data, dtype=dtypes.int32).numpy(), np.array(data).astype(np.int32))
 
-  @unittest.skip("list elements are python scalars: numpy values in a list have no inferred dtype, use Tensor(np.array(data))")
   def test_tensor_list_ndarray(self):
     data = [np.array([1, 2, 3]), np.array([1, 2, 3]), np.array([1, 2, 3])]
     np.testing.assert_equal(Tensor(data).numpy(), np.array(data))
@@ -493,17 +492,6 @@ class TestTinygrad(unittest.TestCase):
     a = t[10:20]
     dev = a.to(Device.DEFAULT)
     np.testing.assert_allclose(a.numpy(), dev.numpy())
-
-  def test_copy_from_numpy_dtype(self):
-    data = np.array([1.0, 2, 3], dtype=np.float32)
-    t = Tensor(data, dtype=dtypes.bfloat16)
-    try:
-      # TODO: fix dtype in tinygrad space
-      assert t.dtype == dtypes.bfloat16
-    except AssertionError:
-      assert t.dtype == dtypes.float32
-    np.testing.assert_equal(t.tolist(), data)
-    np.testing.assert_equal((t+1).tolist(), data+1)
 
   # Regression test for https://github.com/tinygrad/tinygrad/issues/1751
   def test_copy_from_numpy_unaligned(self):
@@ -539,7 +527,7 @@ class TestTinygrad(unittest.TestCase):
       _a = Tensor([3]) in [Tensor([3]), Tensor([4]), Tensor([5])]
 
   def test_repr_with_grad(self):
-    a = Tensor([1.0])
+    a = Tensor([1.0], requires_grad=True)
     b = Tensor([1])
     c = (a + b).sum().backward()
     print(a)
@@ -552,7 +540,7 @@ class TestTinygrad(unittest.TestCase):
       Tensor.zeros(2, 2).realize()
 
   def test_shrink(self):
-    t = Tensor.arange(32).clone().realize()
+    t = Tensor.arange(32).contiguous().realize()
     self.assertListEqual(t[16:20].tolist(), [16,17,18,19])
     self.assertListEqual(t.shrink_to(16).tolist(), list(range(16)))
     t = t.reshape(4, 8).contiguous().realize()
@@ -565,26 +553,26 @@ class TestTinygrad(unittest.TestCase):
 class TestMoveTensor(unittest.TestCase):
   d0, d1 = f"{Device.DEFAULT}:0", f"{Device.DEFAULT}:1"
   @given(strat.sampled_from([d0, d1]), strat.sampled_from([d0, d1]),
-         strat.sampled_from([dtypes.float16, dtypes.float32]), strat.sampled_from([True, False]))
-  def test_to_preserves(self, src, dest, dtype, is_param):
-    if dtype not in Device[Device.DEFAULT].renderer.supported_dtypes():
+         strat.sampled_from([dtypes.float16, dtypes.float32]), strat.sampled_from([True, False, None]))
+  def test_to_preserves(self, src, dest, dtype, requires_grad):
+    if not is_dtype_supported(dtype):
       return
-    s = Tensor([1, 2, 3], device=src, dtype=dtype).is_param_(is_param)
-    if is_param: s.sum().backward()
+    s = Tensor([1, 2, 3], device=src, dtype=dtype, requires_grad=requires_grad)
+    if requires_grad: s.sum().backward()
     t = s.to(dest)
     np.testing.assert_equal(s.numpy(), t.numpy())
     assert s.dtype == t.dtype
-    assert s.is_param == t.is_param
-    if is_param:
+    assert s.requires_grad == t.requires_grad
+    if requires_grad:
       np.testing.assert_equal(s.grad.numpy(), t.grad.numpy())
 
-  @given(strat.sampled_from([dtypes.float16, dtypes.float32]), strat.sampled_from([True, False]))
-  def test_shard_preserves(self, dtype, is_param):
-    s = Tensor([1, 2, 3], dtype=dtype).is_param_(is_param)
+  @given(strat.sampled_from([dtypes.float16, dtypes.float32]), strat.sampled_from([True, False, None]))
+  def test_shard_preserves(self, dtype, requires_grad):
+    s = Tensor([1, 2, 3], dtype=dtype, requires_grad=requires_grad)
     t = s.shard((f"{Device.DEFAULT}:0", f"{Device.DEFAULT}:1"))
     np.testing.assert_equal(s.numpy(), t.numpy())
     assert s.dtype == t.dtype
-    assert s.is_param == t.is_param
+    assert s.requires_grad == t.requires_grad
 
   @given(strat.sampled_from([d0, d1]))
   def test_same_dev(self, dev):
@@ -593,8 +581,8 @@ class TestMoveTensor(unittest.TestCase):
     assert x is y
 
   def test_to_grad(self):
-    x = Tensor.eye(3).clone(self.d0)
-    y = Tensor([[2.0,0,-2.0]], device=self.d0)
+    x = Tensor.eye(3, requires_grad=True, device=self.d0)
+    y = Tensor([[2.0,0,-2.0]], requires_grad=True, device=self.d0)
     z = y.matmul(x).to(self.d1).sum()
     z.backward()
     np.testing.assert_equal(x.grad.numpy(), [[2,2,2],[0,0,0],[-2,-2,-2]])
@@ -653,18 +641,8 @@ class TestZeroShapeTensor(unittest.TestCase):
     np.testing.assert_equal(Tensor([[1, 2]]).pad_to(2, 3).numpy(), [[1, 2, 0], [0, 0, 0]])
     np.testing.assert_equal(Tensor([[1, 2]]).pad_to(1, 3).numpy(), [[1, 2, 0]])
     np.testing.assert_equal(Tensor([[1, 2]]).pad_to(None, 3).numpy(), [[1, 2, 0]])
-    np.testing.assert_equal(Tensor([1, 2]).pad_to(4, value=2).numpy(), [1, 2, 2, 2])
-    np.testing.assert_equal(Tensor([[1, 2]]).pad_to(2, 3, value=-1).numpy(), [[1, 2, -1], [-1, -1, -1]])
-    np.testing.assert_equal(Tensor([1, 2]).pad_to(None, value=5).numpy(), [1, 2])  # no-op pad ignores the fill
     with self.assertRaises(ValueError): Tensor([1, 2]).pad_to(2, 3)
     with self.assertRaises(ValueError): Tensor([[1, 2]]).pad_to(3)
-
-  def test_max_shape(self):
-    from tinygrad import UOp
-    t = Tensor.empty(2, UOp.variable('v', 1, 32), 4)
-    self.assertEqual(t.max_shape, (2, 32, 4))
-    self.assertEqual(t.max_numel(), 2*32*4)
-    self.assertEqual(Tensor.empty(2, 3).max_shape, (2, 3))
 
   def test_shrink_into_zero(self):
     t = Tensor.rand(3, 4).realize()
@@ -737,14 +715,6 @@ class TestZeroShapeTensor(unittest.TestCase):
     np.testing.assert_allclose(a.numpy(), b.numpy())
     self.assertIsNot(a.uop.base.buffer, b.uop.base.buffer)
 
-  def test_clone_deviceless_const(self):
-    t = Tensor(UOp.const(2.0).cast(dtypes.float)).clone()
-    np.testing.assert_equal(t.numpy(), 2.0)
-    self.assertTrue(t.uop.has_buffer_identity())
-
-  def test_numpy_deviceless_const(self):
-    np.testing.assert_equal(Tensor(UOp.const(2.0).cast(dtypes.float)).numpy(), 2.0)
-
   def test_clone_with_shrink(self):
     a = Tensor.rand(16, 16)
     b = a.shrink(((2, 10), None)).clone()
@@ -758,17 +728,12 @@ class TestZeroShapeTensor(unittest.TestCase):
     self.assertIsNot(a.uop.base.buffer, b.uop.base.buffer)
 
   def test_clone_with_grad(self):
-    a = Tensor.rand(16, 16)
+    a = Tensor.rand(16, 16, requires_grad=True)
     a.mul(5.0).add(5.0).mean().backward()
     b = a.clone()
     assert a.grad is not None
     assert b.grad is not None
     np.testing.assert_allclose(a.grad.numpy(), b.grad.numpy())
-
-  def test_clone_deviceless_const_to_cpu(self):
-    t = Tensor(UOp.const(2.0).cast(dtypes.float)).clone(device="CPU")
-    self.assertEqual(t.device, "CPU")
-    np.testing.assert_equal(t.numpy(), 2.0)
 
   def test_reduce_default(self):
     np.testing.assert_equal(Tensor([]).max().numpy(), -float("inf"))

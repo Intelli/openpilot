@@ -1,6 +1,6 @@
 import numpy as np
 from tinygrad.tensor import Tensor
-from tinygrad.helpers import trange, Context
+from tinygrad.helpers import CI, trange
 from tinygrad.engine.jit import TinyJit
 
 
@@ -22,11 +22,11 @@ def train(model, X_train, Y_train, optim, steps, BS=128, lossfn=lambda out,y: ou
 
   if allow_jit: train_step = TinyJit(train_step)
 
-  with Context(TRAINING=1):
+  with Tensor.train():
     losses, accuracies = [], []
-    for i in (t := trange(steps, disable=None)):
+    for i in (t := trange(steps, disable=CI)):
       samp = np.random.randint(0, X_train.shape[0], size=(BS))
-      x = Tensor(transform(X_train[samp]))
+      x = Tensor(transform(X_train[samp]), requires_grad=False)
       y = Tensor(target_transform(Y_train[samp]))
       loss, accuracy = train_step(x, y)
       # printing
@@ -40,10 +40,10 @@ def train(model, X_train, Y_train, optim, steps, BS=128, lossfn=lambda out,y: ou
 
 def evaluate(model, X_test, Y_test, num_classes=None, BS=128, return_predict=False, transform=lambda x: x,
              target_transform=lambda y: y):
-  @Context(TRAINING=0)
+  Tensor.training = False
   def numpy_eval(Y_test, num_classes):
     Y_test_preds_out = np.zeros(list(Y_test.shape)+[num_classes])
-    for i in trange((len(Y_test)-1)//BS+1, disable=None):
+    for i in trange((len(Y_test)-1)//BS+1, disable=CI):
       x = Tensor(transform(X_test[i*BS:(i+1)*BS]))
       out = model.forward(x) if hasattr(model, 'forward') else model(x)
       Y_test_preds_out[i*BS:(i+1)*BS] = out.numpy()
@@ -55,3 +55,4 @@ def evaluate(model, X_test, Y_test, num_classes=None, BS=128, return_predict=Fal
   acc, Y_test_pred = numpy_eval(Y_test, num_classes)
   print("test set accuracy is %f" % acc)
   return (acc, Y_test_pred) if return_predict else acc
+

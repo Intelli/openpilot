@@ -1,4 +1,4 @@
-#include "can_common_declarations.h"
+#include "board/drivers/drivers.h"
 
 uint32_t safety_tx_blocked = 0;
 uint32_t safety_rx_invalid = 0;
@@ -7,15 +7,9 @@ uint32_t rx_buffer_overflow = 0;
 
 can_health_t can_health[PANDA_CAN_CNT] = {{0}, {0}, {0}};
 
-bool wake_on_can = false;
-uint32_t wake_on_can_cnt = 0U;
-
+// Ignition detected from CAN meessages
 bool ignition_can = false;
 uint32_t ignition_can_cnt = 0U;
-#ifdef PANDA_HKG_REMOTE_START
-bool hkg_remote_climate_wake = false;
-uint32_t hkg_remote_climate_wake_cnt = 0U;
-#endif
 
 bool can_silent = true;
 bool can_loopback = false;
@@ -26,13 +20,8 @@ bool can_loopback = false;
   extern can_ring can_##x; \
   can_ring can_##x = { .w_ptr = 0, .r_ptr = 0, .fifo_size = (size), .elems = (CANPacket_t *)&(elems_##x) };
 
-#ifdef STM32H7
-  #define CAN_RX_BUFFER_SIZE 4096U
-  #define CAN_TX_BUFFER_SIZE 416U
-#else
-  #define CAN_RX_BUFFER_SIZE 1024U
-  #define CAN_TX_BUFFER_SIZE 256U
-#endif
+#define CAN_RX_BUFFER_SIZE 4096U
+#define CAN_TX_BUFFER_SIZE 416U
 
 #ifdef STM32H7
 // ITCM RAM and DTCM RAM are the fastest for Cortex-M7 core access
@@ -167,38 +156,15 @@ void can_set_forwarding(uint8_t from, uint8_t to) {
 #endif
 
 void ignition_can_hook(CANPacket_t *msg) {
-  int len = GET_LEN(msg);
-
-  #ifdef PANDA_HKG_REMOTE_START
-  if ((msg->bus == 1U) && (msg->addr == 0x384U) && (len == 8)) {
-    hkg_remote_climate_wake = msg->data[3] != 0U;
-    hkg_remote_climate_wake_cnt = 0U;
-  }
-  #endif
-
   if (msg->bus == 0U) {
+    int len = GET_LEN(msg);
+
     // GM exception
-    // Remote-start mode uses 0xC9 bit 4 (SystemPowerMode=Run) for ignition detection.
-    // Stock mode uses 0x1F1 bit 1 (SystemPowerMode=Run/Crank Request).
-    #ifdef PANDA_GM_REMOTE_START_C9
-    if ((msg->addr == 0xC9U) && (len == 8)) {
-      ignition_can = (msg->data[6] & 0x10U) != 0U;
+    if ((msg->addr == 0x1F1U) && (len == 8)) {
+      // SystemPowerMode (2=Run, 3=Crank Request)
+      ignition_can = (msg->data[0] & 0x2U) != 0U;
       ignition_can_cnt = 0U;
     }
-    #else
-    if (gm_remote_start_boots_comma) {
-      if ((msg->addr == 0xC9U) && (len == 8)) {
-        ignition_can = (msg->data[6] & 0x10U) != 0U;
-        ignition_can_cnt = 0U;
-      }
-    } else {
-      if ((msg->addr == 0x1F1U) && (len == 8)) {
-        // SystemPowerMode (2=Run, 3=Crank Request)
-        ignition_can = (msg->data[0] & 0x2U) != 0U;
-        ignition_can_cnt = 0U;
-      }
-    }
-    #endif
 
     // Rivian R1S/T GEN1 exception
     if ((msg->addr == 0x152U) && (len == 8)) {
@@ -227,39 +193,6 @@ void ignition_can_hook(CANPacket_t *msg) {
         ignition_can_cnt = 0U;
       }
       prev_counter_tesla = counter;
-
-      #ifdef PANDA_TESLA_WAKE_ON_CAN
-      uint32_t checksum = (msg->addr & 0xFFU) + (msg->addr >> 8U);
-      for (uint8_t i = 0U; i < 7U; i++) {
-        checksum += msg->data[i];
-      }
-      static int prev_counter_tesla_wake = -1;
-      if (!msg->extended && (msg->data[7] == (checksum & 0xFFU))) {
-        if ((prev_counter_tesla_wake != -1) && (counter == ((prev_counter_tesla_wake + 1) % 16))) {
-          wake_on_can = ((msg->data[0] >> 5U) & 0x3U) != 0U;
-          wake_on_can_cnt = 0U;
-        }
-        prev_counter_tesla_wake = counter;
-      } else {
-        prev_counter_tesla_wake = -1;
-      }
-      #endif
-    }
-
-    // Tesla Model S pre-AP exception
-    if ((msg->addr == 0x101U) && (len == 3)) {
-      // Validate Tesla checksum/counter to avoid false positives on overlapping frames.
-      int counter = msg->data[1] & 0xFU;
-      int checksum = (((msg->addr & 0xFFU) + ((msg->addr >> 8U) & 0xFFU) + msg->data[0] + msg->data[1]) & 0xFFU);
-
-      static int prev_counter_tesla_preap = -1;
-      if ((msg->data[2] == checksum) && (counter == ((prev_counter_tesla_preap + 1) % 16)) && (prev_counter_tesla_preap != -1)) {
-        // GTW_epasPowerMode=1 is DRIVE_ON, which is the only ignition source on pre-AP cars.
-        int power_mode = (msg->data[0] >> 3U) & 0xFU;
-        ignition_can = power_mode == 0x1U;
-        ignition_can_cnt = 0U;
-      }
-      prev_counter_tesla_preap = counter;
     }
 
     // Mazda exception
@@ -267,21 +200,14 @@ void ignition_can_hook(CANPacket_t *msg) {
       ignition_can = (msg->data[0] >> 5) == 0x6U;
       ignition_can_cnt = 0U;
     }
-
-    // Volkswagen MEB exception
-    if ((msg->addr == 0x3C0U) && (len == 4)) {
-      int counter = msg->data[1] & 0xFU;
-
-      static int prev_counter_vw_meb = -1;
-      if ((counter == ((prev_counter_vw_meb + 1) % 16)) && (prev_counter_vw_meb != -1)) {
-        // Klemmen_Status_01->ZAS_Kl_15
-        ignition_can = ((msg->data[2] >> 1) & 1U) != 0U;
-        ignition_can_cnt = 0U;
-      }
-      prev_counter_vw_meb = counter;
-    }
-
   }
+
+  // TODO: this is too loose, Teslas have 0x222
+  // body v2 exception
+  // if (((msg->bus == 0U) || (msg->bus == 2U)) && (msg->addr == 0x222U)) {
+  //   ignition_can = true;
+  //   ignition_can_cnt = 0U;
+  // }
 }
 
 bool can_tx_check_min_slots_free(uint32_t min) {

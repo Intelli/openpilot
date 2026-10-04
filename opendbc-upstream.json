@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/sunnypilot/opendbc.git",
+  "branch": "hkg-angle-steering-2025",
+  "commit": "7c35b75469408ef8bf14e78737a3e0ad83e15d61",
+  "tree": "eb375550ead895f9ee8ca6764df4105a0083c96e",
+  "restored_from": "5a3f3761f586b8107fb8a66b449fa50806cd8f6f",
+  "restored_tree": "558350c12db5a65f9cd500af53ed0993e72f2b0f",
+  "source": "restored Sunnypilot archive",
+  "legacy_patches_applied": false
+}

@@ -1,0 +1,492 @@
+{
+  "schema_version": 1,
+  "purpose": "Preserve custom StarPilot implementations for reference and future porting; no normal Sunnypilot replay.",
+  "source_commit": "09c6cf07911a0b75954222f0b903347e8baa122d",
+  "source_tree": "1199f8035f068f3557511439778557090b46421c",
+  "source_archive_branch": "codex/ev9-starpilot-archive-20260920",
+  "upstream": {
+    "repository": "https://github.com/firestar5683/StarPilot",
+    "branch": "StarPilot",
+    "commit": "c3e4ec630f41c4baa43254a90f718abd1bf764a1",
+    "tree": "5d21d6fb0b51b4f846ff47f9acb05a9d75525ce0",
+    "legacy_patches_applied": false
+  },
+  "counts": {
+    "application_patches": 13,
+    "vehicle_patches": 6,
+    "historical_patch_files": 24
+  },
+  "patches": [
+    {
+      "scope": "application",
+      "original_path": "patches/alerts_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/alerts_starpilot.patch",
+      "git_blob": "1416e7954f5ae974d30176627802033951bac424",
+      "sha256": "6b7aacdb623d1d8286429b7af39476ef63c1557a8899aa961271be961a652b19",
+      "bytes": 19106,
+      "changed_paths": [
+        "selfdrive/selfdrived/events.py",
+        "selfdrive/selfdrived/tests/test_aol_pedal_alert.py",
+        "selfdrive/selfdrived/tests/test_ev9_compact_alerts.py",
+        "selfdrive/ui/lib/ev9_alert_style.py",
+        "selfdrive/ui/mici/onroad/alert_renderer.py",
+        "selfdrive/ui/onroad/alert_renderer.py",
+        "selfdrive/ui/tests/test_ev9_alert_style.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/boot_logo_ev9_edition.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/boot_logo_ev9_edition.patch",
+      "git_blob": "474ac10d5f8d85ef8eca8f35a90284ccf5ba6c57",
+      "sha256": "ea181ae34d04bf464b7569fa83e9993c9d454cfee98eb764ca6446e25657bd17",
+      "bytes": 582810,
+      "changed_paths": [
+        "starpilot/assets/other_images/starpilot_ev9_edition.jpg",
+        "starpilot/assets/theme_manager.py",
+        "starpilot/common/starpilot_functions.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/build_config_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/build_config_starpilot.patch",
+      "git_blob": "a9ef9ca3fc3a1b4fb9cd9d9a1941872d63f06b35",
+      "sha256": "1c5bd7b6a11e68d323ae3398b908dac7bd4c4f86186e02441da11e2e22c6bfec",
+      "bytes": 375,
+      "changed_paths": [
+        "pyproject.toml"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/custom_defaults_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/custom_defaults_starpilot.patch",
+      "git_blob": "654b11729782cd864ca49b4569a4fa5a35ebbdf2",
+      "sha256": "e97a10b2e303860c728146ea2db06cb5804083360323f7695c8cb480594ae1c2",
+      "bytes": 14506,
+      "changed_paths": [
+        "common/params_keys.h",
+        "starpilot/common/starpilot_variables.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/custom_model_ui_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/custom_model_ui_starpilot.patch",
+      "git_blob": "e84d4f49e4c4265ef598f423d78509c158abb8af",
+      "sha256": "1fee7c42c1bc9ebdd75b4e154ccb63d3fb21dbf0b46d18ded619539b1046794b",
+      "bytes": 34460,
+      "changed_paths": [
+        "selfdrive/ui/layouts/settings/starpilot/appearance.py",
+        "selfdrive/ui/mici/layouts/settings/visuals.py",
+        "selfdrive/ui/mici/onroad/model_renderer.py",
+        "selfdrive/ui/onroad/model_renderer.py",
+        "selfdrive/ui/onroad/starpilot/ev9_path.py",
+        "selfdrive/ui/onroad/starpilot/path_warning.py",
+        "selfdrive/ui/tests/test_ev9_path.py",
+        "selfdrive/ui/tests/test_ev9_path_settings.py",
+        "selfdrive/ui/tests/test_path_warning.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/customize_warnings_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/customize_warnings_starpilot.patch",
+      "git_blob": "065b65b59a7eece7a46ef3ed778d3d8cfe57f2ca",
+      "sha256": "f31bcb1774ec94fee1c52bf2d87f1c7c5932614888b199a62fd1ab3f2457cb05",
+      "bytes": 46858,
+      "changed_paths": [
+        "selfdrive/controls/lib/ev9_warnings.py",
+        "selfdrive/controls/lib/latcontrol.py",
+        "selfdrive/controls/lib/latcontrol_angle.py",
+        "selfdrive/controls/tests/test_ev9_hands_on_warning.py",
+        "selfdrive/controls/tests/test_ev9_limit_notification.py",
+        "selfdrive/controls/tests/test_ev9_warnings.py",
+        "selfdrive/selfdrived/selfdrived.py",
+        "selfdrive/ui/soundd.py",
+        "selfdrive/ui/tests/test_soundd.py",
+        "starpilot/common/starpilot_variables.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/drive_helpers_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/drive_helpers_starpilot.patch",
+      "git_blob": "3fdbf29df2cb74131573114019dea4dac7a7a512",
+      "sha256": "53a328278c843ce0b7b11bf2b3bb090e24c585e509d6b07a6ae9b13fc1a4f357",
+      "bytes": 109305,
+      "changed_paths": [
+        "selfdrive/car/card.py",
+        "selfdrive/car/ev9_cruise_buttons.py",
+        "selfdrive/car/tests/test_ev9_cruise_buttons.py",
+        "selfdrive/controls/controlsd.py",
+        "selfdrive/controls/lib/desire_helper.py",
+        "selfdrive/controls/lib/drive_helpers.py",
+        "selfdrive/controls/tests/test_drive_helpers.py",
+        "selfdrive/controls/tests/test_ev9_curvature_limits.py",
+        "selfdrive/controls/tests/test_navigation_desires.py",
+        "selfdrive/controls/tests/test_steering_saturation_publish.py",
+        "starpilot/common/ev9_tuning.py",
+        "starpilot/common/starpilot_variables.py",
+        "starpilot/common/tests/test_ev9_tuning.py",
+        "starpilot/common/tests/test_starpilot_variables.py",
+        "starpilot/controls/starpilot_card.py",
+        "starpilot/controls/tests/test_starpilot_card.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/ev9_edition_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/ev9_edition_starpilot.patch",
+      "git_blob": "ed7c21ff776ea5f1831bbb0ee921405eee6364a1",
+      "sha256": "a3dd46eaf9dc3cad13f27c345b2e3515c9b53a228e48c80155580a42092a0130",
+      "bytes": 7658,
+      "changed_paths": [
+        "selfdrive/controls/controlsd.py",
+        "selfdrive/selfdrived/selfdrived.py",
+        "selfdrive/ui/layouts/home.py",
+        "selfdrive/ui/mici/layouts/home.py",
+        "system/ui/spinner.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/ev9_longitudinal_status.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/ev9_longitudinal_status.patch",
+      "git_blob": "09bd96b04d923b349370eabe3427be74679d86d8",
+      "sha256": "07a1411319e435a3a33a3210c333be235788d70cedecd933a238c17260526266",
+      "bytes": 34797,
+      "changed_paths": [
+        "cereal/custom.capnp",
+        "opendbc_repo/opendbc/car/hyundai/carstate.py",
+        "opendbc_repo/opendbc/car/hyundai/tests/test_ev9_ready.py",
+        "opendbc_repo/opendbc/dbc/generator/hyundai/hyundai_canfd.dbc",
+        "opendbc_repo/opendbc/dbc/hyundai_canfd_generated.dbc",
+        "selfdrive/ui/onroad/starpilot/longitudinal_status.py",
+        "selfdrive/ui/onroad/starpilot/starpilot_onroad_view.py",
+        "selfdrive/ui/onroad/starpilot/widgets/longitudinal_status.py",
+        "selfdrive/ui/tests/test_longitudinal_status.py",
+        "selfdrive/ui/tests/test_longitudinal_status_widget.py",
+        "selfdrive/ui/tests/test_onroad_render_layers.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/ev9_turn_lead_hesitation.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/ev9_turn_lead_hesitation.patch",
+      "git_blob": "e475438f0ca881f1e4ebc72a2bc210e997e7fc98",
+      "sha256": "1d7fce1f34df5703a7450dfedb2113e05aebc62fc47fd5004173469253ab7d4a",
+      "bytes": 20100,
+      "changed_paths": [
+        "selfdrive/controls/controlsd.py",
+        "selfdrive/controls/tests/test_ev9_turn_lead_control.py",
+        "selfdrive/controls/tests/test_turn_lead.py",
+        "starpilot/common/ev9_tuning.py",
+        "starpilot/common/tests/test_ev9_tuning.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/lane_change_safeguards_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/lane_change_safeguards_starpilot.patch",
+      "git_blob": "0412996dc29566d984ea12860bd03561d5197c42",
+      "sha256": "05516d4c38db622583fb7abb46aea50811b5a8926117a1d0a0d9f93f2fcd6345",
+      "bytes": 20308,
+      "changed_paths": [
+        "selfdrive/controls/lib/desire_helper.py",
+        "selfdrive/controls/tests/test_lane_change_safeguards.py",
+        "selfdrive/controls/tests/test_navigation_desires.py"
+      ]
+    },
+    {
+      "scope": "opendbc",
+      "original_path": "patches/opendbc/01_customize_warnings_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/opendbc/01_customize_warnings_starpilot.patch",
+      "git_blob": "119535445955690f9802240925f71144a57d173e",
+      "sha256": "7a3c91b4d1baa200262eedbdcbecbf21885d5251ea449b2774a3a042d4188481",
+      "bytes": 643,
+      "changed_paths": [
+        "opendbc/car/hyundai/interface.py"
+      ]
+    },
+    {
+      "scope": "opendbc",
+      "original_path": "patches/opendbc/02_door_signals_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/opendbc/02_door_signals_starpilot.patch",
+      "git_blob": "48093b47060ad4235c3570432aa77ed42ff5230f",
+      "sha256": "38cc231fa7b38409823b968265a30fa9583b6999c19a80bced70e0c4fa9fc591",
+      "bytes": 789,
+      "changed_paths": [
+        "opendbc/car/hyundai/carstate.py"
+      ]
+    },
+    {
+      "scope": "opendbc",
+      "original_path": "patches/opendbc/03_modify_baseline_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/opendbc/03_modify_baseline_starpilot.patch",
+      "git_blob": "5b204bc8cb12d4908ceff48992c5996bb38b250f",
+      "sha256": "924ae9fceefc90aab35c0d8a059387b341c930dccf712990990d10b0a82eb135",
+      "bytes": 6798,
+      "changed_paths": [
+        "opendbc/car/hyundai/carcontroller.py",
+        "opendbc/car/hyundai/interface.py",
+        "opendbc/car/hyundai/values.py",
+        "opendbc/safety/modes/hyundai_canfd.h"
+      ]
+    },
+    {
+      "scope": "opendbc",
+      "original_path": "patches/opendbc/04_panda_safety_limits_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/opendbc/04_panda_safety_limits_starpilot.patch",
+      "git_blob": "b2546706230056c127c5ed91d14bd5e34ba05c85",
+      "sha256": "cf95639521c5404d64adff81712ce16bdc4ea2b3cce7f67b78510f33d489b2f1",
+      "bytes": 9082,
+      "changed_paths": [
+        "opendbc/safety/declarations.h",
+        "opendbc/safety/lateral.h",
+        "opendbc/safety/modes/hyundai_canfd.h"
+      ]
+    },
+    {
+      "scope": "opendbc",
+      "original_path": "patches/opendbc/05_steering_and_ev9_limits_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/opendbc/05_steering_and_ev9_limits_starpilot.patch",
+      "git_blob": "acb5de2ce768b2b36f8be58166821194c6538096",
+      "sha256": "855af37eec861fd98007d87552e5d4afc01d6812836e9e8fb786ff667b99e719",
+      "bytes": 30007,
+      "changed_paths": [
+        "opendbc/car/car.capnp",
+        "opendbc/car/hyundai/carcontroller.py",
+        "opendbc/car/hyundai/carstate.py",
+        "opendbc/car/hyundai/ev9.py",
+        "opendbc/car/hyundai/hyundaicanfd.py"
+      ]
+    },
+    {
+      "scope": "opendbc",
+      "original_path": "patches/opendbc/06_ev9_tests_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/opendbc/06_ev9_tests_starpilot.patch",
+      "git_blob": "df79cad41576de6c111f81134b7d4b03b58bec34",
+      "sha256": "efc4471d2af642c5970f28ef3d64880bffdc85b91e4aa9741b1a265bc2d4f7ac",
+      "bytes": 80304,
+      "changed_paths": [
+        "opendbc/car/hyundai/tests/test_ev9.py",
+        "opendbc/car/hyundai/tests/test_hyundai.py",
+        "opendbc/safety/tests/test_hyundai_canfd.py",
+        "opendbc/safety/tests/test_hyundai_ev9.py",
+        "opendbc/safety/tests/test_hyundai_ev9_buttons.py",
+        "opendbc/safety/tests/test_hyundai_ev9_controller.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/settings_ui_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/settings_ui_starpilot.patch",
+      "git_blob": "4484db6e2d4882f3cd59a6af5d8f525a35a2e35d",
+      "sha256": "68fdfeea4c772f37f4bedf64a3b50bdf1b4f609afe998cb4e0efa2ed749809a0",
+      "bytes": 133487,
+      "changed_paths": [
+        "selfdrive/ui/layouts/settings/settings.py",
+        "selfdrive/ui/layouts/settings/starpilot/aethergrid.py",
+        "selfdrive/ui/layouts/settings/starpilot/driving_model.py",
+        "selfdrive/ui/layouts/settings/starpilot/longitudinal.py",
+        "selfdrive/ui/layouts/settings/starpilot/main_panel.py",
+        "selfdrive/ui/layouts/settings/starpilot/maps.py",
+        "selfdrive/ui/layouts/settings/starpilot/navigation.py",
+        "selfdrive/ui/layouts/settings/starpilot/sounds.py",
+        "selfdrive/ui/layouts/settings/starpilot/system_settings.py",
+        "selfdrive/ui/layouts/settings/starpilot/vehicle.py",
+        "selfdrive/ui/layouts/settings/tests/test_starpilot_c3_list_behavior.py",
+        "selfdrive/ui/tests/test_starpilot_navigation_structure.py"
+      ]
+    },
+    {
+      "scope": "application",
+      "original_path": "patches/ui_options_starpilot.patch",
+      "archived_path": "patches/archive/starpilot-20260920/application/ui_options_starpilot.patch",
+      "git_blob": "3c181b4670568e8891dba050c12bd2c9d68c3153",
+      "sha256": "a6a1947f5125a682f0433d00f913b55141560e16303127d714ee391a14edd47f",
+      "bytes": 37807,
+      "changed_paths": [
+        "selfdrive/ui/layouts/settings/starpilot/ev9_settings.py",
+        "selfdrive/ui/layouts/settings/starpilot/lateral.py",
+        "selfdrive/ui/mici/layouts/settings/ev9.py",
+        "selfdrive/ui/mici/layouts/settings/vehicle.py",
+        "selfdrive/ui/tests/test_ev9_settings.py",
+        "starpilot/common/assets/device_settings_layout.json",
+        "starpilot/system/the_galaxy/tests/test_device_settings_layout.py",
+        "starpilot/system/the_galaxy/tests/test_navigation_params.py",
+        "starpilot/system/the_galaxy/the_galaxy.py"
+      ]
+    }
+  ],
+  "historical_patches": [
+    {
+      "path": "patches/alerts.patch.migrated",
+      "git_blob": "4791e101949f97e71711d0336fa1ece57e481a9d",
+      "sha256": "2aa8fd3464d9802150df01de74ec3853e441721444b8c835a11c503e724cccc4"
+    },
+    {
+      "path": "patches/auto_lock.patch.disabled",
+      "git_blob": "4c1e9458cf2377160245be6509dc6ac86ac39d1a",
+      "sha256": "7fba6df8e26a7a5ddd628723efb941cf5ba73b1c69170b8c820ace53502aab5b"
+    },
+    {
+      "path": "patches/custom_audio.patch.disabled",
+      "git_blob": "66a5f20f10024fdb7c8855d18369ec76dafee345",
+      "sha256": "6fe790c36f9cc81746db50bdba651436b49a8df8883c1ddac7611fc107fde34c"
+    },
+    {
+      "path": "patches/custom_defaults.patch.migrated",
+      "git_blob": "dc20aae54ab8176cb094232f5936f881e499f255",
+      "sha256": "2b371553a13f24bec832cdd6d6967a616f4dda353f61869292de63816502d1fc"
+    },
+    {
+      "path": "patches/custom_model_ui.patch.migrated",
+      "git_blob": "34bc1eba180cb09b0770f05d6c07a1f9b2618d73",
+      "sha256": "7187b4c3946a3035d0efea94b043747a67c6973e3852ee32e2a0a0ae431a82d4"
+    },
+    {
+      "path": "patches/customize_warnings.patch.migrated",
+      "git_blob": "41b9a9675f8d03d75facd6b6a084157827dad0ee",
+      "sha256": "105e4db426bce3d6dd84d46f49a7b97b939bb05b973424ef11f5c1c0094a1708"
+    },
+    {
+      "path": "patches/drive_helpers.patch.migrated",
+      "git_blob": "bcc98f523d9a73e30127b90213423b8625f57672",
+      "sha256": "07eb67278fc499ada3c98c8c677454b5e57312283193acc9efbd20384e7a459d"
+    },
+    {
+      "path": "patches/driver_monitoring.patch.temp-disabled",
+      "git_blob": "b4ef161f412184b97dac8aa4c30d18bf8ab96a2c",
+      "sha256": "da37953ceda7d73fb7cac0f972a977c7e808a965d0bd0f153459f37b098aa3e8"
+    },
+    {
+      "path": "patches/ev9_edition.patch.migrated",
+      "git_blob": "d6b8987ec3141b8bbd75cd003262c58c167b2553",
+      "sha256": "28454069aa709704de44596d6d5249403b0041d1be75630f3369179d9782c195"
+    },
+    {
+      "path": "patches/ev9_turn_signal_edge_guard.patch.disabled",
+      "git_blob": "8f24293c3fe44898b0368a1c231d31f9f8bb4dd3",
+      "sha256": "42cf1c3e98acf013f580c4fbf81386fc8c897ce61069b08fb8bed01d2e645b06"
+    },
+    {
+      "path": "patches/icbm_fixes.patch.OUTDATED.disabled",
+      "git_blob": "04e7f8bda790ee79b07b0ab968667acc8b7581c8",
+      "sha256": "334356ff4e8e145dea23867dc382a842dd74ca7495a4acd9eecb326085847080"
+    },
+    {
+      "path": "patches/lane_centering.patch.temp-disabled",
+      "git_blob": "a88887361709e144dace4267053965094f1a41b3",
+      "sha256": "2f6b37359d80b9a966a10531587f29d39629f76049f27d35fe0c6bba378af8ee"
+    },
+    {
+      "path": "patches/opendbc/customize_warnings.patch.migrated",
+      "git_blob": "79c1c6786b8f1ae27f499463f821728b98df2d99",
+      "sha256": "db7fe5354e3b045e80a7014513048d98d8e8676c00c2e47f6731ec395c679cfc"
+    },
+    {
+      "path": "patches/opendbc/door_signals.patch.migrated",
+      "git_blob": "68d3452df6691d040cc26e0e4d84aa3f25db07f6",
+      "sha256": "6d99bd9c098fb64f99afa51c5b669cb17369a5590360aabf81034b05c14843f5"
+    },
+    {
+      "path": "patches/opendbc/ev9_tests.patch.migrated",
+      "git_blob": "13185aac055e32c33c2947d901b72343629fe7c5",
+      "sha256": "ae10bad5f92bb6e6e540e1cdfe45dbf2f8944cf7ed12c1928c95e8b7982daaa8"
+    },
+    {
+      "path": "patches/opendbc/modify_baseline.patch.migrated",
+      "git_blob": "42740fdcd599ae2b042f12cc6db6fefad711847a",
+      "sha256": "155425fde1f15aa42597cd315525a596433a6b9340f719cc06706178e2b91a9d"
+    },
+    {
+      "path": "patches/opendbc/panda_safety_limits.patch.migrated",
+      "git_blob": "899bc935efd63e39ced4954728419ca8ecff0ddb",
+      "sha256": "38dd6db8a633e2684856ce6f919094b4207c78675550d11c1576a7eda449f247"
+    },
+    {
+      "path": "patches/opendbc/steering_and_ev9_limits.patch.migrated",
+      "git_blob": "fb7799d19ae685a79a6acfe1a9774f04f2052e8a",
+      "sha256": "8bfba1f0f55a9c87c4822a9345fe18f48f196709ca7d8d02ff8db818d98be529"
+    },
+    {
+      "path": "patches/opendbc/tap_detection_debug.patch.disabled",
+      "git_blob": "73cf6749f21d67e59d96d12a7de1a4e26e448a2d",
+      "sha256": "aa9f99fe6254c7ad76df6687d55274859a2f094b42befa4f1ee5c4d26a101bc0"
+    },
+    {
+      "path": "patches/power_management.patch.temp-disabled",
+      "git_blob": "2462e41767e42c80017651a872f5e1157cd55f34",
+      "sha256": "8198d82adbb3e52ec22aa85c041373c569d4a27fa79aa75851daad7e1e6a767c"
+    },
+    {
+      "path": "patches/prebuilt.patch.migrated",
+      "git_blob": "59dcf7d48218a9203268348d248ff0b3647bd613",
+      "sha256": "afbecc873ff00581a8070b01a955d8ec52f31877876b45923d370e7217370cc0"
+    },
+    {
+      "path": "patches/quickboot.patch.OUTDATED.disabled",
+      "git_blob": "af59a41b473461adfa9fb82a5742a7ee8f0d7634",
+      "sha256": "7010997a98655ed371d0e669636ecfffa0b985668ffd808a1ee7d488e1cd525c"
+    },
+    {
+      "path": "patches/tap_detection_debug.patch.disabled",
+      "git_blob": "16d9eea5b510e890146ffcce40cb14ef164ee191",
+      "sha256": "58d5cc7158fcb7bc9ad9ef38aeffbc2a951aed2e4cee4ae08730ab2883cffd7f"
+    },
+    {
+      "path": "patches/ui_options.patch.migrated",
+      "git_blob": "2b8d22f30786335b4a5fd57faca624c61c7e9a6d",
+      "sha256": "db646d0728fa13680a6f516688f2d2fc7135d9ad2009da04b3f1b6bc5b18d35c"
+    }
+  ],
+  "context": [
+    {
+      "original_path": "AGENTS.md",
+      "archived_path": "patches/archive/starpilot-20260920/context/REPOSITORY_GUIDELINES.md",
+      "git_blob": "e4bc8e0b926bd07ea6d1143f38546589917d2bfe",
+      "sha256": "e70e7fe0a3660740f7f0b7783720313212a2393951a7816a25bf8dc35b7c7318"
+    },
+    {
+      "original_path": "docs/MAINTENANCE.md",
+      "archived_path": "patches/archive/starpilot-20260920/context/MAINTENANCE.md",
+      "git_blob": "ac50549f10c62c40334c6274a61fa54a36ca5ac9",
+      "sha256": "eaac698d3e7b76eacbdead3ca7fdd8f0b9457521a019158b9ce0924ccf957287"
+    },
+    {
+      "original_path": "patches/README.md",
+      "archived_path": "patches/archive/starpilot-20260920/context/PATCH_WORKFLOW.md",
+      "git_blob": "1c18bbae2554c75ea7f476131ca04a13743dcfe0",
+      "sha256": "caac24ac06c2f9c1478d2e5dc2b0bf4870b1723882a26871887bcff09e79a5c5"
+    }
+  ],
+  "verification": {
+    "method": "Ordered forward replay in a disposable index against the recorded upstream baseline.",
+    "patch_payloads_match_source_commit": true,
+    "covered_paths": 99,
+    "all_covered_paths_match_source_commit": true,
+    "unrecorded_application_or_vehicle_paths": [],
+    "remaining_maintenance_paths": 108,
+    "latest_customization": "EV9 OP-long engagement with the main cruise button, recorded in application drive_helpers and vehicle patches 04/06."
+  },
+  "other_archives": [
+    {
+      "path": "patches/archive/EV9_CUSTOM_PLANNER.md",
+      "git_blob": "29d07362ec2662ba8e2c414a056c05513d9f47fd",
+      "sha256": "d81dba9fcf7bb974f86313715ed104fc452fc30ed1c7aa76dd3e5713f0fb5b4a"
+    },
+    {
+      "path": "patches/archive/EV9_STARTUP_TEST.md",
+      "git_blob": "bac64b6b1b37cf7d44287927e40e3788766c666e",
+      "sha256": "04e3f45817a7cbce7d704afaea1c397577af8a7701e887f2c6519849248851b0"
+    },
+    {
+      "path": "patches/archive/ev9_custom_planner.patch",
+      "git_blob": "9f9ef8d45087e52bedbd196e794cc1da37db01f6",
+      "sha256": "48042b53a39457bf9e2f1f840524c53ce3084f566bd7f1baf2e777dabd403bf6"
+    }
+  ]
+}

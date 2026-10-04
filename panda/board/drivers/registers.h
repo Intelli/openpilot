@@ -1,4 +1,13 @@
-#include "registers_declarations.h"
+#include "board/drivers/drivers.h"
+
+typedef struct reg {
+  volatile uint32_t *address;
+  uint32_t value;
+  uint32_t check_mask;
+  bool logged_fault;
+} reg;
+
+#define CHECK_COLLISION(hash, addr) (((uint32_t) register_map[hash].address != 0U) && (register_map[hash].address != (addr)))
 
 static reg register_map[REGISTER_MAP_SIZE];
 
@@ -49,10 +58,13 @@ void check_registers(void){
     if((uint32_t) register_map[i].address != 0U){
       ENTER_CRITICAL()
       if((*(register_map[i].address) & register_map[i].check_mask) != (register_map[i].value & register_map[i].check_mask)){
-        if(!register_map[i].logged_fault){
-          print("Register 0x"); puth((uint32_t) register_map[i].address); print(" divergent! Map: 0x"); puth(register_map[i].value); print(" Reg: 0x"); puth(*(register_map[i].address)); print("\n");
-          register_map[i].logged_fault = true;
-        }
+        #ifdef DEBUG_FAULTS
+          print("Register at address 0x"); puth((uint32_t) register_map[i].address); print(" is divergent!");
+          print("   Map: 0x"); puth(register_map[i].value);
+          print("   Register: 0x"); puth(*(register_map[i].address));
+          print("   Mask: 0x"); puth(register_map[i].check_mask);
+          print("\n");
+        #endif
         fault_occurred(FAULT_REGISTER_DIVERGENT);
       }
       EXIT_CRITICAL()

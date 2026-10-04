@@ -24,8 +24,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
-#include <cstdint>
 #include <limits>
+#include <cstdint>
 
 namespace json11 {
 

@@ -63,9 +63,6 @@ def listdir_by_creation(d: str) -> list[str]:
     return []
 
 def clear_locks(root: str) -> None:
-  if not os.path.isdir(root):
-    return
-
   for logdir in os.listdir(root):
     path = os.path.join(root, logdir)
     try:
@@ -107,7 +104,6 @@ class Uploader:
       for name in sorted(names, key=lambda n: self.immediate_priority.get(n, 1000)):
         key = os.path.join(logdir, name)
         fn = os.path.join(path, name)
-
         # skip files already uploaded
         try:
           ctime = os.path.getctime(fn)
@@ -254,7 +250,6 @@ def main(exit_event: threading.Event | None = None) -> None:
   backoff = 0.1
   while not exit_event.is_set():
     sm.update(0)
-    always_allow_uploads = params.get_bool("AlwaysAllowUploads")
     offroad = params.get_bool("IsOffroad")
     network_type = sm['deviceState'].networkType if not force_wifi else NetworkType.wifi
     if network_type == NetworkType.none:
@@ -262,7 +257,7 @@ def main(exit_event: threading.Event | None = None) -> None:
         time.sleep(60 if offroad else 5)
       continue
 
-    success = uploader.step(sm['deviceState'].networkType.raw, sm['deviceState'].networkMetered and not always_allow_uploads)
+    success = uploader.step(sm['deviceState'].networkType.raw, sm['deviceState'].networkMetered)
     if success is None:
       backoff = 60 if offroad else 5
     elif success:
@@ -272,6 +267,7 @@ def main(exit_event: threading.Event | None = None) -> None:
       backoff = min(backoff*2, 120)
     if allow_sleep:
       time.sleep(backoff + random.uniform(0, backoff))
+
 
 if __name__ == "__main__":
   main()

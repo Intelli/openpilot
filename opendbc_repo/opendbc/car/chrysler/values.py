@@ -12,17 +12,11 @@ Ecu = CarParams.Ecu
 class ChryslerSafetyFlags(IntFlag):
   RAM_DT = 1
   RAM_HD = 2
-  JEEP_BRAKE_HOLD = 4
 
 
 class ChryslerFlags(IntFlag):
   # Detected flags
   HIGHER_MIN_STEERING_SPEED = 1
-
-
-class ChryslerStarPilotFlags(IntFlag):
-  RAM_HD_ALT_BUTTONS = 1
-  NO_MIN_STEERING_SPEED = 2
 
 
 @dataclass
@@ -73,6 +67,11 @@ class CAR(Platforms):
   )
 
   # Jeep
+  JEEP_CHEROKEE_5TH_GEN = ChryslerPlatformConfig(
+    [ChryslerCarDocs("Jeep Cherokee 2019-23")],
+    ChryslerCarSpecs(mass=1747., wheelbase=2.70, steerRatio=17.0, minSteerSpeed=18.5),
+    {Bus.pt: 'chrysler_cusw'},
+  )
   JEEP_GRAND_CHEROKEE = ChryslerPlatformConfig(  # includes 2017 Trailhawk
     [ChryslerCarDocs("Jeep Grand Cherokee 2016-18", video="https://www.youtube.com/watch?v=eLR9o2JkuRk")],
     ChryslerCarSpecs(mass=1778., wheelbase=2.71, steerRatio=16.7),
@@ -99,25 +98,6 @@ class CAR(Platforms):
   )
 
 
-PACIFICA_HYBRID_AOL_CARS = frozenset({
-  CAR.CHRYSLER_PACIFICA_2019_HYBRID,
-})
-
-
-def pacifica_hybrid_aol_requires_set_press(car_fingerprint, pcm_cruise: bool) -> bool:
-  return car_fingerprint in PACIFICA_HYBRID_AOL_CARS and pcm_cruise
-
-
-def pacifica_hybrid_aol_stock_acc_mode(car_fingerprint, pcm_cruise: bool,
-                                       controls_enabled: bool, always_on_lateral_enabled: bool) -> bool:
-  # Keep this narrow until we have logs proving other Chrysler platforms need the same exemption.
-  return (
-    pacifica_hybrid_aol_requires_set_press(car_fingerprint, pcm_cruise) and
-    always_on_lateral_enabled and
-    not controls_enabled
-  )
-
-
 class CarControllerParams:
   def __init__(self, CP):
     self.STEER_STEP = 2  # 50 Hz
@@ -130,6 +110,11 @@ class CarControllerParams:
       self.STEER_DELTA_UP = 6
       self.STEER_DELTA_DOWN = 6
       self.STEER_MAX = 350  # EPS allows more, up to 350?
+    elif CP.carFingerprint in CUSW_CARS:
+      self.STEER_STEP = 1  # 100 Hz
+      self.STEER_DELTA_UP = 4
+      self.STEER_DELTA_DOWN = 4
+      self.STEER_MAX = 250  # TODO: Some CUSW will go to 261, some not quite, exact boundaries not yet determined
     else:
       self.STEER_DELTA_UP = 3
       self.STEER_DELTA_DOWN = 3
@@ -141,7 +126,7 @@ STEER_THRESHOLD = 120
 RAM_DT = {CAR.RAM_1500_5TH_GEN, }
 RAM_HD = {CAR.RAM_HD_5TH_GEN, }
 RAM_CARS = RAM_DT | RAM_HD
-JEEPS = {CAR.JEEP_GRAND_CHEROKEE, CAR.JEEP_GRAND_CHEROKEE_2019}
+CUSW_CARS = {CAR.JEEP_CHEROKEE_5TH_GEN, }
 
 
 CHRYSLER_VERSION_REQUEST = bytes([uds.SERVICE_TYPE.READ_DATA_BY_IDENTIFIER]) + \

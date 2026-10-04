@@ -11,11 +11,11 @@
 #include "opendbc/safety/modes/honda.h"
 #include "opendbc/safety/modes/toyota.h"
 #include "opendbc/safety/modes/tesla.h"
-#include "opendbc/safety/modes/tesla_preap.h"
 #include "opendbc/safety/modes/gm.h"
 #include "opendbc/safety/modes/ford.h"
 #include "opendbc/safety/modes/hyundai.h"
 #include "opendbc/safety/modes/chrysler.h"
+#include "opendbc/safety/modes/chrysler_cusw.h"
 #include "opendbc/safety/modes/rivian.h"
 #include "opendbc/safety/modes/subaru.h"
 #include "opendbc/safety/modes/subaru_preglobal.h"
@@ -27,12 +27,7 @@
 #include "opendbc/safety/modes/elm327.h"
 #include "opendbc/safety/modes/body.h"
 #include "opendbc/safety/modes/psa.h"
-#include "opendbc/safety/modes/volvo.h"
-
-#ifdef CANFD
 #include "opendbc/safety/modes/hyundai_canfd.h"
-#include "opendbc/safety/modes/volkswagen_meb.h"
-#endif
 
 uint32_t GET_BYTES(const CANPacket_t *msg, int start, int len) {
   uint32_t ret = 0U;
@@ -58,16 +53,12 @@ bool steering_disengage;
 bool steering_disengage_prev;
 bool cruise_engaged_prev = false;
 struct sample_t vehicle_speed;
-struct sample_t vehicle_speed_2;
 bool vehicle_moving = false;
 bool acc_main_on = false;  // referred to as "ACC off" in ISO 15622:2018
 int cruise_button_prev = 0;
 bool safety_rx_checks_invalid = false;
-
-bool aol_allowed = false;
-bool lkas_button_prev = false;
-bool lkas_on = false;
-bool main_button_prev = false;
+bool enable_gas_interceptor = false;
+int gas_interceptor_prev = 0;
 
 // for safety modes with torque steering control
 int desired_torque_last = 0;       // last desired steer torque
@@ -89,8 +80,6 @@ uint32_t ts_angle_check_last = 0;
 int desired_angle_last = 0;
 struct sample_t angle_meas;         // last 6 steer angles/curvatures
 
-CurvatureSteeringState curvature_state;
-
 
 int alternative_experience = 0;
 
@@ -99,12 +88,9 @@ uint32_t safety_mode_cnt = 0U;
 
 uint16_t current_safety_mode = SAFETY_SILENT;
 uint16_t current_safety_param = 0;
+uint16_t current_safety_param_sp = 0;
 static const safety_hooks *current_hooks = &nooutput_hooks;
 safety_config current_safety_config;
-
-bool enable_gas_interceptor = false;
-int gas_interceptor_prev = 0;
-bool gm_remote_start_boots_comma = false;
 
 static void generic_rx_checks(void);
 static void stock_ecu_check(bool stock_ecu_detected);
@@ -204,14 +190,9 @@ static bool rx_msg_safety_check(const CANPacket_t *msg,
 bool safety_rx_hook(const CANPacket_t *msg) {
   bool controls_allowed_prev = controls_allowed;
 
-  if (current_hooks->rx_all != NULL) {
-    current_hooks->rx_all(msg);
-  }
-
   bool valid = rx_msg_safety_check(msg, &current_safety_config, current_hooks);
   bool whitelisted = get_addr_check_index(msg, current_safety_config.rx_checks, current_safety_config.rx_checks_len) != -1;
-  bool gm_rx_passthrough = current_safety_mode == SAFETY_GM;
-  if (valid && (whitelisted || gm_rx_passthrough)) {
+  if (valid && whitelisted) {
     current_hooks->rx(msg);
   }
 
@@ -346,6 +327,7 @@ void safety_tick(const safety_config *cfg) {
       cfg->rx_checks[i].status.lagging = lagging;
       if (lagging) {
         controls_allowed = false;
+        mads_exit_controls(MADS_DISENGAGE_REASON_LAG);
       }
 
       if (lagging || !is_msg_valid(cfg->rx_checks, i)) {
@@ -381,8 +363,6 @@ static void generic_rx_checks(void) {
     controls_allowed = false;
   }
   steering_disengage_prev = steering_disengage;
-
-  aol_allowed = (acc_main_on || lkas_on) && (alternative_experience & ALT_EXP_ALWAYS_ON_LATERAL);
 }
 
 static void stock_ecu_check(bool stock_ecu_detected) {
@@ -393,6 +373,7 @@ static void stock_ecu_check(bool stock_ecu_detected) {
   if ((safety_mode_cnt > RELAY_TRNS_TIMEOUT) && stock_ecu_detected) {
     relay_malfunction_set();
   }
+  mads_state_update(vehicle_moving, acc_main_on, controls_allowed, brake_pressed || regen_braking, steering_disengage);
 }
 
 static void relay_malfunction_reset(void) {
@@ -427,13 +408,9 @@ int set_safety_hooks(uint16_t mode, uint16_t param) {
     {SAFETY_FORD, &ford_hooks},
     {SAFETY_RIVIAN, &rivian_hooks},
     {SAFETY_TESLA, &tesla_hooks},
-    {SAFETY_TESLA_PREAP, &tesla_preap_hooks},
-    {SAFETY_VOLVO, &volvo_hooks},
-#ifdef CANFD
     {SAFETY_HYUNDAI_CANFD, &hyundai_canfd_hooks},
-    {SAFETY_VOLKSWAGEN_MEB, &volkswagen_meb_hooks},
-#endif
 #ifdef ALLOW_DEBUG
+    {SAFETY_CHRYSLER_CUSW, &chrysler_cusw_hooks},
     {SAFETY_PSA, &psa_hooks},
     {SAFETY_SUBARU_PREGLOBAL, &subaru_preglobal_hooks},
     {SAFETY_VOLKSWAGEN_MLB, &volkswagen_mlb_hooks},
@@ -462,23 +439,20 @@ int set_safety_hooks(uint16_t mode, uint16_t param) {
   rt_angle_msgs = 0;
   ts_angle_check_last = 0;
   desired_angle_last = 0;
-  curvature_state.desired_last = 0;
-  curvature_state.rt_msgs = 0;
-  curvature_state.rt_msgs_prev = 0;
-  curvature_state.ts_check_last = 0;
-  curvature_state.steer_power_last = 0;
   ts_torque_check_last = 0;
   ts_steer_req_mismatch_last = 0;
   valid_steer_req_count = 0;
   invalid_steer_req_count = 0;
 
+  // gas interceptor
+  enable_gas_interceptor = false;
+  gas_interceptor_prev = 0;
+
   // reset samples
   reset_sample(&vehicle_speed);
-  reset_sample(&vehicle_speed_2);
   reset_sample(&torque_meas);
   reset_sample(&torque_driver);
   reset_sample(&angle_meas);
-  reset_sample(&curvature_state.meas);
 
   controls_allowed = false;
   relay_malfunction_reset();
@@ -489,14 +463,6 @@ int set_safety_hooks(uint16_t mode, uint16_t param) {
   current_safety_config.tx_msgs = NULL;
   current_safety_config.tx_msgs_len = 0;
   current_safety_config.disable_forwarding = false;
-
-  enable_gas_interceptor = false;
-  gas_interceptor_prev = 0;
-
-  aol_allowed = false;
-  lkas_button_prev = false;
-  lkas_on = false;
-  main_button_prev = false;
 
   int set_status = -1;  // not set
   int hook_config_count = sizeof(safety_hook_registry) / sizeof(safety_hook_config);
@@ -520,7 +486,6 @@ int set_safety_hooks(uint16_t mode, uint16_t param) {
       current_safety_config.rx_checks[j].status = (RxStatus){0};
     }
   }
-
   return set_status;
 }
 

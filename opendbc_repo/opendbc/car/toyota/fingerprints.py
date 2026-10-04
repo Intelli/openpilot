@@ -2,12 +2,10 @@
 from opendbc.car.structs import CarParams
 from opendbc.car.toyota.values import CAR
 
-Ecu = CarParams.Ecu
+from opendbc.sunnypilot.car.fingerprints_ext import merge_fw_versions
+from opendbc.sunnypilot.car.toyota.fingerprints_ext import FW_VERSIONS_EXT
 
-FINGERPRINTS = {
-  CAR.TOYOTA_MATRIX_RETROFIT: [{}],
-  CAR.TOYOTA_PRIUS_RETROFIT: [{}],
-}
+Ecu = CarParams.Ecu
 
 FW_VERSIONS = {
   CAR.TOYOTA_AVALON: {
@@ -1310,16 +1308,13 @@ FW_VERSIONS = {
       b'\x01896630841000\x00\x00\x00\x00',
       b'\x01896630857101\x00\x00\x00\x00',
       b'\x01896630864000\x00\x00\x00\x00',
-      b'\x01896630869000\x00\x00\x00\x00',
     ],
     (Ecu.abs, 0x7b0, None): [
       b'\x01F15260815100\x00\x00\x00\x00',
       b'\x01F15260815300\x00\x00\x00\x00',
-      b'\x01F15260823000\x00\x00\x00\x00',
     ],
     (Ecu.eps, 0x7a1, None): [
       b'\x018965B4509100\x00\x00\x00\x00',
-      b'\x018965B4514000\x00\x00\x00\x00',
     ],
     (Ecu.fwdRadar, 0x750, 0xf): [
       b'\x018821F3301500\x00\x00\x00\x00',
@@ -1328,7 +1323,6 @@ FW_VERSIONS = {
       b'\x028646F0802200\x00\x00\x00\x008646G4202100\x00\x00\x00\x00',
       b'\x028646F0802300\x00\x00\x00\x008646G4202100\x00\x00\x00\x00',
       b'\x028646F0802400\x00\x00\x00\x008646G4202100\x00\x00\x00\x00',
-      b'\x028646F0802500\x00\x00\x00\x008646G4202100\x00\x00\x00\x00',
     ],
   },
   CAR.LEXUS_CTH: {
@@ -1876,4 +1870,26 @@ FW_VERSIONS = {
       b'\x028646F5205200\x00\x00\x00\x008646G5202200\x00\x00\x00\x00',
     ],
   },
+  CAR.LEXUS_LS: {
+    (Ecu.abs, 0x7b0, None): [
+      b'F152650290\x00\x00\x00\x00\x00\x00',
+    ],
+    (Ecu.dsu, 0x791, None): [
+      b'881515003400\x00\x00\x00\x00',
+    ],
+    (Ecu.eps, 0x7a1, None): [
+      b'8965B50022\x00\x00\x00\x00\x00\x00',
+    ],
+    (Ecu.engine, 0x700, None): [
+      b'\x028966350K7200\x00\x00\x00\x00896655066200\x00\x00\x00\x00',
+    ],
+    (Ecu.fwdRadar, 0x750, 0xf): [
+      b'8821F4702300\x00\x00\x00\x00',
+    ],
+    (Ecu.fwdCamera, 0x750, 0x6d): [
+      b'8646F5001200\x00\x00\x00\x00',
+    ],
+  },
 }
+
+FW_VERSIONS = merge_fw_versions(FW_VERSIONS, FW_VERSIONS_EXT)
