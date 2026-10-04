@@ -1,5 +1,5 @@
 diff --git a/openpilot/common/params_keys.h b/openpilot/common/params_keys.h
-index daeb928a843165233f435c3dca6773f8bd1770b6..1de9f30dbc32a2d1e93688c2677addf69b0fb40c 100644
+index daeb928a843165233f435c3dca6773f8bd1770b6..2b5c06e9817e30876720912917b57b14134edd2d 100644
 --- a/openpilot/common/params_keys.h
 +++ b/openpilot/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -28,7 +28,7 @@ index daeb928a843165233f435c3dca6773f8bd1770b6..1de9f30dbc32a2d1e93688c2677addf6
      {"IsOffroad", {CLEAR_ON_MANAGER_START, BOOL}},
      {"IsRhdDetected", {PERSISTENT, BOOL}},
      {"IsReleaseBranch", {CLEAR_ON_MANAGER_START, BOOL}},
-@@ -114,6 +115,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+@@ -114,13 +115,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
      {"RecordAudio", {PERSISTENT | BACKUP, BOOL}},
      {"RecordFront", {PERSISTENT | BACKUP, BOOL}},
      {"RecordFrontLock", {PERSISTENT, BOOL}},  // for the internal fleet
@@ -36,6 +36,14 @@ index daeb928a843165233f435c3dca6773f8bd1770b6..1de9f30dbc32a2d1e93688c2677addf6
      {"SecOCKey", {PERSISTENT | DONT_LOG | BACKUP, STRING}},
      {"ShowDebugInfo", {PERSISTENT, BOOL}},
      {"RouteCount", {PERSISTENT, INT, "0"}},
+     {"SnoozeUpdate", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
+     {"SshEnabled", {PERSISTENT | BACKUP, BOOL}},
+     {"TermsVersion", {PERSISTENT, STRING}},
+-    {"TorqueBar", {PERSISTENT | BACKUP, BOOL, "0"}},
++    {"TorqueBar", {PERSISTENT | BACKUP, BOOL, "1"}},
+     {"TrainingVersion", {PERSISTENT, STRING}},
+     {"UbloxAvailable", {PERSISTENT, BOOL}},
+     {"UpdateAvailable", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
 @@ -143,8 +145,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
  
      // --- sunnypilot params --- //
@@ -138,7 +146,7 @@ index daeb928a843165233f435c3dca6773f8bd1770b6..1de9f30dbc32a2d1e93688c2677addf6
 +    // Tuning keys
 +    {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
 +    {"HkgSharedAutonomyMode", {PERSISTENT | BACKUP, INT, "0"}},
-+    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT | BACKUP, INT, "10"}},
++    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT | BACKUP, INT, "100"}},
 +    {"HkgTuningAngleMinTorqueReductionGain", {PERSISTENT | BACKUP, INT, "1"}},
 +    {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
 +    {"HkgTuningAngleActiveTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},

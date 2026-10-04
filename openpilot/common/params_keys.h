@@ -122,7 +122,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SnoozeUpdate", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
     {"SshEnabled", {PERSISTENT | BACKUP, BOOL}},
     {"TermsVersion", {PERSISTENT, STRING}},
-    {"TorqueBar", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"TorqueBar", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"TrainingVersion", {PERSISTENT, STRING}},
     {"UbloxAvailable", {PERSISTENT, BOOL}},
     {"UpdateAvailable", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
@@ -308,7 +308,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Tuning keys
     {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"HkgSharedAutonomyMode", {PERSISTENT | BACKUP, INT, "0"}},
-    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT | BACKUP, INT, "10"}},
+    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT | BACKUP, INT, "100"}},
     {"HkgTuningAngleMinTorqueReductionGain", {PERSISTENT | BACKUP, INT, "1"}},
     {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
     {"HkgTuningAngleActiveTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},

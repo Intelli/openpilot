@@ -109,7 +109,7 @@ def _initialize_custom_longitudinal_tuning(CI, CP: structs.CarParams, CP_SP: str
     CP_SP.hkgSharedAutonomyEnabled = CP_SP.hkgSharedAutonomyMode != 0
 
     # Steering override effort scaling in percent: 100 keeps stock behavior, 10 minimizes assist during manual override.
-    CP_SP.hkgTuningAngleOverrideEffortPercent = 10.0
+    CP_SP.hkgTuningAngleOverrideEffortPercent = 100.0
     override_effort_percent = params_dict.get("HkgTuningAngleOverrideEffortPercent")
     if override_effort_percent is not None:
       try:
