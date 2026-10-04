@@ -45,6 +45,15 @@ The EV9 controller uses the preserved Sunnypilot acceleration/jerk envelope:
 application retains its separate higher-speed 3.0 m/s² limit with road-bank
 compensation. These limits depend on speed and do not impose a fixed 45° cap.
 
+Custom override effort defaults to 10%. On EV9, the custom reduction and manual
+handoff require both driver torque and confirmed HOD contact (status 1–4, with an
+actual signal timestamp no more than 300 ms old). Hands-off, missing, reserved,
+stale or future-dated HOD readings bypass custom override and release its latches
+immediately. Native Sunnypilot torque-dependent assistance and its rate history
+continue unchanged; the effort-reduction floor cannot increase that native gain. At 100%
+effort the custom gain reduction is disabled. Angle requests, filtering and
+controller/Panda envelopes are unchanged by this contact guard.
+
 Application defaults and vehicle-controller fallbacks are distinct. Read effective
 `HkgTuning*` and `HkgSharedAutonomyMode` parameters before interpreting a drive.
 Retaining feature intent across this upstream upgrade does not establish identical
