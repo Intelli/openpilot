@@ -1,5 +1,5 @@
 diff --git a/openpilot/common/params_keys.h b/openpilot/common/params_keys.h
-index daeb928a843165233f435c3dca6773f8bd1770b6..f46b90b501dd699c9e533d176a6947292e6c5f02 100644
+index daeb928a843165233f435c3dca6773f8bd1770b6..1de9f30dbc32a2d1e93688c2677addf69b0fb40c 100644
 --- a/openpilot/common/params_keys.h
 +++ b/openpilot/common/params_keys.h
 @@ -24,7 +24,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
@@ -84,7 +84,8 @@ index daeb928a843165233f435c3dca6773f8bd1770b6..f46b90b501dd699c9e533d176a694729
 +    {"RainbowMode", {PERSISTENT | BACKUP, BOOL, "1"}},
      {"RoadEdgeLaneChangeEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
      {"RocketFuel", {PERSISTENT | BACKUP, BOOL, "0"}},
-     {"ScreenSaverEnabled", {PERSISTENT | BACKUP, BOOL, "1"}},
+-    {"ScreenSaverEnabled", {PERSISTENT | BACKUP, BOOL, "1"}},
++    {"ScreenSaverEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
      {"ScreenSaverTimeout", {PERSISTENT | BACKUP, INT, "300"}},
      {"ShowAdvancedControls", {PERSISTENT | BACKUP, BOOL, "0"}},
 -    {"ShowTurnSignals", {PERSISTENT | BACKUP, BOOL, "0"}},
