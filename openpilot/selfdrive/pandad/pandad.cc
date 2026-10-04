@@ -404,7 +404,6 @@ void pandad_run(Panda *panda) {
   bool engaged_mads = false;
   bool is_onroad = false;
   bool is_offroad_param = false;
-  bool is_onroad_param = false;
   bool always_offroad = false;
   bool ignition = false;
   bool ignition_valid = false;
@@ -419,11 +418,10 @@ void pandad_run(Panda *panda) {
     can_recv(panda, &pm);
 
     bool screen_off = params.getBool("ScreenOff");
-    is_onroad_param = params.getBool("IsOnroad");
     is_offroad_param = params.getBool("IsOffroad");
     always_offroad = panda_safety.getOffroadMode();
 
-    bool low_power_candidate = is_offroad_param && !is_onroad_param && !is_onroad && ignition_valid && !ignition && screen_off;
+    bool low_power_candidate = is_offroad_param && !is_onroad && ignition_valid && !ignition && screen_off;
     bool next_low_power_loop = low_power_candidate && !always_offroad;
     if (next_low_power_loop && !low_power_loop) {
       low_power_active_until = now + LOW_POWER_INITIAL_GRACE_NS;

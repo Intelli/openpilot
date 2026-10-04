@@ -780,6 +780,65 @@ class TestEffectiveSource(OpenpilotTestCase):
                                                          chestnut_loading=False, offroad=True)).ref == "big"
 
 
+class TestModelManagerLoop(OpenpilotTestCase):
+  def test_catalogs_are_published_and_downloads_serviced_across_power_states(self):
+    class StopLoop(BaseException):
+      pass
+
+    for chestnut_present in (False, True):
+      with self.subTest(chestnut_present=chestnut_present):
+        # Real Params rejects removed keys, unlike a permissive MagicMock.
+        params = helpers.Params()
+        params.put_bool("IsOffroad", True, block=True)
+        params.put_bool("ScreenOff", True, block=True)
+        rates = []
+        ticks = 0
+
+        class LoopRatekeeper:
+          def __init__(self, rate, _rates=rates, **kwargs):
+            _rates.append(rate)
+
+          def keep_time(self, _params=params):
+            nonlocal ticks
+            ticks += 1
+            if ticks == 1:
+              _params.put_bool("ScreenOff", False, block=True)
+            elif ticks == 2:
+              _params.put_bool("ScreenOff", True, block=True)
+              _params.put_bool("IsOffroad", False, block=True)
+            else:
+              raise StopLoop
+
+        small = custom.ModelManagerSP.ModelBundle.new_message(internalName="DTRV6")
+        big = custom.ModelManagerSP.ModelBundle.new_message(internalName="BIG")
+        source_bundles = {"qcom": [small], "chestnut": [big]}
+        manager = ModelManagerSP.__new__(ModelManagerSP)
+        manager.params = params
+        manager.sm = mock.MagicMock()
+        manager.sm.__getitem__.return_value = mock.Mock(chestnutPresent=chestnut_present)
+        manager.model_fetcher = mock.Mock()
+        manager.model_fetcher.get_bundles_for_source.side_effect = source_bundles.__getitem__
+        manager._process_download_requests = mock.Mock()
+        manager._report_status = mock.Mock()
+
+        with mock.patch.object(manager_module, "Ratekeeper", LoopRatekeeper), \
+             mock.patch.object(manager_module, "validate_active_bundles") as validate, \
+             mock.patch.object(manager_module, "get_active_bundle", return_value=None), \
+             mock.patch.object(manager_module, "get_selected_bundle", return_value=None), \
+             mock.patch.object(manager_module.cloudlog, "exception") as errors:
+          with self.assertRaises(StopLoop):
+            manager.main_thread()
+
+        self.assertEqual(rates, [1.0, 0.1, 1.0])
+        self.assertEqual(manager.source_models, source_bundles)
+        self.assertEqual(manager.available_models, source_bundles["chestnut" if chestnut_present else "qcom"])
+        self.assertEqual(manager.model_fetcher.get_bundles_for_source.call_count, 6)
+        self.assertEqual(validate.call_count, 3)
+        self.assertEqual(manager._process_download_requests.call_count, 3)
+        self.assertEqual(manager._report_status.call_count, 3)
+        errors.assert_not_called()
+
+
 @unittest.skipUnless(os.environ.get('RUN_INTEGRATION_TESTS'), 'requires external network')
 class TestLiveModelManifest(OpenpilotTestCase):
   """Every artifact and chunk URL in the published manifest must resolve."""
