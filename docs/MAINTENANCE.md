@@ -65,10 +65,26 @@ sysroot tooling, `.githooks`, and maintenance documents. Upstream `.gitignore`
 is adapted with local cache exclusions. Keep application behavior in patches
 rather than adding application directories to the preservation list.
 
+Reimporting the same verified snapshot retains exact provenance JSON, including
+restoration history, and the existing root ignore/ordinary-blob attribute rules.
+Repository, commit, tree and every dependency pin must match; an explicit ref
+spelling alone does not change provenance. New snapshots regenerate metadata and
+import upstream ignore/attribute rules with the local vendoring adaptations.
+Active LFS attributes are never retained. The Intelli Docker image/registry helper
+`release/ci/docker_build_sp.sh` is preserved as maintenance tooling.
+
+The obsolete standalone opendbc deployment workflow is archived under
+`patches/archive/sunnypilot-consolidated-20261004/legacy-opendbc-ev9-sync.yaml`.
+It does not participate in the embedded dependency or current GitHub deployment.
+
 After importing, run `./apply_patch.sh`, review the source, stage it deliberately,
 and run focused checks. Replay never commits or pushes. A new upstream source
 may require refreshing patches; applicability is not guaranteed by the old
 baseline's successful replay.
+
+For a same-baseline round trip, import the recorded commit, replay the enabled
+patches, and stage the source. The resulting Git tree must equal the starting
+tree. Normal replay leaves the index unchanged until that final staging step.
 
 ## Patch ownership
 

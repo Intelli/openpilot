@@ -78,6 +78,13 @@ Both default to Sunnypilot's `hkg-angle-steering-2025`; no historical standalone
 checkout participates. Sync removes custom source in its scope while preserving
 maintenance files and patch archives. It does not replay patches, merge, commit or push.
 
+Same-baseline imports retain provenance bytes and existing root ignore/attribute
+rules only after checking the official snapshot and all dependency pins. Combined
+with replay and final staging, the recorded baselines produce an identical Git
+tree. New upstream snapshots still regenerate provenance and import new rules.
+The historical standalone opendbc deployment workflow is retained only as
+`archive/sunnypilot-consolidated-20261004/legacy-opendbc-ev9-sync.yaml`.
+
 Save edits and update patch records before sync. Import, then run the application
 helper below, review and stage the result. New upstream snapshots can require ports;
 current-tree `--check` is not a simulated replay of a dependent patch series.

@@ -19,6 +19,7 @@
 - `./sync-upstream.sh --opendbc --check [ref]` previews vehicle-only sync; `--opendbc --allow [ref]` replaces only `opendbc_repo/` and its provenance, preserving unrelated application changes and staging.
 - Both modes default to `hkg-angle-steering-2025`; explicit branch, tag or commit refs are supported. Fetching and LFS hydration use disposable temporary Git caches, not the historical standalone checkout.
 - `--check` does not change source, the index, local configuration or refs. Import refuses dirty source/index paths, untracked/ignored collisions and ongoing merge/rebase operations. Maintenance edits are preserved.
+- Reimporting an identical verified snapshot retains exact provenance and root ignore/ordinary-blob attribute rules; repository, commit, tree and every dependency identity must match. New baselines regenerate metadata/rules. After replay and staging, a same-baseline round trip must produce the original Git tree.
 - Sync is a snapshot replacement: it removes committed customizations in its scope. It does not merge, replay patches, commit or push. Save application edits and refresh their patches first. `./update.sh` forwards the same arguments.
 - Preserve only the maintenance paths explicitly listed in `tools/upstream/sync.py`, including build/sysroot tooling, CI, helpers, archives and maintenance documents. Application behavior belongs in forward patches.
 - Root helpers support `patches/` (repository-relative diffs) and `patches/opendbc/` (diffs relative to `opendbc_repo/`). Vehicle application uses `--directory=opendbc_repo`.

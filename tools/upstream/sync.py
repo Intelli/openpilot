@@ -24,7 +24,7 @@ PRESERVE = (
   "AGENTS.md", "sync-upstream.sh", "update.sh", "apply_patch.sh", "apply_patch_conflicts.sh", "fix_patch.sh",
   "create_patch.sh", "create_patch_manual.sh", "update_patch.sh", "patches", "tools/opendbc-patches", "tools/patches",
   "tools/upstream", "tools/maintenance", "tools/ci/sync_ev9_branch.sh", "tools/ci/tests", ".github/workflows",
-  "release/ci/publish.sh", ".githooks", "build", "scripts/laptop_device_build.sh", "tools/laptop_device_build",
+  "release/ci/publish.sh", "release/ci/docker_build_sp.sh", ".githooks", "build", "scripts/laptop_device_build.sh", "tools/laptop_device_build",
   "docs/how-to/laptop-device-build.md", "docs/MAINTENANCE.md", "docs/EV9_BEHAVIOR.md", "docs/RECENT_DRIVE_REVIEW.md",
   "docs/C3X_UPDATE_WORKFLOW.md", APPLICATION_MANIFEST, OPENDBC_MANIFEST, "starpilot-upstream.json",
 )
@@ -245,6 +245,49 @@ def index_entries(root):
   return entries
 
 
+def indexed_manifest(root, current, path):
+  entry = current.get(path)
+  if entry is None:
+    return {}
+  if entry[0] not in ("100644", "100755"):
+    raise ValueError(f"Expected a regular provenance file: {path}")
+  value = json.loads(git(root, "cat-file", "blob", entry[2]))
+  if not isinstance(value, dict):
+    raise ValueError(f"Expected a provenance object: {path}")
+  return value
+
+
+def same_identity(previous, incoming):
+  if not isinstance(previous, dict) or not isinstance(incoming, dict):
+    return False
+  if any(previous.get(key) != incoming.get(key) for key in ("repository", "commit", "tree")):
+    return False
+  # Older restored manifests omit gitlink; an explicitly recorded pin must match.
+  return "gitlink" not in previous or previous["gitlink"] == incoming.get("gitlink", incoming["commit"])
+
+
+def same_snapshot(previous, incoming):
+  if not same_identity(previous, incoming):
+    return False
+  if previous.get("legacy_patches_applied", False) != incoming.get("legacy_patches_applied", False):
+    return False
+  previous_dependencies = previous.get("dependencies", {})
+  incoming_dependencies = incoming.get("dependencies", {})
+  return (isinstance(previous_dependencies, dict) and previous_dependencies.keys() == incoming_dependencies.keys()
+          and all(same_identity(previous_dependencies[path], entry) for path, entry in incoming_dependencies.items()))
+
+
+def retain_entry(root, snapshot, entry):
+  # Retained blobs must also exist in the disposable cache used by pack_objects.
+  return entry[0], entry[1], snapshot.store(git(root, "cat-file", "blob", entry[2]))
+
+
+def manifest_entry(root, snapshot, current, path, provenance):
+  if same_snapshot(indexed_manifest(root, current, path), provenance):
+    return retain_entry(root, snapshot, current[path])
+  return "100644", "blob", snapshot.store((json.dumps(provenance, indent=2) + "\n").encode())
+
+
 def validate_layout(entries):
   for path in entries:
     parts = path.split("/")
@@ -256,8 +299,18 @@ def validate_layout(entries):
 
 def safety(root, current, incoming, scope):
   dirty = set()
-  for command in (("diff", "--name-only", "-z"), ("diff", "--cached", "--name-only", "-z")):
-    dirty.update(os.fsdecode(path) for path in git(root, *command).split(b"\0") if path and scope(os.fsdecode(path)))
+  index = Path(git(root, "rev-parse", "--git-path", "index").decode().strip())
+  if not index.is_absolute():
+    index = root / index
+  # git diff refreshes zero-stat entries even with GIT_OPTIONAL_LOCKS=0. Let it
+  # compare file contents in a disposable index, preserving the real race guard.
+  with tempfile.TemporaryDirectory(prefix="sunnypilot-safety-") as directory:
+    disposable_index = Path(directory) / "index"
+    shutil.copyfile(index, disposable_index)
+    environment = dict(os.environ, GIT_INDEX_FILE=str(disposable_index))
+    for command in (("diff", "--name-only", "-z"), ("diff", "--cached", "--name-only", "-z")):
+      differences = git(root, "-c", "diff.autoRefreshIndex=true", *command, env=environment)
+      dirty.update(os.fsdecode(path) for path in differences.split(b"\0") if path and scope(os.fsdecode(path)))
   if dirty:
     raise ValueError("Save application/index changes before syncing:\n" + "\n".join(sorted(dirty)))
   links = [path for path, entry in current.items() if scope(path) and entry[0] == "160000"]
@@ -405,7 +458,7 @@ def main():
     if args.opendbc:
       provenance["source"] = "opendbc sync"
       provenance["dependencies"] = snapshot.dependencies
-      source[manifest] = ("100644", "blob", snapshot.store((json.dumps(provenance, indent=2) + "\n").encode()))
+      source[manifest] = manifest_entry(root, snapshot, current, manifest, provenance)
 
       def scope(path):
         return under(path, "opendbc_repo") or path == OPENDBC_MANIFEST
@@ -414,10 +467,23 @@ def main():
       attributes = snapshot.blob(source[".gitattributes"][2]).rstrip() + b"\n\n" if ".gitattributes" in source else b""
       source[".gitattributes"] = ("100644", "blob", snapshot.store(attributes + BINARY_ATTRIBUTES.encode()))
       provenance["dependencies"] = snapshot.dependencies
-      source[manifest] = ("100644", "blob", snapshot.store((json.dumps(provenance, indent=2) + "\n").encode()))
+      if same_snapshot(indexed_manifest(root, current, manifest), provenance):
+        # Same verified upstream means these maintenance adaptations need no churn.
+        # New snapshots still import upstream rules and apply the vendoring policy.
+        for path in (".gitignore", ".gitattributes"):
+          entry = current.get(path)
+          if entry is not None and entry[0] in ("100644", "100755"):
+            data = git(root, "cat-file", "blob", entry[2])
+            if path == ".gitattributes" and re.search(rb"(?<!\S)(?:filter|diff|merge)=lfs(?=\s|$)", data):
+              continue
+            source[path] = retain_entry(root, snapshot, entry)
+      source[manifest] = manifest_entry(root, snapshot, current, manifest, provenance)
       if "opendbc_repo" in snapshot.dependencies:
         vehicle = dict(snapshot.dependencies["opendbc_repo"], branch=BRANCH, source="application pin", legacy_patches_applied=False)
-        source[OPENDBC_MANIFEST] = ("100644", "blob", snapshot.store((json.dumps(vehicle, indent=2) + "\n").encode()))
+        vehicle_dependencies = {path: entry for path, entry in snapshot.dependencies.items() if path.startswith("opendbc_repo/")}
+        if vehicle_dependencies:
+          vehicle["dependencies"] = vehicle_dependencies
+        source[OPENDBC_MANIFEST] = manifest_entry(root, snapshot, current, OPENDBC_MANIFEST, vehicle)
 
       def scope(path):
         return not preserved(path) or path in (APPLICATION_MANIFEST, OPENDBC_MANIFEST)
