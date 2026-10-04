@@ -39,6 +39,12 @@ change formerly in `01_modify_baseline.patch` is now provided by upstream and is
 archived. EV9-specific Panda lateral limits remain in enabled patch `02_`; controller
 and safety source must be built and shipped together.
 
+The EV9 controller uses the preserved Sunnypilot acceleration/jerk envelope:
+4.2 m/s² and 4.2 m/s³ at or below `HkgTuningAngleCustomLimitMaxSpeedKph`
+(40 km/h by default), then 3.5886 m/s² and 3.5886 m/s³ above it. The
+application retains its separate higher-speed 3.0 m/s² limit with road-bank
+compensation. These limits depend on speed and do not impose a fixed 45° cap.
+
 Application defaults and vehicle-controller fallbacks are distinct. Read effective
 `HkgTuning*` and `HkgSharedAutonomyMode` parameters before interpreting a drive.
 Retaining feature intent across this upstream upgrade does not establish identical

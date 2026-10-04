@@ -289,10 +289,10 @@ class TestEV9ControllerLimits(unittest.TestCase):
   def test_ev9_baseline_does_not_change_other_models(self):
     ev9 = self._controller(CAR.KIA_EV9)
     other = self._controller(CAR.HYUNDAI_IONIQ_9)
-    self.assertEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.0)
-    self.assertEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.0)
-    self.assertGreater(other.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5)
-    self.assertGreater(other.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5)
+    self.assertAlmostEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
+    self.assertAlmostEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)
+    self.assertAlmostEqual(other.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
+    self.assertAlmostEqual(other.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)
     self.assertIsNot(ev9.params.ANGLE_LIMITS, other.params.ANGLE_LIMITS)
 
   def test_controller_acceleration_and_jerk_speed_boundary(self):
@@ -315,10 +315,10 @@ class TestEV9ControllerLimits(unittest.TestCase):
       stack.enter_context(patch.object(carcontroller.IntelligentCruiseButtonManagementInterface, "update", return_value=[]))
       stack.enter_context(patch.object(controller, "create_canfd_msgs", return_value=[]))
       stack.enter_context(patch.object(carcontroller, "apply_steer_angle_limits_vm", side_effect=capture))
-      for speed, expected in ((40 / 3.6, 4.2), (40 / 3.6 + 0.01, 3.0), (30, 3.0)):
+      for speed, expected in ((40 / 3.6, 4.2), (40 / 3.6 + 0.01, 3.5886), (30, 3.5886)):
         cs.out.vEgo = cs.out.vEgoRaw = speed
         controller.update(cc.as_reader(), CarControlSP(), cs, 0)
         self.assertEqual(captured[-1].MAX_LATERAL_ACCEL, expected)
         self.assertEqual(captured[-1].MAX_LATERAL_JERK, expected)
-        self.assertEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.0)
-        self.assertEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.0)
+        self.assertAlmostEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
+        self.assertAlmostEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)

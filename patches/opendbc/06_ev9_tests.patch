@@ -1,5 +1,5 @@
 diff --git a/opendbc/car/hyundai/tests/test_hyundai.py b/opendbc/car/hyundai/tests/test_hyundai.py
-index 6c08809aa8bf888251d3b4e43e9d856aea4d8006..d7ef8bee881a05e91c234e2e68b07ffb2f03bc9d 100644
+index 6c08809aa8bf888251d3b4e43e9d856aea4d8006..3c85204072ddbd4e2fb1fc3cb14d5c88eb977e14 100644
 --- a/opendbc/car/hyundai/tests/test_hyundai.py
 +++ b/opendbc/car/hyundai/tests/test_hyundai.py
 @@ -1,12 +1,18 @@
@@ -50,10 +50,10 @@ index 6c08809aa8bf888251d3b4e43e9d856aea4d8006..d7ef8bee881a05e91c234e2e68b07ffb
 +  def test_ev9_baseline_does_not_change_other_models(self):
 +    ev9 = self._controller(CAR.KIA_EV9)
 +    other = self._controller(CAR.HYUNDAI_IONIQ_9)
-+    self.assertEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.0)
-+    self.assertEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.0)
-+    self.assertGreater(other.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5)
-+    self.assertGreater(other.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5)
++    self.assertAlmostEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
++    self.assertAlmostEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)
++    self.assertAlmostEqual(other.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
++    self.assertAlmostEqual(other.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)
 +    self.assertIsNot(ev9.params.ANGLE_LIMITS, other.params.ANGLE_LIMITS)
 +
 +  def test_controller_acceleration_and_jerk_speed_boundary(self):
@@ -76,13 +76,13 @@ index 6c08809aa8bf888251d3b4e43e9d856aea4d8006..d7ef8bee881a05e91c234e2e68b07ffb
 +      stack.enter_context(patch.object(carcontroller.IntelligentCruiseButtonManagementInterface, "update", return_value=[]))
 +      stack.enter_context(patch.object(controller, "create_canfd_msgs", return_value=[]))
 +      stack.enter_context(patch.object(carcontroller, "apply_steer_angle_limits_vm", side_effect=capture))
-+      for speed, expected in ((40 / 3.6, 4.2), (40 / 3.6 + 0.01, 3.0), (30, 3.0)):
++      for speed, expected in ((40 / 3.6, 4.2), (40 / 3.6 + 0.01, 3.5886), (30, 3.5886)):
 +        cs.out.vEgo = cs.out.vEgoRaw = speed
 +        controller.update(cc.as_reader(), CarControlSP(), cs, 0)
 +        self.assertEqual(captured[-1].MAX_LATERAL_ACCEL, expected)
 +        self.assertEqual(captured[-1].MAX_LATERAL_JERK, expected)
-+        self.assertEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.0)
-+        self.assertEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.0)
++        self.assertAlmostEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
++        self.assertAlmostEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)
 diff --git a/opendbc/safety/tests/test_hyundai_canfd.py b/opendbc/safety/tests/test_hyundai_canfd.py
 index 3050a6e7ed46d678065164835e4010aa0098a952..e119c4cc0f316b27fe5ba168234662c1c9650878 100755
 --- a/opendbc/safety/tests/test_hyundai_canfd.py

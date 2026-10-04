@@ -139,8 +139,8 @@ class CarController(CarControllerBase, EsccCarController, LeadDataCarController,
     self.CAN = CanBus(CP)
     self.params = CarControllerParams(CP)
     if CP.carFingerprint == CAR.KIA_EV9:
-      # Preserve the EV9 high-speed controller envelope without changing other models.
-      self.params.ANGLE_LIMITS = replace(self.params.ANGLE_LIMITS, MAX_LATERAL_ACCEL=3.0, MAX_LATERAL_JERK=3.0)
+      # Keep the upstream/old Sunnypilot envelope and isolate temporary EV9 low-speed overrides.
+      self.params.ANGLE_LIMITS = replace(self.params.ANGLE_LIMITS)
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.angle_limit_counter = 0
     self.angle_filter = FirstOrderFilter(0.0, 0.2, DT_CTRL)
