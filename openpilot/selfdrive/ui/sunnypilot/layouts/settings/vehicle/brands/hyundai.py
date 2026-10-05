@@ -16,6 +16,7 @@ class HyundaiSettings(BrandSettings):
     super().__init__()
     self.alpha_long_available = False
     self.has_angle_steering = False
+    self.is_ev9 = False
 
     tuning_texts = [tr("Off"), tr("Dynamic"), tr("Predictive")]
     self.longitudinal_tuning_item = multiple_button_item_sp(tr("Custom Longitudinal Tuning"), "", tuning_texts,
@@ -70,15 +71,18 @@ class HyundaiSettings(BrandSettings):
   def update_settings(self):
     self.alpha_long_available = False
     self.has_angle_steering = False
+    self.is_ev9 = False
     bundle = ui_state.params.get("CarPlatformBundle")
     if bundle:
       platform = bundle.get("platform")
       config = CAR[platform].config
       self.alpha_long_available = CAR[platform] not in set().union(*UNSUPPORTED_LONGITUDINAL_CAR.values())
       self.has_angle_steering = bool(config.flags & HyundaiFlags.CANFD_ANGLE_STEERING)
+      self.is_ev9 = CAR[platform] == CAR.KIA_EV9
     elif ui_state.CP is not None:
       self.alpha_long_available = ui_state.CP.alphaLongitudinalAvailable
       self.has_angle_steering = bool(ui_state.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING)
+      self.is_ev9 = ui_state.CP.carFingerprint == CAR.KIA_EV9
 
     tuning_param = int(ui_state.params.get("HyundaiLongitudinalTuning") or "0")
     long_enabled = ui_state.has_longitudinal_control
@@ -131,6 +135,10 @@ class HyundaiSettings(BrandSettings):
 
     angle_override_base_desc = tr("Adjust steering effort required to manually override lateral control on angle-steering platforms. " +
                                   "Lower values make override easier. 100% keeps stock behavior.")
+    if self.is_ev9:
+      angle_override_base_desc = tr("Lower values require less sustained steering input and progressively reduce assistance more during override. " +
+                                    "100% disables this extra reduction. Hands-off assistance is unchanged. " +
+                                    "Improved Manual Control uses its own handoff assistance.")
     if not self.has_angle_steering:
       angle_override_desc = tr("This feature is only available on angle-steering Hyundai/Kia/Genesis platforms.")
     elif not ui_state.is_offroad():

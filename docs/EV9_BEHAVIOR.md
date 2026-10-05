@@ -48,14 +48,34 @@ compensation. These limits depend on speed and do not impose a fixed 45° cap.
 Custom override effort defaults to 100% in compiled parameters and vehicle
 fallbacks, disabling the extra gain reduction for new installs. Improved Manual
 Control remains off by default. Existing saved settings remain authoritative.
-On EV9, the custom reduction and manual
-handoff require both driver torque and confirmed HOD contact (status 1–4, with an
+On EV9, the custom reduction and manual handoff require sustained driver torque
+and confirmed HOD contact (status 1–4, with an
 actual signal timestamp no more than 300 ms old). Hands-off, missing, reserved,
 stale or future-dated HOD readings bypass custom override and release its latches
 immediately. Native Sunnypilot torque-dependent assistance and its rate history
 continue unchanged; the effort-reduction floor cannot increase that native gain. At 100%
-effort the custom gain reduction is disabled. Angle requests, filtering and
-controller/Panda envelopes are unchanged by this contact guard.
+effort the custom gain reduction is disabled. There is one Override Effort
+setting: lower values automatically lower the EV9 entry threshold and increase
+the allowed extra assistance reduction. Entry thresholds scale linearly from
+150 torque-signal units at 10% to the original 175 at 100%. Entry requires 120 ms of
+continuous input above the threshold, or 60 ms with filtered `steeringPressed`.
+Input at twice the entry threshold bypasses this dwell. Release retains the
+40-unit threshold hysteresis. Contact alone never triggers override.
+
+Override Effort also sets the strongest extra reduction. Reduction increases
+progressively with torque between the release
+threshold and twice the entry threshold. A separate multiplier changes by at most
+0.03 per 10 ms update (0.08 for strong input) toward reduced assistance and 0.02
+toward recovery. Contact loss bypasses recovery immediately. The native gain
+curve/history, model angle filtering, and controller/Panda envelopes remain intact.
+These initial calibration values require device evaluation; recorded-input replay
+does not predict the physical response to different commands.
+
+Improved Manual Control remains a separate mode, including at 100% effort. Its
+high-angle handoff gain is at most 0.1 and never exceeds native gain. Its final
+measured-angle target now passes through the existing controller limiter before
+transmission. If no active request satisfies the acceleration and rate limits,
+angle actuation is disabled for that frame with zero gain.
 
 Application defaults and vehicle-controller fallbacks are distinct. Read effective
 `HkgTuning*` and `HkgSharedAutonomyMode` parameters before interpreting a drive.
