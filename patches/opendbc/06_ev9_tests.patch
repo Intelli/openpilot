@@ -1,0 +1,567 @@
+diff --git a/opendbc/car/hyundai/tests/test_hyundai.py b/opendbc/car/hyundai/tests/test_hyundai.py
+index 6c08809aa8bf888251d3b4e43e9d856aea4d8006..5b2a60c2789d86d2bb672ce3a2d3e7a89218e020 100644
+--- a/opendbc/car/hyundai/tests/test_hyundai.py
++++ b/opendbc/car/hyundai/tests/test_hyundai.py
+@@ -1,12 +1,19 @@
+ import unittest
+-
+-from opendbc.car import gen_empty_fingerprint
+-from opendbc.car.structs import CarParams
++from contextlib import ExitStack, contextmanager
++from dataclasses import replace
++from types import SimpleNamespace
++from unittest.mock import patch
++
++from opendbc.car import Bus, gen_empty_fingerprint
++from opendbc.can import CANPacker
++from opendbc.car.structs import CarParams, CarParamsSP, CarState, CarControl, CarControlSP
++from opendbc.car.hyundai import carcontroller
++from opendbc.car.hyundai.carstate import CarState as HyundaiCarState, HOD_HANDS_ON_STATUSES, HOD_VALID_STATUSES
+ from opendbc.car.fw_versions import build_fw_dict
+ from opendbc.car.hyundai.interface import CarInterface
+ from opendbc.car.hyundai.hyundaicanfd import CanBus
+ from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR
+-from opendbc.car.hyundai.values import CAR, DATE_FW_ECUS, \
++from opendbc.car.hyundai.values import CAR, DBC, DATE_FW_ECUS, \
+                                          FW_QUERY_CONFIG, CANFD_FUZZY_WHITELIST, \
+                                          PLATFORM_CODE_ECUS, HYUNDAI_VERSION_REQUEST_LONG, \
+                                          HyundaiFlags, get_platform_codes, HyundaiSafetyFlags, \
+@@ -54,6 +61,11 @@ def cars_with(flags):
+ 
+ 
+ class TestHyundaiFingerprint(unittest.TestCase):
++  def test_ev9_hod_statuses(self):
++    assert HOD_VALID_STATUSES == {0, 1, 2, 3, 4}
++    assert HOD_HANDS_ON_STATUSES == {1, 2, 3, 4}
++    assert HOD_VALID_STATUSES - HOD_HANDS_ON_STATUSES == {0}
++
+   def test_feature_detection(self):
+     # LKA steering
+     for lka_steering in (True, False):
+@@ -267,3 +279,302 @@ class TestHyundaiFingerprint(unittest.TestCase):
+         platforms_with_shared_codes.add(platform)
+ 
+     assert platforms_with_shared_codes == excluded_platforms
++
++
++class TestEV9ControllerLimits(unittest.TestCase):
++  def _controller(self, car_name, speed_kph=40):
++    cp = CarInterface.get_non_essential_params(car_name)
++    cp_sp = CarParamsSP(hkgTuningAngleCustomLimitMaxSpeedKph=speed_kph)
++    return carcontroller.CarController(DBC[car_name], cp, cp_sp)
++
++  def test_ev9_baseline_does_not_change_other_models(self):
++    ev9 = self._controller(CAR.KIA_EV9)
++    other = self._controller(CAR.HYUNDAI_IONIQ_9)
++    self.assertAlmostEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
++    self.assertAlmostEqual(ev9.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)
++    self.assertAlmostEqual(other.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
++    self.assertAlmostEqual(other.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)
++    self.assertIsNot(ev9.params.ANGLE_LIMITS, other.params.ANGLE_LIMITS)
++
++  def test_controller_acceleration_and_jerk_speed_boundary(self):
++    controller = self._controller(CAR.KIA_EV9)
++    cc = CarControl.new_message(latActive=True)
++    cc.actuators.steeringAngleDeg = 200
++    cs = SimpleNamespace(out=CarState.new_message(), is_metric=True)
++    captured = []
++    original = carcontroller.apply_steer_angle_limits_vm
++
++    def capture(*args):
++      captured.append(replace(args[-2].ANGLE_LIMITS))
++      return original(*args)
++
++    with ExitStack() as stack:
++      # Bypass unrelated longitudinal/CAN builders while running the actual steering update.
++      for cls in (carcontroller.EsccCarController, carcontroller.LeadDataCarController,
++                  carcontroller.MadsCarController, carcontroller.LongitudinalController):
++        stack.enter_context(patch.object(cls, "update"))
++      stack.enter_context(patch.object(carcontroller.IntelligentCruiseButtonManagementInterface, "update", return_value=[]))
++      stack.enter_context(patch.object(controller, "create_canfd_msgs", return_value=[]))
++      stack.enter_context(patch.object(carcontroller, "apply_steer_angle_limits_vm", side_effect=capture))
++      for speed, expected in ((40 / 3.6, 4.2), (40 / 3.6 + 0.01, 3.5886), (30, 3.5886)):
++        cs.out.vEgo = cs.out.vEgoRaw = speed
++        controller.update(cc.as_reader(), CarControlSP(), cs, 0)
++        self.assertEqual(captured[-1].MAX_LATERAL_ACCEL, expected)
++        self.assertEqual(captured[-1].MAX_LATERAL_JERK, expected)
++        self.assertAlmostEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_ACCEL, 3.5886)
++        self.assertAlmostEqual(controller.params.ANGLE_LIMITS.MAX_LATERAL_JERK, 3.5886)
++
++
++def make_ev9_override_controller(car_name=CAR.KIA_EV9, mode=0, effort=10):
++  cp = CarInterface.get_non_essential_params(car_name)
++  cp.flags = int(cp.flags | HyundaiFlags.CANFD_LKA_STEER_MSG | HyundaiFlags.CANFD_LKA_STEER_MSG_ALT)
++  cp_sp = CarParamsSP(hkgTuningAngleCustomLimitMaxSpeedKph=40, hkgTuningAngleOverrideEffortPercent=effort,
++                     hkgSharedAutonomyMode=mode, hkgSharedAutonomyEnabled=mode != 0)
++  return carcontroller.CarController(DBC[car_name], cp, cp_sp)
++
++
++@contextmanager
++def ev9_override_controller_context(controller, pack_steering=False):
++  """Run real steering update; bypass unrelated cruise, HUD and longitudinal work."""
++  with ExitStack() as stack:
++    for cls in (carcontroller.EsccCarController, carcontroller.LeadDataCarController,
++                carcontroller.MadsCarController, carcontroller.LongitudinalController):
++      stack.enter_context(patch.object(cls, "update"))
++    stack.enter_context(patch.object(carcontroller.IntelligentCruiseButtonManagementInterface, "update", return_value=[]))
++    if pack_steering:
++      def steering_only(active, gain, *_):
++        return carcontroller.hyundaicanfd.create_steering_messages(controller.packer, controller.CP, controller.CAN,
++                                                                 True, active, gain, controller.apply_angle_last, 2)
++      stack.enter_context(patch.object(controller, "create_canfd_msgs", side_effect=steering_only))
++    else:
++      stack.enter_context(patch.object(controller, "create_canfd_msgs", return_value=[]))
++    yield
++
++
++class TestEV9OverrideContact(unittest.TestCase):
++  def setUp(self):
++    self.controller = make_ev9_override_controller()
++    self.cc = CarControl.new_message(enabled=True, latActive=True)
++    self.cc.actuators.steeringAngleDeg = 20
++    self.cs = SimpleNamespace(out=CarState.new_message(vEgo=20 / 3.6, vEgoRaw=20 / 3.6, steeringAngleDeg=20,
++                                                     steeringTorque=200, steeringPressed=True),
++                              is_metric=True, hands_on_steering_grip=0, hands_on_steering_ts_nanos=0)
++    self.now = 1_000_000_000
++
++  def step(self, status, age=10_000_000):
++    self.cs.hands_on_steering_grip = status
++    self.cs.hands_on_steering_ts_nanos = self.now - age if age is not None else 0
++    with ev9_override_controller_context(self.controller):
++      output, _ = self.controller.update(self.cc.as_reader(), CarControlSP(), self.cs, self.now)
++    self.now += 10_000_000
++    return output.torqueOutputCan, self.controller.apply_torque_base_last
++
++  def settle(self, status, age=10_000_000):
++    for _ in range(250):
++      result = self.step(status, age)
++    return result
++
++  def test_no_confirmed_contact_keeps_native_gain(self):
++    cases = [(0, 10_000_000), (1, 300_000_001), (1, None), (1, -1),
++             (5, 10_000_000), (6, 10_000_000), (7, 10_000_000)]
++    for status, age in cases:
++      with self.subTest(status=status, age=age):
++        gain, base = self.settle(status, age)
++        self.assertGreater(base, 0.1)
++        self.assertAlmostEqual(gain, base, places=6)
++        self.assertFalse(self.controller.override_active)
++
++  def test_fresh_contact_with_strong_torque_reaches_custom_floor(self):
++    self.cs.out.steeringTorque = 350
++    for status in (1, 2, 3, 4):
++      for age in (10_000_000, 300_000_000):
++        with self.subTest(status=status, age=age):
++          gain, base = self.settle(status, age)
++          self.assertGreater(base, 0.1)
++          self.assertAlmostEqual(gain, 0.1)
++
++  def test_contact_without_torque_keeps_native_gain(self):
++    self.cs.out.steeringTorque = 0
++    self.cs.out.steeringPressed = False
++    gain, base = self.settle(1)
++    self.assertAlmostEqual(gain, base, places=6)
++    self.assertFalse(self.controller.override_active)
++
++  def test_contact_loss_clears_all_manual_state_same_frame(self):
++    for mode in (0, 1, 2):
++      for status, age in ((0, 10_000_000), (1, 300_000_001), (5, 10_000_000), (1, None), (1, -1)):
++        with self.subTest(mode=mode, status=status, age=age):
++          self.controller = make_ev9_override_controller(mode=mode)
++          self.cs.out.steeringAngleDeg = self.cc.actuators.steeringAngleDeg = 100
++          self.settle(1)
++          gain, base = self.step(status, age)
++          self.assertAlmostEqual(gain, base, places=6)
++          for field in ("override_active", "disabled_torque_override_active", "disabled_manual_override_latched",
++                        "manual_override_keep_active_latched"):
++            self.assertFalse(getattr(self.controller, field), field)
++          self.assertEqual(self.controller.disabled_low_demand_release_timer, 0)
++          self.assertEqual(self.controller.disabled_reentry_grip_dwell_timer, 0)
++
++  def test_contact_cut_does_not_change_native_gain_history(self):
++    self.settle(0)
++    base_before = self.controller.apply_torque_base_last
++    gain, base_contact = self.step(1)
++    self.assertAlmostEqual(gain, base_contact, places=6)
++    self.assertEqual(base_contact, base_before)
++    gain, base_contact = self.settle(1)
++    self.assertGreater(gain, 0.1)
++    self.assertLess(gain, base_contact)
++    gain, base_released = self.step(0)
++    self.assertAlmostEqual(gain, base_released, places=6)
++    self.assertEqual(base_released, base_contact)
++
++  def test_full_effort_matches_native_and_floor_never_increases_gain(self):
++    self.controller = make_ev9_override_controller(effort=100)
++    gain, base = self.step(1)
++    self.assertLess(base, 0.1)
++    self.assertAlmostEqual(gain, base, places=6)
++    gain, base = self.settle(1)
++    self.assertAlmostEqual(gain, base, places=6)
++    self.controller = make_ev9_override_controller()
++    gain, base = self.step(1)
++    self.assertGreater(base, 0)
++    self.assertLess(base, 0.1)
++    self.assertAlmostEqual(gain, base, places=6)
++
++  def test_other_angle_models_keep_existing_torque_override(self):
++    self.controller = make_ev9_override_controller(CAR.HYUNDAI_IONIQ_9)
++    gain, base = self.settle(0)
++    self.assertGreater(base, 0.1)
++    self.assertAlmostEqual(gain, 0.1)
++
++  def test_brief_torque_spikes_do_not_reduce_assistance(self):
++    self.cs.out.steeringTorque = 0
++    self.cs.out.steeringPressed = False
++    self.settle(3)
++    for sign in (-1, 1):
++      for pressed in (False, True):
++        self.cs.out.steeringTorque = sign * 200
++        self.cs.out.steeringPressed = pressed
++        for _ in range(5):
++          gain, base = self.step(3)
++          self.assertAlmostEqual(gain, base, places=6)
++          self.assertFalse(self.controller.override_active)
++        self.cs.out.steeringTorque = 0
++        self.step(3)
++
++  def test_sustained_input_and_strong_input_entry(self):
++    self.cs.out.steeringPressed = False
++    for _ in range(11):
++      self.step(3)
++      self.assertFalse(self.controller.override_active)
++    self.step(3)
++    self.assertTrue(self.controller.override_active)
++    self.step(0)
++    self.cs.out.steeringTorque = -350
++    self.step(3)
++    self.assertTrue(self.controller.override_active)
++    self.assertEqual(self.controller.ev9_override.entry_timer, 0.01)
++
++  def test_effort_automatically_scales_entry_and_assistance(self):
++    self.cs.out.steeringTorque = 165
++    self.cs.out.steeringPressed = False
++    for effort, expected in ((10, True), (50, True), (90, False)):
++      self.controller = make_ev9_override_controller(effort=effort)
++      gain, base = self.settle(3)
++      self.assertEqual(self.controller.override_active, expected)
++      self.assertEqual(gain < base - 1e-6, expected)
++    self.cs.out.steeringTorque = 200
++    gains = []
++    for effort in (10, 50, 90):
++      self.controller = make_ev9_override_controller(effort=effort)
++      gain, _ = self.settle(3)
++      gains.append(gain)
++    self.assertLess(gains[0], gains[1])
++    self.assertLess(gains[1], gains[2])
++    self.controller = make_ev9_override_controller(effort=100)
++    gain, base = self.settle(3)
++    self.assertAlmostEqual(gain, base, places=6)
++    self.assertFalse(self.controller.override_active)
++
++  def test_progressive_reduction_and_contact_recovery(self):
++    gain_moderate, base = self.settle(3)
++    self.assertGreater(gain_moderate, 0.1)
++    self.assertLess(gain_moderate, base)
++    self.cs.out.steeringTorque = 350
++    for _ in range(30):
++      previous = self.controller.ev9_override.multiplier
++      self.step(3)
++      self.assertLessEqual(previous - self.controller.ev9_override.multiplier, 0.08 + 1e-9)
++    self.assertAlmostEqual(self.controller.ev9_override.multiplier, 0.1)
++    self.cs.out.steeringTorque = 0
++    for _ in range(10):
++      previous = self.controller.ev9_override.multiplier
++      self.step(3)
++      self.assertLessEqual(self.controller.ev9_override.multiplier - previous, 0.02 + 1e-9)
++    self.assertLess(self.controller.ev9_override.multiplier, 1.0)
++    gain, base = self.step(0)
++    self.assertAlmostEqual(gain, base, places=6)
++    self.assertEqual(self.controller.ev9_override.multiplier, 1.0)
++
++  def test_contact_loss_resets_pending_entry(self):
++    self.cs.out.steeringPressed = False
++    for _ in range(10):
++      self.step(3)
++    self.step(0)
++    self.assertEqual(self.controller.ev9_override.entry_timer, 0)
++    for _ in range(10):
++      gain, base = self.step(3)
++      self.assertAlmostEqual(gain, base, places=6)
++      self.assertFalse(self.controller.override_active)
++
++  def test_hands_off_packed_commands_match_full_effort(self):
++    native = make_ev9_override_controller(effort=100)
++    with ev9_override_controller_context(self.controller, pack_steering=True), ev9_override_controller_context(native, pack_steering=True):
++      for frame in range(200):
++        self.cc.actuators.steeringAngleDeg = 140 if frame < 100 else -70
++        self.cs.out.steeringTorque = -250 if frame % 40 < 20 else 250
++        self.cs.hands_on_steering_grip = 0
++        self.cs.hands_on_steering_ts_nanos = self.now - 10_000_000
++        tuned, tuned_can = self.controller.update(self.cc.as_reader(), CarControlSP(), self.cs, self.now)
++        stock, stock_can = native.update(self.cc.as_reader(), CarControlSP(), self.cs, self.now)
++        self.assertEqual(tuned_can, stock_can)
++        self.assertEqual(tuned.steeringAngleDeg, stock.steeringAngleDeg)
++        self.cs.out.steeringAngleDeg = tuned.steeringAngleDeg
++        self.now += 10_000_000
++
++
++class TestEV9OverrideParameters(unittest.TestCase):
++  def test_effort_defaults_bounds_and_automatic_threshold(self):
++    from opendbc.sunnypilot.car.interfaces import _initialize_custom_longitudinal_tuning
++
++    cp = CarInterface.get_non_essential_params(CAR.KIA_EV9)
++    for value, expected in ((None, 100), ("bad", 100), ("0", 10), ("125", 100), ("80", 80)):
++      params = {} if value is None else {"HkgTuningAngleOverrideEffortPercent": value}
++      cp_sp = CarParamsSP()
++      _initialize_custom_longitudinal_tuning(CarInterface, cp, cp_sp, params)
++      self.assertEqual(cp_sp.hkgTuningAngleOverrideEffortPercent, expected)
++      self.assertEqual(cp_sp.hkgSharedAutonomyMode, 0)
++      controller = make_ev9_override_controller(effort=expected)
++      self.assertAlmostEqual(controller.ev9_override.enter_threshold, 150 + (expected - 10) / 90 * 25)
++
++
++class TestEV9HODTimestamp(unittest.TestCase):
++  def test_timestamp_tracks_received_hod_packet_not_update_time(self):
++    controller = make_ev9_override_controller()
++    state = HyundaiCarState(controller.CP, controller.CP_SP)
++    parsers = state.get_can_parsers(controller.CP, controller.CP_SP)
++    parser = parsers[Bus.pt]
++    packer = CANPacker(DBC[CAR.KIA_EV9][Bus.pt])
++    self.assertEqual(state.hands_on_steering_ts_nanos, 0)
++    state.update_canfd(parsers)
++    self.assertEqual(state.hands_on_steering_ts_nanos, 0)
++    stamp = 1_000_000_000
++    hod = packer.make_can_msg("HOD_FD_01_100ms", parser.bus, {"HOD_Dir_Status": 3})
++    parser.update([(stamp, [hod])])
++    _, state_sp = state.update_canfd(parsers)
++    self.assertTrue(state_sp.handsOnWheel)
++    self.assertEqual(state.hands_on_steering_ts_nanos, stamp)
++    wheels = packer.make_can_msg("WHEEL_SPEEDS", parser.bus, {"WHL_SpdFLVal": 20})
++    parser.update([(stamp + 500_000_000, [wheels])])
++    state.update_canfd(parsers)
++    self.assertEqual(state.hands_on_steering_ts_nanos, stamp)
+diff --git a/opendbc/safety/tests/test_hyundai_canfd.py b/opendbc/safety/tests/test_hyundai_canfd.py
+index 3050a6e7ed46d678065164835e4010aa0098a952..1f1947cfcc9cc4e90546e58db3c1e21f803bb39c 100755
+--- a/opendbc/safety/tests/test_hyundai_canfd.py
++++ b/opendbc/safety/tests/test_hyundai_canfd.py
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env python3
+ from opendbc.testing import parameterized_class, parameterized
+ import unittest
++from dataclasses import replace
+ import numpy as np
+ 
+ from opendbc.car.hyundai.carcontroller import ANGLE_SAFETY_BASELINE_MODEL
+@@ -162,9 +163,12 @@ class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSa
+ 
+   cnt_angle_cmd = 0
+ 
+-  def get_angle_limits(self, car_name):
++  def get_angle_limits(self, car_name, speed=None):
+     limits = CarControllerParams(CarInterface.get_non_essential_params(car_name))
+-    limits.ANGLE_LIMITS = self.BASELINE_PANDA_ANGLE_LIMITS
++    limits.ANGLE_LIMITS = replace(self.BASELINE_PANDA_ANGLE_LIMITS)
++    if car_name == CAR.KIA_EV9 and speed is not None and speed <= (42 / 3.6) + 0.1:
++      limits.ANGLE_LIMITS.MAX_LATERAL_ACCEL = 4.2
++      limits.ANGLE_LIMITS.MAX_LATERAL_JERK = 4.2
+     return limits
+ 
+   def get_baseline_limits(self):
+@@ -250,7 +254,7 @@ class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSa
+ 
+         # Stay within limits
+         # Up
+-        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_angle_limits(car_name))) * sign
++        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_angle_limits(car_name, speed))) * sign
+         sent = self._tx(self._angle_cmd_msg(max_angle_delta, True))
+         self.assertTrue(sent)
+ 
+@@ -264,8 +268,8 @@ class TestHyundaiCanfdAngleSteering(TestHyundaiCanfdBase, common.AngleSteeringSa
+         # Inject too high rates
+         # Up
+         # TODO-SP: Why do I need to set a can_offset so high to pass the tests and why tesla only does +1? and why does it seem to differ based on the baseline?
+-        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_angle_limits(car_name)), 6) * sign
+-        self.assertFalse(self._tx(self._angle_cmd_msg(max_angle_delta, True)), vars(self.get_angle_limits(car_name)))
++        max_angle_delta = round_angle(get_max_angle_delta_vm(speed, self.get_vm(car_name), self.get_angle_limits(car_name, speed)), 6) * sign
++        self.assertFalse(self._tx(self._angle_cmd_msg(max_angle_delta, True)), vars(self.get_angle_limits(car_name, speed)))
+ 
+         # Don't change
+         self.safety.set_desired_angle_last(round(max_angle_delta * self.DEG_TO_CAN))
+@@ -700,3 +704,176 @@ class TestHyundaiCanfdLFASteeringLongAltButtons(TestHyundaiCanfdLFASteeringLongB
+ 
+ if __name__ == "__main__":
+   unittest.main()
++
++
++class TestHyundaiCanfdEV9AngleLimits(unittest.TestCase):
++  """Exercise the actual Panda envelope without inherited torque-only tests."""
++  SPEED_GATE_MPS = (42 / 3.6) + 0.1
++
++  def setUp(self):
++    self.packer = CANPackerSafety("hyundai_canfd_generated")
++    self.safety = libsafety_py.libsafety
++    self.timer = 0
++
++  def _select_model(self, car_name):
++    model_id = ANGLE_STEERING_MODEL_BY_CAR.get(car_name, 0)
++    self.safety.set_current_safety_param_sp(encode_angle_model_id(model_id))
++    self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd,
++                               HyundaiSafetyFlags.CANFD_LKA_STEER_MSG | HyundaiSafetyFlags.EV_GAS |
++                               HyundaiSafetyFlags.CANFD_LKA_STEER_MSG_ALT | HyundaiSafetyFlags.CANFD_ANGLE_STEERING)
++    self.safety.init_tests()
++    self.assertEqual(self.safety.get_hyundai_angle_model_id(), model_id)
++    self.safety.set_controls_allowed(True)
++
++  def _speed(self, speed):
++    values = {f"WHL_Spd{pos}Val": (speed + 1) * 3.6 for pos in ("FL", "FR", "RL", "RR")}
++    for _ in range(common.MAX_SAMPLE_VALS):
++      self.safety.safety_rx_hook(self.packer.make_can_msg_safety("WHEEL_SPEEDS", 1, values))
++    return max(self.safety.get_vehicle_speed_min() - 1, 1)
++
++  def _cmd(self, ticks, previous):
++    self.safety.set_desired_angle_last(previous)
++    self.timer += 10_000
++    self.safety.set_timer(self.timer)
++    msg = self.packer.make_can_msg_safety("LKAS_ALT", 0, {"ADAS_StrAnglReqVal": ticks / 10,
++                                                         "LKAS_ANGLE_ACTIVE": 2, "ADAS_ACIAnglTqRedcGainVal": 0})
++    return self.safety.safety_tx_hook(msg)
++
++  def _check_envelope(self, car_name, nominal_speed, jerk=False):
++    self._select_model(car_name)
++    speed = self._speed(nominal_speed)
++    cp = CarInterface.get_non_essential_params(car_name)
++    vm = VehicleModel(cp)
++    params = CarControllerParams(cp)
++    params.ANGLE_LIMITS = replace(params.ANGLE_LIMITS)
++    if car_name == CAR.KIA_EV9 and speed <= self.SPEED_GATE_MPS:
++      params.ANGLE_LIMITS.MAX_LATERAL_ACCEL = 4.2
++      params.ANGLE_LIMITS.MAX_LATERAL_JERK = 4.2
++    angle = get_max_angle_delta_vm(speed, vm, params) if jerk else get_max_angle_vm(speed, vm, params)
++    ticks = int(angle * 10)
++    for sign in (-1, 1):
++      self.safety.set_controls_allowed(True)
++      self.assertTrue(self._cmd(sign * ticks, 0 if jerk else sign * ticks), (car_name, speed, jerk, ticks))
++      self.assertFalse(self._cmd(sign * (ticks + 3), 0 if jerk else sign * ticks), (car_name, speed, jerk, ticks))
++
++  def test_ev9_acceleration_boundary(self):
++    for speed in (self.SPEED_GATE_MPS - 0.2, self.SPEED_GATE_MPS + 0.2, 30):
++      with self.subTest(speed=speed):
++        self._check_envelope(CAR.KIA_EV9, speed)
++
++  def test_ev9_jerk_boundary(self):
++    for speed in (self.SPEED_GATE_MPS - 0.2, self.SPEED_GATE_MPS + 0.2, 30):
++      with self.subTest(speed=speed):
++        self._check_envelope(CAR.KIA_EV9, speed, jerk=True)
++
++  def test_ioniq9_retains_standard_limits(self):
++    # Similar dimensions must not select the EV9-only limits.
++    for jerk in (False, True):
++      self._check_envelope(CAR.HYUNDAI_IONIQ_9, self.SPEED_GATE_MPS - 0.2, jerk=jerk)
++
++
++class TestEV9OverrideContactCAN(unittest.TestCase):
++  def test_hands_off_gain_and_angle_commands_pass_actual_panda(self):
++    from types import SimpleNamespace
++    from opendbc.car.structs import CarState, CarControl, CarControlSP
++    from opendbc.car.hyundai.tests.test_hyundai import make_ev9_override_controller, ev9_override_controller_context
++
++    # Seed permissions and speed explicitly: this tests command acceptance, not engagement.
++    safety = libsafety_py.libsafety
++    for speed_kph in (20, 30):
++      for sign in (-1, 1):
++        with self.subTest(speed_kph=speed_kph, sign=sign):
++          controller = make_ev9_override_controller()
++          cc = CarControl.new_message(enabled=True, latActive=True)
++          cc.actuators.steeringAngleDeg = sign * 140
++          cs = SimpleNamespace(out=CarState.new_message(vEgo=speed_kph / 3.6, vEgoRaw=speed_kph / 3.6,
++                                                       steeringTorque=sign * 200, steeringPressed=True),
++                               is_metric=True, hands_on_steering_grip=0, hands_on_steering_ts_nanos=0)
++          safety.set_current_safety_param_sp(encode_angle_model_id(ANGLE_STEERING_MODEL_BY_CAR[CAR.KIA_EV9]))
++          safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd,
++                                  HyundaiSafetyFlags.CANFD_LKA_STEER_MSG | HyundaiSafetyFlags.CANFD_LKA_STEER_MSG_ALT |
++                                  HyundaiSafetyFlags.CANFD_ANGLE_STEERING | HyundaiSafetyFlags.EV_GAS)
++          safety.init_tests()
++          safety.set_controls_allowed(True)
++          self.assertEqual(safety.get_hyundai_angle_model_id(), 4)
++          packer = CANPackerSafety("hyundai_canfd_generated")
++          speed_msg = {f"WHL_Spd{pos}Val": speed_kph for pos in ("FL", "FR", "RL", "RR")}
++          for _ in range(common.MAX_SAMPLE_VALS):
++            self.assertTrue(safety.safety_rx_hook(packer.make_can_msg_safety("WHEEL_SPEEDS", 1, speed_msg)))
++          safety.set_desired_angle_last(0)
++          with ev9_override_controller_context(controller, pack_steering=True):
++            for frame in range(300):
++              now = 1_000_000_000 + frame * 10_000_000
++              cs.hands_on_steering_ts_nanos = now - 10_000_000
++              output, messages = controller.update(cc.as_reader(), CarControlSP(), cs, now)
++              self.assertAlmostEqual(output.torqueOutputCan, controller.apply_torque_base_last, places=6)
++              safety.set_timer(now // 1000)
++              self.assertEqual(len(messages), 1)
++              addr, data, bus = messages[0]
++              self.assertEqual((addr, bus), (0x110, 0))
++              self.assertEqual((data[9] >> 4) & 3, 2)
++              self.assertAlmostEqual(data[12] * 0.004, controller.apply_torque_base_last, places=6)
++              angle_ticks = (data[11] << 6) | (data[10] >> 2)
++              if angle_ticks & (1 << 13):
++                angle_ticks -= 1 << 14
++              self.assertAlmostEqual(angle_ticks / 10, output.steeringAngleDeg, delta=0.051)
++              self.assertTrue(safety.safety_tx_hook(libsafety_py.make_CANPacket(addr, bus, data)), (speed_kph, sign, frame))
++              cs.out.steeringAngleDeg = output.steeringAngleDeg
++          self.assertAlmostEqual(output.steeringAngleDeg, sign * 140, places=3)
++          self.assertGreater(output.torqueOutputCan, 0.1)
++
++  def test_manual_handoff_and_release_pass_actual_panda(self):
++    from types import SimpleNamespace
++    from opendbc.car.structs import CarState, CarControl, CarControlSP
++    from opendbc.car.hyundai.tests.test_hyundai import make_ev9_override_controller, ev9_override_controller_context
++
++    safety = libsafety_py.libsafety
++    packer = CANPackerSafety("hyundai_canfd_generated")
++    for mode in (1, 2):
++      for sign in (-1, 1):
++        with self.subTest(mode=mode, sign=sign):
++          controller = make_ev9_override_controller(mode=mode, effort=100)
++          controller.apply_angle_last = controller.angle_filter.x = sign * 140.0
++          cc = CarControl.new_message(enabled=True, latActive=True)
++          cc.actuators.steeringAngleDeg = sign * 140.0
++          cs = SimpleNamespace(out=CarState.new_message(vEgo=30 / 3.6, vEgoRaw=30 / 3.6,
++                                                       steeringTorque=sign * 350, steeringPressed=False),
++                               is_metric=True, hands_on_steering_grip=3, hands_on_steering_ts_nanos=0)
++          safety.set_current_safety_param_sp(encode_angle_model_id(ANGLE_STEERING_MODEL_BY_CAR[CAR.KIA_EV9]))
++          safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd,
++                                  HyundaiSafetyFlags.CANFD_LKA_STEER_MSG | HyundaiSafetyFlags.CANFD_LKA_STEER_MSG_ALT |
++                                  HyundaiSafetyFlags.CANFD_ANGLE_STEERING | HyundaiSafetyFlags.EV_GAS)
++          safety.init_tests()
++          safety.set_controls_allowed(True)
++          for _ in range(common.MAX_SAMPLE_VALS):
++            speed_msg = {f"WHL_Spd{pos}Val": 30 for pos in ("FL", "FR", "RL", "RR")}
++            self.assertTrue(safety.safety_rx_hook(packer.make_can_msg_safety("WHEEL_SPEEDS", 1, speed_msg)))
++          safety.set_desired_angle_last(sign * 1400)
++          saw_active_handoff = saw_inactive_handoff = False
++          with ev9_override_controller_context(controller, pack_steering=True):
++            for frame in range(100):
++              now = 1_000_000_000 + frame * 10_000_000
++              # A rapid manual unwind exceeds the allowed active command rate.
++              # The final target must be limited, rather than copied unchecked.
++              cs.out.steeringAngleDeg = sign * max(140.0 - frame * 4.0, 0.0)
++              cs.hands_on_steering_ts_nanos = now - 10_000_000
++              cs.hands_on_steering_grip = 3 if frame < 40 else 0
++              mdps = packer.make_can_msg_safety("MDPS", 1, {"MDPS_EstStrAnglVal": cs.out.steeringAngleDeg,
++                                                         "MDPS_StrTqSnsrVal": cs.out.steeringTorque})
++              self.assertTrue(safety.safety_rx_hook(mdps))
++              output, messages = controller.update(cc.as_reader(), CarControlSP(), cs, now)
++              safety.set_timer(now // 1000)
++              self.assertEqual(len(messages), 1)
++              addr, data, bus = messages[0]
++              active = ((data[9] >> 4) & 3) == 2
++              if frame < 40:
++                saw_active_handoff |= active
++                saw_inactive_handoff |= not active
++                if active:
++                  self.assertLessEqual(output.torqueOutputCan, 0.1 + 1e-6)
++              else:
++                self.assertFalse(controller.disabled_manual_override_latched)
++                self.assertAlmostEqual(output.torqueOutputCan, controller.apply_torque_base_last, places=6)
++              self.assertTrue(safety.safety_tx_hook(libsafety_py.make_CANPacket(addr, bus, data)), (mode, sign, frame))
++          self.assertTrue(saw_active_handoff)
++          self.assertTrue(saw_inactive_handoff)

@@ -1,0 +1,330 @@
+diff --git a/openpilot/selfdrive/pandad/pandad.cc b/openpilot/selfdrive/pandad/pandad.cc
+index 23df5d6a83e8d31f2bf284e501cf5b37890bfc99..23d3969cbbecfb8731c22b7446afbfd83517825f 100644
+--- a/openpilot/selfdrive/pandad/pandad.cc
++++ b/openpilot/selfdrive/pandad/pandad.cc
+@@ -5,6 +5,7 @@
+ #include <cassert>
+ #include <cerrno>
+ #include <memory>
++#include <optional>
+ #include <thread>
+ #include <utility>
+ 
+@@ -272,15 +273,17 @@ void send_peripheral_state(Panda *panda, PubMaster *pm) {
+   pm->send("peripheralState", msg);
+ }
+ 
+-void process_panda_state(Panda *panda, PubMaster *pm, bool engaged, bool engaged_mads, bool is_onroad, bool spoofing_started, bool always_offroad) {
++std::optional<bool> process_panda_state(Panda *panda, PubMaster *pm, bool engaged, bool engaged_mads, bool is_onroad, bool spoofing_started, bool always_offroad) {
+   auto ignition_opt = send_panda_states(pm, panda, is_onroad, spoofing_started, always_offroad);
+   if (!ignition_opt) {
+     LOGE("Failed to get ignition_opt");
+-    return;
++    return std::nullopt;
+   }
+ 
++  bool ignition_local = ignition_opt.value();
++
+   // check if we should have pandad reconnect
+-  if (!ignition_opt.value()) {
++  if (!ignition_local) {
+     if (!panda->comms_healthy()) {
+       LOGE("Reconnecting, communication to panda not healthy");
+       do_exit = true;
+@@ -288,6 +291,7 @@ void process_panda_state(Panda *panda, PubMaster *pm, bool engaged, bool engaged
+   }
+ 
+   panda->send_heartbeat(engaged, engaged_mads);
++  return ignition_local;
+ }
+ 
+ void process_peripheral_state(Panda *panda, PubMaster *pm, bool no_fan_control, bool is_onroad) {
+@@ -376,42 +380,97 @@ void pandad_run(Panda *panda) {
+   const bool spoofing_started = getenv("STARTED") != nullptr;
+   const bool fake_send = getenv("FAKESEND") != nullptr;
+ 
++  constexpr int ACTIVE_LOOP_RATE_HZ = 100;
++  constexpr int IDLE_LOOP_RATE_HZ = 10;
++  constexpr uint64_t PERIPHERAL_DIVISOR = 5;
++  constexpr uint64_t PANDA_STATE_DIVISOR = 10;
++  constexpr uint64_t ACTIVE_PERIPHERAL_STATE_DIVISOR = 50;
++  constexpr uint64_t IDLE_PERIPHERAL_STATE_DIVISOR = 20;
++  constexpr uint64_t SEC_TO_NANO = 1'000'000'000ULL;
++  constexpr uint64_t LOW_POWER_INITIAL_GRACE_NS = 5ULL * 60ULL * SEC_TO_NANO;
++  constexpr uint64_t LOW_POWER_REFRESH_INTERVAL_NS = 10ULL * 60ULL * SEC_TO_NANO;
++  constexpr uint64_t LOW_POWER_REFRESH_DURATION_NS = 15ULL * SEC_TO_NANO;
++
+   // Start helper thread for event-driven sendcan.
+   std::thread send_thread(can_send_thread, panda, fake_send);
+ 
+-  RateKeeper rk("pandad", 100);
++  Params params;
++  int current_loop_rate_hz = ACTIVE_LOOP_RATE_HZ;
++  RateKeeper rk("pandad", current_loop_rate_hz);
+   SubMaster sm({"selfdriveState", "deviceState", "selfdriveStateSP"});
+   PubMaster pm({"can", "pandaStates", "peripheralState"});
+   PandaSafety panda_safety(panda);
+   bool engaged = false;
+   bool engaged_mads = false;
+   bool is_onroad = false;
++  bool is_offroad_param = false;
+   bool always_offroad = false;
++  bool ignition = false;
++  bool ignition_valid = false;
++  bool low_power_loop = false;
++  uint64_t low_power_next_refresh_ts = 0;
++  uint64_t low_power_active_until = 0;
+ 
+   // Main loop: receive CAN first, then process lower priority panda and peripheral state.
+   while (!do_exit && check_connected(panda)) {
++    uint64_t now = nanos_since_boot();
++
+     can_recv(panda, &pm);
+ 
+-    // Process peripheral state at 20 Hz
+-    if (rk.frame() % 5 == 0) {
++    bool screen_off = params.getBool("ScreenOff");
++    is_offroad_param = params.getBool("IsOffroad");
++    always_offroad = panda_safety.getOffroadMode();
++
++    bool low_power_candidate = is_offroad_param && !is_onroad && ignition_valid && !ignition && screen_off;
++    bool next_low_power_loop = low_power_candidate && !always_offroad;
++    if (next_low_power_loop && !low_power_loop) {
++      low_power_active_until = now + LOW_POWER_INITIAL_GRACE_NS;
++      low_power_next_refresh_ts = now + LOW_POWER_REFRESH_INTERVAL_NS;
++    } else if (!next_low_power_loop && low_power_loop) {
++      low_power_active_until = 0;
++      low_power_next_refresh_ts = 0;
++    }
++    low_power_loop = next_low_power_loop;
++
++    if (low_power_loop && low_power_next_refresh_ts != 0 && now >= low_power_next_refresh_ts) {
++      low_power_next_refresh_ts = now + LOW_POWER_REFRESH_INTERVAL_NS;
++      if (now >= low_power_active_until) {
++        low_power_active_until = now + LOW_POWER_REFRESH_DURATION_NS;
++      }
++    }
++
++    bool effective_low_power = low_power_loop && now >= low_power_active_until;
++    uint64_t peripheral_state_divisor = effective_low_power ? IDLE_PERIPHERAL_STATE_DIVISOR : ACTIVE_PERIPHERAL_STATE_DIVISOR;
++
++    int target_loop_rate_hz = effective_low_power ? IDLE_LOOP_RATE_HZ : ACTIVE_LOOP_RATE_HZ;
++    if (target_loop_rate_hz != current_loop_rate_hz) {
++      current_loop_rate_hz = target_loop_rate_hz;
++      rk = RateKeeper("pandad", current_loop_rate_hz);
++    }
++
++    // Process peripheral state at 20 Hz (active) or 2 Hz (low power)
++    if (rk.frame() % PERIPHERAL_DIVISOR == 0) {
+       process_peripheral_state(panda, &pm, no_fan_control, is_onroad);
+     }
+ 
+-    // Process panda state at 10 Hz
+-    if (rk.frame() % 10 == 0) {
++    // Process panda state at 10 Hz (active) or 1 Hz (low power)
++    if (rk.frame() % PANDA_STATE_DIVISOR == 0) {
+       sm.update(0);
+       engaged = sm.allAliveAndValid({"selfdriveState"}) && sm["selfdriveState"].getSelfdriveState().getEnabled();
+       if (sm.updated("deviceState")) {
+         is_onroad = sm["deviceState"].getDeviceState().getStarted();
+       }
+       engaged_mads = process_mads_heartbeat(&sm);
+-      always_offroad = panda_safety.getOffroadMode();
+-      process_panda_state(panda, &pm, engaged, engaged_mads, is_onroad, spoofing_started, always_offroad);
++      auto ignition_opt = process_panda_state(panda, &pm, engaged, engaged_mads, is_onroad, spoofing_started, always_offroad);
++      if (ignition_opt.has_value()) {
++        ignition = ignition_opt.value();
++        ignition_valid = true;
++      }
+       panda_safety.configureSafetyMode(is_onroad);
+     }
+ 
+-    // Send out peripheralState at 2Hz
+-    if (rk.frame() % 50 == 0) {
++    // Send out peripheralState at 2 Hz (active) or 0.5 Hz (low power)
++    if (rk.frame() % peripheral_state_divisor == 0) {
+       send_peripheral_state(panda, &pm);
+     }
+ 
+diff --git a/openpilot/selfdrive/ui/ui_state.py b/openpilot/selfdrive/ui/ui_state.py
+index a101f93d5736aeb3bf4e0bcc6034d4346a95f0a8..f3e85c5fa37cc6b23f659adb7a8e6a844ab7acd0 100644
+--- a/openpilot/selfdrive/ui/ui_state.py
++++ b/openpilot/selfdrive/ui/ui_state.py
+@@ -412,6 +412,7 @@ class Device(DeviceSP):
+       self._awake = on
+       cloudlog.debug(f"setting display power {int(on)}")
+       HARDWARE.set_display_power(on)
++      ui_state.params.put_bool("ScreenOff", not on, block=False)
+       gui_app.set_should_render(on)
+ 
+ 
+diff --git a/openpilot/sunnypilot/models/manager.py b/openpilot/sunnypilot/models/manager.py
+index 035f59891c4033aa0612c6219308a93ad55d6c66..dfbc1ec13acb89027239db67f2eadb288f824d37 100644
+--- a/openpilot/sunnypilot/models/manager.py
++++ b/openpilot/sunnypilot/models/manager.py
+@@ -317,10 +317,20 @@ class ModelManagerSP:
+ 
+   def main_thread(self) -> None:
+     """Main thread for model management"""
+-    rk = Ratekeeper(1, print_delay_threshold=None)
++    ACTIVE_RATE_HZ = 1.0
++    IDLE_RATE_HZ = 0.1
++    rk = Ratekeeper(ACTIVE_RATE_HZ, print_delay_threshold=None)
++    low_power_loop = False
+ 
+     while True:
+       try:
++        screen_off = self.params.get_bool("ScreenOff")
++        is_offroad = self.params.get_bool("IsOffroad")
++        desired_low_power = screen_off and is_offroad
++        if desired_low_power != low_power_loop:
++          low_power_loop = desired_low_power
++          rk = Ratekeeper(IDLE_RATE_HZ if low_power_loop else ACTIVE_RATE_HZ, print_delay_threshold=None)
++
+         self.sm.update(0)
+         self.chestnut_present = self.sm['deviceState'].chestnutPresent
+         self.source_models = {source: self.model_fetcher.get_bundles_for_source(source) for source in ModelFetcher.MODEL_SOURCES}
+diff --git a/openpilot/sunnypilot/models/tests/test_manager_download.py b/openpilot/sunnypilot/models/tests/test_manager_download.py
+index b995d4fbd14f747e6384361a0c68291409fca7ca..bbf4b2d6a7e5dcfe540971d47a7a0adba6ca0676 100644
+--- a/openpilot/sunnypilot/models/tests/test_manager_download.py
++++ b/openpilot/sunnypilot/models/tests/test_manager_download.py
+@@ -780,6 +780,65 @@ class TestEffectiveSource(OpenpilotTestCase):
+                                                          chestnut_loading=False, offroad=True)).ref == "big"
+ 
+ 
++class TestModelManagerLoop(OpenpilotTestCase):
++  def test_catalogs_are_published_and_downloads_serviced_across_power_states(self):
++    class StopLoop(BaseException):
++      pass
++
++    for chestnut_present in (False, True):
++      with self.subTest(chestnut_present=chestnut_present):
++        # Real Params rejects removed keys, unlike a permissive MagicMock.
++        params = helpers.Params()
++        params.put_bool("IsOffroad", True, block=True)
++        params.put_bool("ScreenOff", True, block=True)
++        rates = []
++        ticks = 0
++
++        class LoopRatekeeper:
++          def __init__(self, rate, _rates=rates, **kwargs):
++            _rates.append(rate)
++
++          def keep_time(self, _params=params):
++            nonlocal ticks
++            ticks += 1
++            if ticks == 1:
++              _params.put_bool("ScreenOff", False, block=True)
++            elif ticks == 2:
++              _params.put_bool("ScreenOff", True, block=True)
++              _params.put_bool("IsOffroad", False, block=True)
++            else:
++              raise StopLoop
++
++        small = custom.ModelManagerSP.ModelBundle.new_message(internalName="DTRV6")
++        big = custom.ModelManagerSP.ModelBundle.new_message(internalName="BIG")
++        source_bundles = {"qcom": [small], "chestnut": [big]}
++        manager = ModelManagerSP.__new__(ModelManagerSP)
++        manager.params = params
++        manager.sm = mock.MagicMock()
++        manager.sm.__getitem__.return_value = mock.Mock(chestnutPresent=chestnut_present)
++        manager.model_fetcher = mock.Mock()
++        manager.model_fetcher.get_bundles_for_source.side_effect = source_bundles.__getitem__
++        manager._process_download_requests = mock.Mock()
++        manager._report_status = mock.Mock()
++
++        with mock.patch.object(manager_module, "Ratekeeper", LoopRatekeeper), \
++             mock.patch.object(manager_module, "validate_active_bundles") as validate, \
++             mock.patch.object(manager_module, "get_active_bundle", return_value=None), \
++             mock.patch.object(manager_module, "get_selected_bundle", return_value=None), \
++             mock.patch.object(manager_module.cloudlog, "exception") as errors:
++          with self.assertRaises(StopLoop):
++            manager.main_thread()
++
++        self.assertEqual(rates, [1.0, 0.1, 1.0])
++        self.assertEqual(manager.source_models, source_bundles)
++        self.assertEqual(manager.available_models, source_bundles["chestnut" if chestnut_present else "qcom"])
++        self.assertEqual(manager.model_fetcher.get_bundles_for_source.call_count, 6)
++        self.assertEqual(validate.call_count, 3)
++        self.assertEqual(manager._process_download_requests.call_count, 3)
++        self.assertEqual(manager._report_status.call_count, 3)
++        errors.assert_not_called()
++
++
+ @unittest.skipUnless(os.environ.get('RUN_INTEGRATION_TESTS'), 'requires external network')
+ class TestLiveModelManifest(OpenpilotTestCase):
+   """Every artifact and chunk URL in the published manifest must resolve."""
+diff --git a/openpilot/system/hardware/power_monitoring.py b/openpilot/system/hardware/power_monitoring.py
+index 8dcd0fa6dc6da848803984cb9a9026a87fec30ce..68e0e80cbbff2a81269e426275fa59d8aecf749a 100644
+--- a/openpilot/system/hardware/power_monitoring.py
++++ b/openpilot/system/hardware/power_monitoring.py
+@@ -1,5 +1,6 @@
+-import time
++import subprocess
+ import threading
++import time
+ 
+ from openpilot.common.params import Params
+ from openpilot.common.hardware import HARDWARE
+@@ -28,6 +29,8 @@ class PowerMonitoring:
+     self.car_voltage_mV = 12e3                  # Low-passed version of peripheralState voltage
+     self.car_voltage_instant_mV = 12e3          # Last value of peripheralState voltage
+     self.integration_lock = threading.Lock()
++    self._last_login_check = 0.0
++    self._remote_logged_in = False
+ 
+     car_battery_capacity_uWh = self.params.get("CarBatteryCapacity") or 0
+ 
+@@ -111,6 +114,40 @@ class PowerMonitoring:
+       return 0 < param * 60 <= offroad_time
+     return offroad_time > MAX_TIME_OFFROAD_S
+ 
++  def _remote_user_logged_in(self) -> bool:
++    now = time.monotonic()
++    if (now - self._last_login_check) < 60.0:
++      return self._remote_logged_in
++
++    remote_logged_in = False
++    try:
++      result = subprocess.run(["last", "-w"], capture_output=True, text=True, check=False)
++      for line in result.stdout.splitlines():
++        if "still logged in" not in line:
++          continue
++
++        parts = line.split()
++        if len(parts) < 2:
++          continue
++
++        user = parts[0]
++        terminal = parts[1]
++        host = parts[2] if len(parts) > 2 else ""
++
++        if user in {"reboot", "shutdown", "runlevel", "wtmp"}:
++          continue
++
++        host_has_network_marker = host not in {"", "-", "localhost", "local"} and any(ch in host for ch in (".", ":"))
++        if terminal.startswith("pts/") or host_has_network_marker:
++          remote_logged_in = True
++          break
++    except Exception:
++      remote_logged_in = False
++
++    self._remote_logged_in = remote_logged_in
++    self._last_login_check = now
++    return remote_logged_in
++
+   # See if we need to shutdown
+   def should_shutdown(self, ignition: bool, in_car: bool, offroad_timestamp: float | None, started_seen: bool):
+     if offroad_timestamp is None:
+@@ -121,7 +158,10 @@ class PowerMonitoring:
+     offroad_time = (now - offroad_timestamp)
+     low_voltage_shutdown = (self.car_voltage_mV < (VBATT_PAUSE_CHARGING * 1e3) and
+                             offroad_time > VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S)
+-    should_shutdown |= self.max_time_offroad_exceeded(offroad_time)
++    max_time_exceeded = self.max_time_offroad_exceeded(offroad_time)
++    if max_time_exceeded and self._remote_user_logged_in():
++      max_time_exceeded = False
++    should_shutdown |= max_time_exceeded
+     should_shutdown |= low_voltage_shutdown
+     should_shutdown |= (self.car_battery_capacity_uWh <= 0)
+     should_shutdown &= not ignition

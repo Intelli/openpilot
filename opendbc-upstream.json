@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/sunnypilot/opendbc.git",
+  "commit": "28303fcd1cc457f67d405407858223e0b338df20",
+  "tree": "dd8af515fbb308eeaa52c04d15395c571657fc0b",
+  "gitlink": "28303fcd1cc457f67d405407858223e0b338df20",
+  "branch": "hkg-angle-steering-2025",
+  "source": "application pin",
+  "legacy_patches_applied": false
+}

@@ -1,0 +1,386 @@
+diff --git a/openpilot/selfdrive/hands_free_stats.py b/openpilot/selfdrive/hands_free_stats.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6aca079d2507c85b2bc72239bed279b3bc4e0b23
+--- /dev/null
++++ b/openpilot/selfdrive/hands_free_stats.py
+@@ -0,0 +1,99 @@
++#!/usr/bin/env python3
++import datetime
++import time
++from dataclasses import asdict, dataclass
++from typing import Any
++
++
++PARAM_KEY = "HandsFreeDriveStats"
++STATS_VERSION = 1
++SAMPLE_INTERVAL_S = 0.5
++MAX_SAMPLE_GAP_S = 0.75
++PERSIST_INTERVAL_S = 60.0
++
++
++@dataclass
++class HandsFreeStats:
++  version: int = STATS_VERSION
++  since: str = ""
++  handsFreeDistanceMeters: float = 0.0
++  trackedDistanceMeters: float = 0.0
++
++
++class HandsFreeStatsAccumulator:
++  def __init__(self, stats: HandsFreeStats | None = None):
++    self.stats = stats or HandsFreeStats()
++    self._last_sample_time: float | None = None
++    self._last_v_ego = 0.0
++    self._last_enabled = False
++    self._last_hands_on = False
++    self._last_valid = False
++
++  def update(self, now: float, v_ego: float, enabled: bool, hands_on: bool, valid: bool, since: str) -> None:
++    if self._last_sample_time is not None:
++      dt = now - self._last_sample_time
++      if self._last_valid and 0.0 < dt <= MAX_SAMPLE_GAP_S:
++        distance = abs(self._last_v_ego) * dt
++        self.stats.trackedDistanceMeters += distance
++        if self._last_enabled and not self._last_hands_on:
++          self.stats.handsFreeDistanceMeters += distance
++
++    if valid and not self.stats.since:
++      self.stats.since = since
++
++    self._last_sample_time = now
++    self._last_v_ego = v_ego
++    self._last_enabled = enabled
++    self._last_hands_on = hands_on
++    self._last_valid = valid
++
++
++def load_stats(params: Any) -> HandsFreeStats:
++  raw = params.get(PARAM_KEY)
++  if not isinstance(raw, dict) or raw.get("version") != STATS_VERSION:
++    return HandsFreeStats()
++
++  try:
++    tracked_distance = max(0.0, float(raw.get("trackedDistanceMeters", 0.0)))
++    return HandsFreeStats(
++      version=STATS_VERSION,
++      since=str(raw.get("since", "")),
++      handsFreeDistanceMeters=min(tracked_distance, max(0.0, float(raw.get("handsFreeDistanceMeters", 0.0)))),
++      trackedDistanceMeters=tracked_distance,
++    )
++  except (TypeError, ValueError):
++    return HandsFreeStats()
++
++
++def persist_stats(params: Any, stats: HandsFreeStats) -> None:
++  params.put(PARAM_KEY, asdict(stats), block=False)
++
++
++class HandsFreeStatsCollector:
++  def __init__(self, params: Any):
++    self.params = params
++    self.accumulator = HandsFreeStatsAccumulator(load_stats(params))
++    self._last_sample_time: float | None = None
++    self._last_persist_time = time.monotonic()
++    self._valid = False
++    self._dirty = False
++
++  def update(self, sm: Any, eligible: bool, now: float | None = None) -> None:
++    now = time.monotonic() if now is None else now
++    messages_valid = eligible and all(sm.seen[s] and sm.alive[s] and sm.valid[s] for s in ("carState", "carStateSP", "carControl"))
++    valid = messages_valid and sm["carStateSP"].handsOnWheelValid
++
++    # Sample at 2 Hz, but invalidate immediately to avoid counting stale data after going offroad or losing HOD data.
++    sample_due = valid and (self._last_sample_time is None or now - self._last_sample_time >= SAMPLE_INTERVAL_S)
++    invalidated = self._valid and not valid
++    if sample_due or invalidated:
++      since = self.accumulator.stats.since or datetime.datetime.now(datetime.UTC).date().isoformat()
++      self.accumulator.update(now, sm["carState"].vEgo, sm["carControl"].latActive, sm["carStateSP"].handsOnWheel, valid, since)
++      self._last_sample_time = now
++      self._valid = valid
++      self._dirty = True
++
++    if self._dirty and (invalidated or now - self._last_persist_time >= PERSIST_INTERVAL_S):
++      persist_stats(self.params, self.accumulator.stats)
++      self._last_persist_time = now
++      self._dirty = False
+diff --git a/openpilot/selfdrive/tests/test_hands_free_stats.py b/openpilot/selfdrive/tests/test_hands_free_stats.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..33f776bbf37cd4461974afa0d81cf591d44799b0
+--- /dev/null
++++ b/openpilot/selfdrive/tests/test_hands_free_stats.py
+@@ -0,0 +1,94 @@
++import pytest
++
++from openpilot.selfdrive.hands_free_stats import HandsFreeStats, HandsFreeStatsAccumulator, HandsFreeStatsCollector, load_stats, persist_stats
++
++
++class FakeParams:
++  def __init__(self, value=None):
++    self.value = value
++
++  def get(self, _key):
++    return self.value
++
++  def put(self, _key, value, block=False):
++    assert block is False
++    self.value = value
++
++
++class FakeMessage:
++  def __init__(self, **kwargs):
++    self.__dict__.update(kwargs)
++
++
++class FakeSubMaster:
++  def __init__(self):
++    self.seen = dict.fromkeys(("carState", "carStateSP", "carControl"), True)
++    self.alive = dict.fromkeys(("carState", "carStateSP", "carControl"), True)
++    self.valid = dict.fromkeys(("carState", "carStateSP", "carControl"), True)
++    self.messages = {
++      "carState": FakeMessage(vEgo=10.0),
++      "carStateSP": FakeMessage(handsOnWheel=False, handsOnWheelValid=True),
++      "carControl": FakeMessage(latActive=True),
++    }
++
++  def __getitem__(self, service):
++    return self.messages[service]
++
++
++def test_accumulates_only_valid_hod_distance():
++  accumulator = HandsFreeStatsAccumulator()
++  accumulator.update(0.0, 10.0, True, False, True, "2026-06-06")
++  accumulator.update(0.1, 10.0, True, True, True, "2026-06-06")
++  accumulator.update(0.2, 10.0, False, False, True, "2026-06-06")
++  accumulator.update(0.3, 10.0, True, False, False, "2026-06-06")
++  accumulator.update(0.4, 10.0, True, False, True, "2026-06-06")
++  accumulator.update(1.0, 10.0, True, False, True, "2026-06-06")
++
++  assert accumulator.stats.trackedDistanceMeters == pytest.approx(9.0)
++  assert accumulator.stats.handsFreeDistanceMeters == pytest.approx(7.0)
++  assert accumulator.stats.since == "2026-06-06"
++
++
++def test_load_and_persist_stats():
++  params = FakeParams()
++  stats = HandsFreeStats(since="2026-06-06", handsFreeDistanceMeters=123.4, trackedDistanceMeters=234.5)
++  persist_stats(params, stats)
++
++  assert load_stats(params) == stats
++
++
++@pytest.mark.parametrize("value", [None, {}, {"version": 999}, {"version": 1, "trackedDistanceMeters": "bad"}])
++def test_invalid_persisted_stats_reset(value):
++  assert load_stats(FakeParams(value)) == HandsFreeStats()
++
++
++def test_loaded_hands_free_distance_is_bounded_by_tracked_distance():
++  stats = load_stats(FakeParams({"version": 1, "handsFreeDistanceMeters": 20.0, "trackedDistanceMeters": 10.0}))
++  assert stats.handsFreeDistanceMeters == stats.trackedDistanceMeters == 10.0
++
++
++def test_collector_samples_at_two_hz_and_invalidates_immediately():
++  collector = HandsFreeStatsCollector(FakeParams())
++  sm = FakeSubMaster()
++
++  collector.update(sm, True, now=0.0)
++  collector.update(sm, True, now=0.25)
++  collector.update(sm, True, now=0.5)
++  collector.update(sm, False, now=0.7)
++  collector.update(sm, False, now=1.7)
++
++  assert collector.accumulator.stats.trackedDistanceMeters == pytest.approx(7.0)
++  assert collector.accumulator.stats.handsFreeDistanceMeters == pytest.approx(7.0)
++
++
++def test_collector_uses_lateral_active_for_hands_free_distance():
++  collector = HandsFreeStatsCollector(FakeParams())
++  sm = FakeSubMaster()
++
++  collector.update(sm, True, now=0.0)
++  sm["carControl"].latActive = False
++  collector.update(sm, True, now=0.5)
++  collector.update(sm, True, now=1.0)
++
++  assert collector.accumulator.stats.trackedDistanceMeters == pytest.approx(10.0)
++  assert collector.accumulator.stats.handsFreeDistanceMeters == pytest.approx(5.0)
+diff --git a/openpilot/selfdrive/ui/sunnypilot/layouts/settings/trips.py b/openpilot/selfdrive/ui/sunnypilot/layouts/settings/trips.py
+index 066f52507fba3bd1dc1889184e8fd8bdeb9f3a59..983bed86d77402a35a70bda84ea65f3f31d979a0 100644
+--- a/openpilot/selfdrive/ui/sunnypilot/layouts/settings/trips.py
++++ b/openpilot/selfdrive/ui/sunnypilot/layouts/settings/trips.py
+@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+ This file is part of sunnypilot and is licensed under the MIT License.
+ See the LICENSE.md file in the root directory for more details.
+ """
++import datetime
+ import requests
+ import threading
+ import time
+@@ -24,6 +25,7 @@ from openpilot.system.ui.widgets import Widget
+ 
+ class TripsLayout(Widget):
+   PARAM_KEY = "ApiCache_DriveStats"
++  HANDS_FREE_PARAM_KEY = "HandsFreeDriveStats"
+   UPDATE_INTERVAL = 30  # seconds
+ 
+   def __init__(self):
+@@ -79,26 +81,20 @@ class TripsLayout(Widget):
+       time.sleep(self.UPDATE_INTERVAL)
+ 
+   def _render_stat_group(self, x, y, width, height, title, data, is_metric):
+-    # Card Background
+     rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, height), 0.05, 10, rl.Color(30, 30, 30, 255))
+ 
+-    # Title
+     title_font = gui_app.font(FontWeight.BOLD)
+-    rl.draw_text_ex(title_font, title, rl.Vector2(x + 60, y + 30), 50 * FONT_SCALE, 0, rl.Color(200, 200, 200, 255))
+-
+-    # Internal content area
+-    # Center the content block (Icon + Value + Unit) vertically
+-    content_y = y + (height / 2) - (140 * FONT_SCALE)
++    rl.draw_text_ex(title_font, title, rl.Vector2(x + 60, y + 20), 36 * FONT_SCALE, 0, rl.Color(200, 200, 200, 255))
+     col_width = width / 3
+ 
+-    # Values
+     number_font = gui_app.font(FontWeight.BOLD)
+     unit_font = gui_app.font(FontWeight.NORMAL)
+-    number_base_size = 92
+-    unit_base_size = 55
++    number_base_size = 70
++    unit_base_size = 34
+     number_size = number_base_size * FONT_SCALE
+     unit_size = unit_base_size * FONT_SCALE
+     color_unit = rl.Color(160, 160, 160, 255)
++    icon_scale = 0.75
+ 
+     routes = int(data.get("routes", 0))
+     distance = data.get("distance", 0)
+@@ -111,18 +107,14 @@ class TripsLayout(Widget):
+       col_x = x + (col_width * col_idx)
+       center_x = col_x + (col_width / 2)
+ 
+-      # Icon
+-      icon_x = center_x - (icon.width / 2)
+-      icon_y = content_y + 60
+-      rl.draw_texture_ex(icon, rl.Vector2(icon_x, icon_y), 0.0, 1.0, rl.WHITE)
++      icon_x = center_x - (icon.width * icon_scale / 2)
++      rl.draw_texture_ex(icon, rl.Vector2(icon_x, y + 65), 0.0, icon_scale, rl.WHITE)
+ 
+-      # Value
+       val_size = measure_text_cached(number_font, value, number_base_size)
+-      rl.draw_text_ex(number_font, value, rl.Vector2(center_x - val_size.x / 1.65, content_y + 145 * FONT_SCALE), number_size, 0, rl.WHITE)
++      rl.draw_text_ex(number_font, value, rl.Vector2(center_x - val_size.x / 1.65, y + 145), number_size, 0, rl.WHITE)
+ 
+-      # Unit
+       unit_size_vec = measure_text_cached(unit_font, unit, unit_base_size)
+-      rl.draw_text_ex(unit_font, unit, rl.Vector2(center_x - unit_size_vec.x / 1.65, content_y + 255 * FONT_SCALE), unit_size, 0, color_unit)
++      rl.draw_text_ex(unit_font, unit, rl.Vector2(center_x - unit_size_vec.x / 1.65, y + 255), unit_size, 0, color_unit)
+ 
+     draw_col(0, self._icon_drives, str(routes), tr("Drives"))
+     draw_col(1, self._icon_distance, distance_str, dist_unit)
+@@ -130,20 +122,74 @@ class TripsLayout(Widget):
+ 
+     return y + height
+ 
++  def _render_hands_free_stats(self, x, y, width, height, is_metric):
++    stats = self._params.get(self.HANDS_FREE_PARAM_KEY) or {}
++    if not isinstance(stats, dict):
++      stats = {}
++    hands_free_meters = max(0.0, float(stats.get("handsFreeDistanceMeters", 0.0)))
++    tracked_meters = max(0.0, float(stats.get("trackedDistanceMeters", 0.0)))
++    percentage = 100.0 * hands_free_meters / tracked_meters if tracked_meters > 0.0 else 0.0
++    distance_factor = 0.001 if is_metric else 1.0 / 1609.344
++    unit = tr("KM") if is_metric else tr("Miles")
++
++    since = stats.get("since", "")
++    try:
++      since = datetime.date.fromisoformat(since).strftime("%b %d, %Y")
++    except (TypeError, ValueError):
++      since = tr("No data yet")
++
++    title = f"{tr('HANDS-FREE DRIVING SINCE')} {since}"
++    data = {
++      "routes": f"{percentage:.0f}%",
++      "distance": hands_free_meters * distance_factor,
++      "minutes": tracked_meters * distance_factor,
++    }
++
++    rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, height), 0.05, 10, rl.Color(30, 30, 30, 255))
++    title_font = gui_app.font(FontWeight.BOLD)
++    rl.draw_text_ex(title_font, title, rl.Vector2(x + 60, y + 20), 36 * FONT_SCALE, 0, rl.Color(200, 200, 200, 255))
++
++    col_width = width / 3
++    number_font = gui_app.font(FontWeight.BOLD)
++    unit_font = gui_app.font(FontWeight.NORMAL)
++    number_base_size = 70
++    unit_base_size = 34
++    color_unit = rl.Color(160, 160, 160, 255)
++    icon_scale = 0.75
++
++    def draw_col(col_idx, icon, value, label):
++      center_x = x + (col_width * col_idx) + (col_width / 2)
++      rl.draw_texture_ex(icon, rl.Vector2(center_x - icon.width * icon_scale / 2, y + 65), 0.0, icon_scale, rl.WHITE)
++
++      val_size = measure_text_cached(number_font, value, number_base_size)
++      rl.draw_text_ex(number_font, value, rl.Vector2(center_x - val_size.x / 1.65, y + 145),
++                      number_base_size * FONT_SCALE, 0, rl.WHITE)
++
++      label_size = measure_text_cached(unit_font, label, unit_base_size)
++      rl.draw_text_ex(unit_font, label, rl.Vector2(center_x - label_size.x / 1.65, y + 255),
++                      unit_base_size * FONT_SCALE, 0, color_unit)
++
++    draw_col(0, self._icon_drives, data["routes"], tr("Hands-Free"))
++    draw_col(1, self._icon_distance, f"{data['distance']:.1f}", f"{tr('Hands-Free')} {unit}")
++    draw_col(2, self._icon_distance, f"{data['minutes']:.1f}", f"{tr('Tracked')} {unit}")
++    return y + height
++
+   def _render(self, rect: rl.Rectangle):
+     x = rect.x
+     y = rect.y
+     w = rect.width
+ 
+     spacing = 30
+-    available_h = rect.height - 30
+-    card_height = available_h / 2
++    available_h = rect.height - spacing * 2
++    card_height = available_h / 3
+ 
+     is_metric = self._params.get_bool("IsMetric")
+ 
+     all_time = self._stats.get("all", {})
+     week = self._stats.get("week", {})
+ 
++    y = self._render_hands_free_stats(x, y, w, card_height, is_metric)
++    y += spacing
+     y = self._render_stat_group(x, y, w, card_height, tr("ALL TIME"), all_time, is_metric)
+     y += spacing
+     y = self._render_stat_group(x, y, w, card_height, tr("PAST WEEK"), week, is_metric)
+diff --git a/openpilot/selfdrive/ui/sunnypilot/ui_state.py b/openpilot/selfdrive/ui/sunnypilot/ui_state.py
+index d130c3862a66c9c84a83e3e482bc63d112e32ca7..a74828c04e2a910bf974782e438df7c440a9d73d 100644
+--- a/openpilot/selfdrive/ui/sunnypilot/ui_state.py
++++ b/openpilot/selfdrive/ui/sunnypilot/ui_state.py
+@@ -9,6 +9,7 @@ from enum import Enum
+ from openpilot.cereal import messaging, log, custom
+ from opendbc.car.structs import car
+ from openpilot.common.params import Params
++from openpilot.selfdrive.hands_free_stats import HandsFreeStatsCollector
+ from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
+ from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
+ from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
+@@ -37,6 +38,7 @@ class UIStateSP:
+       "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
+       "gpsLocation", "lateralTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "lateralDelay"
+     ]
++    self.hands_free_stats = HandsFreeStatsCollector(self.params)
+ 
+     self.sunnylink_state = SunnylinkState()
+ 
+@@ -66,6 +68,9 @@ class UIStateSP:
+     self._sp_initialized: bool = False
+ 
+   def update(self) -> None:
++    is_ev9 = self.CP is not None and self.CP.carFingerprint == "KIA_EV9"
++    self.hands_free_stats.update(self.sm, self.started and is_ev9)
++
+     if self.sunnylink_enabled:
+       self.sunnylink_state.start()
+     else:

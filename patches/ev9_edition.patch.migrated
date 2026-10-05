@@ -1,0 +1,126 @@
+diff --git b/selfdrive/selfdrived/selfdrived.py a/selfdrive/selfdrived/selfdrived.py
+index 41c252be8c..3fb28cec16 100755
+--- b/selfdrive/selfdrived/selfdrived.py
++++ a/selfdrive/selfdrived/selfdrived.py
+@@ -14,6 +14,7 @@ from openpilot.common.realtime import config_realtime_process, Priority, Ratekee
+ from openpilot.common.swaglog import cloudlog
+ from openpilot.common.gps import get_gps_location_service
+ 
++from opendbc.car.hyundai.values import CAR
+ from openpilot.selfdrive.car.car_specific import CarSpecificEvents
+ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
+ from openpilot.selfdrive.selfdrived.events import Events, ET
+@@ -157,6 +158,10 @@ class SelfdriveD(CruiseHelper):
+     elif self.CP.secOcRequired and not self.CP.secOcKeyAvailable:
+       self.startup_event = EventName.startupNoSecOcKey
+ 
++    ev9_supported = self.CP.carFingerprint == CAR.KIA_EV9
++    if self.startup_event == EventName.startupMaster and not ev9_supported and not REPLAY and not SIMULATION:
++      self.events.add(EventName.startupNoControl, static=True)
++
+     if not car_recognized:
+       self.events.add(EventName.carUnrecognized, static=True)
+       set_offroad_alert("Offroad_CarUnrecognized", True)
+diff --git b/selfdrive/ui/layouts/home.py a/selfdrive/ui/layouts/home.py
+index be231dcd4b..161f78584a 100644
+--- b/selfdrive/ui/layouts/home.py
++++ a/selfdrive/ui/layouts/home.py
+@@ -228,6 +228,6 @@ class HomeLayout(Widget):
+     self._prev_alerts_present = alerts_present
+ 
+   def _get_version_text(self) -> str:
+-    brand = "sunnypilot"
++    brand = "sunnypilot - EV9 Edition"
+     description = self.params.get("UpdaterCurrentDescription")
+     return f"{brand} {description}" if description else brand
+diff --git b/selfdrive/ui/mici/layouts/home.py a/selfdrive/ui/mici/layouts/home.py
+index 8200089c28..3ae6718716 100644
+--- b/selfdrive/ui/mici/layouts/home.py
++++ a/selfdrive/ui/mici/layouts/home.py
+@@ -103,7 +103,7 @@ class MiciHomeLayout(Widget):
+       self._mic_icon,
+     ], spacing=18)
+ 
+-    self._openpilot_label = UnifiedLabel("sunnypilot", font_size=96, font_weight=FontWeight.DISPLAY, max_width=480, wrap_text=False)
++    self._openpilot_label = UnifiedLabel("sunnypilot - EV9 Edition", font_size=96, font_weight=FontWeight.DISPLAY, max_width=480, wrap_text=False)
+     self._version_label = UnifiedLabel("", font_size=36, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
+     self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
+     self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
+diff --git b/system/ui/spinner.py a/system/ui/spinner.py
+index 33f4543c3e..7631eb9c0d 100755
+--- b/system/ui/spinner.py
++++ a/system/ui/spinner.py
+@@ -3,7 +3,7 @@ import pyray as rl
+ import select
+ import sys
+ 
+-from openpilot.system.ui.lib.application import gui_app
++from openpilot.system.ui.lib.application import FONT_SCALE, FontWeight, font_fallback, gui_app
+ from openpilot.system.ui.lib.text_measure import measure_text_cached
+ from openpilot.system.ui.text import wrap_text
+ from openpilot.system.ui.widgets import Widget
+@@ -12,12 +12,18 @@ from openpilot.system.ui.widgets import Widget
+ if gui_app.big_ui():
+   PROGRESS_BAR_WIDTH = 1000
+   PROGRESS_BAR_HEIGHT = 20
++  EDITION_FONT_SIZE = 72
++  EDITION_TEXT_SPACING = 36
++  EDITION_X_OFFSET = 90.0
+   TEXTURE_SIZE = 360
+   WRAPPED_SPACING = 50
+   CENTERED_SPACING = 150
+ else:
+   PROGRESS_BAR_WIDTH = 268
+   PROGRESS_BAR_HEIGHT = 10
++  EDITION_FONT_SIZE = 40
++  EDITION_TEXT_SPACING = 18
++  EDITION_X_OFFSET = 0.0
+   TEXTURE_SIZE = 140
+   WRAPPED_SPACING = 10
+   CENTERED_SPACING = 20
+@@ -32,11 +38,20 @@ def clamp(value, min_value, max_value):
+   return max(min(value, max_value), min_value)
+ 
+ 
++def _measure_text_width_safe(font: rl.Font, text: str, font_size: int) -> float:
++  width = rl.measure_text_ex(font, text, font_size * FONT_SCALE, 0.0).x
++  if width <= 0 or width > PROGRESS_BAR_WIDTH * 4.0:
++    width = len(text) * font_size * FONT_SCALE * 0.62
++  return width
++
++
+ class Spinner(Widget):
+   def __init__(self):
+     super().__init__()
+     self._comma_texture = gui_app.texture("../../sunnypilot/selfdrive/assets/images/spinner_sunnypilot.png", TEXTURE_SIZE, TEXTURE_SIZE)
+     self._spinner_texture = gui_app.texture("images/spinner_track.png", TEXTURE_SIZE, TEXTURE_SIZE, alpha_premultiply=True)
++    self._edition_font = gui_app.font(FontWeight.AUDIOWIDE)
++    rl.set_texture_filter(self._edition_font.texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
+     self._rotation = 0.0
+     self._progress: int | None = None
+     self._wrapped_lines: list[str] = []
+@@ -76,11 +91,19 @@ class Spinner(Widget):
+ 
+     # Display the progress bar or text based on user input
+     if self._progress is not None:
+-      bar = rl.Rectangle(center.x - PROGRESS_BAR_WIDTH / 2.0, y_pos, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT)
+-      rl.draw_rectangle_rounded(bar, 1, 10, DARKGRAY)
+-
+-      bar.width *= self._progress / 100.0
+-      rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
++      bar_bg = rl.Rectangle(center.x - PROGRESS_BAR_WIDTH / 2.0, y_pos, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT)
++      rl.draw_rectangle_rounded(bar_bg, 1, 10, DARKGRAY)
++
++      bar_fill = rl.Rectangle(bar_bg.x, bar_bg.y, bar_bg.width * self._progress / 100.0, bar_bg.height)
++      rl.draw_rectangle_rounded(bar_fill, 1, 10, rl.WHITE)
++
++      edition_text = "EV9 Edition"
++      edition_y = y_pos + PROGRESS_BAR_HEIGHT + EDITION_TEXT_SPACING
++      edition_font = font_fallback(self._edition_font)
++      edition_width = _measure_text_width_safe(edition_font, edition_text, EDITION_FONT_SIZE)
++      edition_center_x = bar_bg.x + bar_bg.width / 2.0 + EDITION_X_OFFSET
++      edition_x = round(edition_center_x - edition_width / 2.0)
++      rl.draw_text_ex(edition_font, edition_text, rl.Vector2(edition_x, edition_y), EDITION_FONT_SIZE, 0.0, rl.WHITE)
+     elif self._wrapped_lines:
+       for i, line in enumerate(self._wrapped_lines):
+         text_size = measure_text_cached(gui_app.font(), line, FONT_SIZE)

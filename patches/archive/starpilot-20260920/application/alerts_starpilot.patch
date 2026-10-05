@@ -1,0 +1,397 @@
+diff --git a/selfdrive/selfdrived/events.py b/selfdrive/selfdrived/events.py
+index cb5f4c64b1d001daf4ce0adc74063f9b113d7780..18b1824c41febb34082593a3b9180355b00f8040 100644
+--- a/selfdrive/selfdrived/events.py
++++ b/selfdrive/selfdrived/events.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ import bisect
++import copy
+ import math
+ import os
+ from enum import IntEnum
+@@ -7,6 +8,7 @@ from collections.abc import Callable
+ from types import SimpleNamespace
+ 
+ from cereal import log, car, custom
++from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
+ import cereal.messaging as messaging
+ from openpilot.common.constants import CV
+ from openpilot.common.git import get_short_branch
+@@ -274,6 +276,29 @@ def brake_hold_alert(CP, *_args) -> Alert:
+     Priority.LOW, VisualAlert.none, AudibleAlert.none, .2)
+ 
+ 
++def cruise_disengagement_alert(CP, CS, sm, metric=False, soft_disable_time=0, personality=None, starpilot_toggles=None) -> Alert:
++  # The brake ends normal cruise engagement even when AOL keeps steering.
++  # Keep that partial transition silent only when the current steering request
++  # and its safety/readiness guards agree that lateral control continues.
++  steering_continues = (CS.brakePressed or CS.regenBraking) and not CS.steerFaultTemporary and not CS.steerFaultPermanent
++  steering_continues = steering_continues and CS.canValid and not CS.canTimeout
++  steering_continues = steering_continues and CS.gearShifter not in (
++    car.CarState.GearShifter.park, car.CarState.GearShifter.reverse, car.CarState.GearShifter.neutral, car.CarState.GearShifter.unknown,
++  )
++  steering_continues = steering_continues and sm.all_checks(['carControl', 'starpilotCarState', 'starpilotPlan', 'liveCalibration'])
++  steering_continues = steering_continues and sm['starpilotCarState'].alwaysOnLateralEnabled
++  steering_continues = steering_continues and not sm['starpilotCarState'].pauseLateral
++  steering_continues = steering_continues and sm['carControl'].latActive and sm['starpilotPlan'].lateralCheck
++  steering_continues = steering_continues and sm['liveCalibration'].calStatus == log.LiveCalibrationData.Status.calibrated
++  standstill = CS.standstill or abs(CS.vEgo) <= max(CP.minSteerSpeed, 0.3)
++  steering_continues = steering_continues and (not standstill or CP.steerAtStandstill)
++  brake_pause_speed = getattr(starpilot_toggles, 'always_on_lateral_pause_speed', 0.0)
++  steering_continues = steering_continues and not (CS.brakePressed and CS.vEgo < brake_pause_speed and not CS.standstill)
++  if steering_continues:
++    return copy.copy(EmptyAlert)
++  return EngagementAlert(AudibleAlert.disengage)
++
++
+ def speed_limit_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, starpilot_toggles: SimpleNamespace) -> Alert:
+   return Alert(
+     "Speed limit changed",
+@@ -802,7 +827,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+   },
+ 
+   EventName.pcmDisable: {
+-    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
++    ET.USER_DISABLE: cruise_disengagement_alert,
+   },
+ 
+   EventName.buttonCancel: {
+@@ -820,7 +845,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+   },
+ 
+   EventName.pedalPressed: {
+-    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
++    ET.USER_DISABLE: cruise_disengagement_alert,
+     ET.NO_ENTRY: NoEntryAlert("Pedal Pressed",
+                               visual_alert=VisualAlert.brakePressed),
+   },
+@@ -1507,6 +1532,28 @@ if HARDWARE.get_device_type() == 'mici':
+   })
+ 
+ 
++def ev9_compact_alert(original: Alert, text: str, status):
++  """Keep device-specific timing and sounds while changing EV9 presentation only."""
++  def callback(CP, *args, **kwargs):
++    alert = copy.copy(original)
++    if CP.carFingerprint == HYUNDAI_CAR.KIA_EV9:
++      alert.alert_text_1 = text
++      alert.alert_text_2 = ""
++      alert.alert_size = AlertSize.small
++      alert.alert_status = status
++    return alert
++  return callback
++
++
++# Apply after device overrides so mici retains its original distraction duration.
++EVENTS[EventName.driverDistracted2][ET.PERMANENT] = ev9_compact_alert(
++  EVENTS[EventName.driverDistracted2][ET.PERMANENT], "Driver Distracted", AlertStatus.userPrompt,
++)
++EVENTS[EventName.steerSaturated][ET.WARNING] = ev9_compact_alert(
++  EVENTS[EventName.steerSaturated][ET.WARNING], "Turn Exceeds Steering Limit", AlertStatus.normal,
++)
++
++
+ if __name__ == '__main__':
+   # print all alerts by type and priority
+   from cereal.services import SERVICE_LIST
+diff --git a/selfdrive/selfdrived/tests/test_aol_pedal_alert.py b/selfdrive/selfdrived/tests/test_aol_pedal_alert.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0bce2a73dadafd9e56306fd986eb032558615dd9
+--- /dev/null
++++ b/selfdrive/selfdrived/tests/test_aol_pedal_alert.py
+@@ -0,0 +1,145 @@
++from types import SimpleNamespace
++
++import pytest
++
++from cereal import car, log
++from openpilot.selfdrive.selfdrived.events import AlertSize, AudibleAlert, ET, EventName, Events, VisualAlert
++from openpilot.selfdrive.selfdrived.state import State, StateMachine
++from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
++
++
++class AlertSM(dict):
++  healthy = True
++
++  def all_checks(self, services):
++    return self.healthy
++
++
++def brake_alert(*, normal_enabled=True, pedal="brake", guard=None, pcm_disable=False):
++  cs = SimpleNamespace(brakePressed=pedal == "brake", regenBraking=pedal == "regen", steerFaultTemporary=False,
++                       steerFaultPermanent=False, standstill=False, vEgo=15.0, canValid=True, canTimeout=False, gearShifter=car.CarState.GearShifter.drive)
++  cp = SimpleNamespace(minSteerSpeed=0.0, steerAtStandstill=False)
++  toggles = SimpleNamespace(always_on_lateral_pause_speed=0.0)
++  sm = AlertSM({
++    "starpilotCarState": SimpleNamespace(alwaysOnLateralEnabled=True, pauseLateral=False),
++    "carControl": SimpleNamespace(latActive=True),
++    "starpilotPlan": SimpleNamespace(lateralCheck=True),
++    "liveCalibration": SimpleNamespace(calStatus=log.LiveCalibrationData.Status.calibrated),
++  })
++  if guard == "temporary_fault":
++    cs.steerFaultTemporary = True
++  elif guard == "permanent_fault":
++    cs.steerFaultPermanent = True
++  elif guard == "aol_off":
++    sm["starpilotCarState"].alwaysOnLateralEnabled = False
++  elif guard == "paused":
++    sm["starpilotCarState"].pauseLateral = True
++  elif guard == "lat_inactive":
++    sm["carControl"].latActive = False
++  elif guard == "lateral_blocked":
++    sm["starpilotPlan"].lateralCheck = False
++  elif guard == "uncalibrated":
++    sm["liveCalibration"].calStatus = log.LiveCalibrationData.Status.uncalibrated
++  elif guard == "standstill":
++    cs.standstill = True
++  elif guard == "near_stop":
++    cs.vEgo = 0.2
++  elif guard == "can_invalid":
++    cs.canValid = False
++  elif guard == "can_timeout":
++    cs.canTimeout = True
++  elif guard == "brake_pause":
++    toggles.always_on_lateral_pause_speed = 20.0
++  elif guard == "unhealthy_service":
++    sm.healthy = False
++  elif guard == "reverse":
++    cs.gearShifter = car.CarState.GearShifter.reverse
++  events = Events()
++  events.add(EventName.pedalPressed)
++  if pcm_disable:
++    events.add(EventName.pcmDisable)
++  machine = StateMachine()
++  machine.state = State.enabled if normal_enabled else State.disabled
++  enabled, active = machine.update(events, Events(starpilot=True), sm["starpilotCarState"].alwaysOnLateralEnabled)
++  assert not enabled and not active
++  return events.create_alerts(machine.current_alert_types, [cp, cs, sm, False, 0, None, toggles]), sm
++
++
++@pytest.mark.parametrize("pedal", ["brake", "regen"])
++def test_brake_partial_disengagement_has_no_sound_or_visual_feedback(pedal):
++  alerts, sm = brake_alert(pedal=pedal)
++  alert, = alerts
++  assert alert.event_type == ET.USER_DISABLE
++  assert alert.audible_alert == AudibleAlert.none
++  assert alert.visual_alert == VisualAlert.none
++  assert alert.alert_size == AlertSize.none
++  assert alert.duration == 0
++  assert (alert.alert_text_1, alert.alert_text_2) == ("", "")
++  assert sm["carControl"].latActive
++
++
++@pytest.mark.parametrize("guard", [
++  "temporary_fault", "permanent_fault", "aol_off", "paused", "lat_inactive", "lateral_blocked", "uncalibrated", "standstill", "near_stop",
++  "can_invalid", "can_timeout", "brake_pause", "unhealthy_service", "reverse",
++])
++def test_brake_full_disengagement_never_claims_steering_remains_active(guard):
++  alerts, _ = brake_alert(guard=guard)
++  alert, = alerts
++  assert alert.audible_alert == AudibleAlert.disengage
++  assert alert.alert_text_2 == ""
++
++
++def test_pedal_alert_without_brake_or_regen_keeps_standard_disengagement():
++  alerts, _ = brake_alert(pedal="gas")
++  assert alerts[0].audible_alert == AudibleAlert.disengage
++
++
++def test_brake_during_aol_only_does_not_repeat_cruise_disengagement():
++  alerts, _ = brake_alert(normal_enabled=False)
++  assert alerts == []
++
++
++def test_simultaneous_pcm_and_pedal_disable_cannot_restore_standard_chime():
++  alerts, _ = brake_alert(pcm_disable=True)
++  assert len(alerts) == 2
++  manager = AlertManager()
++  manager.add_many(0, alerts)
++  manager.process_alerts(0, set())
++  assert manager.current_alert.audible_alert == AudibleAlert.none
++  assert manager.current_alert.alert_size == AlertSize.none
++  assert manager.current_alert.alert_text_1 == manager.current_alert.alert_text_2 == ""
++
++
++def test_partial_disengagement_does_not_override_immediate_fault_alert():
++  alerts, _ = brake_alert()
++  events = Events()
++  events.add(EventName.steerUnavailable)
++  alerts += events.create_alerts([ET.IMMEDIATE_DISABLE])
++  manager = AlertManager()
++  manager.add_many(0, alerts)
++  manager.process_alerts(0, set())
++  assert manager.current_alert.event_type == ET.IMMEDIATE_DISABLE
++  assert manager.current_alert.alert_text_2 != "Steering remains active"
++
++
++def test_partial_disengagement_remains_silent_after_each_cruise_reengagement():
++  manager = AlertManager()
++  for frame in (0, 100, 200):
++    alerts, _ = brake_alert(normal_enabled=True, pcm_disable=True)
++    manager.add_many(frame, alerts)
++    manager.process_alerts(frame, set())
++    assert manager.current_alert.audible_alert == AudibleAlert.none
++    assert manager.current_alert.alert_size == AlertSize.none
++    assert manager.current_alert.alert_text_1 == manager.current_alert.alert_text_2 == ""
++
++
++def test_partial_disengagement_does_not_mute_explicit_cancel():
++  alerts, _ = brake_alert()
++  events = Events()
++  events.add(EventName.buttonCancel)
++  alerts += events.create_alerts([ET.USER_DISABLE])
++  manager = AlertManager()
++  manager.add_many(0, alerts)
++  manager.process_alerts(0, set())
++  assert manager.current_alert.alert_type == "buttonCancel/userDisable"
++  assert manager.current_alert.audible_alert == AudibleAlert.disengage
+diff --git a/selfdrive/selfdrived/tests/test_ev9_compact_alerts.py b/selfdrive/selfdrived/tests/test_ev9_compact_alerts.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e399d0caedd718473abe6e4c73156f38bbaa32f8
+--- /dev/null
++++ b/selfdrive/selfdrived/tests/test_ev9_compact_alerts.py
+@@ -0,0 +1,42 @@
++from types import SimpleNamespace
++
++import pytest
++
++from opendbc.car.hyundai.values import CAR
++from openpilot.selfdrive.selfdrived.events import (
++  Alert, AlertSize, AlertStatus, AudibleAlert, ET, EVENTS, EventName, Priority, VisualAlert, ev9_compact_alert,
++)
++from openpilot.system.hardware import HARDWARE
++
++
++@pytest.mark.parametrize("duration", [0.1, 1.0])
++def test_compact_callback_preserves_device_metadata_without_mutation(duration):
++  original = Alert("Pay Attention", "Driver Distracted", AlertStatus.userPrompt, AlertSize.mid,
++                   Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, duration, creation_delay=0.4)
++  callback = ev9_compact_alert(original, "Driver Distracted", AlertStatus.userPrompt)
++  compact = callback(SimpleNamespace(carFingerprint=CAR.KIA_EV9))
++  assert (compact.alert_text_1, compact.alert_text_2, compact.alert_size) == ("Driver Distracted", "", AlertSize.small)
++  for field in ("duration", "creation_delay", "priority", "visual_alert", "audible_alert", "alert_status"):
++    assert getattr(compact, field) == getattr(original, field)
++  compact.alert_type = "mutated"
++  other = callback(SimpleNamespace(carFingerprint=CAR.HYUNDAI_IONIQ_5_PE))
++  assert vars(other) == vars(original)
++  assert other is not original
++  assert original.alert_size == AlertSize.mid
++
++
++@pytest.mark.parametrize("event,event_type,text,status,duration", [
++  (EventName.driverDistracted2, ET.PERMANENT, "Driver Distracted", AlertStatus.userPrompt, None),
++  (EventName.steerSaturated, ET.WARNING, "Turn Exceeds Steering Limit", AlertStatus.normal, 200),
++])
++def test_registered_events_keep_metadata_and_compact_only_ev9(event, event_type, text, status, duration):
++  callback = EVENTS[event][event_type]
++  compact = callback(SimpleNamespace(carFingerprint=CAR.KIA_EV9))
++  other = callback(SimpleNamespace(carFingerprint=CAR.HYUNDAI_IONIQ_5_PE))
++  assert (compact.alert_text_1, compact.alert_text_2, compact.alert_size, compact.alert_status) == (text, "", AlertSize.small, status)
++  assert other.alert_size == AlertSize.mid
++  assert other.alert_status == AlertStatus.userPrompt
++  expected_duration = duration if duration is not None else (100 if HARDWARE.get_device_type() == "mici" else 10)
++  assert compact.duration == other.duration == expected_duration
++  for field in ("priority", "visual_alert", "audible_alert", "creation_delay"):
++    assert getattr(compact, field) == getattr(other, field)
+diff --git a/selfdrive/ui/lib/ev9_alert_style.py b/selfdrive/ui/lib/ev9_alert_style.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b791504d4442e9b432af2883492771d0d127ff56
+--- /dev/null
++++ b/selfdrive/ui/lib/ev9_alert_style.py
+@@ -0,0 +1,13 @@
++from cereal import log
++from opendbc.car.hyundai.values import CAR
++
++
++def hide_normal_alert(status, alert_type, hide_alerts):
++  # Compact steering-limit warnings remain visible even with general banners hidden.
++  return status == log.SelfdriveState.AlertStatus.normal and hide_alerts and alert_type.split('/')[0] != 'steerSaturated'
++
++
++def alert_background_alpha(status, CP):
++  if status == log.SelfdriveState.AlertStatus.normal and CP is not None and CP.carFingerprint == CAR.KIA_EV9:
++    return 128
++  return 255 * 0.90
+diff --git a/selfdrive/ui/mici/onroad/alert_renderer.py b/selfdrive/ui/mici/onroad/alert_renderer.py
+index aab2b6666751b4590dcb51e70e45fc5063b3540b..3b1d626206b094405a102b29e8b49f1affd11a09 100644
+--- a/selfdrive/ui/mici/onroad/alert_renderer.py
++++ b/selfdrive/ui/mici/onroad/alert_renderer.py
+@@ -7,6 +7,7 @@ import string
+ from dataclasses import dataclass
+ from cereal import messaging, log, car, custom
+ from openpilot.selfdrive.ui.ui_state import ui_state
++from openpilot.selfdrive.ui.lib.ev9_alert_style import alert_background_alpha
+ from openpilot.common.filter_simple import BounceFilter, FirstOrderFilter
+ from openpilot.system.hardware import TICI
+ from openpilot.system.ui.lib.application import gui_app, FontWeight
+@@ -270,7 +271,7 @@ class AlertRenderer(Widget):
+   def _draw_background(self, alert: Alert) -> None:
+     # draw top gradient for alert text at top
+     color = ALERT_COLORS.get(alert.status, ALERT_COLORS[AlertStatus.normal])
+-    color = rl.Color(color.r, color.g, color.b, int(255 * 0.90 * self._alpha_filter.x))
++    color = rl.Color(color.r, color.g, color.b, int(alert_background_alpha(alert.status, ui_state.CP) * self._alpha_filter.x))
+     translucent_color = rl.Color(color.r, color.g, color.b, int(0 * self._alpha_filter.x))
+ 
+     small_alert_height = round(self._rect.height * 0.583) # 140px at mici height
+diff --git a/selfdrive/ui/onroad/alert_renderer.py b/selfdrive/ui/onroad/alert_renderer.py
+index 0d3f99512a080ac57342da19b7f2af2c7061b359..ab66fe215085ce3f50ac8038d2f03518582568c5 100644
+--- a/selfdrive/ui/onroad/alert_renderer.py
++++ b/selfdrive/ui/onroad/alert_renderer.py
+@@ -3,6 +3,7 @@ import pyray as rl
+ from dataclasses import dataclass
+ from cereal import messaging, log, custom
+ from openpilot.selfdrive.ui.ui_state import ui_state
++from openpilot.selfdrive.ui.lib.ev9_alert_style import alert_background_alpha, hide_normal_alert
+ from openpilot.common.filter_simple import BounceFilter, FirstOrderFilter
+ from openpilot.system.hardware import TICI
+ from openpilot.system.ui.lib.application import gui_app, FontWeight
+@@ -122,7 +123,7 @@ class AlertRenderer(Widget):
+                   size=starpilot_ss.alertSize.raw, status=starpilot_ss.alertStatus.raw,
+                   alert_type=starpilot_ss.alertType)
+ 
+-    if ret.status == AlertStatus.normal and ui_state.starpilot_toggles.get("hide_alerts", False):
++    if hide_normal_alert(ret.status, ret.alert_type, ui_state.starpilot_toggles.get("hide_alerts", False)):
+       return None
+ 
+     if sm.recv_frame['selfdriveState'] < ui_state.started_frame:
+@@ -173,7 +174,7 @@ class AlertRenderer(Widget):
+ 
+   def _draw_background(self, alert: Alert) -> None:
+     color = ALERT_COLORS.get(alert.status, ALERT_COLORS[AlertStatus.normal])
+-    color = rl.Color(color.r, color.g, color.b, int(255 * 0.90 * self._alpha_filter.x))
++    color = rl.Color(color.r, color.g, color.b, int(alert_background_alpha(alert.status, ui_state.CP) * self._alpha_filter.x))
+     translucent_color = rl.Color(color.r, color.g, color.b, int(0 * self._alpha_filter.x))
+ 
+     if alert.size == AlertSize.full:
+diff --git a/selfdrive/ui/tests/test_ev9_alert_style.py b/selfdrive/ui/tests/test_ev9_alert_style.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..a744219458553cc69ec8d0970d4e54333cd09edc
+--- /dev/null
++++ b/selfdrive/ui/tests/test_ev9_alert_style.py
+@@ -0,0 +1,26 @@
++from types import SimpleNamespace
++
++import pytest
++
++from cereal import log
++from opendbc.car.hyundai.values import CAR
++from openpilot.selfdrive.ui.lib.ev9_alert_style import alert_background_alpha, hide_normal_alert
++
++AlertStatus = log.SelfdriveState.AlertStatus
++
++
++@pytest.mark.parametrize('hidden', [False, True])
++def test_compact_steering_warning_remains_visible(hidden):
++  assert not hide_normal_alert(AlertStatus.normal, 'steerSaturated/warning', hidden)
++  assert hide_normal_alert(AlertStatus.normal, 'laneChange/warning', hidden) == hidden
++  assert not hide_normal_alert(AlertStatus.userPrompt, 'driverDistracted2/permanent', hidden)
++  assert not hide_normal_alert(AlertStatus.critical, 'controlsMismatch/immediateDisable', hidden)
++
++
++def test_half_opacity_only_for_normal_ev9_alerts():
++  ev9 = SimpleNamespace(carFingerprint=CAR.KIA_EV9)
++  assert alert_background_alpha(AlertStatus.normal, ev9) == 128
++  assert alert_background_alpha(AlertStatus.userPrompt, ev9) == 255 * 0.90
++  assert alert_background_alpha(AlertStatus.critical, ev9) == 255 * 0.90
++  assert alert_background_alpha(AlertStatus.normal, None) == 255 * 0.90
++  assert alert_background_alpha(AlertStatus.normal, SimpleNamespace(carFingerprint=CAR.HYUNDAI_IONIQ_5)) == 255 * 0.90

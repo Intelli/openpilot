@@ -1,0 +1,101 @@
+diff --git b/cereal/custom.capnp a/cereal/custom.capnp
+index fe3ed9196f..e2b0aa952e 100644
+--- b/cereal/custom.capnp
++++ a/cereal/custom.capnp
+@@ -351,6 +351,10 @@ struct CarParamsSP @0x80ae746ee2596b11 {
+   pcmCruiseSpeed @3 :Bool;
+   intelligentCruiseButtonManagementAvailable @4 :Bool;
+   enableGasInterceptor @5 :Bool;
++  hkgTuningAngleCustomLimitMaxSpeedKph @6 :Float32;
++  hkgTuningAngleOverrideEffortPercent @7 :Float32;
++  hkgSharedAutonomyEnabled @8 :Bool;
++  hkgSharedAutonomyMode @9 :UInt8;
+ 
+   neuralNetworkLateralControl @2 :NeuralNetworkLateralControl;
+ 
+diff --git b/common/params_keys.h a/common/params_keys.h
+index 77b3d6f780..826589a79a 100644
+--- b/common/params_keys.h
++++ a/common/params_keys.h
+@@ -287,6 +287,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+     {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
+     // Tuning keys
+     {"EnableHkgTuningAngleSmoothingFactor", {PERSISTENT | BACKUP, BOOL, "1"}},
++    {"HkgSharedAutonomyMode", {PERSISTENT | BACKUP, INT, "0"}},
++    {"HkgTuningAngleOverrideEffortPercent", {PERSISTENT | BACKUP, INT, "10"}},
+     {"HkgTuningAngleMinTorqueReductionGain", {PERSISTENT | BACKUP, INT, "1"}},
+     {"HkgTuningAngleMaxTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
+     {"HkgTuningAngleActiveTorqueReductionGain", {PERSISTENT | BACKUP, INT, "100"}},
+diff --git b/selfdrive/controls/controlsd.py a/selfdrive/controls/controlsd.py
+index b53185ca2b..575ec2d46e 100755
+--- b/selfdrive/controls/controlsd.py
++++ a/selfdrive/controls/controlsd.py
+@@ -139,7 +139,7 @@ class Controls(ControlsExt):
+       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
+     else:
+       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+-    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
++    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll, self.params)
+     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+ 
+     actuators.curvature = self.desired_curvature
+diff --git b/selfdrive/controls/lib/drive_helpers.py a/selfdrive/controls/lib/drive_helpers.py
+index bf6dd04f60..22ff939da6 100644
+--- b/selfdrive/controls/lib/drive_helpers.py
++++ a/selfdrive/controls/lib/drive_helpers.py
+@@ -1,5 +1,6 @@
+ import numpy as np
+ from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
++from openpilot.common.params import Params
+ from openpilot.common.realtime import DT_CTRL, DT_MDL
+ 
+ MIN_SPEED = 1.0
+@@ -22,7 +23,7 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
+   alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
+   return alpha * val + (1 - alpha) * prev_val
+ 
+-def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, bool]:
++def clip_curvature(v_ego, prev_curvature, new_curvature, roll, params: Params | None = None) -> tuple[float, bool]:
+   # This function respects ISO lateral jerk and acceleration limits + a max curvature
+   v_ego = max(v_ego, MIN_SPEED)
+   max_curvature_rate = MAX_LATERAL_JERK / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
+@@ -30,12 +31,22 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, b
+                           prev_curvature - max_curvature_rate * DT_CTRL,
+                           prev_curvature + max_curvature_rate * DT_CTRL)
+ 
++  if params is None:
++    params = Params()
++  speed_threshold_mps = float(params.get("HkgTuningAngleCustomLimitMaxSpeedKph", return_default=True)) / 3.6
+   roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
+-  max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
+-  min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
++  if v_ego <= speed_threshold_mps:
++    max_lat_accel = 4.2
++    min_lat_accel = -4.2
++  else:
++    max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
++    min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
+   new_curvature, limited_accel = clamp(new_curvature, min_lat_accel / v_ego ** 2, max_lat_accel / v_ego ** 2)
+ 
+-  new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
++  if v_ego <= speed_threshold_mps:
++    limited_max_curv = False
++  else:
++    new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+   return float(new_curvature), limited_accel or limited_max_curv
+ 
+ 
+diff --git b/sunnypilot/selfdrive/car/interfaces.py a/sunnypilot/selfdrive/car/interfaces.py
+index e4db6c8e97..a273b3379a 100644
+--- b/sunnypilot/selfdrive/car/interfaces.py
++++ a/sunnypilot/selfdrive/car/interfaces.py
+@@ -115,6 +115,9 @@ def initialize_params(params) -> list[dict[str, Any]]:
+   # hyundai
+   keys.extend([
+     "HyundaiLongitudinalTuning",
++    "HkgSharedAutonomyMode",
++    "HkgTuningAngleCustomLimitMaxSpeedKph",
++    "HkgTuningAngleOverrideEffortPercent",
+   ])
+ 
+   # subaru

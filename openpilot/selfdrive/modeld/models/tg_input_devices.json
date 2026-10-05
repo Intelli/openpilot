@@ -1,0 +1,7 @@
+{
+  "openpilot.selfdrive.modeld.dmonitoringmodeld": {
+    "default": {
+      "DEV": "QCOM"
+    }
+  }
+}

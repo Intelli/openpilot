@@ -1,0 +1,650 @@
+diff --git a/openpilot/selfdrive/ui/mici/onroad/model_renderer.py b/openpilot/selfdrive/ui/mici/onroad/model_renderer.py
+index 805bdcc335e7e0f2f2220f88dd46da812cf79535..ff8a0b0d5555d07a7ed1ef4887780c8619eef123 100644
+--- a/openpilot/selfdrive/ui/mici/onroad/model_renderer.py
++++ b/openpilot/selfdrive/ui/mici/onroad/model_renderer.py
+@@ -149,14 +149,19 @@ class ModelRenderer(Widget, ModelRendererSP):
+         self._update_leads(radar_state, path_x_array)
+       self._transform_dirty = False
+ 
++    self.update_lane_centering_ui(sm)
++
+     # Draw elements (hide when disengaged)
+     if ui_state.status != UIStatus.DISENGAGED:
+       self._draw_lane_lines()
+       self._draw_path(sm)
++      self.draw_lane_highlight(self._lane_lines)
+ 
+     # if render_lead_indicator and radar_state:
+     #   self._draw_lead_indicator()
+ 
++    self.draw_lane_centering_panel(self._rect)
++
+   def _update_raw_points(self, model):
+     """Update raw 3D points from model data"""
+     self._path.raw_points = np.array([model.position.x, np.array(model.position.y) + self._camera_offset, model.position.z], dtype=np.float32).T
+@@ -345,7 +350,7 @@ class ModelRenderer(Widget, ModelRendererSP):
+     self._blend_filter.update(int(allow_throttle))
+ 
+     if ui_state.rainbow_path:
+-      self.rainbow_path.draw_rainbow_path(self._rect, self._path)
++      self.rainbow_path.draw_rainbow_path(self._rect, self._path, sm)
+       return
+ 
+     path_pts = self._path.projected_points + np.array([self._rect.x, self._rect.y], dtype=np.float32)
+diff --git a/openpilot/selfdrive/ui/onroad/model_renderer.py b/openpilot/selfdrive/ui/onroad/model_renderer.py
+index f5a39a2a5b3923bcc8f9833ad6ab212dee1b902b..cb7b7fed7a349d0ff54d8699426c45bb0d6ec81c 100644
+--- a/openpilot/selfdrive/ui/onroad/model_renderer.py
++++ b/openpilot/selfdrive/ui/onroad/model_renderer.py
+@@ -132,14 +132,19 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
+         self._update_leads(radar_state, path_x_array)
+       self._transform_dirty = False
+ 
++    self.update_lane_centering_ui(sm)
++
+     # Draw elements
+     self._draw_lane_lines()
+     self._draw_path(sm)
++    self.draw_lane_highlight(self._lane_lines)
+ 
+     if render_lead_indicator and radar_state:
+       self._draw_lead_indicator()
+       self.chevron_metrics.draw_lead_status(sm, radar_state, self._rect, self._lead_vehicles)
+ 
++    self.draw_lane_centering_panel(self._rect)
++
+   def _update_raw_points(self, model):
+     """Update raw 3D points from model data"""
+     self._path.raw_points = np.array([model.position.x, np.array(model.position.y) + self._camera_offset, model.position.z], dtype=np.float32).T
+@@ -293,7 +298,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
+     self._blend_filter.update(int(allow_throttle))
+ 
+     if ui_state.rainbow_path and self._lateral_active:
+-      self.rainbow_path.draw_rainbow_path(self._rect, self._path)
++      self.rainbow_path.draw_rainbow_path(self._rect, self._path, sm)
+       return
+ 
+     if self._experimental_mode:
+diff --git a/openpilot/selfdrive/ui/sunnypilot/mici/onroad/model_renderer.py b/openpilot/selfdrive/ui/sunnypilot/mici/onroad/model_renderer.py
+index e3de9401ceff77c89b0cfecc911061dcdcd19a98..3653a7674d710c5bce7fa657dfce8154d7f27578 100644
+--- a/openpilot/selfdrive/ui/sunnypilot/mici/onroad/model_renderer.py
++++ b/openpilot/selfdrive/ui/sunnypilot/mici/onroad/model_renderer.py
+@@ -6,7 +6,7 @@ See the LICENSE.md file in the root directory for more details.
+ """
+ import pyray as rl
+ from openpilot.selfdrive.ui.ui_state import UIStatus
+-from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
++from openpilot.selfdrive.ui.sunnypilot.onroad.model_renderer import ModelRendererSP as BaseModelRendererSP
+ 
+ LANE_LINE_COLORS_SP = {
+   UIStatus.LAT_ONLY: rl.Color(0, 255, 64, 255),
+@@ -14,6 +14,6 @@ LANE_LINE_COLORS_SP = {
+ }
+ 
+ 
+-class ModelRendererSP:
++class ModelRendererSP(BaseModelRendererSP):
+   def __init__(self):
+-    self.rainbow_path = RainbowPath()
++    super().__init__()
+diff --git a/openpilot/selfdrive/ui/sunnypilot/onroad/model_renderer.py b/openpilot/selfdrive/ui/sunnypilot/onroad/model_renderer.py
+index 4be82bef4aba2ecc18c434e4384e492e07cacd1e..12b57b22ee8558af7fcfb4d8f7675935086849a0 100644
+--- a/openpilot/selfdrive/ui/sunnypilot/onroad/model_renderer.py
++++ b/openpilot/selfdrive/ui/sunnypilot/onroad/model_renderer.py
+@@ -4,12 +4,33 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+ This file is part of sunnypilot and is licensed under the MIT License.
+ See the LICENSE.md file in the root directory for more details.
+ """
++import math
++import time
++
++import pyray as rl
++
+ from openpilot.common.filter_simple import FirstOrderFilter
++from openpilot.common.params import Params
+ from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
++from openpilot.system.ui.lib.application import FontWeight, gui_app
++from openpilot.system.ui.lib.shader_polygon import draw_polygon
++from openpilot.system.ui.lib.text_measure import measure_text_cached
++
+ from openpilot.selfdrive.ui.sunnypilot.onroad.chevron_metrics import ChevronMetrics
+ from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
+ from openpilot.selfdrive.ui.sunnypilot.ui_state import MADSState
+-from openpilot.system.ui.lib.application import gui_app
++
++CENTERING_SIGNAL_STALE_S = 1.0
++CENTERING_CENTER_BAND_M = 0.08
++CENTERING_PANEL_MIN_VISIBLE_S = 0.5
++CENTERING_HIGHLIGHT_FREQ_HZ = 1.0
++
++SOURCE_NONE = 0
++SOURCE_EDGE = 2
++
++
++def _enum_raw(value) -> int:
++  return int(getattr(value, "raw", value))
+ 
+ 
+ class ModelRendererSP:
+@@ -18,6 +39,261 @@ class ModelRendererSP:
+     self.chevron_metrics = ChevronMetrics()
+     self._width_filter = FirstOrderFilter(0.9, 0.1, 1 / gui_app.target_fps)
+ 
++    self.params = Params()
++
++    self._title_font = gui_app.font(FontWeight.SEMI_BOLD)
++    self._detail_font = gui_app.font(FontWeight.MEDIUM)
++    self.advanced_lane_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
++    self.prev_lat_active = False
++
++    self.centering_display_valid = False
++    self.centering_display_offset_m = 0.0
++    self.centering_adjusting_display = False
++    self.centering_edge_mode = False
++    self.centering_status_active = False
++    self.centering_within_center_band = False
++    self.centering_steering_direction_sign = 0.0
++    self.centering_indicator_edge_sign = 0.0
++    self.centering_indicator_source = SOURCE_NONE
++    self.centering_indicator_last_nonzero_source = SOURCE_NONE
++
++    self.centering_highlight_strength = 0.0
++    self.centering_highlight_phase = 0.0
++    self.centering_highlight_last_update = time.monotonic()
++
++    self.centering_panel_visible_state = False
++    self.centering_panel_request_active = False
++    self.centering_panel_request_start = time.monotonic()
++    self.centering_panel_visible = False
++
++  def update_lane_centering_ui(self, sm) -> None:
++    now = time.monotonic()
++    selfdrive_state = sm["selfdriveState"]
++
++    self.centering_status_active = False
++    self.centering_display_valid = False
++    self.centering_display_offset_m = 0.0
++    self.centering_adjusting_display = False
++    self.centering_edge_mode = False
++    self.centering_indicator_source = SOURCE_NONE
++    self.centering_indicator_edge_sign = 0.0
++    self.centering_highlight_strength = 0.0
++    self.centering_panel_visible = False
++    self.centering_within_center_band = False
++    self.centering_steering_direction_sign = 0.0
++
++    panel_offset_available = False
++    panel_offset_m = 0.0
++
++    mads_enabled = False
++    if sm.alive["selfdriveStateSP"]:
++      mads_enabled = bool(sm["selfdriveStateSP"].mads.enabled)
++    enabled = bool(selfdrive_state.enabled) or mads_enabled
++
++    if sm.alive["carControl"]:
++      lat_active = bool(sm["carControl"].latActive)
++      if lat_active and not self.prev_lat_active:
++        self.advanced_lane_centering_enabled = self.params.get_bool("AdvancedLaneCentering")
++      self.prev_lat_active = lat_active
++
++    if not self.advanced_lane_centering_enabled:
++      self.centering_panel_visible_state = False
++      self.centering_panel_request_active = False
++      self.centering_indicator_last_nonzero_source = SOURCE_NONE
++      return
++
++    if enabled and sm.alive["controlsState"]:
++      controls_state = sm["controlsState"]
++      controls_state_stale = abs(now - sm.recv_time["controlsState"]) > CENTERING_SIGNAL_STALE_S
++      if not controls_state_stale:
++        self.centering_status_active = bool(getattr(controls_state, "laneCenteringActive", False))
++        self.centering_adjusting_display = bool(getattr(controls_state, "laneCenteringAdjusting", False))
++        self.centering_edge_mode = bool(getattr(controls_state, "edgeClearanceActive", False))
++        self.centering_display_valid = bool(getattr(controls_state, "laneCenteringValid", False))
++
++        if self.centering_adjusting_display:
++          panel_offset_available = True
++          panel_offset_m = float(getattr(controls_state, "laneCenteringOffset", 0.0))
++          self.centering_indicator_source = _enum_raw(getattr(controls_state, "laneCenteringSource", SOURCE_NONE))
++        elif self.centering_edge_mode:
++          panel_offset_available = True
++          panel_offset_m = float(getattr(controls_state, "edgeClearanceOffset", 0.0))
++          self.centering_indicator_source = SOURCE_EDGE
++        elif self.centering_display_valid:
++          panel_offset_available = True
++          panel_offset_m = float(getattr(controls_state, "laneCenteringDisplayOffset", 0.0))
++          self.centering_indicator_source = _enum_raw(getattr(controls_state, "laneCenteringSource", SOURCE_NONE))
++        elif self.centering_status_active:
++          panel_offset_available = True
++          panel_offset_m = float(getattr(controls_state, "laneCenteringOffset", 0.0))
++          self.centering_indicator_source = _enum_raw(getattr(controls_state, "laneCenteringSource", SOURCE_NONE))
++      else:
++        self.centering_indicator_last_nonzero_source = SOURCE_NONE
++    else:
++      self.centering_indicator_last_nonzero_source = SOURCE_NONE
++
++    if self.centering_indicator_source == SOURCE_NONE and self.centering_indicator_last_nonzero_source != SOURCE_NONE:
++      self.centering_indicator_source = self.centering_indicator_last_nonzero_source
++    if self.centering_indicator_source != SOURCE_NONE:
++      self.centering_indicator_last_nonzero_source = self.centering_indicator_source
++
++    self.centering_display_valid = panel_offset_available
++    self.centering_display_offset_m = panel_offset_m if panel_offset_available else 0.0
++    self.centering_within_center_band = panel_offset_available and abs(panel_offset_m) <= CENTERING_CENTER_BAND_M
++
++    if panel_offset_available:
++      if panel_offset_m > 0.0:
++        offset_sign = 1.0
++      elif panel_offset_m < 0.0:
++        offset_sign = -1.0
++      else:
++        offset_sign = 0.0
++      self.centering_indicator_edge_sign = 0.0 if self.centering_within_center_band else offset_sign
++      self.centering_steering_direction_sign = 0.0 if self.centering_within_center_band else offset_sign
++      self.centering_highlight_strength = 0.0 if self.centering_within_center_band else max(0.0, min(1.0, abs(panel_offset_m) / 0.6))
++
++    panel_request_now = enabled and (self.centering_status_active or self.centering_display_valid or panel_offset_available)
++    force_panel_visible = self.centering_edge_mode or \
++      (self.centering_indicator_source == SOURCE_EDGE and (self.centering_adjusting_display or panel_offset_available)) or \
++      self.centering_adjusting_display
++
++    if force_panel_visible:
++      self.centering_panel_visible_state = True
++      # Keep request state primed so we don't briefly hide when transitioning
++      # from force-visible ("Adjusting") to normal panel states.
++      self.centering_panel_request_active = True
++      self.centering_panel_request_start = now - CENTERING_PANEL_MIN_VISIBLE_S
++      self.centering_panel_visible = True
++    else:
++      if panel_request_now:
++        if not self.centering_panel_request_active:
++          self.centering_panel_request_active = True
++          self.centering_panel_request_start = now
++        request_duration = now - self.centering_panel_request_start
++        self.centering_panel_visible_state = request_duration >= CENTERING_PANEL_MIN_VISIBLE_S
++      else:
++        self.centering_panel_request_active = False
++        self.centering_panel_visible_state = False
++      self.centering_panel_visible = self.centering_panel_visible_state
++
++    highlight_dt = max(0.0, now - self.centering_highlight_last_update)
++    self.centering_highlight_last_update = now
++    if self.centering_highlight_strength <= 0.0:
++      self.centering_highlight_phase = 0.0
++    else:
++      self.centering_highlight_phase = math.fmod(
++        self.centering_highlight_phase + highlight_dt * CENTERING_HIGHLIGHT_FREQ_HZ * (2.0 * math.pi),
++        2.0 * math.pi,
++      )
++
++  def draw_lane_highlight(self, lane_lines: list) -> None:
++    if self.centering_highlight_strength <= 0.0 or abs(self.centering_indicator_edge_sign) < 1e-4:
++      return
++
++    highlight_right = self.centering_indicator_edge_sign < 0.0
++    highlight_idx = 2 if highlight_right else 1
++    if highlight_idx < 0 or highlight_idx >= len(lane_lines):
++      return
++    if math.sin(self.centering_highlight_phase) <= -0.2:
++      return
++
++    points = lane_lines[highlight_idx].projected_points
++    if points.size < 3:
++      return
++
++    alpha = max(0, min(255, int(round(255.0 * max(0.0, min(1.0, self.centering_highlight_strength))))))
++    if alpha <= 0:
++      return
++
++    color = rl.Color(160, 90, 235, alpha) if highlight_right else rl.Color(210, 170, 255, alpha)
++    draw_polygon(self._rect, points, color)
++
++  def draw_lane_centering_panel(self, rect: rl.Rectangle) -> None:
++    if not self.centering_panel_visible:
++      return
++
++    display_offset_valid = self.centering_display_valid or self.centering_status_active
++    display_offset_m = self.centering_display_offset_m if display_offset_valid else 0.0
++    display_offset_cm = abs(display_offset_m) * 100.0
++    decimal_precision = 1 if display_offset_cm < 10.0 else 0
++
++    use_edge_mode = self.centering_edge_mode or \
++      (self.centering_indicator_source == SOURCE_EDGE and self.centering_adjusting_display)
++    feature_text = "Edge" if use_edge_mode else "Lane"
++    show_centered = self.centering_within_center_band and not self.centering_edge_mode
++
++    def direction_from_sign(value: float) -> str:
++      if abs(value) < 1e-4:
++        return "center"
++      return "right" if value > 0.0 else "left"
++
++    primary_text = ""
++    if self.advanced_lane_centering_enabled:
++      correction_sign = self.centering_steering_direction_sign
++      if abs(correction_sign) < 1e-4:
++        if display_offset_m > 0.0:
++          correction_sign = 1.0
++        elif display_offset_m < 0.0:
++          correction_sign = -1.0
++
++      if not display_offset_valid and not self.centering_adjusting_display and not self.centering_edge_mode:
++        primary_text = "Center Unknown"
++      elif show_centered:
++        primary_text = "Maintaining Center" if self.centering_adjusting_display else "Centered"
++      elif use_edge_mode and (self.centering_adjusting_display or self.centering_edge_mode):
++        if correction_sign > 0.0:
++          primary_text = f"Adjusting Right ({feature_text})"
++        elif correction_sign < 0.0:
++          primary_text = f"Adjusting Left ({feature_text})"
++        else:
++          primary_text = f"Centering ({feature_text})"
++      elif self.centering_adjusting_display:
++        if correction_sign > 0.0:
++          primary_text = f"Adjusting Right ({feature_text})"
++        elif correction_sign < 0.0:
++          primary_text = f"Adjusting Left ({feature_text})"
++        else:
++          primary_text = f"Centering ({feature_text})" if use_edge_mode else "Centered"
++      elif display_offset_valid:
++        primary_text = "Centered"
++      else:
++        primary_text = "Lane centering standby"
++
++    if display_offset_valid:
++      offset_value = f"{display_offset_cm:.{decimal_precision}f}"
++      offset_direction = direction_from_sign(-display_offset_m)
++      if offset_direction == "center":
++        secondary_text = f"{offset_value} cm from center"
++      else:
++        secondary_text = f"{offset_value} cm {offset_direction} of center"
++    else:
++      secondary_text = "Offset unknown"
++
++    indicator_width = int(min(720, rect.width * 0.82))
++    has_primary_text = bool(primary_text)
++    indicator_height = 160 if has_primary_text else 112
++    indicator_x = int(rect.x + (rect.width - indicator_width) / 2)
++    indicator_y = int(rect.y + rect.height - indicator_height - 148)
++    indicator_y = max(int(rect.y + 40), indicator_y)
++    indicator_rect = rl.Rectangle(indicator_x, indicator_y, indicator_width, indicator_height)
++
++    rl.draw_rectangle_rounded(indicator_rect, 0.12, 12, rl.Color(0, 0, 0, 190))
++
++    title_font_size = int(max(36, min(56, rect.height * 0.052)))
++    detail_font_size = int(max(28, min(42, rect.height * 0.039)))
++    text_color = rl.Color(255, 255, 255, 245)
++
++    def draw_centered(font, text: str, font_size: int, y: float) -> None:
++      text_size = measure_text_cached(font, text, font_size, 0)
++      x = indicator_rect.x + (indicator_rect.width - text_size.x) / 2
++      rl.draw_text_ex(font, text, rl.Vector2(x, y), font_size, 0, text_color)
++
++    if has_primary_text:
++      draw_centered(self._title_font, primary_text, title_font_size, indicator_rect.y + 26)
++      draw_centered(self._detail_font, secondary_text, detail_font_size, indicator_rect.y + indicator_height * 0.55)
++    else:
++      draw_centered(self._detail_font, secondary_text, detail_font_size, indicator_rect.y + indicator_height * 0.33)
++
+   @property
+   def _lateral_active(self) -> bool:
+     sm = ui_state.sm
+diff --git a/openpilot/selfdrive/ui/sunnypilot/onroad/rainbow_path.py b/openpilot/selfdrive/ui/sunnypilot/onroad/rainbow_path.py
+index de383a659d89515ca67606178d72fb2d8aa89a9b..5f480c665ddb79556d110d4bcfff858d6a06c771 100644
+--- a/openpilot/selfdrive/ui/sunnypilot/onroad/rainbow_path.py
++++ b/openpilot/selfdrive/ui/sunnypilot/onroad/rainbow_path.py
+@@ -4,19 +4,46 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+ This file is part of sunnypilot and is licensed under the MIT License.
+ See the LICENSE.md file in the root directory for more details.
+ """
+-import time
+ import colorsys
++import math
++import time
+ import pyray as rl
+ from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
+ 
+ 
+ class RainbowPath:
+-  DEFAULT_NUM_SEGMENTS = 8
+-  DEFAULT_SPEED = 50.0  # degrees per second
++  DEFAULT_NUM_SEGMENTS = 9
++  DEFAULT_SPEED = 0.35  # radians per second for wave phase
+   DEFAULT_SATURATION = 0.9
+   DEFAULT_LIGHTNESS = 0.6
+   BASE_ALPHA = 0.8
+   ALPHA_FADE = 0.3  # Alpha reduction from bottom to top
++  TAU = 2.0 * math.pi
++
++  ACCEL_START_THRESHOLD = 0.25
++  ACCEL_STOP_THRESHOLD = 0.15
++  ACCEL_FADE_IN_SECONDS = 0.5
++  ACCEL_FADE_OUT_SECONDS = 1.0
++  HAZARD_HOLD_SECONDS = 0.5
++  HAZARD_FADE_SECONDS = 1.0
++  HAZARD_ALPHA_SCALE = 0.82
++
++  OCEAN_STOPS = (
++    (0.00, 206.0, 0.70, 0.32, 0.85),
++    (0.35, 202.0, 0.72, 0.40, 0.75),
++    (0.70, 198.0, 0.74, 0.55, 0.65),
++    (1.00, 192.0, 0.60, 0.68, 0.55),
++  )
++
++  HAZARD_PREFIXES = (
++    "steerSaturated",
++    "aeb",
++    "stockAeb",
++    "fcw",
++    "driverDistracted",
++    "driverUnresponsive",
++    "manualRestart",
++  )
+ 
+   def __init__(self, num_segments: int = DEFAULT_NUM_SEGMENTS, speed: float = DEFAULT_SPEED,
+                saturation: float = DEFAULT_SATURATION, lightness: float = DEFAULT_LIGHTNESS):
+@@ -25,6 +52,15 @@ class RainbowPath:
+     self.saturation = saturation
+     self.lightness = lightness
+ 
++    self._last_update_time = time.monotonic()
++    self._accel_presence = 0.0
++    self._accel_state = False
++    self._hazard_mix = 0.0
++    self._hazard_hold = 0.0
++    self._wave_phase = 0.0
++    self._rainbow_phase_shift = 0.0
++    self._rainbow_wave_phase = 0.0
++
+   def set_speed(self, speed: float):
+     self.speed = speed
+ 
+@@ -37,33 +73,153 @@ class RainbowPath:
+   def set_lightness(self, lightness: float):
+     self.lightness = max(0.0, min(1.0, lightness))
+ 
+-  def get_gradient(self) -> Gradient:
+-    time_offset = time.monotonic()
+-    hue_offset = (time_offset * self.speed) % 360.0
+-
+-    segment_colors = []
+-    gradient_stops = []
+-
+-    for i in range(self.num_segments):
+-      position = i / (self.num_segments - 1)
+-      hue = (hue_offset + position * 360.0) % 360.0
+-      alpha = self.BASE_ALPHA * (1.0 - position * self.ALPHA_FADE)
+-      color = self._hsla_to_color(
+-        hue / 360.0,
+-        self.saturation,
+-        self.lightness,
+-        alpha
++  @staticmethod
++  def _clamp01(value: float) -> float:
++    return max(0.0, min(1.0, value))
++
++  @staticmethod
++  def _lerp(a: float, b: float, t: float) -> float:
++    return a + (b - a) * t
++
++  @staticmethod
++  def _wrap_unit(value: float) -> float:
++    wrapped = math.fmod(value, 1.0)
++    return wrapped + 1.0 if wrapped < 0.0 else wrapped
++
++  def _sample_stops(self, stops: tuple[tuple[float, float, float, float, float], ...], position: float):
++    if position <= stops[0][0]:
++      return stops[0]
++    if position >= stops[-1][0]:
++      return stops[-1]
++
++    for i in range(1, len(stops)):
++      if position <= stops[i][0]:
++        left = stops[i - 1]
++        right = stops[i]
++        span = max(1e-4, right[0] - left[0])
++        t = self._clamp01((position - left[0]) / span)
++        return (
++          position,
++          self._lerp(left[1], right[1], t),
++          self._lerp(left[2], right[2], t),
++          self._lerp(left[3], right[3], t),
++          self._lerp(left[4], right[4], t),
++        )
++    return stops[-1]
++
++  @staticmethod
++  def _blend_colors(color_a: rl.Color, color_b: rl.Color, t: float) -> rl.Color:
++    mix = max(0.0, min(1.0, t))
++    inv = 1.0 - mix
++    return rl.Color(
++      int(inv * color_a.r + mix * color_b.r),
++      int(inv * color_a.g + mix * color_b.g),
++      int(inv * color_a.b + mix * color_b.b),
++      int(inv * color_a.a + mix * color_b.a),
++    )
++
++  def _build_hazard_gradient(self) -> Gradient:
++    mix = self._clamp01(self._hazard_mix)
++    alpha_scale = self.HAZARD_ALPHA_SCALE * mix
++    colors = [
++      rl.Color(115, 0, 0, int(255 * alpha_scale)),
++      rl.Color(199, 36, 36, int(255 * 0.68 * mix)),
++      rl.Color(235, 115, 115, int(255 * 0.55 * mix)),
++    ]
++    return Gradient(
++      start=(0.0, 1.0),
++      end=(0.0, 0.0),
++      colors=colors,
++      stops=[0.0, 0.5, 1.0],
++    )
++
++  def _build_ocean_gradient(self) -> Gradient:
++    accel_visibility = self._clamp01(self._accel_presence)
++
++    sample_count = max(2, int(self.num_segments))
++    sample_positions = [i / (sample_count - 1) for i in range(sample_count)]
++    segment_colors: list[rl.Color] = []
++    gradient_stops: list[float] = []
++
++    for position in sample_positions:
++      _, ocean_hue, ocean_sat, ocean_light, ocean_alpha = self._sample_stops(self.OCEAN_STOPS, position)
++      wave = 0.5 * math.sin(self._wave_phase + position * 3.0) + 0.5
++      wave_offset = wave - 0.5
++      base_wave_strength = 0.0 if accel_visibility > 0.0 else 1.0
++
++      hue_mod = 10.0 + 3.0 * accel_visibility
++      lightness_mod = 0.08 + 0.03 * accel_visibility
++      saturation_mod = 0.05 + 0.08 * accel_visibility
++      alpha_mod = 0.04 + 0.05 * accel_visibility
++
++      base_hue = math.fmod(ocean_hue + wave_offset * hue_mod * base_wave_strength + 360.0, 360.0)
++      base_lightness = self._clamp01(ocean_light + wave_offset * lightness_mod * base_wave_strength + 0.05 * accel_visibility)
++      base_saturation = self._clamp01(ocean_sat - wave_offset * saturation_mod * base_wave_strength + 0.08 * accel_visibility)
++      base_alpha = self._clamp01(ocean_alpha - wave_offset * alpha_mod * base_wave_strength + 0.08 * accel_visibility)
++      base_color = self._hsla_to_color(
++        base_hue / 360.0,
++        base_saturation,
++        base_lightness,
++        self._clamp01(0.45 + 0.45 * base_alpha),
++      )
++
++      rainbow_phase = self._wrap_unit(position + self._rainbow_phase_shift)
++      rainbow_wave_primary = 0.5 * math.sin(self._rainbow_wave_phase + position * (self.TAU * 0.8)) + 0.5
++      rainbow_wave_secondary = 0.5 * math.sin(self._rainbow_wave_phase * 1.3 + position * (self.TAU * 0.45)) + 0.5
++      hue_cycle = self._wrap_unit(rainbow_phase + (rainbow_wave_primary - 0.5) * 0.25)
++      rainbow_hue = hue_cycle * 360.0
++      rainbow_saturation = self._clamp01(0.80 + 0.14 * accel_visibility + (rainbow_wave_secondary - 0.5) * 0.24)
++      rainbow_lightness = self._clamp01(0.52 + accel_visibility * 0.10 + (0.5 - rainbow_wave_primary) * 0.20)
++      rainbow_alpha = self._clamp01(0.66 + 0.18 * accel_visibility + (rainbow_wave_secondary - 0.5) * 0.12)
++      rainbow_color = self._hsla_to_color(
++        rainbow_hue / 360.0,
++        rainbow_saturation,
++        rainbow_lightness,
++        rainbow_alpha,
+       )
++
++      segment_colors.append(self._blend_colors(base_color, rainbow_color, accel_visibility))
+       gradient_stops.append(position)
+-      segment_colors.append(color)
+ 
+     return Gradient(
+-      start=(0.0, 1.0),  # Bottom of path
+-      end=(0.0, 0.0),  # Top of path
++      start=(0.0, 1.0),
++      end=(0.0, 0.0),
+       colors=segment_colors,
+       stops=gradient_stops,
+     )
+ 
++  def _update_state(self, sm) -> None:
++    now = time.monotonic()
++    dt = max(0.0, now - self._last_update_time)
++    self._last_update_time = now
++
++    a_ego = float(sm['carState'].aEgo)
++    if not self._accel_state and a_ego >= self.ACCEL_START_THRESHOLD:
++      self._accel_state = True
++    elif self._accel_state and a_ego <= self.ACCEL_STOP_THRESHOLD:
++      self._accel_state = False
++
++    if self._accel_state:
++      self._accel_presence = min(1.0, self._accel_presence + dt / self.ACCEL_FADE_IN_SECONDS)
++    else:
++      self._accel_presence = max(0.0, self._accel_presence - dt / self.ACCEL_FADE_OUT_SECONDS)
++
++    alert_type = str(sm['selfdriveState'].alertType)
++    hazard_active = bool(alert_type) and any(alert_type.startswith(prefix) for prefix in self.HAZARD_PREFIXES)
++    if hazard_active:
++      self._hazard_mix = 1.0
++      self._hazard_hold = self.HAZARD_HOLD_SECONDS
++    elif self._hazard_mix > 0.0:
++      if self._hazard_hold > 0.0:
++        self._hazard_hold = max(0.0, self._hazard_hold - dt)
++      else:
++        self._hazard_mix = max(0.0, self._hazard_mix - dt / self.HAZARD_FADE_SECONDS)
++
++    rainbow_speed_multiplier = 1.5 + self._accel_presence * 0.4 if self._accel_presence > 0.0 else 1.0
++    self._wave_phase = math.fmod(self._wave_phase + self.speed * rainbow_speed_multiplier * dt, self.TAU)
++    self._rainbow_phase_shift = self._wrap_unit(self._rainbow_phase_shift + 0.10 * rainbow_speed_multiplier * dt)
++    self._rainbow_wave_phase = math.fmod(self._rainbow_wave_phase + 0.8 * dt, self.TAU)
++
+   @staticmethod
+   def _hsla_to_color(h: float, s: float, l: float, a: float) -> rl.Color:
+     rgb = colorsys.hls_to_rgb(h, l, s)
+@@ -74,6 +230,14 @@ class RainbowPath:
+       int(a * 255)
+     )
+ 
+-  def draw_rainbow_path(self, rect, path):
+-    gradient = self.get_gradient()
+-    draw_polygon(rect, path.projected_points, gradient=gradient)
++  def draw_rainbow_path(self, rect, path, sm):
++    if not path.projected_points.size:
++      return
++
++    self._update_state(sm)
++
++    if self._hazard_mix > 0.0:
++      draw_polygon(rect, path.projected_points, gradient=self._build_hazard_gradient())
++      return
++
++    draw_polygon(rect, path.projected_points, gradient=self._build_ocean_gradient())

@@ -1,0 +1,158 @@
+diff --git a/selfdrive/controls/controlsd.py b/selfdrive/controls/controlsd.py
+index 0fdf7c97cb3467e75d1efe4a16ad24b9661ef5f8..de1694bfa8e1bba5f738c00543c698ebc17a241f 100644
+--- a/selfdrive/controls/controlsd.py
++++ b/selfdrive/controls/controlsd.py
+@@ -52,6 +52,7 @@ LateralControlMode = car.CarControl.Actuators.LateralControlMode
+ 
+ ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
+ REPLAY = "REPLAY" in os.environ
++SIMULATION = "SIMULATION" in os.environ
+ 
+ # After a smoothed lane change ends, ramp the curvature limits back to stock over this
+ # time so the final recenter correction is shaped instead of stepping through unclamped.
+@@ -551,6 +552,10 @@ class Controls:
+       not self.ecu_disable_failed
+     )
+ 
++    # Always-on lateral bypasses normal engagement, so enforce EV9-only control here too.
++    if self.CP.carFingerprint != HYUNDAI_CAR.KIA_EV9 and not REPLAY and not SIMULATION:
++      CC.enabled = CC.latActive = CC.longActive = False
++
+     actuators = CC.actuators
+     actuators.longControlState = self.LoC.long_control_state
+ 
+diff --git a/selfdrive/selfdrived/selfdrived.py b/selfdrive/selfdrived/selfdrived.py
+index aea14c1a93c2977ea71b922c72bc0fb3893c05cb..f31ec970576fc64cf1e6769edf036ccbcaf00abc 100644
+--- a/selfdrive/selfdrived/selfdrived.py
++++ b/selfdrive/selfdrived/selfdrived.py
+@@ -177,7 +177,7 @@ class SelfdriveD:
+     self.params_memory = Params(memory=True)
+ 
+     # Ensure the current branch is cached, otherwise the first cycle lags
+-    build_metadata = get_build_metadata()
++    get_build_metadata()
+ 
+     if CP is None:
+       cloudlog.info("selfdrived is waiting for CarParams")
+@@ -285,6 +285,9 @@ class SelfdriveD:
+     elif car_recognized and self.CP.passive:
+       self.startup_event = EventName.startupNoControl
+ 
++    if self.CP.carFingerprint != HYUNDAI_CAR.KIA_EV9 and not REPLAY and not SIMULATION:
++      self.events.add(EventName.startupNoControl, static=True)
++
+     if not car_recognized:
+       self.events.add(EventName.carUnrecognized, static=True)
+       set_offroad_alert("Offroad_CarUnrecognized", True)
+diff --git a/selfdrive/ui/layouts/home.py b/selfdrive/ui/layouts/home.py
+index 19be4dda978205ec572bec07b05be6481ae8a75d..0c231d51cbaa0af3432699b02a5b30194655f384 100644
+--- a/selfdrive/ui/layouts/home.py
++++ b/selfdrive/ui/layouts/home.py
+@@ -261,7 +261,7 @@ class HomeLayout(Widget):
+     self._prev_alerts_present = alerts_present
+ 
+   def _get_version_text(self) -> str:
+-    brand = "StarPilot"
++    brand = "StarPilot - EV9 Edition"
+     description = starpilot_display_description(self.params.get("UpdaterCurrentDescription"))
+     version_text = f"{brand} {description}" if description else brand
+ 
+diff --git a/selfdrive/ui/mici/layouts/home.py b/selfdrive/ui/mici/layouts/home.py
+index c85b778bbbfac61091c56caebe84d99eabdde9c4..f03d0ebb08d1225ed98e8f594073f73f9c918da4 100644
+--- a/selfdrive/ui/mici/layouts/home.py
++++ b/selfdrive/ui/mici/layouts/home.py
+@@ -177,7 +177,8 @@ class MiciHomeLayout(Widget):
+       self._mic_icon,
+     ], spacing=18)
+ 
+-    self._openpilot_label = UnifiedLabel("StarPilot", font_size=96, font_weight=FontWeight.BRAND, max_width=480, wrap_text=False)
++    self._openpilot_label = UnifiedLabel("StarPilot", font_size=64, font_weight=FontWeight.BRAND, max_width=480, wrap_text=False)
++    self._edition_label = UnifiedLabel("EV9 Edition", font_size=28, font_weight=FontWeight.BRAND, max_width=480, wrap_text=False)
+     self._version_label = UnifiedLabel("", font_size=36, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
+     self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
+     self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
+@@ -264,9 +265,12 @@ class MiciHomeLayout(Widget):
+     text_pos = rl.Vector2(self.rect.x - 2 + HOME_PADDING, self.rect.y - 16)
+     self._openpilot_label.set_position(text_pos.x, text_pos.y)
+     self._openpilot_label.render()
++    edition_y = text_pos.y + self._openpilot_label.font_size + 12
++    self._edition_label.set_position(text_pos.x, edition_y)
++    self._edition_label.render()
+ 
+     if self._version_text is not None:
+-      version_pos = rl.Rectangle(text_pos.x, text_pos.y + self._openpilot_label.font_size + 16, 100, 44)
++      version_pos = rl.Rectangle(text_pos.x, edition_y + self._edition_label.font_size + 8, 100, 44)
+       self._version_label.set_text(self._version_text[0])
+       self._version_label.set_position(version_pos.x, version_pos.y)
+       self._version_label.render()
+diff --git a/system/ui/spinner.py b/system/ui/spinner.py
+index d7668ea8fe3a37a139ab7a7a84c5531335920696..2e8f42c3ce0960a1c09e6e75797285f4af03f882 100755
+--- a/system/ui/spinner.py
++++ b/system/ui/spinner.py
+@@ -20,6 +20,8 @@ class SpinnerTheme:
+   text_font_size: int
+   line_height: int
+   horizontal_margin: int
++  edition_font_size: int
++  edition_spacing: int
+   progress_label_font_size: int | None = None
+ 
+ 
+@@ -32,6 +34,8 @@ BIG_THEME = SpinnerTheme(
+   text_font_size=96,
+   line_height=104,
+   horizontal_margin=100,
++  edition_font_size=72,
++  edition_spacing=36,
+ )
+ 
+ SMALL_THEME = SpinnerTheme(
+@@ -43,6 +47,8 @@ SMALL_THEME = SpinnerTheme(
+   text_font_size=30,
+   line_height=36,
+   horizontal_margin=24,
++  edition_font_size=40,
++  edition_spacing=14,
+   progress_label_font_size=24,
+ )
+ 
+@@ -50,6 +56,7 @@ SMALL_THEME = SpinnerTheme(
+ DEGREES_PER_SECOND = 360.0  # one full rotation per second
+ SMALL_MAX_WRAPPED_LINES = 4
+ PROGRESS_LABEL_SPACING = 12
++EDITION_TEXT = "EV9 Edition"
+ DARKGRAY = (55, 55, 55, 255)
+ 
+ 
+@@ -96,7 +103,10 @@ class Spinner(Widget):
+     if self._progress is not None:
+       height = self._theme.texture_size + self._theme.centered_spacing + self._theme.progress_bar_height
+       if self._theme.progress_label_font_size is not None:
+-        height += PROGRESS_LABEL_SPACING + self._theme.progress_label_font_size
++        height += PROGRESS_LABEL_SPACING + measure_text_cached(
++          gui_app.font(FontWeight.BOLD), f"{self._progress}%", self._theme.progress_label_font_size).y
++      height += self._theme.edition_spacing + measure_text_cached(
++        gui_app.font(FontWeight.BRAND), EDITION_TEXT, self._theme.edition_font_size).y
+       return height
+ 
+     if self._wrapped_lines:
+@@ -143,12 +153,19 @@ class Spinner(Widget):
+ 
+       bar.width *= self._progress / 100.0
+       rl.draw_rectangle_rounded(bar, 1, 10, rl.WHITE)
++      edition_y = y_pos + bar.height
+       if self._theme.progress_label_font_size is not None:
+         progress_text = f"{self._progress}%"
+         font = gui_app.font(FontWeight.BOLD)
+         text_size = measure_text_cached(font, progress_text, self._theme.progress_label_font_size)
+         text_pos = rl.Vector2(center_x - text_size.x / 2.0, y_pos + bar.height + PROGRESS_LABEL_SPACING)
+         rl.draw_text_ex(font, progress_text, text_pos, self._theme.progress_label_font_size, 0.0, rl.Color(255, 255, 255, 180))
++        edition_y = text_pos.y + text_size.y
++
++      edition_font = gui_app.font(FontWeight.BRAND)
++      edition_size = measure_text_cached(edition_font, EDITION_TEXT, self._theme.edition_font_size)
++      edition_pos = rl.Vector2(center_x - edition_size.x / 2.0, edition_y + self._theme.edition_spacing)
++      rl.draw_text_ex(edition_font, EDITION_TEXT, edition_pos, self._theme.edition_font_size, 0.0, rl.WHITE)
+     elif self._wrapped_lines:
+       font = gui_app.font(FontWeight.BOLD if not gui_app.big_ui() else FontWeight.NORMAL)
+       for i, line in enumerate(self._wrapped_lines):
