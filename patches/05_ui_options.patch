@@ -51,10 +51,10 @@ index d036d8d281d2e93562b231e236cc5db3af273681..de37e8c29ad49b354c2c81c9374277fd
      self.delay_control.set_visible(not live_delay and advanced_controls)
      new_step = int(round(100 / CV.MPH_TO_KPH)) if ui_state.is_metric else 100
 diff --git a/openpilot/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py b/openpilot/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py
-index 20c9903a63b919b9852cdd54945d6798d3573670..bf4b128f1d5565d345999cd8283c196eb1282a49 100644
+index 20c9903a63b919b9852cdd54945d6798d3573670..c45d1e031cc0177f944b00a21185dc12ed01e100 100644
 --- a/openpilot/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py
 +++ b/openpilot/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/hyundai.py
-@@ -7,33 +7,78 @@ See the LICENSE.md file in the root directory for more details.
+@@ -7,33 +7,82 @@ See the LICENSE.md file in the root directory for more details.
  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.vehicle.brands.base import BrandSettings
  from openpilot.selfdrive.ui.ui_state import ui_state
  from openpilot.system.ui.lib.multilang import tr
@@ -69,6 +69,7 @@ index 20c9903a63b919b9852cdd54945d6798d3573670..bf4b128f1d5565d345999cd8283c196e
      super().__init__()
      self.alpha_long_available = False
 +    self.has_angle_steering = False
++    self.is_ev9 = False
  
      tuning_texts = [tr("Off"), tr("Dynamic"), tr("Predictive")]
      self.longitudinal_tuning_item = multiple_button_item_sp(tr("Custom Longitudinal Tuning"), "", tuning_texts,
@@ -125,19 +126,22 @@ index 20c9903a63b919b9852cdd54945d6798d3573670..bf4b128f1d5565d345999cd8283c196e
    def update_settings(self):
      self.alpha_long_available = False
 +    self.has_angle_steering = False
++    self.is_ev9 = False
      bundle = ui_state.params.get("CarPlatformBundle")
      if bundle:
        platform = bundle.get("platform")
 +      config = CAR[platform].config
        self.alpha_long_available = CAR[platform] not in set().union(*UNSUPPORTED_LONGITUDINAL_CAR.values())
 +      self.has_angle_steering = bool(config.flags & HyundaiFlags.CANFD_ANGLE_STEERING)
++      self.is_ev9 = CAR[platform] == CAR.KIA_EV9
      elif ui_state.CP is not None:
        self.alpha_long_available = ui_state.CP.alphaLongitudinalAvailable
 +      self.has_angle_steering = bool(ui_state.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING)
++      self.is_ev9 = ui_state.CP.carFingerprint == CAR.KIA_EV9
  
      tuning_param = int(ui_state.params.get("HyundaiLongitudinalTuning") or "0")
      long_enabled = ui_state.has_longitudinal_control
-@@ -57,3 +102,66 @@ class HyundaiSettings(BrandSettings):
+@@ -57,3 +106,70 @@ class HyundaiSettings(BrandSettings):
      self.longitudinal_tuning_item.show_description(True)
      self.longitudinal_tuning_item.action_item.set_selected_button(tuning_param)
      self.longitudinal_tuning_item.set_visible(self.alpha_long_available)
@@ -170,6 +174,10 @@ index 20c9903a63b919b9852cdd54945d6798d3573670..bf4b128f1d5565d345999cd8283c196e
 +
 +    angle_override_base_desc = tr("Adjust steering effort required to manually override lateral control on angle-steering platforms. " +
 +                                  "Lower values make override easier. 100% keeps stock behavior.")
++    if self.is_ev9:
++      angle_override_base_desc = tr("Lower values require less sustained steering input and progressively reduce assistance more during override. " +
++                                    "100% disables this extra reduction. Hands-off assistance is unchanged. " +
++                                    "Improved Manual Control uses its own handoff assistance.")
 +    if not self.has_angle_steering:
 +      angle_override_desc = tr("This feature is only available on angle-steering Hyundai/Kia/Genesis platforms.")
 +    elif not ui_state.is_offroad():

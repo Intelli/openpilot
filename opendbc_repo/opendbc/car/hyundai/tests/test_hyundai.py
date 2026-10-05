@@ -384,7 +384,8 @@ class TestEV9OverrideContact(unittest.TestCase):
         self.assertAlmostEqual(gain, base, places=6)
         self.assertFalse(self.controller.override_active)
 
-  def test_fresh_contact_with_torque_applies_custom_floor(self):
+  def test_fresh_contact_with_strong_torque_reaches_custom_floor(self):
+    self.cs.out.steeringTorque = 350
     for status in (1, 2, 3, 4):
       for age in (10_000_000, 300_000_000):
         with self.subTest(status=status, age=age):
@@ -418,8 +419,11 @@ class TestEV9OverrideContact(unittest.TestCase):
     self.settle(0)
     base_before = self.controller.apply_torque_base_last
     gain, base_contact = self.step(1)
-    self.assertAlmostEqual(gain, 0.1)
+    self.assertAlmostEqual(gain, base_contact, places=6)
     self.assertEqual(base_contact, base_before)
+    gain, base_contact = self.settle(1)
+    self.assertGreater(gain, 0.1)
+    self.assertLess(gain, base_contact)
     gain, base_released = self.step(0)
     self.assertAlmostEqual(gain, base_released, places=6)
     self.assertEqual(base_released, base_contact)
@@ -442,6 +446,116 @@ class TestEV9OverrideContact(unittest.TestCase):
     gain, base = self.settle(0)
     self.assertGreater(base, 0.1)
     self.assertAlmostEqual(gain, 0.1)
+
+  def test_brief_torque_spikes_do_not_reduce_assistance(self):
+    self.cs.out.steeringTorque = 0
+    self.cs.out.steeringPressed = False
+    self.settle(3)
+    for sign in (-1, 1):
+      for pressed in (False, True):
+        self.cs.out.steeringTorque = sign * 200
+        self.cs.out.steeringPressed = pressed
+        for _ in range(5):
+          gain, base = self.step(3)
+          self.assertAlmostEqual(gain, base, places=6)
+          self.assertFalse(self.controller.override_active)
+        self.cs.out.steeringTorque = 0
+        self.step(3)
+
+  def test_sustained_input_and_strong_input_entry(self):
+    self.cs.out.steeringPressed = False
+    for _ in range(11):
+      self.step(3)
+      self.assertFalse(self.controller.override_active)
+    self.step(3)
+    self.assertTrue(self.controller.override_active)
+    self.step(0)
+    self.cs.out.steeringTorque = -350
+    self.step(3)
+    self.assertTrue(self.controller.override_active)
+    self.assertEqual(self.controller.ev9_override.entry_timer, 0.01)
+
+  def test_effort_automatically_scales_entry_and_assistance(self):
+    self.cs.out.steeringTorque = 165
+    self.cs.out.steeringPressed = False
+    for effort, expected in ((10, True), (50, True), (90, False)):
+      self.controller = make_ev9_override_controller(effort=effort)
+      gain, base = self.settle(3)
+      self.assertEqual(self.controller.override_active, expected)
+      self.assertEqual(gain < base - 1e-6, expected)
+    self.cs.out.steeringTorque = 200
+    gains = []
+    for effort in (10, 50, 90):
+      self.controller = make_ev9_override_controller(effort=effort)
+      gain, _ = self.settle(3)
+      gains.append(gain)
+    self.assertLess(gains[0], gains[1])
+    self.assertLess(gains[1], gains[2])
+    self.controller = make_ev9_override_controller(effort=100)
+    gain, base = self.settle(3)
+    self.assertAlmostEqual(gain, base, places=6)
+    self.assertFalse(self.controller.override_active)
+
+  def test_progressive_reduction_and_contact_recovery(self):
+    gain_moderate, base = self.settle(3)
+    self.assertGreater(gain_moderate, 0.1)
+    self.assertLess(gain_moderate, base)
+    self.cs.out.steeringTorque = 350
+    for _ in range(30):
+      previous = self.controller.ev9_override.multiplier
+      self.step(3)
+      self.assertLessEqual(previous - self.controller.ev9_override.multiplier, 0.08 + 1e-9)
+    self.assertAlmostEqual(self.controller.ev9_override.multiplier, 0.1)
+    self.cs.out.steeringTorque = 0
+    for _ in range(10):
+      previous = self.controller.ev9_override.multiplier
+      self.step(3)
+      self.assertLessEqual(self.controller.ev9_override.multiplier - previous, 0.02 + 1e-9)
+    self.assertLess(self.controller.ev9_override.multiplier, 1.0)
+    gain, base = self.step(0)
+    self.assertAlmostEqual(gain, base, places=6)
+    self.assertEqual(self.controller.ev9_override.multiplier, 1.0)
+
+  def test_contact_loss_resets_pending_entry(self):
+    self.cs.out.steeringPressed = False
+    for _ in range(10):
+      self.step(3)
+    self.step(0)
+    self.assertEqual(self.controller.ev9_override.entry_timer, 0)
+    for _ in range(10):
+      gain, base = self.step(3)
+      self.assertAlmostEqual(gain, base, places=6)
+      self.assertFalse(self.controller.override_active)
+
+  def test_hands_off_packed_commands_match_full_effort(self):
+    native = make_ev9_override_controller(effort=100)
+    with ev9_override_controller_context(self.controller, pack_steering=True), ev9_override_controller_context(native, pack_steering=True):
+      for frame in range(200):
+        self.cc.actuators.steeringAngleDeg = 140 if frame < 100 else -70
+        self.cs.out.steeringTorque = -250 if frame % 40 < 20 else 250
+        self.cs.hands_on_steering_grip = 0
+        self.cs.hands_on_steering_ts_nanos = self.now - 10_000_000
+        tuned, tuned_can = self.controller.update(self.cc.as_reader(), CarControlSP(), self.cs, self.now)
+        stock, stock_can = native.update(self.cc.as_reader(), CarControlSP(), self.cs, self.now)
+        self.assertEqual(tuned_can, stock_can)
+        self.assertEqual(tuned.steeringAngleDeg, stock.steeringAngleDeg)
+        self.cs.out.steeringAngleDeg = tuned.steeringAngleDeg
+        self.now += 10_000_000
+
+
+class TestEV9OverrideParameters(unittest.TestCase):
+  def test_effort_defaults_bounds_and_automatic_threshold(self):
+    from opendbc.sunnypilot.car.interfaces import _initialize_custom_longitudinal_tuning
+
+    cp = CarInterface.get_non_essential_params(CAR.KIA_EV9)
+    for value, expected in ((None, 100), ("bad", 100), ("0", 10), ("125", 100), ("80", 80)):
+      params = {} if value is None else {"HkgTuningAngleOverrideEffortPercent": value}
+      cp_sp = CarParamsSP()
+      _initialize_custom_longitudinal_tuning(CarInterface, cp, cp_sp, params)
+      self.assertEqual(cp_sp.hkgTuningAngleOverrideEffortPercent, expected)
+      self.assertEqual(cp_sp.hkgSharedAutonomyMode, 0)
+      controller = make_ev9_override_controller(effort=expected)
+      self.assertAlmostEqual(controller.ev9_override.enter_threshold, 150 + (expected - 10) / 90 * 25)
 
 
 class TestEV9HODTimestamp(unittest.TestCase):
